@@ -11,6 +11,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Check compiler pin and validation workflow configuration
-        uses: lukewilliamboswell/roc-automation/actions/nightly@9b929d615ff94b489afdb01d6f3e7099a8fd2b5b
+        uses: lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
         with:
           phase: check

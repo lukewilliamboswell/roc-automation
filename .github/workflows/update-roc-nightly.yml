@@ -32,7 +32,7 @@ jobs:
         FORCE: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false'
           }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@9b929d615ff94b489afdb01d6f3e7099a8fd2b5b
+        lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
       with:
         phase: prepare
   validate:
@@ -57,7 +57,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@9b929d615ff94b489afdb01d6f3e7099a8fd2b5b
+        lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
       with:
         phase: validate
   report:
@@ -81,7 +81,7 @@ jobs:
         TEST_RESULT: ${{ needs.validate.result }}
         VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@9b929d615ff94b489afdb01d6f3e7099a8fd2b5b
+        lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
       with:
         phase: report
 
@@ -95,17 +95,13 @@ jobs:
       pull-requests: read
       actions: read
     steps:
-      # Only the trusted original default-branch checkout; never candidate code.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
+      # No consumer checkout. Policy is read through the API at github.sha.
       - name: Merge an opted-in pin update after rechecking live evidence
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
           NIGHTLY_TAG: ${{ needs.prepare.outputs.nightly }}
           VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
-        uses: lukewilliamboswell/roc-automation/actions/nightly@9b929d615ff94b489afdb01d6f3e7099a8fd2b5b
+        uses: lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
         with:
           phase: merge
