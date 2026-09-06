@@ -6,9 +6,10 @@ compiler's `0.1.x` line. These are **compiler compatibility branches**, not
 package-version branches. A branch is not an LTS promise: document support scope,
 end dates, and any paid support arrangements separately.
 
-Published packages support an actually released stable Roc compiler. Nightly
-compatibility is development evidence and never authorizes publication, even
-from `main`. Package versions form an independent repository-wide namespace. A package change
+The intended long-term policy is to publish packages supporting an actually
+released stable Roc compiler, even when development has moved ahead. Until a
+usable versioned compiler exists, consumers can explicitly enable transitional
+publication with an exact nightly on `main`. This is not stable compatibility. Package versions form an independent repository-wide namespace. A package change
 on either branch receives a new immutable package release when published. For
 example, package `2.3.1` could support Roc `0.1.2`, while package `3.0.0` requires a
 newer compiler. Never republish changed contents under an old package version or
@@ -16,10 +17,10 @@ infer compiler support from the package's version number.
 
 ## Compiler policy
 
-Every branch keeps an exact `.roc-version`. A release candidate from `main` must
-first use and pass validation with an actually released stable compiler. If
-development has moved beyond that compiler, prepare the release on its compatible
-`release/roc-<major>.<minor>.x` branch; do not publish nightly-only code. The existing nightly updater runs
+Every branch keeps an exact `.roc-version`. Under the intended stable-only policy, a release candidate from `main` must
+use and pass validation with an actually released stable compiler. If development
+has moved beyond that compiler, prepare the release on its compatible branch.
+The explicit bootstrap exception below supports today's exact-nightly releases. The existing nightly updater runs
 only on the default branch and proposes pin-only PRs there. It does not manage
 compiler compatibility branches. A reviewed update from Roc `0.1.2` to `0.1.3`
 can remain on `release/roc-0.1.x`, with the complete relevant compatibility tests.
@@ -29,7 +30,8 @@ in this implementation; patch updates use ordinary reviewed PRs for now.
 
 Do not create a compiler compatibility branch with a nightly pin and claim that
 it supports a stable compiler release. Until a suitable versioned Roc compiler
-exists, use `main` for development with a documented nightly; publication remains blocked.
+exists, use `main` with a documented exact nightly. Publication requires explicit
+bootstrap opt-in; remove that opt-in when a usable stable compiler is available.
 Policy tests can use
 synthetic final-version fixtures without claiming those upstream releases exist.
 
@@ -107,11 +109,20 @@ Missing releases and API failures fail closed. Consumers must separately verify
 the downloaded compiler version and test its actual supported platform artifacts.
 
 `allow-default-branch: 'true'` explicitly permits package releases from `main`,
-only with a final stable compiler release, just like compatibility branches. It
-does not waive the stable-compiler requirement. Omit it
+with a final stable compiler release, just like compatibility branches. To enable
+the temporary nightly exception, also set `allow-nightly-bootstrap: 'true'` (its
+default is false). Both opt-ins are required, and the exception applies only to
+the actual default branch with an exact `nightly-YYYY-MM-DD-<commit>` pin. The
+action verifies that exact tag in `roc-lang/nightlies` is published with assets;
+nightly pins are never accepted on compiler compatibility branches. Remove the
+bootstrap opt-in through a reviewed PR when a usable stable compiler becomes
+available. The action does not infer readiness from an unrelated existing tag.
+
+Omit default-branch opt-in
 to restrict the workflow to compiler compatibility branches. Tags, PR refs,
 mismatched compiler lines and mismatched checkouts are rejected. Outputs are
-`version`, `sha`, `compiler-pin`, `compiler-release`, and `maintenance-branch` (empty on the default
+`version`, `sha`, `compiler-pin`, `compiler-release`, `compiler-channel` (`stable`
+or `nightly-bootstrap`), and `maintenance-branch` (empty on the default
 branch). Use `sha` throughout build/publish jobs. The action uses the short-lived GitHub token for read-only official release
 metadata; it requires `gh` and no write permission.
 
@@ -132,7 +143,9 @@ changes independently. These practices support the OpenSSF goals described in
 Use roc-time's core/tzdb pair and starters to rehearse artifact identity and
 compiler compatibility metadata; use roc-ansi to confirm the same contracts apply
 to a simpler package. Until a versioned compiler is available, validate rejection
-and matching-line behavior with synthetic fixtures and keep publication blocked while development uses a nightly. Do not claim a live stable-compiler
+and matching-line behavior with synthetic fixtures. Exercise current publication
+with explicit main-only nightly bootstrap and report its compiler requirement
+honestly. Do not claim a live stable-compiler
 pilot from fixture success.
 
 For each consumer, record compiler policy, branch rules, validation-only paths,

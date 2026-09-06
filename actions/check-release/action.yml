@@ -7,6 +7,9 @@ inputs:
   allow-default-branch:
     description: Explicitly permit releases from the repository default branch
     default: 'false'
+  allow-nightly-bootstrap:
+    description: Transitional exact-nightly publication on the explicitly permitted default branch only
+    default: 'false'
 outputs:
   version:
     description: Validated release version
@@ -17,8 +20,11 @@ outputs:
   compiler-pin:
     description: Exact compiler pin read from the validated checkout
     value: ${{ steps.policy.outputs.compiler-pin }}
+  compiler-channel:
+    description: stable or explicitly enabled nightly-bootstrap
+    value: ${{ steps.policy.outputs.compiler-channel }}
   compiler-release:
-    description: Verified official stable compiler release URL
+    description: Verified official compiler release URL
     value: ${{ steps.policy.outputs.compiler-release }}
   maintenance-branch:
     description: Compiler maintenance branch, empty for default-branch releases
@@ -32,6 +38,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         RELEASE_VERSION: ${{ inputs.version }}
         ALLOW_DEFAULT_BRANCH: ${{ inputs.allow-default-branch }}
+        ALLOW_NIGHTLY_BOOTSTRAP: ${{ inputs.allow-nightly-bootstrap }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         POLICY_PATH: ${{ github.action_path }}
       run: python3 "$POLICY_PATH/check_release.py"

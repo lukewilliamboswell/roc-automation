@@ -89,11 +89,15 @@ status-write permission and independently rechecks the run and job evidence.
 
 `actions/check-release` is separate from the nightly controller. It requires an
 explicit dispatch and exact event checkout, reads the compiler pin from that
-checkout, and accepts only a final compiler version for publication. It uses
+checkout, and defaults to a final compiler version for publication. It uses
 `github.token` to read `roc-lang/roc` release metadata for the exact pin spelling;
 missing releases, drafts, prereleases and releases without assets are rejected.
 Compiler compatibility branches must match the compiler line. Optional default-
-branch permission does not permit nightly publication.
+branch permission alone does not permit nightly publication. A separate default-off
+`allow-nightly-bootstrap` input permits an exact nightly only on the actual default
+branch; metadata then comes from `roc-lang/nightlies` with the same published
+release and asset checks. Compatibility branches cannot use this exception. Remove
+the bootstrap opt-in when the consumer adopts the intended stable-only policy.
 
 This action has no write operations, consumer Python imports, approval, or bypass.
 The official release metadata is upstream evidence, not verification of compiler

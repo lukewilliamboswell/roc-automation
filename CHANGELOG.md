@@ -7,8 +7,10 @@
 - Add a read-only `actions/check-release` guard for independent package versions, compiler-pin/branch and
   exact checkout correspondence; publication and artifact validation stay consumer-owned.
 - Require an exact final stable compiler for publication on every branch, and
-  verify its exact official upstream tag is published with assets. Nightly
-  compatibility alone never permits a package release.
+  verify its exact official upstream tag is published with assets. A separate
+  default-off, main-only nightly bootstrap opt-in permits transitional releases
+  before a usable versioned compiler exists; verify its official nightly release
+  and remove the opt-in when adopting the documented stable-only policy.
 - Keep the existing nightly updater restricted to the default branch.
 
 ## Consumer validation guidance

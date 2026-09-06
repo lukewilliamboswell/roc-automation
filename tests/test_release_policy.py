@@ -47,7 +47,7 @@ class ReleasePolicyTests(unittest.TestCase):
                 policy.main()
                 self.assertEqual(git.call_count, 2)
                 self.assertEqual(git.call_args_list[1].args[0], ["gh", "api", "repos/roc-lang/roc/releases/tags/v0.1.2"])
-            self.assertEqual(output.read_text(), "version=0.1.2\nsha=" + "a" * 40 + "\ncompiler-pin=v0.1.2\nmaintenance-branch=release/roc-0.1.x\ncompiler-release=https://github.com/roc-lang/roc/releases/tag/v0.1.2\n")
+            self.assertEqual(output.read_text(), "version=0.1.2\nsha=" + "a" * 40 + "\ncompiler-pin=v0.1.2\nmaintenance-branch=release/roc-0.1.x\ncompiler-channel=stable\ncompiler-release=https://github.com/roc-lang/roc/releases/tag/v0.1.2\n")
 
     def test_entrypoint_rejects_other_events_before_git(self):
         for event in ("pull_request", "push", "schedule"):
@@ -77,3 +77,22 @@ class ReleasePolicyTests(unittest.TestCase):
                         {**valid, "prerelease": 0}, {**valid, "assets": "asset"}):
             with self.subTest(release=invalid), self.assertRaises(ValueError):
                 policy.verify_compiler_release("0.1.2", invalid)
+
+    def test_explicit_nightly_bootstrap_is_main_only(self):
+        nightly = "nightly-2026-09-04-c125b82"
+        result = self.check(ref="refs/heads/main", compiler_pin=nightly,
+                            allow_default=True, allow_nightly_bootstrap=True)
+        self.assertEqual(result["compiler-channel"], "nightly-bootstrap")
+        for ref, allow_default in (("refs/heads/release/roc-0.1.x", True),
+                                   ("refs/heads/feature", True), ("refs/heads/main", False)):
+            with self.subTest(ref=ref), self.assertRaises(ValueError):
+                self.check(ref=ref, compiler_pin=nightly, allow_default=allow_default,
+                           allow_nightly_bootstrap=True)
+
+    def test_nightly_bootstrap_metadata_uses_official_nightlies(self):
+        pin = "nightly-2026-09-04-c125b82"
+        release = {"tag_name": pin, "draft": False, "prerelease": False, "assets": [{"name": "compiler"}]}
+        self.assertEqual(policy.verify_compiler_release(pin, release, "nightly-bootstrap"),
+                         f"https://github.com/roc-lang/nightlies/releases/tag/{pin}")
+        with self.assertRaises(ValueError):
+            policy.verify_compiler_release(pin, {**release, "tag_name": "another"}, "nightly-bootstrap")
