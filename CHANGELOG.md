@@ -1,5 +1,15 @@
 # Release notes
 
+## Consumer validation guidance
+
+- Document separate published-example, working-tree, and release-archive checks.
+- Record localhost testing, signed URL-only release follow-ups, and keeping
+  generated docs in deployment artifacts as consumer integration requirements.
+- Link the roc-ansi trial evidence and distinguish controller acceptance from
+  published-release compatibility and a live release-follow-up test.
+
+Documentation only; no controller, permission, or consumer pin changes are needed.
+
 ## Required checks for bot PRs
 
 - Mirror successful dispatched validation jobs as commit statuses on the exact

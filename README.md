@@ -30,6 +30,10 @@ Every listed workflow must accept the boolean `workflow_dispatch` input
 publication and deployment. A successful workflow with incomplete tests is not
 useful evidence; each project owns its validation contract.
 
+Use the [consumer validation and release lifecycle guide](docs/consumer-validation.md)
+to distinguish published-release compatibility from local bundle tests. It also
+records the roc-ansi trial findings and requirements for signed release follow-ups.
+
 ## Development
 
 Python 3.10+ and the standard library are sufficient for the controller tests:

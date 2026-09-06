@@ -11,6 +11,11 @@ Each listed workflow must support a boolean dispatch input named
 `nightly_validation`. Its true path must run the intended tests without publishing
 releases, uploading packages to registries, or deploying sites.
 
+Before selecting workflows, apply the [consumer validation contract](consumer-validation.md).
+Require checks of committed published example URLs as well as working-tree source
+and the proposed release archive. A local bundle test alone does not establish
+that a compiler update works with the release users download.
+
 Use this caller, replacing `REVIEWED_FULL_SHA` with an actual 40-character commit
 SHA containing the reusable workflow:
 
@@ -76,6 +81,11 @@ PR are skipped; manual dispatch retries an unchanged candidate.
    and confirm failure reporting before relying on unattended results.
 5. Add or retain a weekly `github-actions` Dependabot entry. Review shared SHA-pin
    updates like other dependency updates. Never replace full pins with `main`.
+6. Verify the consumer's release follow-up updates and tests published URLs,
+   keeps generated docs in deployment artifacts, preserves the site layout, and
+   creates commits accepted by the branch
+   signature rules. Record this separately from the nightly merge trial; see the
+   [release follow-up contract and trial evidence](consumer-validation.md).
 
 The branch `automation/roc-nightly` is reserved for pin-only bot commits. Put manual
 compatibility fixes on separate branches. No branch-protection bypass is required.
