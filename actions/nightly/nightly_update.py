@@ -16,6 +16,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import compiler_pins
+
 BRANCH = "automation/roc-nightly"
 TAG = re.compile(r"nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40}")
 ROOT = Path(os.environ.get("GITHUB_WORKSPACE", os.getcwd())).resolve()
@@ -74,9 +77,30 @@ def require_trusted_context(*, checkout=True):
         raise ValueError("Default branch moved since the updater started; retry on its current commit")
 
 
-def pin_at(sha):
-    result = api(f"repos/{repo()}/contents/.roc-version?ref={sha}")
-    return tag(base64.b64decode(result["content"]).decode().strip())
+def sources_at(sha, config):
+    paths = config.get("compiler_roots", [".roc-version"])
+    sources = {}
+    for path in paths:
+        result = api(f"repos/{repo()}/contents/{path}?ref={sha}")
+        if result.get("type", "file") != "file":
+            raise ValueError("Compiler root must be an ordinary repository file")
+        sources[path] = base64.b64decode(result["content"]).decode()
+    return sources
+
+
+def pin_at(sha, config=None):
+    config = load_config() if config is None else config
+    return tag(compiler_pins.version(compiler_pins.discover(sources_at(sha, config))))
+
+
+def verify_header_candidate(base, sha, files, nightly, config):
+    pins = compiler_pins.discover(sources_at(base, config))
+    expected = compiler_pins.replace(pins, nightly)
+    if (len(files) != len(expected) or {item["filename"] for item in files} != set(expected)
+            or any(item.get("status") != "modified" for item in files)):
+        raise ValueError("Candidate changes files outside the compiler header pins")
+    if sources_at(sha, config) != expected:
+        raise ValueError("Candidate contains changes beyond compiler pin literals")
 
 
 def head():
@@ -92,7 +116,7 @@ def existing_pr():
 
 
 def pr_body(sha, nightly, status, runs=()):
-    lines = [f"Updates `.roc-version` to [{nightly}](https://github.com/roc-lang/nightlies/releases/tag/{nightly}).",
+    lines = [f"Updates the selected compiler pins to [{nightly}](https://github.com/roc-lang/nightlies/releases/tag/{nightly}).",
              f"Candidate commit: `{sha}`.", status]
     for item in runs:
         lines.append(f"- [{item['workflow']}]({item['html_url']}): **{item.get('conclusion') or 'pending'}**")
@@ -123,14 +147,17 @@ def push_base(base, old):
 
 
 def signed_pin(base, nightly):
+    config = load_config()
+    sources = compiler_pins.local_sources(ROOT, config.get("compiler_roots"))
+    changes = compiler_pins.replace(compiler_pins.discover(sources), nightly)
     request = {"query": """mutation($input: CreateCommitOnBranchInput!) {
       createCommitOnBranch(input: $input) { commit { oid } }
     }""", "variables": {"input": {
         "branch": {"repositoryNameWithOwner": repo(), "branchName": BRANCH},
         "expectedHeadOid": base,
         "message": {"headline": f"Update Roc nightly to {nightly}"},
-        "fileChanges": {"additions": [{"path": ".roc-version",
-            "contents": base64.b64encode((nightly + "\n").encode()).decode()}]},
+        "fileChanges": {"additions": [{"path": path,
+            "contents": base64.b64encode(source.encode()).decode()} for path, source in changes.items()]},
     }}}
     sha = api("graphql", request)["data"]["createCommitOnBranch"]["commit"]["oid"]
     if not api(f"repos/{repo()}/commits/{sha}")["commit"]["verification"]["verified"]:
@@ -145,7 +172,9 @@ def prepare():
     nightly = tag(release["tag_name"])
     if release["draft"] or release["prerelease"] or not release["assets"]:
         raise ValueError("Latest release is not a published nightly with assets")
-    if nightly == tag((ROOT / ".roc-version").read_text().strip()):
+    config = load_config()
+    pins = compiler_pins.discover(compiler_pins.local_sources(ROOT, config.get("compiler_roots")))
+    if nightly == tag(compiler_pins.version(pins)):
         output("changed", "false")
         return
     # An exact matching-refs lookup distinguishes absence from API failures.
@@ -156,9 +185,11 @@ def prepare():
     if old and old != base:
         commit = api(f"repos/{repo()}/commits/{old}")
         # Never erase human work from this reserved branch.
-        if len(commit["parents"]) != 1 or [f["filename"] for f in commit["files"]] != [".roc-version"]:
+        if len(commit["parents"]) != 1 or (not config.get("compiler_roots") and [f["filename"] for f in commit["files"]] != [".roc-version"]):
             raise ValueError("Nightly branch contains changes other than a pin commit")
-        same = commit["parents"][0]["sha"] == base and pin_at(old) == nightly
+        if config.get("compiler_roots"):
+            verify_header_candidate(commit["parents"][0]["sha"], old, commit["files"], pin_at(old, config), config)
+        same = commit["parents"][0]["sha"] == base and pin_at(old, config) == nightly
     if same and existing_pr() and os.environ.get("FORCE", "false") != "true":
         output("changed", "false")
         return
@@ -180,10 +211,12 @@ def prepare():
 
 def load_config(content=None):
     config = json.loads(content if content is not None else (ROOT / ".github/roc-nightly.json").read_text())
-    if not isinstance(config, dict) or "workflows" not in config or set(config) - {"workflows", "auto_merge"}:
+    if not isinstance(config, dict) or "workflows" not in config or set(config) - {"workflows", "auto_merge", "compiler_roots"}:
         raise ValueError("Expected workflows and optional auto_merge configuration")
     if type(config.get("auto_merge", False)) is not bool:
         raise ValueError("auto_merge must be a boolean")
+    if "compiler_roots" in config:
+        compiler_pins.validate_paths(config["compiler_roots"])
     return config
 
 
@@ -204,7 +237,8 @@ def load_workflows(config=None, *, check_files=True):
 
 
 def check():
-    tag((ROOT / ".roc-version").read_text().strip())
+    config = load_config()
+    compiler_pins.discover(compiler_pins.local_sources(ROOT, config.get("compiler_roots")))
     workflows = load_workflows()
     print(f"Validated compiler pin and {len(workflows)} workflow filenames")
 
@@ -343,18 +377,20 @@ def merge():
             or current["head"]["ref"] != BRANCH or current["head"]["sha"] != sha
             or current["base"]["repo"]["full_name"] != repository
             or current["base"]["ref"] != default or current["base"]["sha"] != base
-            or current["commits"] != 1 or current["changed_files"] != 1):
+            or current["commits"] != 1 or current["changed_files"] != len(config.get("compiler_roots", [".roc-version"]))):
         raise ValueError("PR is not the trusted pin-only candidate on the current base")
     commit = api(f"repos/{repository}/commits/{sha}")
     if (len(commit["parents"]) != 1 or commit["parents"][0]["sha"] != base
             or not commit["commit"]["verification"]["verified"]
             or (commit.get("author") or {}).get("login") != "github-actions[bot]"
-            or len(commit["files"]) != 1
+            or (not config.get("compiler_roots") and (len(commit["files"]) != 1
             or commit["files"][0]["filename"] != ".roc-version"
             or commit["files"][0]["status"] != "modified"
-            or commit["files"][0]["additions"] != 1 or commit["files"][0]["deletions"] != 1):
+            or commit["files"][0]["additions"] != 1 or commit["files"][0]["deletions"] != 1))):
         raise ValueError("Candidate is not a verified bot pin commit directly on the tested base")
-    nightly = pin_at(sha)
+    nightly = pin_at(sha, config)
+    if config.get("compiler_roots"):
+        verify_header_candidate(base, sha, commit["files"], nightly, config)
     if nightly != tag(os.environ["NIGHTLY_TAG"]):
         raise ValueError("Candidate pin changed")
     release = api(f"repos/roc-lang/nightlies/releases/tags/{nightly}")

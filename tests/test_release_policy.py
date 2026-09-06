@@ -12,12 +12,12 @@ spec.loader.exec_module(policy)
 
 
 class ReleasePolicyTests(unittest.TestCase):
-    def check(self, version="0.1.1", ref="refs/heads/release/roc-0.1.x", **kwargs):
+    def check(self, version="0.1.1", ref="refs/heads/roc-0.1.x", **kwargs):
         return policy.validate(version, ref, "main", "a" * 40, kwargs.pop("checkout_sha", "a" * 40), kwargs.pop("compiler_pin", "0.1.2"), **kwargs)
 
     def test_patch_and_prerelease(self):
         for version in ("0.1.0", "0.1.1", "0.1.12-rc.1", "0.1.0-rc1"):
-            self.assertEqual(self.check(version)["maintenance-branch"], "release/roc-0.1.x")
+            self.assertEqual(self.check(version)["maintenance-branch"], "roc-0.1.x")
 
     def test_main_requires_explicit_opt_in(self):
         with self.assertRaises(ValueError):
@@ -25,7 +25,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertEqual(self.check(ref="refs/heads/main", allow_default=True)["sha"], "a" * 40)
 
     def test_wrong_line_tags_and_pr_refs_rejected(self):
-        for ref in ("refs/heads/release/roc-0.2.x", "refs/heads/release/0.1.x", "refs/tags/0.1.1", "refs/pull/1/merge", "refs/heads/feature"):
+        for ref in ("refs/heads/roc-0.2.x", "refs/heads/release/0.1.x", "refs/tags/0.1.1", "refs/pull/1/merge", "refs/heads/feature"):
             with self.subTest(ref=ref), self.assertRaises(ValueError):
                 self.check(ref=ref, allow_default=True)
 
@@ -41,13 +41,13 @@ class ReleasePolicyTests(unittest.TestCase):
     def test_entrypoint_writes_only_validated_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
-            env = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/release/roc-0.1.x",
+            env = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/roc-0.1.x",
                    "GITHUB_SHA": "a" * 40, "RELEASE_VERSION": "0.1.2", "GITHUB_OUTPUT": str(output)}
             with patch.dict(os.environ, env, clear=True), patch.object(policy.subprocess, "check_output", side_effect=["a" * 40 + "\n", json.dumps({"tag_name": "v0.1.2", "draft": False, "prerelease": False, "assets": [{"name": "compiler"}]})]) as git, patch.object(policy.Path, "read_text", return_value="v0.1.2\n"):
                 policy.main()
                 self.assertEqual(git.call_count, 2)
                 self.assertEqual(git.call_args_list[1].args[0], ["gh", "api", "repos/roc-lang/roc/releases/tags/v0.1.2"])
-            self.assertEqual(output.read_text(), "version=0.1.2\nsha=" + "a" * 40 + "\ncompiler-pin=v0.1.2\nmaintenance-branch=release/roc-0.1.x\ncompiler-channel=stable\ncompiler-release=https://github.com/roc-lang/roc/releases/tag/v0.1.2\n")
+            self.assertEqual(output.read_text(), "version=0.1.2\nsha=" + "a" * 40 + "\ncompiler-pin=v0.1.2\nmaintenance-branch=roc-0.1.x\ncompiler-channel=stable\ncompiler-release=https://github.com/roc-lang/roc/releases/tag/v0.1.2\n")
 
     def test_entrypoint_rejects_other_events_before_git(self):
         for event in ("pull_request", "push", "schedule"):
@@ -83,7 +83,7 @@ class ReleasePolicyTests(unittest.TestCase):
         result = self.check(ref="refs/heads/main", compiler_pin=nightly,
                             allow_default=True, allow_nightly_bootstrap=True)
         self.assertEqual(result["compiler-channel"], "nightly-bootstrap")
-        for ref, allow_default in (("refs/heads/release/roc-0.1.x", True),
+        for ref, allow_default in (("refs/heads/roc-0.1.x", True),
                                    ("refs/heads/feature", True), ("refs/heads/main", False)):
             with self.subTest(ref=ref), self.assertRaises(ValueError):
                 self.check(ref=ref, compiler_pin=nightly, allow_default=allow_default,
@@ -96,3 +96,35 @@ class ReleasePolicyTests(unittest.TestCase):
                          f"https://github.com/roc-lang/nightlies/releases/tag/{pin}")
         with self.assertRaises(ValueError):
             policy.verify_compiler_release(pin, {**release, "tag_name": "another"}, "nightly-bootstrap")
+
+    def test_simulated_stable_requires_exact_explicit_branch_mapping(self):
+        simulated = "nightly-2026-09-05-b195f5b"
+        policy = {"simulated_stable_pin": simulated, "simulated_stable_line": "0.1"}
+        result = self.check(compiler_pin=simulated, **policy)
+        self.assertEqual(result["compiler-channel"], "simulated-stable")
+        for overrides in ({"compiler_pin": "nightly-2026-09-06-d85e877"},
+                          {"ref": "refs/heads/roc-0.2.x"}, {"ref": "refs/heads/main"},
+                          {"simulated_stable_line": ""}):
+            args = {"compiler_pin": simulated, **policy, **overrides}
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                self.check(**args)
+
+    def test_header_simulation_entrypoint_reads_actual_root_and_nightly_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / 'outputs'
+            (root / 'main.roc').write_text('package [] { roc: "nightly-2026-09-05-b195f5b" }')
+            env = {'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_REF': 'refs/heads/roc-0.1.x',
+                   'GITHUB_SHA': 'a' * 40, 'RELEASE_VERSION': '4.2.1', 'GITHUB_OUTPUT': str(output),
+                   'COMPILER_ROOT': 'main.roc', 'SIMULATED_STABLE_PIN': 'nightly-2026-09-05-b195f5b',
+                   'SIMULATED_STABLE_LINE': '0.1'}
+            release = {'tag_name': env['SIMULATED_STABLE_PIN'], 'draft': False, 'prerelease': False, 'assets': [{}]}
+            old = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.dict(os.environ, env, clear=True), patch.object(policy.subprocess, 'check_output', side_effect=['a' * 40, json.dumps(release)]) as commands:
+                    policy.main()
+                self.assertIn('compiler-channel=simulated-stable', output.read_text())
+                self.assertEqual(commands.call_args_list[1].args[0], ['gh', 'api', 'repos/roc-lang/nightlies/releases/tags/nightly-2026-09-05-b195f5b'])
+            finally:
+                os.chdir(old)

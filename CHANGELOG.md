@@ -1,8 +1,18 @@
 # Release notes
 
+## Header pins and compiler-lane rehearsal
+
+- Select development compiler roots by source path and derive their versions from
+  literal header fields, retaining legacy `.roc-version` for unmigrated consumers.
+- Verify full immutable base/head blobs contain only the expected pin replacements
+  before replacing or merging header update candidates. Public example roots stay
+  independent.
+- Read release compiler metadata from a header and support an explicit exact-pin,
+  exact-branch simulated-stable rehearsal, labeled separately from real stable.
+
 ## Maintenance release policy
 
-- Document development on `main`, explicit `release/roc-<major>.<minor>.x` compiler compatibility,
+- Document development on `main`, explicit `roc-<major>.<minor>.x` compiler compatibility,
   reviewed backports, compiler support, and separate LTS commitments.
 - Add a read-only `actions/check-release` guard for independent package versions, compiler-pin/branch and
   exact checkout correspondence; publication and artifact validation stay consumer-owned.

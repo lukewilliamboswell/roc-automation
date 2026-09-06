@@ -1,11 +1,11 @@
 # Roc automation
 
 Shared, reviewable maintenance automation for Roc packages and platforms.
-The nightly updater creates a GitHub-signed compiler-pin commit, validates that
+The nightly updater creates a GitHub-signed compiler-pin-only commit, validates that
 exact commit using the project's existing workflows, and reports results on a PR.
 
 The implementation and tests live here. Consumer repositories keep their daily
-schedule, `.roc-version`, `.github/roc-nightly.json`, and actual test/release workflows.
+schedule, compiler pins in selected Roc root headers, `.github/roc-nightly.json`, and actual test/release workflows.
 The reusable workflow keeps prepare, validate, and report in separate jobs with
 separate token permissions. An optional fourth job merges validated pin-only PRs
 when the consumer explicitly enables `auto_merge`. No PAT is required.
@@ -25,6 +25,11 @@ The default repository configuration (automatic merging disabled) is:
 See [opt-in automatic merging](docs/integration.md#opt-in-automatic-merging) for
 the additional policy and required repository rules.
 
+For header-based pins, add `"compiler_roots": ["package/main.roc"]` to the
+configuration. These are reviewed source paths, not a second version registry.
+Legacy consumers without this field retain `.roc-version`. See the integration
+guide for independent development and public-example compiler lanes.
+
 Every listed workflow must accept the boolean `workflow_dispatch` input
 `nightly_validation`. When true, it must run the relevant tests and exclude
 publication and deployment. A successful workflow with incomplete tests is not
@@ -35,7 +40,7 @@ to distinguish published-release compatibility from local bundle tests. It also
 records the roc-ansi trial findings and requirements for signed release follow-ups.
 
 Use the [maintenance release guide](docs/maintenance-releases.md) for development
-on `main`, `release/roc-0.1.x` upstream compiler compatibility lines, independent package releases, and the read-only
+on `main`, `roc-0.1.x` upstream compiler compatibility lines, independent package releases, and the read-only
 `actions/check-release` guard. Branch existence does not promise LTS.
 
 ## Development

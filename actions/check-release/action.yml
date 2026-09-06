@@ -10,6 +10,15 @@ inputs:
   allow-nightly-bootstrap:
     description: Transitional exact-nightly publication on the explicitly permitted default branch only
     default: 'false'
+  compiler-root:
+    description: Roc root file whose header owns the compiler pin; empty retains legacy .roc-version
+    default: ''
+  simulated-stable-pin:
+    description: Explicit temporary nightly tag representing a compiler line during rehearsal
+    default: ''
+  simulated-stable-line:
+    description: Explicit temporary compiler major.minor line, valid only on its roc-M.m.x branch
+    default: ''
 outputs:
   version:
     description: Validated release version
@@ -21,7 +30,7 @@ outputs:
     description: Exact compiler pin read from the validated checkout
     value: ${{ steps.policy.outputs.compiler-pin }}
   compiler-channel:
-    description: stable or explicitly enabled nightly-bootstrap
+    description: stable, nightly-bootstrap, or explicitly mapped simulated-stable
     value: ${{ steps.policy.outputs.compiler-channel }}
   compiler-release:
     description: Verified official compiler release URL
@@ -35,6 +44,9 @@ runs:
     - id: policy
       shell: bash
       env:
+        COMPILER_ROOT: ${{ inputs.compiler-root }}
+        SIMULATED_STABLE_PIN: ${{ inputs.simulated-stable-pin }}
+        SIMULATED_STABLE_LINE: ${{ inputs.simulated-stable-line }}
         GH_TOKEN: ${{ github.token }}
         RELEASE_VERSION: ${{ inputs.version }}
         ALLOW_DEFAULT_BRANCH: ${{ inputs.allow-default-branch }}

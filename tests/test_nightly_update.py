@@ -347,4 +347,61 @@ class ControllerTests(unittest.TestCase):
         responses = self.merge_fixture()
         self.assertEqual(len(self.attempt_merge(responses, failure=True, merge_result={'merged': False})), 1)
 
+
+    def test_header_commit_preserves_source_and_unselected_examples(self):
+        config = {'workflows': ['ci.yml'], 'compiler_roots': ['package/main.roc', 'tzdb/main.roc']}
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
+        original = 'package [] { roc: "nightly-2026-09-04-c125b82" }\n# untouched\n'
+        for path in config['compiler_roots'] + ['examples/main.roc']:
+            target = n.ROOT / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(original)
+        with patch.object(n, 'api', side_effect=[{'data': {'createCommitOnBranch': {'commit': {'oid': 'signed'}}}},
+                                                {'commit': {'verification': {'verified': True}}}]) as api:
+            n.signed_pin('base', 'nightly-2026-09-05-b195f5b')
+        changes = api.call_args_list[0].args[1]['variables']['input']['fileChanges']['additions']
+        self.assertEqual([item['path'] for item in changes], config['compiler_roots'])
+        for item in changes:
+            self.assertEqual(base64.b64decode(item['contents']).decode(), original.replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b'))
+        self.assertEqual((n.ROOT / 'examples/main.roc').read_text(), original)
+
+    def test_header_candidate_rejects_body_changes_and_extra_files(self):
+        config = {'compiler_roots': ['package/main.roc']}
+        old = {'package/main.roc': 'package [] {roc: "nightly-2026-09-04-c125b82"}\n# original'}
+        new = {'package/main.roc': old['package/main.roc'].replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b')}
+        files = [{'filename': 'package/main.roc', 'status': 'modified'}]
+        with patch.object(n, 'sources_at', side_effect=[old, new]):
+            n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+        with patch.object(n, 'sources_at', side_effect=[old, {**new, 'package/main.roc': new['package/main.roc'] + '\nmalicious = 1'}]), self.assertRaises(ValueError):
+            n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+        with patch.object(n, 'sources_at', return_value=old), self.assertRaises(ValueError):
+            n.verify_header_candidate('base', 'head', files + [{'filename': 'examples/main.roc', 'status': 'modified'}], 'nightly-2026-09-05-b195f5b', config)
+
+
+    def test_merge_checks_header_blobs_before_authorizing_merge(self):
+        responses = self.merge_fixture()
+        config = {'workflows': ['ci.yml', 'release.yml'], 'auto_merge': True,
+                  'compiler_roots': ['package/main.roc', 'tzdb/main.roc']}
+        responses['repos/owner/project/contents/.github/roc-nightly.json?ref=base']['content'] = base64.b64encode(json.dumps(config).encode()).decode()
+        responses['repos/owner/project/pulls/1']['changed_files'] = 2
+        responses['repos/owner/project/commits/candidate']['files'] = [
+            {'filename': path, 'status': 'modified'} for path in config['compiler_roots']]
+        before = 'package [] {roc: "nightly-2026-09-04-c125b82"}\n# original'
+        after = before.replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b')
+        for path in config['compiler_roots']:
+            for sha, text in [('base', before), ('candidate', after)]:
+                responses[f'repos/owner/project/contents/{path}?ref={sha}'] = {'type': 'file', 'content': base64.b64encode(text.encode()).decode()}
+        self.assertEqual(len(self.attempt_merge(responses)), 1)
+        responses['repos/owner/project/contents/tzdb/main.roc?ref=candidate']['content'] = base64.b64encode((after + '\nchanged = 1').encode()).decode()
+        self.assertEqual(self.attempt_merge(responses, failure=True), [])
+
+
+    def test_read_only_config_check_accepts_stable_header_roots(self):
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps({'workflows': ['ci.yml'], 'compiler_roots': ['main.roc']}))
+        (n.ROOT / 'main.roc').write_text('package [] {roc: "0.1.2"}')
+        with patch.object(n, 'api') as api, patch.object(n, 'run') as run:
+            n.check()
+        api.assert_not_called()
+        run.assert_not_called()
+
 if __name__ == '__main__': unittest.main()

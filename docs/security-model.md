@@ -103,3 +103,28 @@ This action has no write operations, consumer Python imports, approval, or bypas
 The official release metadata is upstream evidence, not verification of compiler
 binary integrity. Consumers retain compiler installation, actual version checks,
 tests, artifact identity, tag uniqueness, and publication permissions.
+
+## Header compiler roots
+
+Consumers may set `compiler_roots` in trusted `.github/roc-nightly.json` to select
+exact source-root paths instead of legacy `.roc-version`. This is an edit-authority
+list, not a version registry; versions come from literal `roc` fields in the
+selected app/package/platform headers. Independent published-example roots stay
+outside the list. Paths reject escapes, globs, duplicates and non-Roc files;
+local source reads reject symlinks and paths outside the checkout.
+
+Prepare preserves bytes outside each selected pin literal. Before replacing an
+existing candidate, and independently before optional merging, the controller
+reads immutable parent/candidate blobs via the API and compares the full contents
+against the exact expected literal replacements. The complete changed-file set
+must match those roots, with every file modified in place. Extra files or a body
+change cannot pass as a compiler update. Merge uses trusted event configuration
+and does not check out or execute candidate source. Tests cover body mutations,
+extra files, selected-root limits and preservation of unselected examples.
+
+The read-only release guard accepts `compiler-root` to read the source header;
+empty retains legacy `.roc-version`. An optional paired `simulated-stable-pin`
+and `simulated-stable-line` permits a clearly labeled pilot only on the exact
+`roc-<line>.x` branch and only for that exact nightly. It still verifies the
+published nightly asset release and emits `compiler-channel: simulated-stable`.
+It never reports stable upstream availability. Remove the mapping after rehearsal.
