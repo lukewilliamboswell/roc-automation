@@ -1,5 +1,16 @@
 # Release notes
 
+## Required checks for bot PRs
+
+- Mirror successful dispatched validation jobs as commit statuses on the exact
+  candidate, so GitHub can enforce required checks on Actions-bot PRs.
+- Publish pending before validation and refuse missing/skipped/failed job evidence.
+- Independently recheck those jobs in the merge phase, without status-write access.
+- Show structured GitHub API rejection reasons for actionable failure reporting.
+
+Consumers updating to this revision must add `statuses: write` to their caller's
+permission ceiling. Only the validation controller receives that permission.
+
 ## Opt-in nightly merging
 
 - Add a default-off `auto_merge` policy for compiler-pin PRs only.

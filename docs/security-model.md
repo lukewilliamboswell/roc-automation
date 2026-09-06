@@ -16,7 +16,7 @@ The caller grants a permission ceiling. Actual jobs reduce it:
 | Job | Token access |
 | --- | --- |
 | prepare | contents: write; pull-requests: write |
-| validate | contents: read; actions: write |
+| validate | contents: read; actions: write; statuses: write |
 | report | contents: read; pull-requests: write |
 | configuration check | contents: read |
 
@@ -75,3 +75,12 @@ Prepare, validate, and report check out the explicit default branch and verify i
 still equals the original event SHA before doing work. The merge job reads that
 immutable SHA through the API and checks the live default branch before merging.
 If the branch moves, retry the updater on its current commit.
+
+
+Opted-in validation publishes pending commit statuses for the active ruleset's
+required Actions contexts, then publishes success only after the exact dispatched
+runs and all corresponding jobs have succeeded. Missing, skipped, or failed jobs
+cannot produce success. This is needed because GitHub can leave dispatched check
+runs unattached to an Actions-bot PR. Statuses use the same check names and Actions
+identity; they do not replace or bypass the required checks. The merge job has no
+status-write permission and independently rechecks the run and job evidence.
