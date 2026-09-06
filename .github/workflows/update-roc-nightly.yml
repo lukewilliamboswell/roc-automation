@@ -23,7 +23,6 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       with:
-        ref: ${{ github.event.repository.default_branch }}
         persist-credentials: false
     - id: prepare
       name: Prepare signed pin commit and PR
@@ -32,24 +31,24 @@ jobs:
         FORCE: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false'
           }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
+        lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
       with:
         phase: prepare
   validate:
     needs: prepare
-    if: needs.prepare.outputs.changed == 'true'
+    if: github.ref_name == github.event.repository.default_branch && github.ref_type == 'branch' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
       actions: write
+      statuses: write
     outputs:
       runs: ${{ steps.validate.outputs.runs }}
     steps:
       # This is the trusted controller, not a checkout of the candidate.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       with:
-        ref: ${{ github.event.repository.default_branch }}
         persist-credentials: false
     - id: validate
       name: Dispatch candidate validation and await its results
@@ -57,12 +56,12 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
+        lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
       with:
         phase: validate
   report:
     needs: [prepare, validate]
-    if: always() && needs.prepare.outputs.changed == 'true'
+    if: always() && github.ref_name == github.event.repository.default_branch && github.ref_type == 'branch' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -71,7 +70,6 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       with:
-        ref: ${{ github.event.repository.default_branch }}
         persist-credentials: false
     - name: Report results for this candidate
       env:
@@ -81,7 +79,7 @@ jobs:
         TEST_RESULT: ${{ needs.validate.result }}
         VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
+        lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
       with:
         phase: report
 
@@ -102,6 +100,6 @@ jobs:
           CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
           NIGHTLY_TAG: ${{ needs.prepare.outputs.nightly }}
           VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
-        uses: lukewilliamboswell/roc-automation/actions/nightly@52fb0e32c582c44b47f6f571b72ca1a261c6b28b
+        uses: lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
         with:
           phase: merge

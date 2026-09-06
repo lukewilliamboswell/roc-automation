@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -35,6 +36,46 @@ class ControllerTests(unittest.TestCase):
             n.check()
         api.assert_not_called()
         run.assert_not_called()
+
+    def test_api_error_reports_only_structured_github_message(self):
+        error = subprocess.CalledProcessError(1, ['gh', 'api'], output='{"message":"Required checks missing"}', stderr='private diagnostics')
+        with patch.object(n, 'run', side_effect=error), self.assertRaisesRegex(ValueError, '^GitHub API rejected endpoint: Required checks missing$'):
+            n.api('endpoint')
+
+    def test_required_statuses_only_follow_real_successful_jobs(self):
+        runs = [{'id': 7}]
+        for jobs in [[], [{'name': 'test', 'status': 'completed', 'conclusion': 'skipped'}],
+                     [{'name': 'test', 'status': 'completed', 'conclusion': 'failure'}],
+                     [{'name': 'other', 'status': 'completed', 'conclusion': 'success'}],
+                     [{'name': 'test', 'status': 'in_progress', 'conclusion': None}]]:
+            with patch.object(n, 'api', return_value={'jobs': jobs, 'total_count': len(jobs)}):
+                with self.assertRaises(ValueError): n.verify_required_jobs(runs, ['test'])
+        job = {'name': 'test', 'status': 'completed', 'conclusion': 'success'}
+        with patch.object(n, 'api', side_effect=[{'jobs': [job], 'total_count': 2},
+                                               {'jobs': [dict(job, name='bundle')], 'total_count': 2}]) as api:
+            n.verify_required_jobs(runs, ['test', 'bundle'])
+        self.assertIn('page=2', api.call_args.args[0])
+
+    def test_opted_in_validation_publishes_pending_before_success(self):
+        config = {'workflows': ['ci.yml', 'release.yml'], 'auto_merge': True}
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
+        for conclusion in ['success', 'failure']:
+            with patch.object(n, 'head', return_value='candidate'), patch.object(n, 'api', side_effect=self.validate_api(conclusion)), \
+                 patch.object(n, 'required_contexts', return_value=['test']), patch.object(n, 'verify_required_jobs') as verify, \
+                 patch.object(n, 'publish_statuses') as publish:
+                if conclusion == 'success': n.validate()
+                else:
+                    with self.assertRaises(ValueError): n.validate()
+            self.assertEqual([call.args[2] for call in publish.call_args_list],
+                             ['pending', 'success'] if conclusion == 'success' else ['pending'])
+            self.assertEqual(verify.call_count, 1 if conclusion == 'success' else 0)
+
+    def test_status_publication_targets_exact_candidate_and_required_names(self):
+        with patch.object(n, 'api') as api:
+            n.publish_statuses('candidate', ['test'], 'pending')
+        self.assertEqual(api.call_args.args[0], 'repos/owner/project/statuses/candidate')
+        self.assertEqual(api.call_args.args[1]['context'], 'test')
+        self.assertEqual(api.call_args.args[1]['state'], 'pending')
 
     def test_privileged_controller_rejects_pr_events_branches_and_tags(self):
         for event, ref in [('pull_request', 'refs/heads/main'),
@@ -191,6 +232,9 @@ class ControllerTests(unittest.TestCase):
                 'tag_name': 'nightly-2026-09-05-b195f5b', 'draft': False, 'prerelease': False, 'assets': [{}]},
             'repos/owner/project/actions/runs/7': {**self.response(), 'path': '.github/workflows/ci.yml'},
             'repos/owner/project/actions/runs/8': {**self.response(), 'path': '.github/workflows/release.yml'},
+            'repos/owner/project/actions/runs/7/jobs?filter=latest&per_page=100&page=1': {
+                'jobs': [{'name': 'test', 'status': 'completed', 'conclusion': 'success'}], 'total_count': 1},
+            'repos/owner/project/actions/runs/8/jobs?filter=latest&per_page=100&page=1': {'jobs': [], 'total_count': 0},
             'repos/owner/project/rules/branches/main': rules,
             'repos/owner/project/git/ref/heads/main': {'object': {'sha': 'base'}},
         }

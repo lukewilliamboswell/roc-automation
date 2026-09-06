@@ -30,6 +30,7 @@ jobs:
       contents: write
       pull-requests: write
       actions: write
+      statuses: write
     uses: lukewilliamboswell/roc-automation/.github/workflows/update-roc-nightly.yml@REVIEWED_FULL_SHA
 ```
 
@@ -137,3 +138,13 @@ source code, workflow configuration, and the shared automation require maintaine
 review. Passing tests demonstrate covered compatibility, not compiler provenance
 or freedom from malicious upstream changes. Pin upgrades still trust Roc's nightly
 release channel.
+
+
+The caller permission ceiling includes `statuses: write`; only the validation
+controller job receives it. For opted-in consumers, this job mirrors the configured
+validation jobs into the active ruleset's required commit-status contexts. It sets
+pending before validation and success only after the real runs/jobs succeed.
+Choose required contexts that correspond to actual jobs in the selected dispatch
+workflows, with GitHub Actions as their source. Other integrations or checks that
+never run in nightly validation are rejected. This avoids manual approval of the
+redundant bot-triggered PR workflows while retaining strict required checks.

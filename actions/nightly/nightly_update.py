@@ -32,7 +32,16 @@ def api(endpoint, data=None, method=None):
         args += ["--method", method]
     if data is not None:
         args += ["--input", "-"]
-    result = run(args, data=json.dumps(data) if data is not None else None)
+    try:
+        result = run(args, data=json.dumps(data) if data is not None else None)
+    except subprocess.CalledProcessError as error:
+        # Only expose GitHub's structured error message, never a subprocess
+        # environment, authenticated git arguments, or arbitrary stderr.
+        try:
+            message = json.loads(error.stdout)["message"]
+        except (ValueError, TypeError, KeyError):
+            raise error
+        raise ValueError(f"GitHub API rejected {endpoint}: {message}") from None
     return json.loads(result) if result else None
 
 
@@ -208,6 +217,8 @@ def validate_run(item, expected_sha):
 def validate():
     sha = os.environ["CANDIDATE_SHA"]
     workflows = load_workflows()
+    contexts = required_contexts() if load_config().get("auto_merge", False) else []
+    publish_statuses(sha, contexts, "pending")
     runs = []
     try:
         for workflow in workflows:
@@ -237,6 +248,9 @@ def validate():
             raise ValueError("Candidate branch changed during validation")
         if any(item["conclusion"] != "success" for item in runs):
             raise ValueError("Candidate validation did not pass")
+        if contexts:
+            verify_required_jobs(runs, contexts)
+            publish_statuses(sha, contexts, "success")
     finally:
         output("runs", json.dumps(runs))
 
@@ -251,6 +265,57 @@ def report():
     passed = status == "success" and [r["workflow"] for r in runs] == expected and all(r["conclusion"] == "success" for r in runs)
     message = "**Passed:** all configured validation workflows passed." if passed else f"**Needs attention:** validation finished with status `{status}`. Do not merge until all validation passes."
     save_pr(sha, tag(os.environ["NIGHTLY_TAG"]), message, runs)
+
+
+def required_contexts():
+    rules = api(f"repos/{repo()}/rules/branches/{os.environ['DEFAULT_BRANCH']}")
+    if not any(rule["type"] == "required_status_checks"
+               and rule["parameters"]["strict_required_status_checks_policy"]
+               and rule["parameters"]["required_status_checks"] for rule in rules):
+        raise ValueError("Automatic merging requires an active strict required-status-check ruleset")
+    if not any(rule["type"] == "pull_request" for rule in rules):
+        raise ValueError("Automatic merging requires an active pull-request ruleset")
+    contexts = []
+    for rule in rules:
+        if rule["type"] != "required_status_checks":
+            continue
+        for check in rule["parameters"]["required_status_checks"]:
+            if check.get("integration_id") not in {None, 15368}:
+                raise ValueError("Nightly status reporting only supports required GitHub Actions checks")
+            if check["context"] not in contexts:
+                contexts.append(check["context"])
+    return contexts
+
+
+def verify_required_jobs(runs, contexts):
+    jobs = []
+    for item in runs:
+        page = 1
+        collected = []
+        while True:
+            result = api(f"repos/{repo()}/actions/runs/{item['id']}/jobs?filter=latest&per_page=100&page={page}")
+            collected.extend(result["jobs"])
+            if len(collected) >= result["total_count"]:
+                break
+            if not result["jobs"]:
+                raise ValueError("Incomplete validation job evidence")
+            page += 1
+        jobs.extend(collected)
+    for context in contexts:
+        matching = [job for job in jobs if job["name"] == context]
+        if not matching or any(job["status"] != "completed" or job["conclusion"] != "success" for job in matching):
+            raise ValueError(f"Required check has no successful validation job: {context}")
+
+
+def publish_statuses(sha, contexts, state):
+    # Dispatched check runs are not always associated with bot-created PRs.
+    # Mirror real job results using the same Actions identity and check names.
+    for context in contexts:
+        api(f"repos/{repo()}/statuses/{sha}", {
+            "context": context, "state": state,
+            "description": "Nightly candidate validation " + ("passed" if state == "success" else "in progress"),
+            "target_url": f"{os.environ['GITHUB_SERVER_URL']}/{repo()}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+        })
 
 
 def merge():
@@ -308,13 +373,8 @@ def merge():
             raise ValueError("Live validation evidence is not a successful configured workflow")
     # Strict required checks close the base-movement race at GitHub's merge API.
     # Refuse unprotected repositories rather than relying on a client-side check.
-    rules = api(f"repos/{repository}/rules/branches/{default}")
-    if not any(rule["type"] == "required_status_checks"
-               and rule["parameters"]["strict_required_status_checks_policy"]
-               and rule["parameters"]["required_status_checks"] for rule in rules):
-        raise ValueError("Automatic merging requires an active strict required-status-check ruleset")
-    if not any(rule["type"] == "pull_request" for rule in rules):
-        raise ValueError("Automatic merging requires an active pull-request ruleset")
+    contexts = required_contexts()
+    verify_required_jobs(runs, contexts)
     if head() != sha or api(f"repos/{repository}/git/ref/heads/{default}")["object"]["sha"] != base:
         raise ValueError("Candidate or default branch changed; revalidate before merging")
     result = api(f"repos/{repository}/pulls/{number}/merge",

@@ -16,7 +16,7 @@ The caller grants a permission ceiling. Actual jobs reduce it:
 | Job | Token access |
 | --- | --- |
 | prepare | contents: write; pull-requests: write |
-| validate | contents: read; actions: write |
+| validate | contents: read; actions: write; statuses: write |
 | report | contents: read; pull-requests: write |
 | configuration check | contents: read |
 
@@ -68,10 +68,19 @@ GitHub Actions bot identity, so the identity check alone is not proof that a
 particular workflow created a commit. The shape, trusted base, signature, upstream
 release, and independently checked validation are also required.
 
-Both prepare and merge explicitly restrict their jobs to schedule/manual events
+All controller jobs explicitly restrict execution to schedule/manual events
 on the default branch (and reject tags). Every non-check controller invocation
 also validates that event/ref boundary before performing any API or git operation.
-Prepare, validate, and report check out the explicit default branch and verify it
-still equals the original event SHA before doing work. The merge job reads that
+Prepare, validate, and report use checkout's original event commit under these
+explicit event/ref guards and verify it equals the event SHA before doing work. The merge job reads that
 immutable SHA through the API and checks the live default branch before merging.
 If the branch moves, retry the updater on its current commit.
+
+
+Opted-in validation publishes pending commit statuses for the active ruleset's
+required Actions contexts, then publishes success only after the exact dispatched
+runs and all corresponding jobs have succeeded. Missing, skipped, or failed jobs
+cannot produce success. This is needed because GitHub can leave dispatched check
+runs unattached to an Actions-bot PR. Statuses use the same check names and Actions
+identity; they do not replace or bypass the required checks. The merge job has no
+status-write permission and independently rechecks the run and job evidence.
