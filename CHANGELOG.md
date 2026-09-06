@@ -6,6 +6,9 @@
   reviewed backports, compiler support, and separate LTS commitments.
 - Add a read-only `actions/check-release` guard for independent package versions, compiler-pin/branch and
   exact checkout correspondence; publication and artifact validation stay consumer-owned.
+- Require an exact final stable compiler for publication on every branch, and
+  verify its exact official upstream tag is published with assets. Nightly
+  compatibility alone never permits a package release.
 - Keep the existing nightly updater restricted to the default branch.
 
 ## Consumer validation guidance

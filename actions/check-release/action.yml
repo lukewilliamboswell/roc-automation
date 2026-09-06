@@ -17,6 +17,9 @@ outputs:
   compiler-pin:
     description: Exact compiler pin read from the validated checkout
     value: ${{ steps.policy.outputs.compiler-pin }}
+  compiler-release:
+    description: Verified official stable compiler release URL
+    value: ${{ steps.policy.outputs.compiler-release }}
   maintenance-branch:
     description: Compiler maintenance branch, empty for default-branch releases
     value: ${{ steps.policy.outputs.maintenance-branch }}
@@ -26,6 +29,7 @@ runs:
     - id: policy
       shell: bash
       env:
+        GH_TOKEN: ${{ github.token }}
         RELEASE_VERSION: ${{ inputs.version }}
         ALLOW_DEFAULT_BRANCH: ${{ inputs.allow-default-branch }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}

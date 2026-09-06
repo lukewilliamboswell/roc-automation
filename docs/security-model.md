@@ -84,3 +84,18 @@ cannot produce success. This is needed because GitHub can leave dispatched check
 runs unattached to an Actions-bot PR. Statuses use the same check names and Actions
 identity; they do not replace or bypass the required checks. The merge job has no
 status-write permission and independently rechecks the run and job evidence.
+
+## Read-only release policy
+
+`actions/check-release` is separate from the nightly controller. It requires an
+explicit dispatch and exact event checkout, reads the compiler pin from that
+checkout, and accepts only a final compiler version for publication. It uses
+`github.token` to read `roc-lang/roc` release metadata for the exact pin spelling;
+missing releases, drafts, prereleases and releases without assets are rejected.
+Compiler compatibility branches must match the compiler line. Optional default-
+branch permission does not permit nightly publication.
+
+This action has no write operations, consumer Python imports, approval, or bypass.
+The official release metadata is upstream evidence, not verification of compiler
+binary integrity. Consumers retain compiler installation, actual version checks,
+tests, artifact identity, tag uniqueness, and publication permissions.

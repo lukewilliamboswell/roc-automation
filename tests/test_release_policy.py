@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+import json
 import os
 import tempfile
 
@@ -42,10 +43,11 @@ class ReleasePolicyTests(unittest.TestCase):
             output = Path(directory) / "output"
             env = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/release/roc-0.1.x",
                    "GITHUB_SHA": "a" * 40, "RELEASE_VERSION": "0.1.2", "GITHUB_OUTPUT": str(output)}
-            with patch.dict(os.environ, env, clear=True), patch.object(policy.subprocess, "check_output", return_value="a" * 40 + "\n") as git, patch.object(policy.Path, "read_text", return_value="v0.1.2\n"):
+            with patch.dict(os.environ, env, clear=True), patch.object(policy.subprocess, "check_output", side_effect=["a" * 40 + "\n", json.dumps({"tag_name": "v0.1.2", "draft": False, "prerelease": False, "assets": [{"name": "compiler"}]})]) as git, patch.object(policy.Path, "read_text", return_value="v0.1.2\n"):
                 policy.main()
-                git.assert_called_once_with(["git", "rev-parse", "HEAD"], text=True)
-            self.assertEqual(output.read_text(), "version=0.1.2\nsha=" + "a" * 40 + "\ncompiler-pin=v0.1.2\nmaintenance-branch=release/roc-0.1.x\n")
+                self.assertEqual(git.call_count, 2)
+                self.assertEqual(git.call_args_list[1].args[0], ["gh", "api", "repos/roc-lang/roc/releases/tags/v0.1.2"])
+            self.assertEqual(output.read_text(), "version=0.1.2\nsha=" + "a" * 40 + "\ncompiler-pin=v0.1.2\nmaintenance-branch=release/roc-0.1.x\ncompiler-release=https://github.com/roc-lang/roc/releases/tag/v0.1.2\n")
 
     def test_entrypoint_rejects_other_events_before_git(self):
         for event in ("pull_request", "push", "schedule"):
@@ -63,6 +65,15 @@ class ReleasePolicyTests(unittest.TestCase):
             with self.subTest(compiler=compiler), self.assertRaises(ValueError):
                 self.check(compiler_pin=compiler)
 
-    def test_main_can_track_pinned_nightly(self):
-        result = self.check(ref="refs/heads/main", compiler_pin="nightly-2026-09-04-c125b82", allow_default=True)
-        self.assertEqual(result["maintenance-branch"], "")
+    def test_main_cannot_publish_with_nightly(self):
+        with self.assertRaisesRegex(ValueError, "stable compiler pin"):
+            self.check(ref="refs/heads/main", compiler_pin="nightly-2026-09-04-c125b82", allow_default=True)
+
+    def test_official_compiler_release_must_be_stable_published_and_exact(self):
+        valid = {"tag_name": "0.1.2", "draft": False, "prerelease": False, "assets": [{"name": "compiler"}]}
+        self.assertEqual(policy.verify_compiler_release("0.1.2", valid), "https://github.com/roc-lang/roc/releases/tag/0.1.2")
+        for invalid in ({}, {**valid, "tag_name": "v0.1.2"}, {**valid, "draft": True},
+                        {**valid, "prerelease": True}, {**valid, "assets": []},
+                        {**valid, "prerelease": 0}, {**valid, "assets": "asset"}):
+            with self.subTest(release=invalid), self.assertRaises(ValueError):
+                policy.verify_compiler_release("0.1.2", invalid)
