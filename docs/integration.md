@@ -1,15 +1,43 @@
 # Integration and rollout
 
-A repository keeps its existing validation workflows and exact `.roc-version`.
+A repository keeps its validation workflows and exact compiler versions in the
+`roc` field of selected app/package/platform root headers.
 Declare workflow filenames in `.github/roc-nightly.json`:
 
 ```json
 {"workflows": ["ci.yml", "release.yml"]}
 ```
 
+For header-based consumers, configure only the roots belonging to the development
+lane, for example:
+
+```json
+{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc", "tzdb/package/main.roc"]}
+```
+
+`compiler_roots` is a unique list of at most 100 safe relative `.roc` paths; it
+contains no versions. Each must be a normal file with one literal header pin, and
+selected pins must agree. Public example headers can retain another compiler pin
+and remain outside this list, even when their pin currently equals development.
+The updater replaces only selected header string contents, preserving all other
+bytes. No formatter runs in privileged jobs. The consumer validates grammar,
+compiler availability, and runtime behavior in its read-only candidate workflow.
+
+Consumers omitting `compiler_roots` keep legacy `.roc-version` behavior. Migrate
+explicitly and remove duplicate version authority rather than maintaining both.
+`actions/nightly/compiler_pins.py` provides `read_pin(path)` and
+`replace_pin(source, pin)` for local tooling; vendor a reviewed revision with
+provenance if direct action use is not appropriate. Replacement requires an
+existing literal header pin and never inserts or formats one.
+
 Each listed workflow must support a boolean dispatch input named
 `nightly_validation`. Its true path must run the intended tests without publishing
 releases, uploading packages to registries, or deploying sites.
+
+Before selecting workflows, apply the [consumer validation contract](consumer-validation.md).
+Require checks of committed published example URLs as well as working-tree source
+and the proposed release archive. A local bundle test alone does not establish
+that a compiler update works with the release users download.
 
 Use this caller, replacing `REVIEWED_FULL_SHA` with an actual 40-character commit
 SHA containing the reusable workflow:
@@ -61,6 +89,11 @@ UTC build schedule. Stagger consumer minutes. The latest published nightly is us
 a delayed release can wait until the next day. Unchanged candidates with an open
 PR are skipped; manual dispatch retries an unchanged candidate.
 
+The updater remains default-branch-only when a consumer adopts
+[maintenance branches](maintenance-releases.md). It does not update compiler compatibility
+branch pins; versioned compiler patch updates use reviewed PRs. Review cross-version published compatibility separately from
+release fixtures tested with their documented compiler.
+
 ## Repository settings and acceptance
 
 1. Use read-only default workflow permissions. Enable Actions PR creation in
@@ -76,6 +109,11 @@ PR are skipped; manual dispatch retries an unchanged candidate.
    and confirm failure reporting before relying on unattended results.
 5. Add or retain a weekly `github-actions` Dependabot entry. Review shared SHA-pin
    updates like other dependency updates. Never replace full pins with `main`.
+6. Verify the consumer's release follow-up updates and tests published URLs,
+   keeps generated docs in deployment artifacts, preserves the site layout, and
+   creates commits accepted by the branch
+   signature rules. Record this separately from the nightly merge trial; see the
+   [release follow-up contract and trial evidence](consumer-validation.md).
 
 The branch `automation/roc-nightly` is reserved for pin-only bot commits. Put manual
 compatibility fixes on separate branches. No branch-protection bypass is required.
@@ -84,7 +122,8 @@ compatibility fixes on separate branches. No branch-protection bypass is require
 
 Replace the updater and controller-test workflow with the callers above. Remove
 `scripts/nightly_update.py` and its copied tests. Retain project validation workflows,
-`.roc-version`, `.github/roc-nightly.json`, and project-specific rollout notes.
+compiler header pins (or legacy `.roc-version`), `.github/roc-nightly.json`, and
+project-specific rollout notes.
 For already-merged installations, use a follow-up PR from the latest default branch.
 
 Consumer repository settings are separate from file changes. Record settings that
@@ -115,7 +154,7 @@ an immediate squash merge only after live validation; it does not queue a merge
 that could later accept an unvalidated replacement commit.
 
 The controller checks the bot PR identity, same-repository reserved branch,
-current base, single verified bot commit modifying only the pin, published upstream
+current base, single verified bot commit modifying only selected compiler pin literals, published upstream
 release, and fresh API results for every dispatched validation run. The merge API
 receives the expected head SHA and enforces repository rules. Strict status checks
 close the race if the default branch moves after the controller checks it.

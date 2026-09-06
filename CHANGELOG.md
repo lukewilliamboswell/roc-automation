@@ -1,5 +1,38 @@
 # Release notes
 
+## Header pins and compiler-lane rehearsal
+
+- Select development compiler roots by source path and derive their versions from
+  literal header fields, retaining legacy `.roc-version` for unmigrated consumers.
+- Verify full immutable base/head blobs contain only the expected pin replacements
+  before replacing or merging header update candidates. Public example roots stay
+  independent.
+- Read release compiler metadata from a header and support an explicit exact-pin,
+  exact-branch simulated-stable rehearsal, labeled separately from real stable.
+
+## Maintenance release policy
+
+- Document development on `main`, explicit `roc-<major>.<minor>.x` compiler compatibility,
+  reviewed backports, compiler support, and separate LTS commitments.
+- Add a read-only `actions/check-release` guard for independent package versions, compiler-pin/branch and
+  exact checkout correspondence; publication and artifact validation stay consumer-owned.
+- Require an exact final stable compiler for publication on every branch, and
+  verify its exact official upstream tag is published with assets. A separate
+  default-off, main-only nightly bootstrap opt-in permits transitional releases
+  before a usable versioned compiler exists; verify its official nightly release
+  and remove the opt-in when adopting the documented stable-only policy.
+- Keep the existing nightly updater restricted to the default branch.
+
+## Consumer validation guidance
+
+- Document separate published-example, working-tree, and release-archive checks.
+- Record localhost testing, signed URL-only release follow-ups, and keeping
+  generated docs in deployment artifacts as consumer integration requirements.
+- Link the roc-ansi trial evidence and distinguish controller acceptance from
+  published-release compatibility and a live release-follow-up test.
+
+Documentation only; no controller, permission, or consumer pin changes are needed.
+
 ## Required checks for bot PRs
 
 - Mirror successful dispatched validation jobs as commit statuses on the exact
