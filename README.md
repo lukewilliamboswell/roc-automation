@@ -35,7 +35,7 @@ to distinguish published-release compatibility from local bundle tests. It also
 records the roc-ansi trial findings and requirements for signed release follow-ups.
 
 Use the [maintenance release guide](docs/maintenance-releases.md) for development
-on `main`, `release/0.1.x` patch lines, compiler support, and the read-only
+on `main`, `release/roc-0.1.x` upstream compiler compatibility lines, independent package releases, and the read-only
 `actions/check-release` guard. Branch existence does not promise LTS.
 
 ## Development

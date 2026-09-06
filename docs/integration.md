@@ -67,8 +67,8 @@ a delayed release can wait until the next day. Unchanged candidates with an open
 PR are skipped; manual dispatch retries an unchanged candidate.
 
 The updater remains default-branch-only when a consumer adopts
-[maintenance branches](maintenance-releases.md). It does not update maintenance
-compiler pins. Review cross-version published compatibility separately from
+[maintenance branches](maintenance-releases.md). It does not update compiler compatibility
+branch pins; versioned compiler patch updates use reviewed PRs. Review cross-version published compatibility separately from
 release fixtures tested with their documented compiler.
 
 ## Repository settings and acceptance

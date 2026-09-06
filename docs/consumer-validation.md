@@ -5,7 +5,7 @@ download, as well as with the consumer's working-tree changes. Testing only a
 fresh local bundle can hide a broken published package or platform.
 
 This is the existing nightly published-compatibility contract. Consumers adopting
-[maintenance release lines](maintenance-releases.md) may instead keep source
+[compiler compatibility branches](maintenance-releases.md) may instead keep source
 examples on `main` and explicit release fixtures with their supported compiler.
 Make that policy change reviewed and visible: testing a release fixture with its
 old compiler does not establish compatibility with a new nightly.
@@ -64,7 +64,7 @@ versions this way; CI checks that generated docs stay untracked and that the sit
 can be assembled from the assets.
 
 For consumers with published examples on the default branch, merge the follow-up
-there. For maintenance-line releases, target the owning release branch and update
+there. For compiler-compatible releases, target the owning compiler branch and update
 public landing links separately; do not overwrite development source or pins.
 The nightly updater does not publish releases or merge these follow-up PRs: its
 automatic merge policy permits only `.roc-version` changes. Validation-only runs

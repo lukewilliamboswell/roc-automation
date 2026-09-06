@@ -2,9 +2,9 @@
 
 ## Maintenance release policy
 
-- Document development on `main`, explicit `release/<major>.<minor>.x` maintenance,
+- Document development on `main`, explicit `release/roc-<major>.<minor>.x` compiler compatibility,
   reviewed backports, compiler support, and separate LTS commitments.
-- Add a read-only `actions/check-release` guard for dispatched version/branch and
+- Add a read-only `actions/check-release` guard for independent package versions, compiler-pin/branch and
   exact checkout correspondence; publication and artifact validation stay consumer-owned.
 - Keep the existing nightly updater restricted to the default branch.
 

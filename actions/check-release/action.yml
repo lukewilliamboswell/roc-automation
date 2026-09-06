@@ -1,8 +1,8 @@
 name: Check Roc release policy
-description: Validate a dispatched release version, maintenance branch, and exact checkout without publishing.
+description: Validate a dispatched release version, compiler compatibility branch, and exact checkout without publishing.
 inputs:
   version:
-    description: Unprefixed SemVer version, optionally a prerelease
+    description: Independent package SemVer version, optionally a prerelease
     required: true
   allow-default-branch:
     description: Explicitly permit releases from the repository default branch
@@ -14,9 +14,12 @@ outputs:
   sha:
     description: Exact validated checkout and event commit
     value: ${{ steps.policy.outputs.sha }}
-  release-line:
-    description: Corresponding maintenance branch name
-    value: ${{ steps.policy.outputs.release-line }}
+  compiler-pin:
+    description: Exact compiler pin read from the validated checkout
+    value: ${{ steps.policy.outputs.compiler-pin }}
+  maintenance-branch:
+    description: Compiler maintenance branch, empty for default-branch releases
+    value: ${{ steps.policy.outputs.maintenance-branch }}
 runs:
   using: composite
   steps:
