@@ -57,6 +57,12 @@ def repo():
     return value
 
 
+def require_trusted_context():
+    if (os.environ.get("GITHUB_EVENT_NAME") not in {"schedule", "workflow_dispatch"}
+            or os.environ.get("GITHUB_REF") != f"refs/heads/{os.environ['DEFAULT_BRANCH']}"):
+        raise ValueError("Controller writes require a scheduled or manual default-branch run")
+
+
 def pin_at(sha):
     result = api(f"repos/{repo()}/contents/.roc-version?ref={sha}")
     return tag(base64.b64decode(result["content"]).decode().strip())
@@ -318,6 +324,8 @@ if __name__ == "__main__":
     try:
         if len(sys.argv) != 2 or sys.argv[1] not in commands:
             raise ValueError("Expected prepare, validate, report, check, or merge")
+        if sys.argv[1] != "check":
+            require_trusted_context()
         commands[sys.argv[1]]()
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError, TimeoutError) as error:
         # Do not print subprocess environments or authenticated git arguments.

@@ -35,6 +35,18 @@ class ControllerTests(unittest.TestCase):
         api.assert_not_called()
         run.assert_not_called()
 
+    def test_privileged_controller_rejects_pr_events_branches_and_tags(self):
+        for event, ref in [('pull_request', 'refs/heads/main'),
+                           ('pull_request_target', 'refs/heads/main'),
+                           ('workflow_run', 'refs/heads/main'),
+                           ('workflow_dispatch', 'refs/heads/other'),
+                           ('workflow_dispatch', 'refs/tags/main')]:
+            with self.subTest(event=event, ref=ref), patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF=ref):
+                with self.assertRaises(ValueError): n.require_trusted_context()
+        for event in ['schedule', 'workflow_dispatch']:
+            with patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF='refs/heads/main'):
+                n.require_trusted_context()
+
     def test_config_rejects_malformed_missing_or_duplicate_workflows(self):
         invalid = [{}, [], {'workflows': []}, {'workflows': 'ci.yml'},
                    {'workflows': ['ci.yml', 'ci.yml']}, {'workflows': ['missing.yml']},

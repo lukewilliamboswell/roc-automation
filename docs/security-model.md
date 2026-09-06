@@ -66,3 +66,9 @@ is not a native GitHub file-scoped merge permission. All consumers share the
 GitHub Actions bot identity, so the identity check alone is not proof that a
 particular workflow created a commit. The shape, trusted base, signature, upstream
 release, and independently checked validation are also required.
+
+Both prepare and merge explicitly restrict their jobs to schedule/manual events
+on the default branch (and reject tags). Every non-check controller invocation
+also validates that event/ref boundary before performing any API or git operation.
+A caller triggered by a pull request cannot rely on dependency-job conditions to
+reach a privileged merge checkout.
