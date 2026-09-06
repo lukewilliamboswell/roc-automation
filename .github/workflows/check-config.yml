@@ -1,0 +1,16 @@
+name: Check Roc nightly configuration
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  controller-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check compiler pin and validation workflow configuration
+        uses: lukewilliamboswell/roc-automation/actions/nightly@4b6015444c705684a123a921b0af197a400265c7
+        with:
+          phase: check
