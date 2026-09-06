@@ -31,7 +31,7 @@ jobs:
         FORCE: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false'
           }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
+        lukewilliamboswell/roc-automation/actions/nightly@ce402b2786852d7061dd6c91a6a118e886521e3c
       with:
         phase: prepare
   validate:
@@ -56,7 +56,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
+        lukewilliamboswell/roc-automation/actions/nightly@ce402b2786852d7061dd6c91a6a118e886521e3c
       with:
         phase: validate
   report:
@@ -79,7 +79,7 @@ jobs:
         TEST_RESULT: ${{ needs.validate.result }}
         VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
+        lukewilliamboswell/roc-automation/actions/nightly@ce402b2786852d7061dd6c91a6a118e886521e3c
       with:
         phase: report
 
@@ -100,6 +100,6 @@ jobs:
           CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
           NIGHTLY_TAG: ${{ needs.prepare.outputs.nightly }}
           VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
-        uses: lukewilliamboswell/roc-automation/actions/nightly@85bb6894311089d8d16d9324165ee86c2dff11b8
+        uses: lukewilliamboswell/roc-automation/actions/nightly@ce402b2786852d7061dd6c91a6a118e886521e3c
         with:
           phase: merge
