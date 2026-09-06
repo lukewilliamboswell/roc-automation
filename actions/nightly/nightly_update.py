@@ -61,6 +61,8 @@ def require_trusted_context():
     if (os.environ.get("GITHUB_EVENT_NAME") not in {"schedule", "workflow_dispatch"}
             or os.environ.get("GITHUB_REF") != f"refs/heads/{os.environ['DEFAULT_BRANCH']}"):
         raise ValueError("Controller writes require a scheduled or manual default-branch run")
+    if run(["git", "rev-parse", "HEAD"]) != os.environ["GITHUB_SHA"]:
+        raise ValueError("Default branch moved since the updater started; retry on its current commit")
 
 
 def pin_at(sha):

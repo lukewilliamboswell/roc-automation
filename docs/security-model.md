@@ -72,3 +72,9 @@ on the default branch (and reject tags). Every non-check controller invocation
 also validates that event/ref boundary before performing any API or git operation.
 A caller triggered by a pull request cannot rely on dependency-job conditions to
 reach a privileged merge checkout.
+
+Privileged checkouts explicitly select the repository's default branch, never an
+inherited event SHA that could represent a PR in another caller. Before doing any
+work, the controller verifies that this checkout equals the original event SHA.
+If main moved while jobs were queued, the run stops and must be retried. This
+preserves the original trusted base without permitting a PR-controlled checkout.

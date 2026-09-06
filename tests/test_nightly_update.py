@@ -44,8 +44,10 @@ class ControllerTests(unittest.TestCase):
             with self.subTest(event=event, ref=ref), patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF=ref):
                 with self.assertRaises(ValueError): n.require_trusted_context()
         for event in ['schedule', 'workflow_dispatch']:
-            with patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF='refs/heads/main'):
+            with patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF='refs/heads/main', GITHUB_SHA='base'), patch.object(n, 'run', return_value='base'):
                 n.require_trusted_context()
+        with patch.dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main', GITHUB_SHA='base'), patch.object(n, 'run', return_value='new-base'):
+            with self.assertRaises(ValueError): n.require_trusted_context()
 
     def test_config_rejects_malformed_missing_or_duplicate_workflows(self):
         invalid = [{}, [], {'workflows': []}, {'workflows': 'ci.yml'},
