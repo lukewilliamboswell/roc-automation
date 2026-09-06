@@ -1,3 +1,4 @@
+import base64
 import copy
 import importlib.util
 import json
@@ -24,7 +25,7 @@ class ControllerTests(unittest.TestCase):
         (root / '.roc-version').write_text('nightly-2026-09-04-c125b82\n')
         self.env = patch.dict(os.environ, GITHUB_REPOSITORY='owner/project', GITHUB_OUTPUT=str(root/'outputs'),
                               GITHUB_SERVER_URL='https://github.com', GITHUB_RUN_ID='100', DEFAULT_BRANCH='main',
-                              CANDIDATE_SHA='candidate', NIGHTLY_TAG='nightly-2026-09-05-b195f5b', GH_TOKEN='test-token')
+                              CANDIDATE_SHA='candidate', GITHUB_SHA='base', NIGHTLY_TAG='nightly-2026-09-05-b195f5b', GH_TOKEN='test-token')
         self.env.start(); self.addCleanup(self.env.stop)
         self.root_patch = patch.object(n, 'ROOT', root)
         self.root_patch.start(); self.addCleanup(self.root_patch.stop)
@@ -182,6 +183,8 @@ class ControllerTests(unittest.TestCase):
         rules = [{'type': 'pull_request'}, {'type': 'required_status_checks', 'parameters': {
             'strict_required_status_checks_policy': True, 'required_status_checks': [{'context': 'test'}]}}]
         return {
+            'repos/owner/project/contents/.github/roc-nightly.json?ref=base': {
+                'content': base64.b64encode((n.ROOT / '.github/roc-nightly.json').read_bytes()).decode()},
             'repos/owner/project/pulls/1': pr,
             'repos/owner/project/commits/candidate': commit,
             'repos/roc-lang/nightlies/releases/tags/nightly-2026-09-05-b195f5b': {
@@ -200,24 +203,31 @@ class ControllerTests(unittest.TestCase):
                 self.assertEqual(endpoint, 'repos/owner/project/pulls/1/merge')
                 return merge_result or {'merged': True, 'sha': 'merged'}
             return responses[endpoint]
-        with patch.object(n, 'run', return_value='base'), patch.object(n, 'head', return_value='candidate'), \
+        with patch.object(n, 'run') as run, patch.object(n, 'head', return_value='candidate'), \
              patch.object(n, 'pin_at', return_value=os.environ['NIGHTLY_TAG']), \
              patch.object(n, 'existing_pr', return_value={'number': 1}), patch.object(n, 'api', side_effect=api):
             if failure:
                 with self.assertRaises(ValueError): n.merge()
             else:
                 n.merge()
+            run.assert_not_called()
         return writes
 
-    def test_merge_is_opt_in_and_disabled_without_any_api_access(self):
+    def test_merge_reads_opt_in_only_at_trusted_base_and_disabled_has_no_writes(self):
         for enabled in [None, False]:
             config = {'workflows': ['ci.yml']}
             if enabled is not None: config['auto_merge'] = enabled
             (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
-            with patch.object(n, 'api') as api, patch.object(n, 'run') as run:
+            contents = {'content': base64.b64encode(json.dumps(config).encode()).decode()}
+            with patch.object(n, 'api', return_value=contents) as api, patch.object(n, 'run') as run:
                 n.merge()
-            api.assert_not_called()
+            api.assert_called_once_with('repos/owner/project/contents/.github/roc-nightly.json?ref=base')
             run.assert_not_called()
+
+    def test_merge_needs_no_consumer_checkout_or_local_configuration(self):
+        responses = self.merge_fixture()
+        (n.ROOT / '.github/roc-nightly.json').unlink()
+        self.assertEqual(len(self.attempt_merge(responses)), 1)
 
     def test_merge_policy_rejects_truthy_non_booleans(self):
         for value in ['true', 'false', 1, 0, None, {}, []]:

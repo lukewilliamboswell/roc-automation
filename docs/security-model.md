@@ -48,10 +48,11 @@ or deploys sites. The optional merge policy is described below.
 
 Consumers may explicitly set the boolean `auto_merge` in their trusted config.
 The default is false, and prepare emits the opt-in so the merge job is skipped
-entirely otherwise. The merge job runs after successful validation and reporting,
-checks out the original trusted default-branch SHA with no persisted credentials,
-and never runs candidate code. It has contents write, pull-requests read, and
-actions read permissions. Test jobs never receive this merge token.
+entirely otherwise. The merge job runs after successful validation and reporting.
+It performs no consumer checkout: it reads configuration through the API at the
+original default-branch event SHA and executes only the pinned shared controller.
+It has contents write, pull-requests read, and actions read permissions. Test jobs
+never receive this merge token.
 
 Immediately before merging, the controller independently rechecks the PR, signed
 bot commit, published upstream tag, configured workflow paths and live run results,
@@ -70,11 +71,7 @@ release, and independently checked validation are also required.
 Both prepare and merge explicitly restrict their jobs to schedule/manual events
 on the default branch (and reject tags). Every non-check controller invocation
 also validates that event/ref boundary before performing any API or git operation.
-A caller triggered by a pull request cannot rely on dependency-job conditions to
-reach a privileged merge checkout.
-
-Privileged checkouts explicitly select the repository's default branch, never an
-inherited event SHA that could represent a PR in another caller. Before doing any
-work, the controller verifies that this checkout equals the original event SHA.
-If main moved while jobs were queued, the run stops and must be retried. This
-preserves the original trusted base without permitting a PR-controlled checkout.
+Prepare, validate, and report check out the explicit default branch and verify it
+still equals the original event SHA before doing work. The merge job reads that
+immutable SHA through the API and checks the live default branch before merging.
+If the branch moves, retry the updater on its current commit.

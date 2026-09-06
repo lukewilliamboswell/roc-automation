@@ -106,7 +106,8 @@ not accepted by its preflight. Existing required human reviews still block mergi
 For unattended pin updates, the applicable policy must permit merging without a
 human approval; this is a deliberate review-policy decision, not a bot approval.
 
-The separate merge job uses the existing repository-scoped GITHUB_TOKEN, with
+The separate merge job performs no consumer checkout and reads policy at the
+original trusted event SHA through the API. It uses the existing GITHUB_TOKEN, with
 contents write and Actions/PR read access. No App registration, PAT, stored key,
 repository-wide auto-merge setting, or approval permission is needed. It requests
 an immediate squash merge only after live validation; it does not queue a merge
