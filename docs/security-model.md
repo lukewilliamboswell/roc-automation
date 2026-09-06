@@ -41,4 +41,28 @@ maintainer responsibilities; this automation grants no bypass or self-approval.
 
 No credentials are persisted by checkout. Authenticated git pushes receive a
 short-lived token in the child process environment, never command-line arguments.
-The action does not merge, approve, publish releases, or deploy sites.
+By default the action does not merge. It never approves PRs, publishes releases,
+or deploys sites. The optional merge policy is described below.
+
+## Optional merge authority
+
+Consumers may explicitly set the boolean `auto_merge` in their trusted config.
+The default is false, and prepare emits the opt-in so the merge job is skipped
+entirely otherwise. The merge job runs after successful validation and reporting,
+checks out the original trusted default-branch SHA with no persisted credentials,
+and never runs candidate code. It has contents write, pull-requests read, and
+actions read permissions. Test jobs never receive this merge token.
+
+Immediately before merging, the controller independently rechecks the PR, signed
+bot commit, published upstream tag, configured workflow paths and live run results,
+branch heads, and active pull-request/strict status-check rulesets. It passes the
+expected head SHA to GitHub's normal squash-merge endpoint. No bot approval or
+protection bypass is used. Repository rules must have no bot bypass; administrators
+remain responsible for protecting those rules and the trusted workflow/config.
+
+Token scopes cannot restrict contents write to one file or one operation. The
+pin-only restriction is controller policy, backed by required PRs and checks; it
+is not a native GitHub file-scoped merge permission. All consumers share the
+GitHub Actions bot identity, so the identity check alone is not proof that a
+particular workflow created a commit. The shape, trusted base, signature, upstream
+release, and independently checked validation are also required.

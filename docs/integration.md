@@ -88,3 +88,51 @@ For already-merged installations, use a follow-up PR from the latest default bra
 
 Consumer repository settings are separate from file changes. Record settings that
 still need action; do not present a caller PR as a completed live-bot acceptance test.
+
+## Opt-in automatic merging
+
+Automatic merging defaults to disabled. To opt in on the trusted default branch:
+
+```json
+{"workflows": ["ci.yml", "release.yml"], "auto_merge": true}
+```
+
+Install an active default-branch ruleset requiring pull requests and strict
+(up-to-date) required status checks. Select the real test/build/bundle checks from
+successful candidate runs, restricted to the GitHub Actions integration. Retain
+signature, deletion, and force-push protections. Give the Actions bot no bypass.
+The controller requires rulesets specifically; legacy branch protection alone is
+not accepted by its preflight. Existing required human reviews still block merging.
+For unattended pin updates, the applicable policy must permit merging without a
+human approval; this is a deliberate review-policy decision, not a bot approval.
+
+The separate merge job uses the existing repository-scoped GITHUB_TOKEN, with
+contents write and Actions/PR read access. No App registration, PAT, stored key,
+repository-wide auto-merge setting, or approval permission is needed. It requests
+an immediate squash merge only after live validation; it does not queue a merge
+that could later accept an unvalidated replacement commit.
+
+The controller checks the bot PR identity, same-repository reserved branch,
+current base, single verified bot commit modifying only the pin, published upstream
+release, and fresh API results for every dispatched validation run. The merge API
+receives the expected head SHA and enforces repository rules. Strict status checks
+close the race if the default branch moves after the controller checks it.
+
+A rejected merge fails the updater and leaves the PR for diagnosis. Retry the
+updater manually after resolving the cause; it rebuilds/revalidates against the
+current default branch. Set `auto_merge` to false (or remove it) to disable merging;
+disable the caller workflow in Actions for an immediate emergency stop. A default
+branch change invalidates an in-flight candidate. Do not grant a bypass to force
+an update through.
+
+Trial on one repository before adding other opt-ins. Record the successful bot
+merge, exact validation runs, enforced rules, and a subsequent no-op. Nightly
+validation must never publish a release. A GITHUB_TOKEN merge does not normally
+trigger push workflows: explicitly dispatch any separately authorized follow-up
+work rather than assuming publication or deployment will run.
+
+This policy is intended for mechanical compiler-pin updates only. Changes to
+source code, workflow configuration, and the shared automation require maintainer
+review. Passing tests demonstrate covered compatibility, not compiler provenance
+or freedom from malicious upstream changes. Pin upgrades still trust Roc's nightly
+release channel.
