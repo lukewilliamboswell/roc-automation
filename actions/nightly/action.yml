@@ -1,0 +1,28 @@
+name: Roc nightly controller
+description: Prepare a signed compiler pin PR, validate its exact commit, or report results.
+inputs:
+  phase:
+    description: Controller phase (prepare, validate, report, or check)
+    required: true
+outputs:
+  changed:
+    description: Whether prepare selected a candidate
+    value: ${{ steps.controller.outputs.changed }}
+  sha:
+    description: Candidate commit SHA
+    value: ${{ steps.controller.outputs.sha }}
+  nightly:
+    description: Candidate nightly tag
+    value: ${{ steps.controller.outputs.nightly }}
+  runs:
+    description: JSON validation run evidence
+    value: ${{ steps.controller.outputs.runs }}
+runs:
+  using: composite
+  steps:
+    - id: controller
+      shell: bash
+      env:
+        CONTROLLER_PHASE: ${{ inputs.phase }}
+        CONTROLLER_PATH: ${{ github.action_path }}
+      run: python3 "$CONTROLLER_PATH/nightly_update.py" "$CONTROLLER_PHASE"
