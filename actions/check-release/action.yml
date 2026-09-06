@@ -1,0 +1,30 @@
+name: Check Roc release policy
+description: Validate a dispatched release version, maintenance branch, and exact checkout without publishing.
+inputs:
+  version:
+    description: Unprefixed SemVer version, optionally a prerelease
+    required: true
+  allow-default-branch:
+    description: Explicitly permit releases from the repository default branch
+    default: 'false'
+outputs:
+  version:
+    description: Validated release version
+    value: ${{ steps.policy.outputs.version }}
+  sha:
+    description: Exact validated checkout and event commit
+    value: ${{ steps.policy.outputs.sha }}
+  release-line:
+    description: Corresponding maintenance branch name
+    value: ${{ steps.policy.outputs.release-line }}
+runs:
+  using: composite
+  steps:
+    - id: policy
+      shell: bash
+      env:
+        RELEASE_VERSION: ${{ inputs.version }}
+        ALLOW_DEFAULT_BRANCH: ${{ inputs.allow-default-branch }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        POLICY_PATH: ${{ github.action_path }}
+      run: python3 "$POLICY_PATH/check_release.py"

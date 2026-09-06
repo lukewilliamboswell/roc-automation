@@ -66,6 +66,11 @@ UTC build schedule. Stagger consumer minutes. The latest published nightly is us
 a delayed release can wait until the next day. Unchanged candidates with an open
 PR are skipped; manual dispatch retries an unchanged candidate.
 
+The updater remains default-branch-only when a consumer adopts
+[maintenance branches](maintenance-releases.md). It does not update maintenance
+compiler pins. Review cross-version published compatibility separately from
+release fixtures tested with their documented compiler.
+
 ## Repository settings and acceptance
 
 1. Use read-only default workflow permissions. Enable Actions PR creation in

@@ -1,5 +1,13 @@
 # Release notes
 
+## Maintenance release policy
+
+- Document development on `main`, explicit `release/<major>.<minor>.x` maintenance,
+  reviewed backports, compiler support, and separate LTS commitments.
+- Add a read-only `actions/check-release` guard for dispatched version/branch and
+  exact checkout correspondence; publication and artifact validation stay consumer-owned.
+- Keep the existing nightly updater restricted to the default branch.
+
 ## Consumer validation guidance
 
 - Document separate published-example, working-tree, and release-archive checks.

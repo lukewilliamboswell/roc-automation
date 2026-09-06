@@ -34,6 +34,10 @@ Use the [consumer validation and release lifecycle guide](docs/consumer-validati
 to distinguish published-release compatibility from local bundle tests. It also
 records the roc-ansi trial findings and requirements for signed release follow-ups.
 
+Use the [maintenance release guide](docs/maintenance-releases.md) for development
+on `main`, `release/0.1.x` patch lines, compiler support, and the read-only
+`actions/check-release` guard. Branch existence does not promise LTS.
+
 ## Development
 
 Python 3.10+ and the standard library are sufficient for the controller tests:
