@@ -26,3 +26,15 @@ those run/PR links as evidence.
 
 Use OpenSSF Scorecard separately if desired; its automated checks are not the
 Best Practices badge. Revisit practice evidence and response history periodically.
+
+
+Automatic merging does not itself disqualify the passing Best Practices badge.
+It does not count as human review. Gold requires at least 50% of proposed
+modifications to be reviewed by another person before release; frequent unreviewed
+bot changes must be considered when assessing that criterion. Scorecard is a
+separate measurement and can deduct Code-Review points for unreviewed bot changes.
+Document the opt-in and its tradeoff honestly; do not manufacture bot approvals.
+
+Sources: [passing](https://www.bestpractices.dev/en/criteria/0),
+[gold](https://www.bestpractices.dev/en/criteria/2),
+[Scorecard Code-Review](https://github.com/ossf/scorecard/blob/main/docs/checks.md#code-review).

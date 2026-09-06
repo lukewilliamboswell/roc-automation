@@ -57,6 +57,14 @@ def repo():
     return value
 
 
+def require_trusted_context(*, checkout=True):
+    if (os.environ.get("GITHUB_EVENT_NAME") not in {"schedule", "workflow_dispatch"}
+            or os.environ.get("GITHUB_REF") != f"refs/heads/{os.environ['DEFAULT_BRANCH']}"):
+        raise ValueError("Controller writes require a scheduled or manual default-branch run")
+    if checkout and run(["git", "rev-parse", "HEAD"]) != os.environ["GITHUB_SHA"]:
+        raise ValueError("Default branch moved since the updater started; retry on its current commit")
+
+
 def pin_at(sha):
     result = api(f"repos/{repo()}/contents/.roc-version?ref={sha}")
     return tag(base64.b64decode(result["content"]).decode().strip())
@@ -80,7 +88,7 @@ def pr_body(sha, nightly, status, runs=()):
     for item in runs:
         lines.append(f"- [{item['workflow']}]({item['html_url']}): **{item.get('conclusion') or 'pending'}**")
     lines += [f"[Updater run]({os.environ['GITHUB_SERVER_URL']}/{repo()}/actions/runs/{os.environ['GITHUB_RUN_ID']}).",
-              "Created by the Roc nightly updater. Validation runs on the candidate commit. This workflow does not approve or merge PRs."]
+              "Created by the Roc nightly updater. Validation runs on the candidate commit. Merging is disabled unless the repository explicitly opts in; this workflow never approves PRs."]
     return "\n\n".join(lines)
 
 
@@ -122,6 +130,7 @@ def signed_pin(base, nightly):
 
 
 def prepare():
+    output("auto_merge", str(load_config().get("auto_merge", False)).lower())
     base = run(["git", "rev-parse", "HEAD"])
     release = api("repos/roc-lang/nightlies/releases/latest")
     nightly = tag(release["tag_name"])
@@ -160,10 +169,17 @@ def prepare():
 
 
 
-def load_workflows():
-    config = json.loads((ROOT / ".github/roc-nightly.json").read_text())
-    if not isinstance(config, dict) or set(config) != {"workflows"}:
-        raise ValueError("Expected a configuration containing only workflows")
+def load_config(content=None):
+    config = json.loads(content if content is not None else (ROOT / ".github/roc-nightly.json").read_text())
+    if not isinstance(config, dict) or "workflows" not in config or set(config) - {"workflows", "auto_merge"}:
+        raise ValueError("Expected workflows and optional auto_merge configuration")
+    if type(config.get("auto_merge", False)) is not bool:
+        raise ValueError("auto_merge must be a boolean")
+    return config
+
+
+def load_workflows(config=None, *, check_files=True):
+    config = load_config() if config is None else config
     workflows = config["workflows"]
     if not isinstance(workflows, list) or not workflows:
         raise ValueError("Validation workflows must be a nonempty list")
@@ -171,7 +187,7 @@ def load_workflows():
         if not isinstance(workflow, str) or not re.fullmatch(r"[A-Za-z0-9_-]+\.ya?ml", workflow):
             raise ValueError("Invalid workflow filename")
         path = ROOT / ".github/workflows" / workflow
-        if not path.is_file() or not path.resolve().is_relative_to(ROOT):
+        if check_files and (not path.is_file() or not path.resolve().is_relative_to(ROOT)):
             raise ValueError(f"Validation workflow is missing or outside the repository: {workflow}")
     if len(set(workflows)) != len(workflows):
         raise ValueError("Validation workflows must be unique")
@@ -237,11 +253,84 @@ def report():
     save_pr(sha, tag(os.environ["NIGHTLY_TAG"]), message, runs)
 
 
+def merge():
+    # No consumer checkout in this privileged job. Read policy at the original
+    # trusted event SHA, not at the candidate or a moving branch reference.
+    base = os.environ["GITHUB_SHA"]
+    repository = repo()
+    contents = api(f"repos/{repository}/contents/.github/roc-nightly.json?ref={base}")
+    config = load_config(base64.b64decode(contents["content"]).decode())
+    if not config.get("auto_merge", False):
+        print("Automatic merging is disabled")
+        return
+    workflows = load_workflows(config, check_files=False)
+    sha = os.environ["CANDIDATE_SHA"]
+    default = os.environ["DEFAULT_BRANCH"]
+    current = existing_pr()
+    if not current:
+        raise ValueError("No open nightly PR")
+    number = current["number"]
+    current = api(f"repos/{repository}/pulls/{number}")
+    if (current["state"] != "open" or current["draft"]
+            or current["user"]["login"] != "github-actions[bot]"
+            or current["user"]["type"] != "Bot"
+            or current["head"]["repo"]["full_name"] != repository
+            or current["head"]["ref"] != BRANCH or current["head"]["sha"] != sha
+            or current["base"]["repo"]["full_name"] != repository
+            or current["base"]["ref"] != default or current["base"]["sha"] != base
+            or current["commits"] != 1 or current["changed_files"] != 1):
+        raise ValueError("PR is not the trusted pin-only candidate on the current base")
+    commit = api(f"repos/{repository}/commits/{sha}")
+    if (len(commit["parents"]) != 1 or commit["parents"][0]["sha"] != base
+            or not commit["commit"]["verification"]["verified"]
+            or (commit.get("author") or {}).get("login") != "github-actions[bot]"
+            or len(commit["files"]) != 1
+            or commit["files"][0]["filename"] != ".roc-version"
+            or commit["files"][0]["status"] != "modified"
+            or commit["files"][0]["additions"] != 1 or commit["files"][0]["deletions"] != 1):
+        raise ValueError("Candidate is not a verified bot pin commit directly on the tested base")
+    nightly = pin_at(sha)
+    if nightly != tag(os.environ["NIGHTLY_TAG"]):
+        raise ValueError("Candidate pin changed")
+    release = api(f"repos/roc-lang/nightlies/releases/tags/{nightly}")
+    if release["tag_name"] != nightly or release["draft"] or release["prerelease"] or not release["assets"]:
+        raise ValueError("Candidate is not a published upstream nightly with assets")
+    runs = json.loads(os.environ.get("VALIDATION_RUNS") or "[]")
+    if [item["workflow"] for item in runs] != workflows or len({item["id"] for item in runs}) != len(workflows):
+        raise ValueError("Missing or duplicate validation evidence")
+    for item in runs:
+        if type(item["id"]) is not int or item["id"] <= 0:
+            raise ValueError("Invalid validation run ID")
+        result = api(f"repos/{repository}/actions/runs/{item['id']}")
+        validate_run(result, sha)
+        if (result["path"] != f".github/workflows/{item['workflow']}"
+                or result["status"] != "completed" or result["conclusion"] != "success"):
+            raise ValueError("Live validation evidence is not a successful configured workflow")
+    # Strict required checks close the base-movement race at GitHub's merge API.
+    # Refuse unprotected repositories rather than relying on a client-side check.
+    rules = api(f"repos/{repository}/rules/branches/{default}")
+    if not any(rule["type"] == "required_status_checks"
+               and rule["parameters"]["strict_required_status_checks_policy"]
+               and rule["parameters"]["required_status_checks"] for rule in rules):
+        raise ValueError("Automatic merging requires an active strict required-status-check ruleset")
+    if not any(rule["type"] == "pull_request" for rule in rules):
+        raise ValueError("Automatic merging requires an active pull-request ruleset")
+    if head() != sha or api(f"repos/{repository}/git/ref/heads/{default}")["object"]["sha"] != base:
+        raise ValueError("Candidate or default branch changed; revalidate before merging")
+    result = api(f"repos/{repository}/pulls/{number}/merge",
+                 {"sha": sha, "merge_method": "squash"}, "PUT")
+    if not result["merged"]:
+        raise ValueError("GitHub refused the merge")
+    print(f"Merged nightly PR #{number}: {result['sha']}")
+
+
 if __name__ == "__main__":
-    commands = {"prepare": prepare, "validate": validate, "report": report, "check": check}
+    commands = {"prepare": prepare, "validate": validate, "report": report, "check": check, "merge": merge}
     try:
         if len(sys.argv) != 2 or sys.argv[1] not in commands:
-            raise ValueError("Expected prepare, validate, report, or check")
+            raise ValueError("Expected prepare, validate, report, check, or merge")
+        if sys.argv[1] != "check":
+            require_trusted_context(checkout=sys.argv[1] != "merge")
         commands[sys.argv[1]]()
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError, TimeoutError) as error:
         # Do not print subprocess environments or authenticated git arguments.

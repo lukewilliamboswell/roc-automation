@@ -2,9 +2,12 @@ name: Roc nightly controller
 description: Prepare a signed compiler pin PR, validate its exact commit, or report results.
 inputs:
   phase:
-    description: Controller phase (prepare, validate, report, or check)
+    description: Controller phase (prepare, validate, report, check, or merge)
     required: true
 outputs:
+  auto_merge:
+    description: Whether the trusted repository configuration opts into merging
+    value: ${{ steps.controller.outputs.auto_merge }}
   changed:
     description: Whether prepare selected a candidate
     value: ${{ steps.controller.outputs.changed }}

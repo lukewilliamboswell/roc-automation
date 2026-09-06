@@ -1,3 +1,5 @@
+import base64
+import copy
 import importlib.util
 import json
 import os
@@ -23,7 +25,7 @@ class ControllerTests(unittest.TestCase):
         (root / '.roc-version').write_text('nightly-2026-09-04-c125b82\n')
         self.env = patch.dict(os.environ, GITHUB_REPOSITORY='owner/project', GITHUB_OUTPUT=str(root/'outputs'),
                               GITHUB_SERVER_URL='https://github.com', GITHUB_RUN_ID='100', DEFAULT_BRANCH='main',
-                              CANDIDATE_SHA='candidate', NIGHTLY_TAG='nightly-2026-09-05-b195f5b', GH_TOKEN='test-token')
+                              CANDIDATE_SHA='candidate', GITHUB_SHA='base', NIGHTLY_TAG='nightly-2026-09-05-b195f5b', GH_TOKEN='test-token')
         self.env.start(); self.addCleanup(self.env.stop)
         self.root_patch = patch.object(n, 'ROOT', root)
         self.root_patch.start(); self.addCleanup(self.root_patch.stop)
@@ -33,6 +35,20 @@ class ControllerTests(unittest.TestCase):
             n.check()
         api.assert_not_called()
         run.assert_not_called()
+
+    def test_privileged_controller_rejects_pr_events_branches_and_tags(self):
+        for event, ref in [('pull_request', 'refs/heads/main'),
+                           ('pull_request_target', 'refs/heads/main'),
+                           ('workflow_run', 'refs/heads/main'),
+                           ('workflow_dispatch', 'refs/heads/other'),
+                           ('workflow_dispatch', 'refs/tags/main')]:
+            with self.subTest(event=event, ref=ref), patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF=ref):
+                with self.assertRaises(ValueError): n.require_trusted_context()
+        for event in ['schedule', 'workflow_dispatch']:
+            with patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_REF='refs/heads/main', GITHUB_SHA='base'), patch.object(n, 'run', return_value='base'):
+                n.require_trusted_context()
+        with patch.dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main', GITHUB_SHA='base'), patch.object(n, 'run', return_value='new-base'):
+            with self.assertRaises(ValueError): n.require_trusted_context()
 
     def test_config_rejects_malformed_missing_or_duplicate_workflows(self):
         invalid = [{}, [], {'workflows': []}, {'workflows': 'ci.yml'},
@@ -149,5 +165,142 @@ class ControllerTests(unittest.TestCase):
             n.report()
         self.assertIn('Passed', save.call_args.args[2])
         self.assertEqual(save.call_args.args[3], runs)
+
+
+    def merge_fixture(self):
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps({
+            'workflows': ['ci.yml', 'release.yml'], 'auto_merge': True}))
+        os.environ['VALIDATION_RUNS'] = json.dumps([
+            {'workflow': 'ci.yml', 'id': 7}, {'workflow': 'release.yml', 'id': 8}])
+        pr = {'number': 1, 'state': 'open', 'draft': False,
+              'user': {'login': 'github-actions[bot]', 'type': 'Bot'},
+              'head': {'repo': {'full_name': 'owner/project'}, 'ref': n.BRANCH, 'sha': 'candidate'},
+              'base': {'repo': {'full_name': 'owner/project'}, 'ref': 'main', 'sha': 'base'},
+              'commits': 1, 'changed_files': 1}
+        commit = {'parents': [{'sha': 'base'}], 'commit': {'verification': {'verified': True}},
+                  'author': {'login': 'github-actions[bot]'},
+                  'files': [{'filename': '.roc-version', 'status': 'modified', 'additions': 1, 'deletions': 1}]}
+        rules = [{'type': 'pull_request'}, {'type': 'required_status_checks', 'parameters': {
+            'strict_required_status_checks_policy': True, 'required_status_checks': [{'context': 'test'}]}}]
+        return {
+            'repos/owner/project/contents/.github/roc-nightly.json?ref=base': {
+                'content': base64.b64encode((n.ROOT / '.github/roc-nightly.json').read_bytes()).decode()},
+            'repos/owner/project/pulls/1': pr,
+            'repos/owner/project/commits/candidate': commit,
+            'repos/roc-lang/nightlies/releases/tags/nightly-2026-09-05-b195f5b': {
+                'tag_name': 'nightly-2026-09-05-b195f5b', 'draft': False, 'prerelease': False, 'assets': [{}]},
+            'repos/owner/project/actions/runs/7': {**self.response(), 'path': '.github/workflows/ci.yml'},
+            'repos/owner/project/actions/runs/8': {**self.response(), 'path': '.github/workflows/release.yml'},
+            'repos/owner/project/rules/branches/main': rules,
+            'repos/owner/project/git/ref/heads/main': {'object': {'sha': 'base'}},
+        }
+
+    def attempt_merge(self, responses, *, failure=False, merge_result=None):
+        writes = []
+        def api(endpoint, data=None, method=None):
+            if data is not None or method is not None:
+                writes.append((endpoint, data, method))
+                self.assertEqual(endpoint, 'repos/owner/project/pulls/1/merge')
+                return merge_result or {'merged': True, 'sha': 'merged'}
+            return responses[endpoint]
+        with patch.object(n, 'run') as run, patch.object(n, 'head', return_value='candidate'), \
+             patch.object(n, 'pin_at', return_value=os.environ['NIGHTLY_TAG']), \
+             patch.object(n, 'existing_pr', return_value={'number': 1}), patch.object(n, 'api', side_effect=api):
+            if failure:
+                with self.assertRaises(ValueError): n.merge()
+            else:
+                n.merge()
+            run.assert_not_called()
+        return writes
+
+    def test_merge_reads_opt_in_only_at_trusted_base_and_disabled_has_no_writes(self):
+        for enabled in [None, False]:
+            config = {'workflows': ['ci.yml']}
+            if enabled is not None: config['auto_merge'] = enabled
+            (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
+            contents = {'content': base64.b64encode(json.dumps(config).encode()).decode()}
+            with patch.object(n, 'api', return_value=contents) as api, patch.object(n, 'run') as run:
+                n.merge()
+            api.assert_called_once_with('repos/owner/project/contents/.github/roc-nightly.json?ref=base')
+            run.assert_not_called()
+
+    def test_merge_needs_no_consumer_checkout_or_local_configuration(self):
+        responses = self.merge_fixture()
+        (n.ROOT / '.github/roc-nightly.json').unlink()
+        self.assertEqual(len(self.attempt_merge(responses)), 1)
+
+    def test_merge_policy_rejects_truthy_non_booleans(self):
+        for value in ['true', 'false', 1, 0, None, {}, []]:
+            (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps({'workflows': ['ci.yml'], 'auto_merge': value}))
+            with self.subTest(value=value), self.assertRaises(ValueError): n.check()
+
+    def test_merge_rechecks_live_evidence_and_uses_exact_head_without_bypass(self):
+        responses = self.merge_fixture()
+        self.assertEqual(self.attempt_merge(responses), [
+            ('repos/owner/project/pulls/1/merge', {'sha': 'candidate', 'merge_method': 'squash'}, 'PUT')])
+
+    def test_merge_refuses_untrusted_prs_and_commits(self):
+        original = self.merge_fixture()
+        mutations = [
+            ('pulls/1', ['state'], 'closed'), ('pulls/1', ['draft'], True),
+            ('pulls/1', ['user', 'login'], 'human'), ('pulls/1', ['user', 'type'], 'User'),
+            ('pulls/1', ['head', 'repo', 'full_name'], 'attacker/project'),
+            ('pulls/1', ['head', 'sha'], 'other'), ('pulls/1', ['head', 'ref'], 'other'),
+            ('pulls/1', ['base', 'sha'], 'new-base'), ('pulls/1', ['base', 'ref'], 'release'),
+            ('pulls/1', ['commits'], 2), ('pulls/1', ['changed_files'], 2),
+            ('commits/candidate', ['parents'], []),
+            ('commits/candidate', ['parents'], [{'sha': 'old-base'}]),
+            ('commits/candidate', ['commit', 'verification', 'verified'], False),
+            ('commits/candidate', ['author'], None),
+            ('commits/candidate', ['files', 0, 'filename'], 'source.roc'),
+            ('commits/candidate', ['files', 0, 'status'], 'added'),
+            ('commits/candidate', ['files', 0, 'additions'], 2),
+        ]
+        for endpoint, keys, value in mutations:
+            responses = copy.deepcopy(original)
+            target = responses['repos/owner/project/' + endpoint]
+            for key in keys[:-1]: target = target[key]
+            target[keys[-1]] = value
+            with self.subTest(endpoint=endpoint, keys=keys):
+                self.assertEqual(self.attempt_merge(responses, failure=True), [])
+
+    def test_merge_refuses_failed_stale_or_wrong_workflow_evidence(self):
+        original = self.merge_fixture()
+        for key, value in [('conclusion', 'failure'), ('conclusion', 'skipped'),
+                           ('conclusion', 'cancelled'), ('status', 'in_progress'),
+                           ('head_sha', 'old'), ('head_branch', 'main'), ('event', 'push'),
+                           ('path', '.github/workflows/unrelated.yml')]:
+            responses = copy.deepcopy(original)
+            responses['repos/owner/project/actions/runs/8'][key] = value
+            with self.subTest(key=key, value=value):
+                self.assertEqual(self.attempt_merge(responses, failure=True), [])
+
+    def test_merge_refuses_missing_duplicate_or_invalid_run_ids(self):
+        responses = self.merge_fixture()
+        for runs in [[], [{'workflow': 'ci.yml', 'id': 7}],
+                     [{'workflow': 'ci.yml', 'id': 7}, {'workflow': 'release.yml', 'id': 7}],
+                     [{'workflow': 'ci.yml', 'id': '../7'}, {'workflow': 'release.yml', 'id': 8}]]:
+            with patch.dict(os.environ, VALIDATION_RUNS=json.dumps(runs)):
+                self.assertEqual(self.attempt_merge(responses, failure=True), [])
+
+    def test_merge_refuses_unpublished_release_or_missing_protection(self):
+        original = self.merge_fixture()
+        for key, value in [('draft', True), ('prerelease', True), ('assets', [])]:
+            responses = copy.deepcopy(original)
+            responses['repos/roc-lang/nightlies/releases/tags/nightly-2026-09-05-b195f5b'][key] = value
+            self.assertEqual(self.attempt_merge(responses, failure=True), [])
+        for rules in [[], [{'type': 'pull_request'}], original['repos/owner/project/rules/branches/main'][1:],
+                      [{'type': 'pull_request'}, {'type': 'required_status_checks', 'parameters': {
+                          'strict_required_status_checks_policy': False, 'required_status_checks': [{'context': 'test'}]}}]]:
+            responses = copy.deepcopy(original)
+            responses['repos/owner/project/rules/branches/main'] = rules
+            self.assertEqual(self.attempt_merge(responses, failure=True), [])
+
+    def test_merge_refuses_base_movement_and_github_rejection(self):
+        responses = self.merge_fixture()
+        responses['repos/owner/project/git/ref/heads/main']['object']['sha'] = 'new-base'
+        self.assertEqual(self.attempt_merge(responses, failure=True), [])
+        responses = self.merge_fixture()
+        self.assertEqual(len(self.attempt_merge(responses, failure=True, merge_result={'merged': False})), 1)
 
 if __name__ == '__main__': unittest.main()
