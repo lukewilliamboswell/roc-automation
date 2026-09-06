@@ -16,12 +16,14 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
+      auto_merge: ${{ steps.prepare.outputs.auto_merge }}
       changed: ${{ steps.prepare.outputs.changed }}
       sha: ${{ steps.prepare.outputs.sha }}
       nightly: ${{ steps.prepare.outputs.nightly }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       with:
+        ref: ${{ github.sha }}
         persist-credentials: false
     - id: prepare
       name: Prepare signed pin commit and PR
@@ -30,7 +32,7 @@ jobs:
         FORCE: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false'
           }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@4b6015444c705684a123a921b0af197a400265c7
+        lukewilliamboswell/roc-automation/actions/nightly@821337c3c1ee1b5b749116e750d0c69775cfd7fa
       with:
         phase: prepare
   validate:
@@ -47,6 +49,7 @@ jobs:
       # This is the trusted controller, not a checkout of the candidate.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       with:
+        ref: ${{ github.sha }}
         persist-credentials: false
     - id: validate
       name: Dispatch candidate validation and await its results
@@ -54,7 +57,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@4b6015444c705684a123a921b0af197a400265c7
+        lukewilliamboswell/roc-automation/actions/nightly@821337c3c1ee1b5b749116e750d0c69775cfd7fa
       with:
         phase: validate
   report:
@@ -68,6 +71,7 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       with:
+        ref: ${{ github.sha }}
         persist-credentials: false
     - name: Report results for this candidate
       env:
@@ -77,6 +81,31 @@ jobs:
         TEST_RESULT: ${{ needs.validate.result }}
         VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
       uses: 
-        lukewilliamboswell/roc-automation/actions/nightly@4b6015444c705684a123a921b0af197a400265c7
+        lukewilliamboswell/roc-automation/actions/nightly@821337c3c1ee1b5b749116e750d0c69775cfd7fa
       with:
         phase: report
+
+  merge:
+    needs: [prepare, validate, report]
+    if: needs.prepare.outputs.auto_merge == 'true' && needs.validate.result == 'success' && needs.report.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    steps:
+      # Only the trusted original default-branch checkout; never candidate code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Merge an opted-in pin update after rechecking live evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
+          NIGHTLY_TAG: ${{ needs.prepare.outputs.nightly }}
+          VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
+        uses: lukewilliamboswell/roc-automation/actions/nightly@821337c3c1ee1b5b749116e750d0c69775cfd7fa
+        with:
+          phase: merge
