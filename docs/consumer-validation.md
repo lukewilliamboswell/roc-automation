@@ -63,12 +63,21 @@ and archive restoration in the consumer. The roc-ansi migration preserved five
 versions this way; CI checks that generated docs stay untracked and that the site
 can be assembled from the assets.
 
+The roc-time pilot currently retains its historical `www/` output in Git and
+includes generated docs in release follow-up PRs. That preserves its existing
+versioned documentation while the compiler and package release flow is exercised;
+it does not satisfy the artifact-only storage contract above. Keep that exception
+scoped to the pilot. Before removing the tracked history, archive and verify the
+published versions and prove the site can be restored from those artifacts.
+
 For consumers with published examples on the default branch, merge the follow-up
 there. For compiler-compatible releases, target the owning compiler branch and update
 public landing links separately; do not overwrite development source or pins.
-The nightly updater does not publish releases or merge these follow-up PRs: its
-automatic merge policy permits only `.roc-version` changes. Validation-only runs
-must exclude publication, follow-up creation, and deployment.
+The nightly updater does not publish releases or merge these follow-up PRs. Its
+automatic merge policy permits only compiler pin changes: literal contents in
+the selected `compiler_roots` headers, or the legacy `.roc-version` file when
+header roots are not configured. Validation-only runs must exclude publication,
+follow-up creation, and deployment.
 
 Check the follow-up creator against the actual repository rules. Git bot identity
 configuration does not sign a commit. GitHub's commit API can create a verified

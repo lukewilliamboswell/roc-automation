@@ -5,9 +5,6 @@ policy used by roc-time, preserving independently pinned public examples.
 
 Remaining work:
 
-- Validate current commits in remote CI; earlier green runs cover earlier code.
-- Have roc-time vendor the final scanner revision with provenance and pin the
-  final shared workflow/action SHA.
 - Rehearse real support-branch publication, resulting docs/notes/starters/example
   follow-ups, development compiler update isolation, and a reviewed backport.
   Record live acceptance links in the PR. No end-to-end success is claimed yet.
