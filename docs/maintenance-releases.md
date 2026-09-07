@@ -148,59 +148,49 @@ writes isolated, give no branch-rule bypass or self-approval, and review workflo
 changes independently. These practices support the OpenSSF goals described in
 [the rollout checklist](openssf.md); they are not a badge-compliance claim.
 
-## Pilot and rollout
+## Rollout
 
-Use roc-time's core/tzdb pair and starters to rehearse artifact identity and
-compiler compatibility metadata; use roc-ansi to confirm the same contracts apply
-to a simpler package. Until a versioned compiler is available, validate rejection
-and matching-line behavior with synthetic fixtures. Consumers may opt into the
-main-only nightly bootstrap described above, but the roc-time pilot instead
-restricts publication to its explicitly mapped simulated support branch. Report
-the actual nightly requirement honestly; fixture success does not establish a
-live stable-compiler pilot.
-
-For each consumer, record compiler policy, branch rules, validation-only paths,
-support commitments, and source/published/archive test commands. Once available,
-exercise a compiler-line mismatch, failed validation, a successful candidate and
-a reviewed backport against the real compiler. Roll out full-SHA automation changes
-through PRs. No automatic promotion, compiler-patch tracker, or backport merging
+Record the repository's compiler policy, branch rules, validation-only paths,
+support commitments and source/published/archive test commands in its rollout PR.
+Exercise a compiler-line mismatch, failed validation, a successful candidate and
+a reviewed backport. Test each package or platform archive independently and test
+the complete applications that combine them. Roll out full-SHA automation changes
+through PRs. No automatic promotion, compiler-patch tracker or backport merging
 is included in this implementation.
 
-## Explicit two-compiler rehearsal
+## Optional compiler simulation
 
-A consumer may rehearse before final upstream versions exist. For the current
-pilot, `nightly-2026-09-05-b195f5b` represents pretend Roc `0.1.x` on `roc-0.1.x`,
-while development roots use `nightly-2026-09-06-d85e877`. Published examples keep
-the pretend-stable pin and released dependency URLs; development examples or
-source test copies are separate validation inputs.
+A repository may rehearse before suitable stable upstream versions exist. Select
+two real, exact nightly releases: one represents the intended supported compiler,
+and the other tests ongoing development. Public examples retain the simulated
+support compiler and released dependency URLs. Their success does not establish
+that an upstream stable compiler exists.
 
-Configure the roc-time release guard explicitly:
+The following action-input template illustrates a hypothetical `0.1` support line.
+Replace `EXACT_PUBLISHED_NIGHTLY_TAG` with the actual nightly tag selected for the
+simulation; the placeholder itself is not a valid configuration:
 
 ```yaml
 compiler-root: package/main.roc
 allow-default-branch: 'false'
 allow-nightly-bootstrap: 'false'
-simulated-stable-pin: nightly-2026-09-05-b195f5b
+simulated-stable-pin: EXACT_PUBLISHED_NIGHTLY_TAG
 simulated-stable-line: '0.1'
 ```
 
-These are action inputs for this rehearsal. Main uses the September 6 compiler
-and cannot publish; only `roc-0.1.x` with the exact September 5 pin can publish.
-Public examples also retain September 5, independently of development. This
-models the future support-branch release policy without claiming that the
-September 5 nightly is an upstream stable release. Shared main-only bootstrap
-remains available to other consumers, but is disabled in this pilot.
-Release notes and metadata must label `compiler-channel: simulated-stable`, name
-the actual nightly, and link to its real upstream release. Package version tags
-remain independent, immutable, and globally unique across development/compatibility
-branches. Remove the mapping when ending the pilot.
+With these inputs, only `roc-0.1.x` with that exact pin can publish. The shared
+main-only bootstrap remains a separate option and is disabled here. Release notes
+and metadata must label `compiler-channel: simulated-stable`, identify the actual
+nightly and link to its upstream release. Package versions remain independent,
+immutable and globally unique across branches. Remove the simulation mapping
+when adopting a real stable compiler.
 
-Exercise package changes, a compiler update on main, and a reviewed backport with
-new package releases. For each, validate exact artifacts, then published starter
-execution and versioned documentation. Update the public compatibility mapping
-and example URLs through reviewed follow-ups without replacing their compiler
-pins with the development pin. A new release follows every published source
-change; never edit existing release archives to update examples retroactively.
+Exercise package changes, a compiler update on main and a reviewed backport with
+new package releases. Validate exact artifacts, then published starter execution
+and versioned documentation. Update public links and example URLs through reviewed
+follow-ups without replacing their compiler pins with the development pin. Never
+edit existing release archives to update examples retroactively. Keep results and
+run links in the rollout PR rather than adding a project history to this guide.
 
 For generated package roots, keep the mutable compiler header pin separate from
 checksums of generated data. A compiler update should not make unchanged zone or

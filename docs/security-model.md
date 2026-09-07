@@ -124,7 +124,7 @@ extra files, selected-root limits and preservation of unselected examples.
 
 The read-only release guard accepts `compiler-root` to read the source header;
 empty retains legacy `.roc-version`. An optional paired `simulated-stable-pin`
-and `simulated-stable-line` permits a clearly labeled pilot only on the exact
+and `simulated-stable-line` permits a clearly labeled simulation only on the exact
 `roc-<line>.x` branch and only for that exact nightly. It still verifies the
 published nightly asset release and emits `compiler-channel: simulated-stable`.
 It never reports stable upstream availability. Remove the mapping after rehearsal.

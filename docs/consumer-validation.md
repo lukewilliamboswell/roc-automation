@@ -59,19 +59,13 @@ The consumer's explicit release workflow should:
 5. Open a signed, reviewable PR updating the checked-in example URLs. Do not add
    generated documentation to that PR.
 
-When moving existing documentation out of Git, preserve published version URLs:
+When moving generated documentation out of Git, preserve published version URLs:
 archive the existing output as release assets, verify restored files match, and
 validate full site assembly before removing the tracked copies. Keep generation
-and archive restoration in the consumer. The roc-ansi migration preserved five
-versions this way; CI checks that generated docs stay untracked and that the site
-can be assembled from the assets.
-
-The roc-time pilot currently retains its historical `www/` output in Git and
-includes generated docs in release follow-up PRs. That preserves its existing
-versioned documentation while the compiler and package release flow is exercised;
-it does not satisfy the artifact-only storage contract above. Keep that exception
-scoped to the pilot. Before removing the tracked history, archive and verify the
-published versions and prove the site can be restored from those artifacts.
+and archive restoration in the consumer. During migration, retain the tracked
+output until those checks pass; this temporary arrangement is not completion of
+the artifact-only storage contract. Avoid mixing that migration with compiler or
+package changes when it would make failures harder to diagnose.
 
 For consumers with published examples on the default branch, merge the follow-up
 there. For compiler-compatible releases, target the owning compiler branch and update
@@ -92,36 +86,11 @@ They need to know how to bundle that project and exercise its examples. Share th
 contract here; extract more runtime code only when multiple consumers demonstrate
 the same requirements.
 
-## Evidence from the roc-ansi trial
+## Verify rollout
 
-These are historical observations, not a claim that every consumer is configured
-correctly:
-
-- The [first live run](https://github.com/lukewilliamboswell/roc-ansi/actions/runs/34059365699)
-  passed dispatched validation but GitHub rejected the merge because required
-  checks were not associated with the bot PR. The
-  [shared reporting fix](https://github.com/lukewilliamboswell/roc-automation/pull/3)
-  publishes pending statuses, then success only for verified successful jobs on
-  the exact candidate. The merge job independently rechecks that evidence.
-- The [successful trial](https://github.com/lukewilliamboswell/roc-ansi/actions/runs/34059965253)
-  merged [PR #43](https://github.com/lukewilliamboswell/roc-ansi/pull/43) through
-  active rules with no bypass. A
-  [subsequent no-op](https://github.com/lukewilliamboswell/roc-ansi/actions/runs/34060098146)
-  passed without another update. Refreshing the branch had closed stale PR #37;
-  identify candidates by branch and commit, not a permanently stored PR number.
-- Those runs proved the controller and merge protections worked. A later audit
-  found that the consumer tested only freshly bundled source, so they did **not**
-  prove compatibility with the published release. The changes in
-  [roc-ansi PR #26](https://github.com/lukewilliamboswell/roc-ansi/pull/26) separate
-  published and local validation, preserve the landing page, keep generated
-  documentation out of Git, and sign release follow-ups. That PR remains unmerged;
-  a new release using its revised publication path had not been exercised.
-
-The [consumer scripts at the reviewed revision](https://github.com/lukewilliamboswell/roc-ansi/tree/7241d6d97ae1e5f27ef71864a277ac7db44fa91d/scripts)
-are a concrete reference, not a universal runner template.
-
-For each additional consumer, record its published URL pins, commands for all
+For each consumer, record its published URL pins, commands for all
 three checks, required check names, signed follow-up behavior, and links to a
 successful bot merge, a rejected/failed candidate, and a no-op. Verify the
 published check cannot pass merely because local copies were rewritten. Assess
-the release follow-up independently of the nightly controller's successful trial.
+the release follow-up independently of the nightly controller. Keep run links
+and acceptance history in the rollout PR, not in this reusable guide.

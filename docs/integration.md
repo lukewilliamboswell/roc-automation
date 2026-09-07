@@ -15,7 +15,7 @@ For header-based consumers, configure only the roots belonging to the developmen
 lane, for example:
 
 ```json
-{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc", "tzdb/package/main.roc"]}
+{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc", "platform/main.roc"]}
 ```
 
 `compiler_roots` is a unique list of at most 100 safe relative `.roc` paths; it
@@ -116,7 +116,7 @@ release fixtures tested with their documented compiler.
    keeps generated docs in deployment artifacts, preserves the site layout, and
    creates commits accepted by the branch
    signature rules. Record this separately from the nightly merge trial; see the
-   [release follow-up contract and trial evidence](consumer-validation.md).
+   [release follow-up contract](consumer-validation.md).
 
 The branch `automation/roc-nightly` is reserved for pin-only bot commits. Put manual
 compatibility fixes on separate branches. No branch-protection bypass is required.
