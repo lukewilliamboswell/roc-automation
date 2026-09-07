@@ -121,6 +121,28 @@ release fixtures tested with their documented compiler.
 The branch `automation/roc-nightly` is reserved for pin-only bot commits. Put manual
 compatibility fixes on separate branches. No branch-protection bypass is required.
 
+## Required checks on manually merged bot PRs
+
+A successful dispatch proves the selected workflows ran; it does not by itself
+prove that branch protection permits merging. With `auto_merge: false`, this
+controller reports verified run links on the PR but does not mirror results into
+required commit-status contexts. That mirroring currently belongs to the opt-in
+merge path. Do not enable automatic merging merely to obtain status reporting.
+
+Validate a real protected-branch merge before declaring setup complete. A release
+follow-up reporter must provide the check names and sources your rules require,
+on the commit GitHub evaluates. One aggregate result cannot satisfy unrelated
+per-job requirements. If a required name identifies both a check run and a commit
+status, GitHub requires both to pass. See [required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
+
+Manual approval to start the bot PR's ordinary workflows may still be necessary;
+that starts validation and is separate from approving the code. Alternatives
+include a distinct aggregate check implemented for every PR path, or a GitHub App
+that triggers ordinary PR workflows. These require reviewed integration and live
+protected-merge verification; this controller does not install either approach.
+Choose that policy explicitly instead of assuming dispatch removes every manual
+step. See [GitHub's workflow trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
 ## Migrate copied controllers
 
 Replace the updater and controller-test workflow with the callers above. Remove

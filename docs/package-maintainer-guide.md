@@ -131,6 +131,9 @@ The nightly controller supplies its dispatch flow. A consumer's release follow-u
 needs its own equivalent; merely opening the PR does not complete that work.
 Verify that the chosen follow-up creator actually signs its commit and validates
 that SHA; configuring a bot name alone does neither.
+A green dispatch is not proof that required merge checks are satisfied. Follow the
+[manual-mode check integration guidance](integration.md#required-checks-on-manually-merged-bot-prs)
+and test a real protected merge; workflow-start approval may still be needed.
 [GitHub's trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 and [environment policies](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
 explain the platform behavior.
