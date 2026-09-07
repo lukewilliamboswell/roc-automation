@@ -43,7 +43,7 @@ useful evidence; each project owns its validation contract.
 
 Use the [consumer validation and release lifecycle guide](docs/consumer-validation.md)
 to distinguish published-release compatibility from local bundle tests. It also
-records the roc-ansi trial findings and requirements for signed release follow-ups.
+describes requirements for signed, validated release follow-ups.
 
 Use the [maintenance release guide](docs/maintenance-releases.md) for development
 on `main`, `roc-0.1.x` upstream compiler compatibility lines, independent package releases, and the read-only

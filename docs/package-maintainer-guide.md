@@ -25,22 +25,22 @@ compatibility branch, not a package version or an LTS commitment.
 | An example's header | The compiler and released dependencies needed to run that application |
 
 The version numbers above illustrate the policy; they do not claim that those
-upstream compiler releases exist. The current roc-time rehearsal explicitly maps
-September 5, 2026's nightly to a pretend supported line and September 6's nightly
-to development. Keep that simulation visible. Replace it with an actual stable
-compiler requirement when ending the pilot. See [compiler policy and the exact
-pilot settings](maintenance-releases.md).
+upstream compiler releases exist. To rehearse before a stable compiler is
+available, explicitly map one real, exact nightly to a simulated support line and
+use another nightly for development. Label the simulation in release metadata,
+and remove it when adopting an actual stable compiler. See [compiler policy and
+simulation settings](maintenance-releases.md).
 
 ## 2. Make the first example easy to run
 
 Give each application a folder containing `main.roc` and any companion modules.
 Show a realistic input and useful output. A package user should install the
-compiler named by that example, then run the application directly, for example
-in a roc-time checkout:
+compiler named by that example, then run the application directly. For an
+application stored at `examples/hello/main.roc`:
 
 ```sh
 roc version
-roc examples/booking_exchange/main.roc
+roc examples/hello/main.roc
 ```
 
 No Python wrapper is required to run a Roc example. Python scripts in a repository
@@ -82,12 +82,12 @@ review a policy change. See the [validation contract](consumer-validation.md).
 
 Follow the [integration guide](integration.md) to add the scheduled caller and
 configuration check, pinned to a reviewed full SHA. Configure the development
-roots only; for roc-time the selection is:
+roots only. A repository containing a package and a platform might select:
 
 ```json
 {
   "workflows": ["tests.yaml", "release.yml"],
-  "compiler_roots": ["package/main.roc", "tzdb/package/main.roc"],
+  "compiler_roots": ["package/main.roc", "platform/main.roc"],
   "auto_merge": false
 }
 ```
@@ -153,7 +153,7 @@ checklist](openssf.md). Adopting these files is not an OpenSSF compliance claim.
 4. Test the published downloads, generate versioned documentation and deploy it.
    Preserve earlier docs and the site's public landing page. Prefer deployment or
    release artifacts for rendered docs; the [release follow-up contract](consumer-validation.md#release-follow-up-contract)
-   describes historical-docs migration and roc-time's current pilot exception.
+   describes how to migrate existing tracked documentation safely.
 5. Open and validate a signed follow-up PR updating public example URLs and release
    links. Updates to public examples on `main` must preserve the development package
    pins. Changes belonging to a support branch target that branch separately.
@@ -182,5 +182,5 @@ This implementation does not automatically promote releases, update stable
 compiler patches, merge backports or promise LTS. Release-policy exceptions are
 explicit and off by default. Keep those decisions visible in your README and
 contributor guide. Record successful runs, failures and outstanding setup in the
-pilot PR or active task plan; do not call the workflow complete while checks,
+rollout PR or active task plan; do not call the workflow complete while checks,
 review, deployment or the actual user download remain unverified.
