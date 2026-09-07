@@ -1,24 +1,26 @@
 # Consumer validation and release lifecycle
 
-A successful nightly update must establish compatibility with what users can
-download, as well as with the consumer's working-tree changes. Testing only a
-fresh local bundle can hide a broken published package or platform.
+Use the [package maintainer walkthrough](package-maintainer-guide.md) to choose
+and adopt the workflow. This page specifies what each validation proves.
 
-This is the existing nightly published-compatibility contract. Consumers adopting
-[compiler compatibility branches](maintenance-releases.md) may instead keep source
-examples on `main` and explicit release fixtures with their supported compiler.
-Make that policy change reviewed and visible: testing a release fixture with its
-old compiler does not establish compatibility with a new nightly.
+The recommended independent-compiler policy keeps development source and public
+examples on their declared compilers. A nightly update validates development with
+the candidate compiler while also preserving the documented public experience.
+Do not infer cross-version compatibility from those two separate successes.
 
 ## Validation contract
 
-Use separate checks for these questions, all running with the candidate compiler:
+| Check | Compiler | Dependency used by examples | What a failure means |
+| --- | --- | --- | --- |
+| Published examples | The example's declared compiler | Committed, immutable release URLs, without rewriting | The documented user experience is broken |
+| Working-tree package/platform | The development candidate compiler | A fresh local bundle served over localhost to temporary example copies | Current source changes are incompatible or incorrect |
+| Proposed release archive | The intended release compiler | The exact archive intended for upload, served over localhost | The release artifact is incomplete or unusable even if source tests pass |
 
-| Check | Dependency used by examples | What a failure means |
-| --- | --- | --- |
-| Published examples | Committed, immutable release URLs, without rewriting | Users of the published package or platform may be broken by the compiler update |
-| Working-tree package/platform | A fresh local bundle served over localhost to temporary example copies | Current source changes are incompatible or incorrect |
-| Proposed release archive | The exact archive intended for upload, served over localhost | The release artifact is incomplete or unusable even if source tests pass |
+Some existing consumers additionally require published packages to work with each
+new nightly. For that policy, also run the published examples with the candidate
+compiler as an explicit cross-version check. Preserve the released dependency
+URLs; any temporary root-pin adaptation must be visible in the check definition.
+Keep this check required until a reviewed policy change removes that promise.
 
 Published-example validation should check, test, run, and build examples where
 those operations are supported. Keep example URLs on the latest working release
@@ -33,9 +35,10 @@ rewrite only those copies. Clean up the server and copies when execution ends.
 A single-example runner should retain terminal input/output when needed.
 
 Require the relevant published, source, and artifact checks in the branch rules.
-If published examples fail while the local bundle passes, stop the nightly update
-and diagnose the difference. A source fix may require a new package/platform
-release and an example-URL update before accepting that compiler. Do not treat
+If a required published-example or cross-version check fails while the local
+bundle passes, stop the nightly update and diagnose the difference. A source fix
+may require a new package/platform release and an example-URL update before
+accepting that compiler. Do not treat
 local success as permission to bypass published compatibility.
 
 `.github/roc-nightly.json` selects workflows, not their meaning. The configuration

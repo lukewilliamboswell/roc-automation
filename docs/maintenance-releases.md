@@ -1,5 +1,8 @@
 # Development and compiler compatibility releases
 
+Start with the [package maintainer walkthrough](package-maintainer-guide.md) for
+the adoption sequence. This page defines branch and release-policy details.
+
 Keep `main` (the default branch) for development with the pinned Roc nightly.
 Use `roc-0.1.x` for package development compatible with the upstream Roc
 compiler's `0.1.x` line. These are **compiler compatibility branches**, not
@@ -44,9 +47,11 @@ change, not an automatic consequence of a green nightly check. Each package
 release must document its supported compiler line and exact compiler used for
 validation; its starter kit records that exact pin and immutable package URLs.
 
-Keep repository examples useful for developing current source. Preserve distinct
-published-release fixtures or starter downloads, tested with their documented
-compiler, and test proposed archives before publishing. If a consumer additionally
+Keep public repository examples and starter downloads pinned to their published
+dependencies and documented compiler. Use temporary copies rebound to current
+source for development checks, and test proposed archives before publishing.
+Consumers may instead keep separate development examples and published-release
+fixtures if both checks remain explicit. If a consumer additionally
 promises that the latest compiler works with a previous package release, keep
 that cross-version check explicit and required. Do not silently change an existing
 compatibility promise when adopting this layout.
