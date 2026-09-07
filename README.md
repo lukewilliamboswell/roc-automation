@@ -10,25 +10,31 @@ The reusable workflow keeps prepare, validate, and report in separate jobs with
 separate token permissions. An optional fourth job merges validated pin-only PRs
 when the consumer explicitly enables `auto_merge`. No PAT is required.
 
+## Start here
+
+Follow the [package maintainer walkthrough](docs/package-maintainer-guide.md) to
+set up examples, compiler versions, releases and repository permissions in order.
+It explains the choices and the work that remains manual.
+
 ## Use
 
 See [integration and permissions](docs/integration.md) for the complete caller
 workflow and rollout checks. Always reference a full commit SHA. Upgrade that
 reference through a PR; shared code changes do not silently change consumers.
 
-The default repository configuration (automatic merging disabled) is:
+A header-based repository starts with automatic merging disabled:
 
 ```json
-{"workflows": ["ci.yml", "release.yml"]}
+{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc"], "auto_merge": false}
 ```
 
 See [opt-in automatic merging](docs/integration.md#opt-in-automatic-merging) for
 the additional policy and required repository rules.
 
-For header-based pins, add `"compiler_roots": ["package/main.roc"]` to the
-configuration. These are reviewed source paths, not a second version registry.
-Legacy consumers without this field retain `.roc-version`. See the integration
-guide for independent development and public-example compiler lanes.
+List development package/platform roots in `compiler_roots`; public example
+headers can retain a different compiler. These are reviewed source paths, not a
+second version registry. Legacy consumers omitting this field retain
+`.roc-version`. See the integration guide for the complete configuration contract.
 
 Every listed workflow must accept the boolean `workflow_dispatch` input
 `nightly_validation`. When true, it must run the relevant tests and exclude

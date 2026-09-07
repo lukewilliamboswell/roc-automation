@@ -1,5 +1,8 @@
 # Integration and rollout
 
+New to the workflow? Start with the [package maintainer walkthrough](package-maintainer-guide.md).
+This page contains the exact caller configuration and rollout requirements.
+
 A repository keeps its validation workflows and exact compiler versions in the
 `roc` field of selected app/package/platform root headers.
 Declare workflow filenames in `.github/roc-nightly.json`:
