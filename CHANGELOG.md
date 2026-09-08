@@ -1,5 +1,16 @@
 # Release notes
 
+## Live nightly rollout guidance
+
+- Document resolving and verifying full shared-workflow SHAs instead of manually
+  expanding abbreviations.
+- Specify exact `OWNER/REPOSITORY@REF` action-allowlist syntax and API checks for
+  effective strict rulesets.
+- Distinguish zero-job startup failures, controller preflight failures, consumer
+  validation failures and live merge rejection.
+- Require stable aggregate check names and record successful merge, no-op and
+  unsuccessful-candidate evidence during consumer acceptance.
+
 ## Nightly validation of released dependencies
 
 - Document selecting public application and development compiler roots together,
