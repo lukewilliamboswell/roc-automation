@@ -10,6 +10,37 @@ The reusable workflow keeps prepare, validate, and report in separate jobs with
 separate token permissions. An optional fourth job merges validated pin-only PRs
 when the consumer explicitly enables `auto_merge`. No PAT is required.
 
+## Nightly status
+
+Nightly updaters for my repositories in [Roc Awesome](https://github.com/lukewilliamboswell/roc-awesome).
+Click a badge to inspect scheduled and manual runs on the default branch.
+
+| Repository | Nightly updater |
+| --- | --- |
+| [aoc](https://github.com/lukewilliamboswell/aoc) | Not configured |
+| [basic-ssg](https://github.com/lukewilliamboswell/basic-ssg) | [![basic-ssg nightly updater](https://github.com/lukewilliamboswell/basic-ssg/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/basic-ssg/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-ansi](https://github.com/lukewilliamboswell/roc-ansi) | [![roc-ansi nightly updater](https://github.com/lukewilliamboswell/roc-ansi/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-ansi/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-blueprint](https://github.com/lukewilliamboswell/roc-blueprint) | [![roc-blueprint nightly updater](https://github.com/lukewilliamboswell/roc-blueprint/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-blueprint/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-fuzz](https://github.com/lukewilliamboswell/roc-fuzz) | [![roc-fuzz nightly updater](https://github.com/lukewilliamboswell/roc-fuzz/actions/workflows/update-roc-nightly.yml/badge.svg?branch=trunk)](https://github.com/lukewilliamboswell/roc-fuzz/actions/workflows/update-roc-nightly.yml?query=branch%3Atrunk) |
+| [roc-graph-layout](https://github.com/lukewilliamboswell/roc-graph-layout) | [![roc-graph-layout nightly updater](https://github.com/lukewilliamboswell/roc-graph-layout/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-graph-layout/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-parser](https://github.com/lukewilliamboswell/roc-parser) | [![roc-parser nightly updater](https://github.com/lukewilliamboswell/roc-parser/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-parser/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-pdf](https://github.com/lukewilliamboswell/roc-pdf) | [![roc-pdf nightly updater](https://github.com/lukewilliamboswell/roc-pdf/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-pdf/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-platform-template-go](https://github.com/lukewilliamboswell/roc-platform-template-go) | [![roc-platform-template-go nightly updater](https://github.com/lukewilliamboswell/roc-platform-template-go/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-platform-template-go/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-platform-template-rust](https://github.com/lukewilliamboswell/roc-platform-template-rust) | [![roc-platform-template-rust nightly updater](https://github.com/lukewilliamboswell/roc-platform-template-rust/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-platform-template-rust/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-platform-template-zig](https://github.com/lukewilliamboswell/roc-platform-template-zig) | [![roc-platform-template-zig nightly updater](https://github.com/lukewilliamboswell/roc-platform-template-zig/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-platform-template-zig/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-ray](https://github.com/lukewilliamboswell/roc-ray) | [![roc-ray nightly updater](https://github.com/lukewilliamboswell/roc-ray/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-ray/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-signals](https://github.com/lukewilliamboswell/roc-signals) | [![roc-signals nightly updater](https://github.com/lukewilliamboswell/roc-signals/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-signals/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-time](https://github.com/lukewilliamboswell/roc-time) | [![roc-time nightly updater](https://github.com/lukewilliamboswell/roc-time/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-time/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [roc-wasm4](https://github.com/lukewilliamboswell/roc-wasm4) | [![roc-wasm4 nightly updater](https://github.com/lukewilliamboswell/roc-wasm4/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-wasm4/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+| [weaver](https://github.com/lukewilliamboswell/weaver) | [![weaver nightly updater](https://github.com/lukewilliamboswell/weaver/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/weaver/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
+
+A failed CI workflow dispatched by the updater also fails the nightly run. A
+successful run can skip validation when there is no new update to attempt, including
+an existing candidate already attempted. These badges show the latest updater
+result, not current CI health or how recently validation ran.
+
+GitHub supplies the badge results; this repository list is maintained manually.
+
 ## Start here
 
 Follow the [package maintainer walkthrough](docs/package-maintainer-guide.md) to
