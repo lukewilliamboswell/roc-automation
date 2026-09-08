@@ -1,5 +1,16 @@
 # Release notes
 
+## Nightly validation of released dependencies
+
+- Document selecting public application and development compiler roots together,
+  advancing only compiler pins while preserving released dependency URLs.
+- Require released-example and current-source checks before automatic merging;
+  explain the fix, release, URL-update, and retry cycle after a failed candidate.
+- Retain independent example compilers as an explicit alternative and clarify
+  that compatibility branches are optional during exact-nightly bootstrap.
+- Cover selected application headers and reject dependency changes in pin-only
+  candidates without broadening controller edit or merge authority.
+
 ## Header pins and compiler-lane rehearsal
 
 - Select development compiler roots by source path and derive their versions from

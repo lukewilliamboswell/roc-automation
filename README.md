@@ -31,9 +31,12 @@ A header-based repository starts with automatic merging disabled:
 See [opt-in automatic merging](docs/integration.md#opt-in-automatic-merging) for
 the additional policy and required repository rules.
 
-List development package/platform roots in `compiler_roots`; public example
-headers can retain a different compiler. These are reviewed source paths, not a
-second version registry. Legacy consumers omitting this field retain
+List development package/platform roots and public application headers in
+`compiler_roots` to advance their compiler pins while retaining released dependency
+URLs. Require both released-example and current-source validation before merging.
+Independent example compilers are an explicit alternative: leave their roots out
+of the list. These are reviewed source paths, not a second version registry.
+Legacy consumers omitting this field retain
 `.roc-version`. See the integration guide for the complete configuration contract.
 
 Every listed workflow must accept the boolean `workflow_dispatch` input

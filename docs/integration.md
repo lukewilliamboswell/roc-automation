@@ -11,17 +11,18 @@ Declare workflow filenames in `.github/roc-nightly.json`:
 {"workflows": ["ci.yml", "release.yml"]}
 ```
 
-For header-based consumers, configure only the roots belonging to the development
-lane, for example:
+To test released dependencies with each new nightly, select development roots
+and public application headers together, for example:
 
 ```json
-{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc", "platform/main.roc"]}
+{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc", "platform/main.roc", "examples/hello/main.roc"]}
 ```
 
 `compiler_roots` is a unique list of at most 100 safe relative `.roc` paths; it
 contains no versions. Each must be a normal file with one literal header pin, and
-selected pins must agree. Public example headers can retain another compiler pin
-and remain outside this list, even when their pin currently equals development.
+selected pins must agree. Selected public examples retain their released package
+and platform URLs while their compiler pins advance. If the consumer instead
+chooses independent example compilers, leave those roots outside the list.
 The updater replaces only selected header string contents, preserving all other
 bytes. No formatter runs in privileged jobs. The consumer validates grammar,
 compiler availability, and runtime behavior in its read-only candidate workflow.

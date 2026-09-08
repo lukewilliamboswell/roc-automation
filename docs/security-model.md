@@ -109,8 +109,10 @@ tests, artifact identity, tag uniqueness, and publication permissions.
 Consumers may set `compiler_roots` in trusted `.github/roc-nightly.json` to select
 exact source-root paths instead of legacy `.roc-version`. This is an edit-authority
 list, not a version registry; versions come from literal `roc` fields in the
-selected app/package/platform headers. Independent published-example roots stay
-outside the list. Paths reject escapes, globs, duplicates and non-Roc files;
+selected app/package/platform headers. Public-example roots belong in the list
+when testing released dependencies with each new nightly; their dependency URLs
+remain immutable. Independent-compiler example roots stay outside the list.
+Paths reject escapes, globs, duplicates and non-Roc files;
 local source reads reject symlinks and paths outside the checkout.
 
 Prepare preserves bytes outside each selected pin literal. Before replacing an

@@ -8,12 +8,16 @@ repository supplies its examples, tests, package bundles and documentation.
 ## 1. Give each branch and version a clear job
 
 Keep `main` for development. Its package or platform roots declare the exact
-nightly used to test current source. Keep public examples useful to someone trying
-the library: their application headers declare their own supported compiler and
-immutable package and platform URLs. Development tests work on temporary copies
-of those examples against current source.
+nightly used to test current source. Public application headers pin that compiler
+and immutable package and platform release URLs. The nightly updater advances the
+selected compiler pins together, leaving dependency URLs unchanged. Its purpose
+is to discover whether the next compiler still works with the releases users
+download, as well as with current source. Development tests use temporary copies
+of the examples rebound to current source.
 
-When an upstream stable compiler line becomes available, use a branch such as
+One `main` branch and an explicitly enabled exact-nightly bootstrap release policy
+are sufficient initially. When maintaining a separate stable compiler line becomes
+necessary, use a branch such as
 `roc-0.1.x` for source compatible with that compiler line. This is a compiler
 compatibility branch, not a package version or an LTS commitment.
 
@@ -72,30 +76,36 @@ fresh cache. Do not rewrite the committed URLs or compiler pins during a public
 example check. Updating an example to a new package release is a separate reviewed
 change.
 
-If you also promise that an older package works with the newest nightly, add that
-as an explicit cross-version check. Passing an example with its older compiler
-proves only that documented combination. Existing consumers that require
-cross-version compatibility should retain that requirement until they deliberately
-review a policy change. See the [validation contract](consumer-validation.md).
+A nightly candidate changes the example's committed `roc` pin before these checks
+run. The public-example check therefore tests that candidate compiler against the
+unchanged released dependencies; it must not replace them with the local bundle.
+If either published or source validation fails, leave the update unmerged and
+investigate. A source fix may need a new package/platform release and a reviewed
+example-URL update before the nightly can pass. Never repair URLs in a pin-only PR.
+
+An alternative policy keeps example compilers independent of development. Exclude
+those example roots from the updater and test each declared compiler separately.
+Those successes do not prove released-package compatibility with a newer nightly.
+Choose the policy explicitly; see the [validation contract](consumer-validation.md).
 
 ## 4. Connect nightly updates without handing tests release authority
 
 Follow the [integration guide](integration.md) to add the scheduled caller and
-configuration check, pinned to a reviewed full SHA. Configure the development
-roots only. A repository containing a package and a platform might select:
+configuration check, pinned to a reviewed full SHA. Select development roots and
+every public application whose compiler should advance. For example:
 
 ```json
 {
   "workflows": ["tests.yaml", "release.yml"],
-  "compiler_roots": ["package/main.roc", "platform/main.roc"],
+  "compiler_roots": ["package/main.roc", "platform/main.roc", "examples/hello/main.roc"],
   "auto_merge": false
 }
 ```
 
-The selected headers must agree. Public example headers stay outside this list,
-even if their compiler currently happens to match development. The list contains
-paths, not duplicate versions. Remove the legacy `.roc-version` when adopting
-header pins.
+The selected headers must agree. The list contains paths, not duplicate versions.
+The updater changes only their literal `roc` values, never package or platform
+URLs. Independent-compiler examples stay outside this list. Remove the legacy
+`.roc-version` when adopting header pins.
 
 The updater runs on default `main`, proposes a signed pin-only commit, and
 explicitly dispatches your listed workflows with `nightly_validation: true`.
@@ -103,9 +113,11 @@ Those workflows must validate the candidate without publishing, deploying or
 creating release follow-ups. Compatibility-branch compiler updates and source
 fixes remain reviewed PRs; this controller does not manage them.
 
-Start with manual review and merging. Exercise a successful candidate, a no-op and
-a failure before relying on the schedule. Inspect the actual run commit and PR
-head, not just a green badge from an earlier commit.
+Automatic merging defaults to off. To enable it, set `auto_merge: true` and install
+the strict PR and required-check rules described in the integration guide. Passing
+pin-only updates can then merge without a maintainer click; the bot never approves
+itself or bypasses review rules. Exercise a successful merge, a no-op and a failed
+candidate. Inspect the actual run commit and PR head, not an earlier green badge.
 
 ## 5. Finish the repository settings
 

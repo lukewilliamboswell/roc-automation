@@ -21,9 +21,13 @@ infer compiler support from the package's version number.
 ## Compiler policy
 
 Each app/package/platform root keeps its compiler pin in its header `roc` entry.
-Development package roots may use a newer compiler than public example roots.
-The updater selects development roots by path and never uses a central version
-registry to force these lanes to agree. Under the intended stable-only policy, a release candidate from `main` must
+The nightly compatibility policy selects development and public application roots
+together: their compiler pins advance, their released dependency URLs do not.
+Independent example compilers are an alternative policy whose roots stay outside
+the updater's selection. Versions live in headers, not a central registry.
+One `main` branch with explicit nightly bootstrap is sufficient until maintaining
+separate compiler support lines is necessary. Under the intended stable-only
+policy, a release candidate from `main` must
 use and pass validation with an actually released stable compiler. If development
 has moved beyond that compiler, prepare the release on its compatible branch.
 The explicit bootstrap exception below supports today's exact-nightly releases. The existing nightly updater runs
