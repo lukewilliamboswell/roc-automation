@@ -123,6 +123,10 @@ the strict PR and required-check rules described in the integration guide. Passi
 pin-only updates can then merge without a maintainer click; the bot never approves
 itself or bypasses review rules. Exercise a successful merge, a no-op and a failed
 candidate. Inspect the actual run commit and PR head, not an earlier green badge.
+Use the integration guide's [live rollout and troubleshooting](integration.md#live-rollout-and-troubleshooting)
+procedure to verify full pins, action allowlists and the effective ruleset before
+the first automatic merge. A workflow that fails before creating jobs is a setup
+failure, not evidence about compiler compatibility.
 
 ## 5. Finish the repository settings
 

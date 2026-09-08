@@ -108,7 +108,10 @@ release fixtures tested with their documented compiler.
    Settings → Actions → General. The UI option also mentions approval; this
    controller uses creation only and never approves PRs.
 2. Allow the pinned shared workflows and their nested pinned actions in any
-   repository action allowlist. Confirm this before retiring the local controller.
+   repository action allowlist. Entries for one repository use
+   `OWNER/REPOSITORY@TAG-OR-SHA`; prefer the exact reviewed SHA. An entry without
+   `@...` does not match an action reference. Confirm this before retiring the
+   local controller.
 3. Keep protected-branch rules and require the actual project validation checks
    on the candidate commit. Do not require the scheduled updater's default-branch
    job. Use up-to-date branch requirements or a merge queue for integration checks.
@@ -125,6 +128,55 @@ release fixtures tested with their documented compiler.
 
 The branch `automation/roc-nightly` is reserved for pin-only bot commits. Put manual
 compatibility fixes on separate branches. No branch-protection bypass is required.
+
+## Live rollout and troubleshooting
+
+Resolve immutable references instead of completing an abbreviated SHA by hand.
+Query the reviewed revision and copy the returned 40-character SHA:
+
+```sh
+gh api repos/OWNER/roc-automation/commits/REVIEWED_REF --jq .sha
+```
+
+Use that exact value in both consumer callers and verify it again after editing.
+An invalid reusable-workflow SHA produces a `startup_failure` with zero jobs and
+no job logs; it never reaches controller code.
+
+Before the first opted-in dispatch, inspect the live repository settings rather
+than relying only on the web form:
+
+```sh
+gh api repos/OWNER/REPOSITORY/actions/permissions/selected-actions
+gh api repos/OWNER/REPOSITORY/rules/branches/DEFAULT_BRANCH
+```
+
+The effective rules must include an active pull-request rule and required status
+checks with `strict_required_status_checks_policy: true`. Required check contexts
+must name real aggregate jobs produced by the configured validation workflows and
+must allow zero human approvals if unattended merging is intended. Give the bot no
+bypass. Confirm the saved values through this API before testing the updater.
+
+Keep required aggregate checks stable for every pull request. Do not put an entire
+required workflow behind a path filter: an unrelated PR can then wait forever for
+a check that GitHub never creates. If expensive work is conditional, always run a
+small aggregate job that truthfully reports the lane's result.
+
+Failure shape helps locate the problem:
+
+| Symptom | Likely boundary | Check |
+| --- | --- | --- |
+| `startup_failure`, zero jobs, no logs | Workflow reference or Actions policy | Full SHA and `OWNER/REPOSITORY@REF` allowlist entries |
+| Prepare succeeds; validate fails before dispatch | Repository preflight | Active strict ruleset, pull-request rule, required contexts and integrations |
+| A dispatched workflow fails | Consumer compatibility | The linked exact candidate run and its jobs |
+| Validation/report succeed; merge fails | Live state or merge policy | Base/head movement, reviews, signatures and current rules |
+
+After configuration merges, manually dispatch the updater; manual dispatch retries
+an unchanged candidate, so a new nightly is unnecessary. Record the candidate's
+verified signed commit, every dispatched run, the bot-authored merge, and the
+effective rules. Then exercise a subsequent no-op and retain a real or controlled
+failure as evidence that unsuccessful candidates remain open. A merge performed
+with `GITHUB_TOKEN` does not normally trigger `push` workflows; dispatch separately
+authorized follow-up automation explicitly.
 
 ## Required checks on manually merged bot PRs
 
