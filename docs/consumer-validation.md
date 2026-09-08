@@ -11,6 +11,22 @@ reviewed URL update before retrying the compiler bump.
 
 ## Validation contract
 
+Keep published-release compatibility and current-source validation as distinct
+lanes with distinct check names. They answer different questions and neither is a
+substitute for the other:
+
+| Proposed change | Published released dependencies | Current source/local bundle |
+| --- | --- | --- |
+| Compiler pin only | Required | Required |
+| Package/platform source only | Not required unless the documented release combination also changes | Required |
+| Compiler pin and source together | Required | Required |
+| Published example URL or header | Required | Required when source is also changed |
+
+A consumer may implement these as separate workflows or clearly separated jobs.
+The nightly controller must dispatch and require both lanes. Ordinary pull-request
+triggers may use changed paths, but each configured nightly workflow must always
+run its real validation when dispatched with `nightly_validation: true`.
+
 | Check | Compiler | Dependency used by examples | What a failure means |
 | --- | --- | --- | --- |
 | Published examples | The example's declared compiler | Committed, immutable release URLs, without rewriting | The documented user experience is broken |

@@ -79,6 +79,11 @@ change.
 A nightly candidate changes the example's committed `roc` pin before these checks
 run. The public-example check therefore tests that candidate compiler against the
 unchanged released dependencies; it must not replace them with the local bundle.
+Keep this as a separately named validation lane from the current-source check,
+which deliberately rewrites temporary example copies to a freshly built bundle.
+Run both lanes for compiler-only and combined compiler/source changes. A
+package-only change needs the current-source lane; it does not gain evidence from
+retesting an unchanged published release.
 If either published or source validation fails, leave the update unmerged and
 investigate. A source fix may need a new package/platform release and a reviewed
 example-URL update before the nightly can pass. Never repair URLs in a pin-only PR.

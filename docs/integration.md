@@ -42,6 +42,10 @@ Before selecting workflows, apply the [consumer validation contract](consumer-va
 Require checks of committed published example URLs as well as working-tree source
 and the proposed release archive. A local bundle test alone does not establish
 that a compiler update works with the release users download.
+Prefer separately named published-release and current-source workflows or jobs so
+failures identify which compatibility promise broke. Configure the nightly
+controller to dispatch both. Compiler-only and combined compiler/source candidates
+must pass both; package-only pull requests primarily exercise current source.
 
 Use this caller, replacing `REVIEWED_FULL_SHA` with an actual 40-character commit
 SHA containing the reusable workflow:
