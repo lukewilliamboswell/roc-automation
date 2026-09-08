@@ -3,12 +3,29 @@
 Use the [package maintainer walkthrough](package-maintainer-guide.md) to choose
 and adopt the workflow. This page specifies what each validation proves.
 
-The recommended independent-compiler policy keeps development source and public
-examples on their declared compilers. A nightly update validates development with
-the candidate compiler while also preserving the documented public experience.
-Do not infer cross-version compatibility from those two separate successes.
+The nightly compatibility policy advances selected public-example and development
+compiler pins together. Public examples retain their released dependency URLs:
+the candidate must work with those releases and with current source before it can
+merge. A failed released-package check may require a fix, a new release, and a
+reviewed URL update before retrying the compiler bump.
 
 ## Validation contract
+
+Keep published-release compatibility and current-source validation as distinct
+lanes with distinct check names. They answer different questions and neither is a
+substitute for the other:
+
+| Proposed change | Published released dependencies | Current source/local bundle |
+| --- | --- | --- |
+| Compiler pin only | Required | Required |
+| Package/platform source only | Not required unless the documented release combination also changes | Required |
+| Compiler pin and source together | Required | Required |
+| Published example URL or header | Required | Required when source is also changed |
+
+A consumer may implement these as separate workflows or clearly separated jobs.
+The nightly controller must dispatch and require both lanes. Ordinary pull-request
+triggers may use changed paths, but each configured nightly workflow must always
+run its real validation when dispatched with `nightly_validation: true`.
 
 | Check | Compiler | Dependency used by examples | What a failure means |
 | --- | --- | --- | --- |
@@ -16,11 +33,16 @@ Do not infer cross-version compatibility from those two separate successes.
 | Working-tree package/platform | The development candidate compiler | A fresh local bundle served over localhost to temporary example copies | Current source changes are incompatible or incorrect |
 | Proposed release archive | The intended release compiler | The exact archive intended for upload, served over localhost | The release artifact is incomplete or unusable even if source tests pass |
 
-Some existing consumers additionally require published packages to work with each
-new nightly. For that policy, also run the published examples with the candidate
-compiler as an explicit cross-version check. Preserve the released dependency
-URLs; any temporary root-pin adaptation must be visible in the check definition.
-Keep this check required until a reviewed policy change removes that promise.
+Select the public app headers in `compiler_roots` for this policy. The updater
+changes their `roc` pins in the candidate commit; validation reads those pins and
+does not rewrite them or the released URLs. Keep published, source, and artifact
+checks required for automatic merging.
+
+Alternatively, leave independent example compilers outside `compiler_roots`.
+Test their declared versions separately from the development candidate. That
+policy proves only the documented combinations, not that an older release works
+with a newer compiler. An additional cross-version check can establish that
+promise; make any temporary compiler-pin adaptation explicit and retain the URLs.
 
 Published-example validation should check, test, run, and build examples where
 those operations are supported. Keep example URLs on the latest working release

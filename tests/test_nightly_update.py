@@ -365,6 +365,30 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(base64.b64decode(item['contents']).decode(), original.replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b'))
         self.assertEqual((n.ROOT / 'examples/main.roc').read_text(), original)
 
+    def test_selected_application_preserves_released_dependencies(self):
+        path = 'examples/hello/main.roc'
+        config = {'workflows': ['ci.yml'], 'compiler_roots': [path]}
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
+        source = ('app [main] { roc: "nightly-2026-09-04-c125b82", '
+                  'pf: platform "https://example.com/releases/1.0/platform.tar.zst", '
+                  'lib: "https://example.com/releases/2.0/package.tar.zst" }\nmain = 1\n')
+        target = n.ROOT / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source)
+        with patch.object(n, 'api', side_effect=[{'data': {'createCommitOnBranch': {'commit': {'oid': 'signed'}}}},
+                                                {'commit': {'verification': {'verified': True}}}]) as api:
+            n.signed_pin('base', 'nightly-2026-09-05-b195f5b')
+        changes = api.call_args_list[0].args[1]['variables']['input']['fileChanges']['additions']
+        self.assertEqual(len(changes), 1)
+        after = base64.b64decode(changes[0]['contents']).decode()
+        self.assertEqual(after, source.replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b'))
+        files = [{'filename': path, 'status': 'modified'}]
+        with patch.object(n, 'sources_at', side_effect=[{path: source}, {path: after}]):
+            n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+        for changed in [after.replace('/1.0/', '/1.1/'), after.replace('/2.0/', '/2.1/')]:
+            with patch.object(n, 'sources_at', side_effect=[{path: source}, {path: changed}]), self.assertRaises(ValueError):
+                n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+
     def test_header_candidate_rejects_body_changes_and_extra_files(self):
         config = {'compiler_roots': ['package/main.roc']}
         old = {'package/main.roc': 'package [] {roc: "nightly-2026-09-04-c125b82"}\n# original'}
