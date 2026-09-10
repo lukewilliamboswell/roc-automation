@@ -66,7 +66,8 @@ local success as permission to bypass published compatibility.
 `.github/roc-nightly.json` selects workflows, not their meaning. The configuration
 check verifies the pin and workflow filenames. The controller verifies actual run
 and job evidence, but cannot determine whether a consumer quietly rewrote URLs or
-omitted an important test. Review that contract before enabling `auto_merge`.
+omitted an important test. Review that contract before adopting the updater's
+default merge behavior; set `auto_merge: false` until the contract is ready.
 
 ## Release follow-up contract
 

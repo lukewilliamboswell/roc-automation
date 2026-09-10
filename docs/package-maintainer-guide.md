@@ -102,8 +102,7 @@ every public application whose compiler should advance. For example:
 ```json
 {
   "workflows": ["tests.yaml", "release.yml"],
-  "compiler_roots": ["package/main.roc", "platform/main.roc", "examples/hello/main.roc"],
-  "auto_merge": false
+  "compiler_roots": ["package/main.roc", "platform/main.roc", "examples/hello/main.roc"]
 }
 ```
 
@@ -118,8 +117,8 @@ Those workflows must validate the candidate without publishing, deploying or
 creating release follow-ups. Compatibility-branch compiler updates and source
 fixes remain reviewed PRs; this controller does not manage them.
 
-Automatic merging defaults to off. To enable it, set `auto_merge: true` and install
-the strict PR and required-check rules described in the integration guide. Passing
+Automatic merging defaults to on. Install the strict PR and required-check rules
+described in the integration guide before rollout. Passing
 pin-only updates can then merge without a maintainer click; the bot never approves
 itself or bypasses review rules. Exercise a successful merge, a no-op and a failed
 candidate. Inspect the actual run commit and PR head, not an earlier green badge.
@@ -159,9 +158,9 @@ and test a real protected merge; workflow-start approval may still be needed.
 and [environment policies](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
 explain the platform behavior.
 
-No PAT or GitHub App is required by this controller. Automatic merging defaults
-to off; its opt-in requires additional verified rules and cannot manufacture human
-review. Consult the [security model](security-model.md) and [OpenSSF rollout
+No PAT or GitHub App is required by this controller. Set `auto_merge: false` to opt
+out when the required rules or validation contract are not ready. Automatic merging
+cannot manufacture human review. Consult the [security model](security-model.md) and [OpenSSF rollout
 checklist](openssf.md). Adopting these files is not an OpenSSF compliance claim.
 
 ## 6. Publish a tested commit, then update the public experience

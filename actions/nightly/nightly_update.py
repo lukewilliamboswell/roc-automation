@@ -88,12 +88,19 @@ def sources_at(sha, config):
     return sources
 
 
+def config_at(sha):
+    result = api(f"repos/{repo()}/contents/.github/roc-nightly.json?ref={sha}")
+    if result.get("type", "file") != "file":
+        raise ValueError("Nightly configuration must be an ordinary repository file")
+    return load_config(base64.b64decode(result["content"]).decode())
+
+
 def pin_at(sha, config=None):
     config = load_config() if config is None else config
     return tag(compiler_pins.version(compiler_pins.discover(sources_at(sha, config))))
 
 
-def verify_header_candidate(base, sha, files, nightly, config):
+def verify_pin_candidate(base, sha, files, nightly, config):
     pins = compiler_pins.discover(sources_at(base, config))
     expected = compiler_pins.replace(pins, nightly)
     if (len(files) != len(expected) or {item["filename"] for item in files} != set(expected)
@@ -121,7 +128,7 @@ def pr_body(sha, nightly, status, runs=()):
     for item in runs:
         lines.append(f"- [{item['workflow']}]({item['html_url']}): **{item.get('conclusion') or 'pending'}**")
     lines += [f"[Updater run]({os.environ['GITHUB_SERVER_URL']}/{repo()}/actions/runs/{os.environ['GITHUB_RUN_ID']}).",
-              "Created by the Roc nightly updater. Validation runs on the candidate commit. Merging is disabled unless the repository explicitly opts in; this workflow never approves PRs."]
+              "Created by the Roc nightly updater. Validation runs on the candidate commit. Validated updates merge by default unless the repository opts out; this workflow never approves PRs or bypasses repository rules."]
     return "\n\n".join(lines)
 
 
@@ -166,7 +173,7 @@ def signed_pin(base, nightly):
 
 
 def prepare():
-    output("auto_merge", str(load_config().get("auto_merge", False)).lower())
+    output("auto_merge", str(load_config().get("auto_merge", True)).lower())
     base = run(["git", "rev-parse", "HEAD"])
     release = api("repos/roc-lang/nightlies/releases/latest")
     nightly = tag(release["tag_name"])
@@ -185,10 +192,12 @@ def prepare():
     if old and old != base:
         commit = api(f"repos/{repo()}/commits/{old}")
         # Never erase human work from this reserved branch.
-        if len(commit["parents"]) != 1 or (not config.get("compiler_roots") and [f["filename"] for f in commit["files"]] != [".roc-version"]):
+        if len(commit["parents"]) != 1:
             raise ValueError("Nightly branch contains changes other than a pin commit")
-        if config.get("compiler_roots"):
-            verify_header_candidate(commit["parents"][0]["sha"], old, commit["files"], pin_at(old, config), config)
+        previous_base = commit["parents"][0]["sha"]
+        previous_config = config_at(previous_base)
+        verify_pin_candidate(previous_base, old, commit["files"],
+                             pin_at(old, previous_config), previous_config)
         same = commit["parents"][0]["sha"] == base and pin_at(old, config) == nightly
     if same and existing_pr() and os.environ.get("FORCE", "false") != "true":
         output("changed", "false")
@@ -251,7 +260,7 @@ def validate_run(item, expected_sha):
 def validate():
     sha = os.environ["CANDIDATE_SHA"]
     workflows = load_workflows()
-    contexts = required_contexts() if load_config().get("auto_merge", False) else []
+    contexts = required_contexts() if load_config().get("auto_merge", True) else []
     publish_statuses(sha, contexts, "pending")
     runs = []
     try:
@@ -359,7 +368,7 @@ def merge():
     repository = repo()
     contents = api(f"repos/{repository}/contents/.github/roc-nightly.json?ref={base}")
     config = load_config(base64.b64decode(contents["content"]).decode())
-    if not config.get("auto_merge", False):
+    if not config.get("auto_merge", True):
         print("Automatic merging is disabled")
         return
     workflows = load_workflows(config, check_files=False)
@@ -389,8 +398,7 @@ def merge():
             or commit["files"][0]["additions"] != 1 or commit["files"][0]["deletions"] != 1))):
         raise ValueError("Candidate is not a verified bot pin commit directly on the tested base")
     nightly = pin_at(sha, config)
-    if config.get("compiler_roots"):
-        verify_header_candidate(base, sha, commit["files"], nightly, config)
+    verify_pin_candidate(base, sha, commit["files"], nightly, config)
     if nightly != tag(os.environ["NIGHTLY_TAG"]):
         raise ValueError("Candidate pin changed")
     release = api(f"repos/roc-lang/nightlies/releases/tags/{nightly}")

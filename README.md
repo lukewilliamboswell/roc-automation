@@ -7,8 +7,8 @@ exact commit using the project's existing workflows, and reports results on a PR
 The implementation and tests live here. Consumer repositories keep their daily
 schedule, compiler pins in selected Roc root headers, `.github/roc-nightly.json`, and actual test/release workflows.
 The reusable workflow keeps prepare, validate, and report in separate jobs with
-separate token permissions. An optional fourth job merges validated pin-only PRs
-when the consumer explicitly enables `auto_merge`. No PAT is required.
+separate token permissions. A fourth job merges validated pin-only PRs by default;
+consumers can explicitly opt out with `"auto_merge": false`. No PAT is required.
 
 ## Nightly status
 
@@ -54,14 +54,14 @@ See [integration and permissions](docs/integration.md) for the complete caller
 workflow and rollout checks. Always reference a full commit SHA. Upgrade that
 reference through a PR; shared code changes do not silently change consumers.
 
-A header-based repository starts with automatic merging disabled:
+A header-based repository enables automatic merging by default:
 
 ```json
-{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc"], "auto_merge": false}
+{"workflows": ["ci.yml", "release.yml"], "compiler_roots": ["package/main.roc"]}
 ```
 
-See [opt-in automatic merging](docs/integration.md#opt-in-automatic-merging) for
-the additional policy and required repository rules.
+See [automatic merging](docs/integration.md#automatic-merging) for the required
+repository rules and the explicit opt-out.
 
 List development package/platform roots and public application headers in
 `compiler_roots` to advance their compiler pins while retaining released dependency

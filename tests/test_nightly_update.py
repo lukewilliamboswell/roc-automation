@@ -22,7 +22,8 @@ class ControllerTests(unittest.TestCase):
         (root / '.github/workflows').mkdir(parents=True)
         for workflow in ['ci.yml', 'release.yml']:
             (root / '.github/workflows' / workflow).write_text('name: fixture\n')
-        (root / '.github/roc-nightly.json').write_text(json.dumps({'workflows': ['ci.yml', 'release.yml']}))
+        (root / '.github/roc-nightly.json').write_text(json.dumps({
+            'workflows': ['ci.yml', 'release.yml'], 'auto_merge': False}))
         (root / '.roc-version').write_text('nightly-2026-09-04-c125b82\n')
         self.env = patch.dict(os.environ, GITHUB_REPOSITORY='owner/project', GITHUB_OUTPUT=str(root/'outputs'),
                               GITHUB_SERVER_URL='https://github.com', GITHUB_RUN_ID='100', DEFAULT_BRANCH='main',
@@ -56,8 +57,8 @@ class ControllerTests(unittest.TestCase):
             n.verify_required_jobs(runs, ['test', 'bundle'])
         self.assertIn('page=2', api.call_args.args[0])
 
-    def test_opted_in_validation_publishes_pending_before_success(self):
-        config = {'workflows': ['ci.yml', 'release.yml'], 'auto_merge': True}
+    def test_default_validation_publishes_pending_before_success(self):
+        config = {'workflows': ['ci.yml', 'release.yml']}
         (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
         for conclusion in ['success', 'failure']:
             with patch.object(n, 'head', return_value='candidate'), patch.object(n, 'api', side_effect=self.validate_api(conclusion)), \
@@ -156,9 +157,69 @@ class ControllerTests(unittest.TestCase):
         release = {'tag_name': 'nightly-2026-09-05-b195f5b', 'draft': False, 'prerelease': False, 'assets': [{}]}
         refs = [{'ref': 'refs/heads/automation/roc-nightly', 'object': {'sha': 'old'}}]
         commit = {'parents': [{'sha': 'base'}], 'files': [{'filename': 'src/main.roc'}]}
-        with patch.object(n, 'run', return_value='base'), patch.object(n, 'api', side_effect=[release, refs, commit]), patch.object(n, 'push_base') as push:
+        with patch.object(n, 'run', return_value='base'), \
+             patch.object(n, 'api', side_effect=[release, refs, commit]), \
+             patch.object(n, 'config_at', return_value={'workflows': ['ci.yml']}), \
+             patch.object(n, 'pin_at', return_value='nightly-2026-09-04-c125b82'), \
+             patch.object(n, 'verify_pin_candidate', side_effect=ValueError(
+                 'Candidate changes files outside the compiler pins')), \
+             patch.object(n, 'push_base') as push:
             with self.assertRaises(ValueError): n.prepare()
             push.assert_not_called()
+
+    def test_stale_candidate_is_verified_with_its_own_base_config(self):
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps({
+            'workflows': ['ci.yml'],
+            'compiler_roots': ['package/main.roc', 'package/new.roc'],
+        }))
+        (n.ROOT / 'package').mkdir()
+        (n.ROOT / 'package/main.roc').write_text('app [main] { roc: "nightly-2026-09-04-c125b82" }')
+        (n.ROOT / 'package/new.roc').write_text('app [main] { roc: "nightly-2026-09-04-c125b82" }')
+        release = {'tag_name': 'nightly-2026-09-05-b195f5b', 'draft': False, 'prerelease': False, 'assets': [{}]}
+        refs = [{'ref': 'refs/heads/automation/roc-nightly', 'object': {'sha': 'old'}}]
+        commit = {'parents': [{'sha': 'previous-base'}],
+                  'files': [{'filename': 'package/main.roc', 'status': 'modified'}]}
+        previous_config = {'workflows': ['ci.yml'], 'compiler_roots': ['package/main.roc']}
+        with patch.object(n, 'run', return_value='base'), patch.object(n, 'api', side_effect=[release, refs, commit]), \
+             patch.object(n, 'config_at', return_value=previous_config) as config_at, \
+             patch.object(n, 'pin_at', return_value='nightly-2026-09-04-c125b82'), \
+             patch.object(n, 'verify_pin_candidate') as verify, patch.object(n, 'existing_pr', return_value=None), \
+             patch.object(n, 'push_base') as push, patch.object(n, 'signed_pin', return_value='signed'), \
+             patch.object(n, 'save_pr'):
+            n.prepare()
+        config_at.assert_called_once_with('previous-base')
+        verify.assert_called_once_with('previous-base', 'old', commit['files'],
+                                       'nightly-2026-09-04-c125b82', previous_config)
+        push.assert_called_once_with('base', 'old')
+
+    def test_stale_legacy_candidate_survives_migration_to_header_pins(self):
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps({
+            'workflows': ['ci.yml'], 'compiler_roots': ['package/main.roc'],
+        }))
+        (n.ROOT / 'package').mkdir()
+        (n.ROOT / 'package/main.roc').write_text(
+            'app [main] { roc: "nightly-2026-09-04-c125b82" }')
+        release = {'tag_name': 'nightly-2026-09-05-b195f5b', 'draft': False,
+                   'prerelease': False, 'assets': [{}]}
+        refs = [{'ref': 'refs/heads/automation/roc-nightly',
+                 'object': {'sha': 'legacy-candidate'}}]
+        commit = {'parents': [{'sha': 'legacy-base'}],
+                  'files': [{'filename': '.roc-version', 'status': 'modified'}]}
+        legacy_config = {'workflows': ['ci.yml']}
+        with patch.object(n, 'run', return_value='base'), \
+             patch.object(n, 'api', side_effect=[release, refs, commit]), \
+             patch.object(n, 'config_at', return_value=legacy_config), \
+             patch.object(n, 'pin_at', return_value='nightly-2026-09-04-c125b82'), \
+             patch.object(n, 'verify_pin_candidate') as verify, \
+             patch.object(n, 'existing_pr', return_value=None), \
+             patch.object(n, 'push_base') as push, \
+             patch.object(n, 'signed_pin', return_value='signed'), \
+             patch.object(n, 'save_pr'):
+            n.prepare()
+        verify.assert_called_once_with(
+            'legacy-base', 'legacy-candidate', commit['files'],
+            'nightly-2026-09-04-c125b82', legacy_config)
+        push.assert_called_once_with('base', 'legacy-candidate')
 
     def response(self, conclusion='success', sha='candidate'):
         return {'head_sha': sha, 'head_branch': n.BRANCH, 'event': 'workflow_dispatch',
@@ -228,6 +289,12 @@ class ControllerTests(unittest.TestCase):
                 'content': base64.b64encode((n.ROOT / '.github/roc-nightly.json').read_bytes()).decode()},
             'repos/owner/project/pulls/1': pr,
             'repos/owner/project/commits/candidate': commit,
+            'repos/owner/project/contents/.roc-version?ref=base': {
+                'type': 'file', 'content': base64.b64encode(
+                    b'nightly-2026-09-04-c125b82\n').decode()},
+            'repos/owner/project/contents/.roc-version?ref=candidate': {
+                'type': 'file', 'content': base64.b64encode(
+                    b'nightly-2026-09-05-b195f5b\n').decode()},
             'repos/roc-lang/nightlies/releases/tags/nightly-2026-09-05-b195f5b': {
                 'tag_name': 'nightly-2026-09-05-b195f5b', 'draft': False, 'prerelease': False, 'assets': [{}]},
             'repos/owner/project/actions/runs/7': {**self.response(), 'path': '.github/workflows/ci.yml'},
@@ -257,16 +324,13 @@ class ControllerTests(unittest.TestCase):
             run.assert_not_called()
         return writes
 
-    def test_merge_reads_opt_in_only_at_trusted_base_and_disabled_has_no_writes(self):
-        for enabled in [None, False]:
-            config = {'workflows': ['ci.yml']}
-            if enabled is not None: config['auto_merge'] = enabled
-            (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
-            contents = {'content': base64.b64encode(json.dumps(config).encode()).decode()}
-            with patch.object(n, 'api', return_value=contents) as api, patch.object(n, 'run') as run:
-                n.merge()
-            api.assert_called_once_with('repos/owner/project/contents/.github/roc-nightly.json?ref=base')
-            run.assert_not_called()
+    def test_merge_reads_opt_out_only_at_trusted_base_and_disabled_has_no_writes(self):
+        config = {'workflows': ['ci.yml'], 'auto_merge': False}
+        contents = {'content': base64.b64encode(json.dumps(config).encode()).decode()}
+        with patch.object(n, 'api', return_value=contents) as api, patch.object(n, 'run') as run:
+            n.merge()
+        api.assert_called_once_with('repos/owner/project/contents/.github/roc-nightly.json?ref=base')
+        run.assert_not_called()
 
     def test_merge_needs_no_consumer_checkout_or_local_configuration(self):
         responses = self.merge_fixture()
@@ -384,10 +448,10 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(after, source.replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b'))
         files = [{'filename': path, 'status': 'modified'}]
         with patch.object(n, 'sources_at', side_effect=[{path: source}, {path: after}]):
-            n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+            n.verify_pin_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
         for changed in [after.replace('/1.0/', '/1.1/'), after.replace('/2.0/', '/2.1/')]:
             with patch.object(n, 'sources_at', side_effect=[{path: source}, {path: changed}]), self.assertRaises(ValueError):
-                n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+                n.verify_pin_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
 
     def test_header_candidate_rejects_body_changes_and_extra_files(self):
         config = {'compiler_roots': ['package/main.roc']}
@@ -395,11 +459,11 @@ class ControllerTests(unittest.TestCase):
         new = {'package/main.roc': old['package/main.roc'].replace('nightly-2026-09-04-c125b82', 'nightly-2026-09-05-b195f5b')}
         files = [{'filename': 'package/main.roc', 'status': 'modified'}]
         with patch.object(n, 'sources_at', side_effect=[old, new]):
-            n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+            n.verify_pin_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
         with patch.object(n, 'sources_at', side_effect=[old, {**new, 'package/main.roc': new['package/main.roc'] + '\nmalicious = 1'}]), self.assertRaises(ValueError):
-            n.verify_header_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
+            n.verify_pin_candidate('base', 'head', files, 'nightly-2026-09-05-b195f5b', config)
         with patch.object(n, 'sources_at', return_value=old), self.assertRaises(ValueError):
-            n.verify_header_candidate('base', 'head', files + [{'filename': 'examples/main.roc', 'status': 'modified'}], 'nightly-2026-09-05-b195f5b', config)
+            n.verify_pin_candidate('base', 'head', files + [{'filename': 'examples/main.roc', 'status': 'modified'}], 'nightly-2026-09-05-b195f5b', config)
 
 
     def test_merge_checks_header_blobs_before_authorizing_merge(self):

@@ -1,5 +1,15 @@
 # Release notes
 
+## Resilient nightly candidates and default merging
+
+- Verify stale automation candidates against the immutable configuration from
+  their own parent commit, including migrations between `.roc-version` and Roc
+  header pins, before safely replacing them from the current default branch.
+- Enable merging for validated pin-only updates by default; consumers can opt out
+  explicitly with `"auto_merge": false`.
+- Document the required rules, validation contract, and emergency-stop behavior
+  for the default merge policy.
+
 ## Live nightly rollout guidance
 
 - Document resolving and verifying full shared-workflow SHAs instead of manually

@@ -142,7 +142,7 @@ Use that exact value in both consumer callers and verify it again after editing.
 An invalid reusable-workflow SHA produces a `startup_failure` with zero jobs and
 no job logs; it never reaches controller code.
 
-Before the first opted-in dispatch, inspect the live repository settings rather
+Before the first merge-enabled dispatch, inspect the live repository settings rather
 than relying only on the web form:
 
 ```sh
@@ -183,8 +183,8 @@ authorized follow-up automation explicitly.
 A successful dispatch proves the selected workflows ran; it does not by itself
 prove that branch protection permits merging. With `auto_merge: false`, this
 controller reports verified run links on the PR but does not mirror results into
-required commit-status contexts. That mirroring currently belongs to the opt-in
-merge path. Do not enable automatic merging merely to obtain status reporting.
+required commit-status contexts. That mirroring belongs to the merge-enabled path.
+Do not leave automatic merging enabled merely to obtain status reporting.
 
 Validate a real protected-branch merge before declaring setup complete. A release
 follow-up reporter must provide the check names and sources your rules require,
@@ -211,12 +211,15 @@ For already-merged installations, use a follow-up PR from the latest default bra
 Consumer repository settings are separate from file changes. Record settings that
 still need action; do not present a caller PR as a completed live-bot acceptance test.
 
-## Opt-in automatic merging
+## Automatic merging
 
-Automatic merging defaults to disabled. To opt in on the trusted default branch:
+Automatic merging defaults to enabled. The trusted updater only merges its signed,
+pin-only candidate after every configured validation workflow succeeds and all
+repository rules pass. To disable merging and leave successful candidates for
+manual review, opt out on the trusted default branch:
 
 ```json
-{"workflows": ["ci.yml", "release.yml"], "auto_merge": true}
+{"workflows": ["ci.yml", "release.yml"], "auto_merge": false}
 ```
 
 Install an active default-branch ruleset requiring pull requests and strict
@@ -243,8 +246,9 @@ close the race if the default branch moves after the controller checks it.
 
 A rejected merge fails the updater and leaves the PR for diagnosis. Retry the
 updater manually after resolving the cause; it rebuilds/revalidates against the
-current default branch. Set `auto_merge` to false (or remove it) to disable merging;
-disable the caller workflow in Actions for an immediate emergency stop. A default
+current default branch. Set `auto_merge` to false to disable merging; omitting it
+enables merging. Disable the caller workflow in Actions for an immediate emergency stop.
+A default
 branch change invalidates an in-flight candidate. Do not grant a bypass to force
 an update through.
 
@@ -262,7 +266,7 @@ release channel.
 
 
 The caller permission ceiling includes `statuses: write`; only the validation
-controller job receives it. For opted-in consumers, this job mirrors the configured
+controller job receives it. For merge-enabled consumers, this job mirrors the configured
 validation jobs into the active ruleset's required commit-status contexts. It sets
 pending before validation and success only after the real runs/jobs succeed.
 Choose required contexts that correspond to actual jobs in the selected dispatch
