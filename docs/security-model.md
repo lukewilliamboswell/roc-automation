@@ -41,14 +41,15 @@ maintainer responsibilities; this automation grants no bypass or self-approval.
 
 No credentials are persisted by checkout. Authenticated git pushes receive a
 short-lived token in the child process environment, never command-line arguments.
-By default the action does not merge. It never approves PRs, publishes releases,
-or deploys sites. The optional merge policy is described below.
+By default the action merges only its validated pin-only PR. It never approves PRs,
+bypasses repository rules, publishes releases, or deploys sites. The merge policy
+is described below.
 
-## Optional merge authority
+## Merge authority
 
-Consumers may explicitly set the boolean `auto_merge` in their trusted config.
-The default is false, and prepare emits the opt-in so the merge job is skipped
-entirely otherwise. The merge job runs after successful validation and reporting.
+The boolean `auto_merge` in trusted configuration defaults to true. Consumers may
+set it to false to opt out, in which case prepare skips the merge job entirely.
+The merge job runs only after successful validation and reporting.
 It performs no consumer checkout: it reads configuration through the API at the
 original default-branch event SHA and executes only the pinned shared controller.
 It has contents write, pull-requests read, and actions read permissions. Test jobs
@@ -116,13 +117,17 @@ Paths reject escapes, globs, duplicates and non-Roc files;
 local source reads reject symlinks and paths outside the checkout.
 
 Prepare preserves bytes outside each selected pin literal. Before replacing an
-existing candidate, and independently before optional merging, the controller
+existing candidate, and independently before merging, the controller
 reads immutable parent/candidate blobs via the API and compares the full contents
 against the exact expected literal replacements. The complete changed-file set
 must match those roots, with every file modified in place. Extra files or a body
-change cannot pass as a compiler update. Merge uses trusted event configuration
-and does not check out or execute candidate source. Tests cover body mutations,
-extra files, selected-root limits and preservation of unselected examples.
+change cannot pass as a compiler update. A stale candidate is interpreted using
+the immutable configuration from its own parent, so a reviewed change to selected
+roots or migration between `.roc-version` and header pins cannot make that branch
+unverifiable or broaden its historical authority. Merge uses trusted event
+configuration and does not check out or execute candidate source. Tests cover
+body mutations, config evolution, extra files, selected-root limits and
+preservation of unselected examples.
 
 The read-only release guard accepts `compiler-root` to read the source header;
 empty retains legacy `.roc-version`. An optional paired `simulated-stable-pin`

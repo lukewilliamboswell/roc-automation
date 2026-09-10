@@ -6,7 +6,7 @@ inputs:
     required: true
 outputs:
   auto_merge:
-    description: Whether the trusted repository configuration opts into merging
+    description: Whether the trusted repository configuration permits merging (default true)
     value: ${{ steps.controller.outputs.auto_merge }}
   changed:
     description: Whether prepare selected a candidate
