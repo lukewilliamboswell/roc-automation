@@ -45,6 +45,7 @@ jobs:
       statuses: write
     outputs:
       runs: ${{ steps.validate.outputs.runs }}
+      passed: ${{ steps.validate.outputs.passed }}
     steps:
       # This is the trusted controller, not a checkout of the candidate.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -77,6 +78,7 @@ jobs:
         CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
         NIGHTLY_TAG: ${{ needs.prepare.outputs.nightly }}
         TEST_RESULT: ${{ needs.validate.result }}
+        TEST_PASSED: ${{ needs.validate.outputs.passed }}
         VALIDATION_RUNS: ${{ needs.validate.outputs.runs }}
       uses: 
         lukewilliamboswell/roc-automation/actions/nightly@ce402b2786852d7061dd6c91a6a118e886521e3c
@@ -85,7 +87,7 @@ jobs:
 
   merge:
     needs: [prepare, validate, report]
-    if: github.ref_name == github.event.repository.default_branch && github.ref_type == 'branch' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.auto_merge == 'true' && needs.validate.result == 'success' && needs.report.result == 'success'
+    if: github.ref_name == github.event.repository.default_branch && github.ref_type == 'branch' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.auto_merge == 'true' && needs.validate.outputs.passed == 'true' && needs.report.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

@@ -1,5 +1,14 @@
 # Release notes
 
+## Report incompatible nightlies without failing the controller
+
+- Treat a normally completed candidate test failure as a handled compatibility
+  result, while preserving failed run evidence and preventing merge.
+- Keep cancelled, skipped, timed-out, stale, malformed, and unverifiable validation
+  as controller failures.
+- Publish explicit failed required statuses for rejected merge-enabled candidates
+  instead of leaving them pending.
+
 ## Resilient nightly candidates and default merging
 
 - Verify stale automation candidates against the immutable configuration from

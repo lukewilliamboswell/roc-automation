@@ -289,11 +289,16 @@ def validate():
             time.sleep(30)
         if head() != sha:
             raise ValueError("Candidate branch changed during validation")
-        if any(item["conclusion"] != "success" for item in runs):
-            raise ValueError("Candidate validation did not pass")
-        if contexts:
+        conclusions = [item["conclusion"] for item in runs]
+        if any(conclusion not in ("success", "failure") for conclusion in conclusions):
+            raise ValueError("Candidate validation did not complete normally")
+        passed = all(conclusion == "success" for conclusion in conclusions)
+        output("passed", str(passed).lower())
+        if contexts and passed:
             verify_required_jobs(runs, contexts)
             publish_statuses(sha, contexts, "success")
+        elif contexts:
+            publish_statuses(sha, contexts, "failure")
     finally:
         output("runs", json.dumps(runs))
 
@@ -303,9 +308,10 @@ def report():
     if head() != sha:
         raise ValueError("Refusing to report results on a different candidate")
     status = os.environ["TEST_RESULT"]
+    validation_passed = os.environ.get("TEST_PASSED") == "true"
     runs = json.loads(os.environ.get("VALIDATION_RUNS") or "[]")
     expected = load_workflows()
-    passed = status == "success" and [r["workflow"] for r in runs] == expected and all(r["conclusion"] == "success" for r in runs)
+    passed = status == "success" and validation_passed and [r["workflow"] for r in runs] == expected and all(r["conclusion"] == "success" for r in runs)
     message = "**Passed:** all configured validation workflows passed." if passed else f"**Needs attention:** validation finished with status `{status}`. Do not merge until all validation passes."
     save_pr(sha, tag(os.environ["NIGHTLY_TAG"]), message, runs)
 
