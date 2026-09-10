@@ -165,6 +165,16 @@ checklist](openssf.md). Adopting these files is not an OpenSSF compliance claim.
 
 ## 6. Publish a tested commit, then update the public experience
 
+For platforms with native or Wasm build outputs, follow the
+[platform build-input guide](platform-build-inputs.md) to choose a suitable lifecycle.
+Small hosts can build in the release workflow; expensive reusable outputs may have
+independent dependency releases. Verify reviewed content hashes when consuming
+prebuilt inputs, and check freshness against source owned by the repository.
+Attestations provide additional provenance under an explicit policy and can also
+be verified offline. Test the exact bundles intended for publication, with distinct
+package URLs and app roots for distinct platform APIs. Combine their releases only
+when they share a version and must ship together.
+
 1. Prepare a reviewed candidate on the appropriate compiler branch. Use a new
    package version independent of the compiler's version. If development remains
    compatible, it can supply the candidate; otherwise adapt it on the support branch.
@@ -193,6 +203,10 @@ a reviewed recovery procedure that checks source identity and existing assets;
 do not rebuild from a moving branch, replace old contents or blindly rerun a job
 that expects a new release. Fixing the workflow does not invalidate the recorded
 identity of already-tested artifacts.
+For immutable GitHub releases, upload and verify the complete asset inventory in
+a draft before publishing. Only an unfinished draft can resume missing uploads;
+an incomplete published immutable release needs a new release identity. See the
+[publication recovery rules](platform-build-inputs.md#publish-provenance-without-confusing-it-with-integrity).
 
 ## 7. Carry fixes forward and record what remains manual
 
