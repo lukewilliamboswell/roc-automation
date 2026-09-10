@@ -20,6 +20,9 @@ outputs:
   runs:
     description: JSON validation run evidence
     value: ${{ steps.controller.outputs.runs }}
+  passed:
+    description: Whether every configured candidate validation workflow passed
+    value: ${{ steps.controller.outputs.passed }}
 runs:
   using: composite
   steps:

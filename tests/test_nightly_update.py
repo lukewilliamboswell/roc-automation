@@ -64,12 +64,12 @@ class ControllerTests(unittest.TestCase):
             with patch.object(n, 'head', return_value='candidate'), patch.object(n, 'api', side_effect=self.validate_api(conclusion)), \
                  patch.object(n, 'required_contexts', return_value=['test']), patch.object(n, 'verify_required_jobs') as verify, \
                  patch.object(n, 'publish_statuses') as publish:
-                if conclusion == 'success': n.validate()
-                else:
-                    with self.assertRaises(ValueError): n.validate()
+                n.validate()
             self.assertEqual([call.args[2] for call in publish.call_args_list],
-                             ['pending', 'success'] if conclusion == 'success' else ['pending'])
+                             ['pending', 'success'] if conclusion == 'success' else ['pending', 'failure'])
             self.assertEqual(verify.call_count, 1 if conclusion == 'success' else 0)
+            outputs = (n.ROOT / 'outputs').read_text().splitlines()
+            self.assertIn(f"passed={str(conclusion == 'success').lower()}", outputs)
 
     def test_status_publication_targets_exact_candidate_and_required_names(self):
         with patch.object(n, 'api') as api:
@@ -247,8 +247,13 @@ class ControllerTests(unittest.TestCase):
 
     def test_failed_cancelled_or_skipped_validation_is_not_success(self):
         for status in ['failure', 'cancelled', 'skipped', 'timed_out', 'action_required']:
-            with self.subTest(status=status), patch.object(n, 'head', return_value='candidate'), patch.object(n, 'api', side_effect=self.validate_api(status)), self.assertRaises(ValueError):
-                n.validate()
+            with self.subTest(status=status), patch.object(n, 'head', return_value='candidate'), patch.object(n, 'api', side_effect=self.validate_api(status)):
+                if status == 'failure':
+                    n.validate()
+                    self.assertIn('passed=false', (n.ROOT / 'outputs').read_text().splitlines())
+                else:
+                    with self.assertRaises(ValueError):
+                        n.validate()
 
     def test_stale_candidate_results_are_not_reported(self):
         with patch.object(n, 'head', return_value='other'), patch.object(n, 'save_pr') as save:
@@ -263,7 +268,7 @@ class ControllerTests(unittest.TestCase):
 
     def test_report_links_both_successful_runs(self):
         runs = [{'workflow': w, 'conclusion': 'success', 'html_url': 'https://github.com/run'} for w in ['ci.yml', 'release.yml']]
-        with patch.dict(os.environ, TEST_RESULT='success', VALIDATION_RUNS=json.dumps(runs)), patch.object(n, 'head', return_value='candidate'), patch.object(n, 'save_pr') as save:
+        with patch.dict(os.environ, TEST_RESULT='success', TEST_PASSED='true', VALIDATION_RUNS=json.dumps(runs)), patch.object(n, 'head', return_value='candidate'), patch.object(n, 'save_pr') as save:
             n.report()
         self.assertIn('Passed', save.call_args.args[2])
         self.assertEqual(save.call_args.args[3], runs)

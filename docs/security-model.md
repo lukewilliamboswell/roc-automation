@@ -23,15 +23,18 @@ The caller grants a permission ceiling. Actual jobs reduce it:
 The controller uses `GH_TOKEN` from `github.token`, `DEFAULT_BRANCH`, and GitHub's
 standard repository/workspace/run environment. Prepare additionally accepts `FORCE`
 for an explicit retry. Its outputs are `changed`, `sha`, and `nightly`. Validate
-accepts `CANDIDATE_SHA` and emits JSON `runs` with workflow, ID, URL, and conclusion.
-Report accepts that SHA, `NIGHTLY_TAG`, `TEST_RESULT`, and `VALIDATION_RUNS`.
+accepts `CANDIDATE_SHA` and emits JSON `runs` with workflow, ID, URL, and conclusion,
+plus `passed`, which is true only when every configured run succeeds. Report accepts
+that SHA, `NIGHTLY_TAG`, `TEST_RESULT`, `TEST_PASSED`, and `VALIDATION_RUNS`.
 
 Validation dispatches workflows on the candidate branch with
 `nightly_validation: true`. GitHub API version 2026-03-10 returns their exact run
 IDs. The controller verifies run commit, branch, and event, waits for all results,
-and refuses stale branch heads. Missing, failed, cancelled, skipped, timed-out,
-or mismatched evidence never becomes a passing report. Previous success is cleared
-before a new candidate is prepared. A timeout links to runs for diagnosis.
+and refuses stale branch heads. A normally completed failed run becomes a handled,
+non-passing candidate: it is reported without failing the controller itself. Missing,
+cancelled, skipped, timed-out, or mismatched evidence fails the controller. None of
+these states becomes a passing report. Previous success is cleared before a new
+candidate is prepared. A timeout links to runs for diagnosis.
 
 A workflow dispatch executes project code under that validation workflow's own
 permissions. Each consumer must keep test jobs read-only and guard every release

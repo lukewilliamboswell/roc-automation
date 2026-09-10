@@ -167,14 +167,15 @@ Failure shape helps locate the problem:
 | --- | --- | --- |
 | `startup_failure`, zero jobs, no logs | Workflow reference or Actions policy | Full SHA and `OWNER/REPOSITORY@REF` allowlist entries |
 | Prepare succeeds; validate fails before dispatch | Repository preflight | Active strict ruleset, pull-request rule, required contexts and integrations |
-| A dispatched workflow fails | Consumer compatibility | The linked exact candidate run and its jobs |
+| Controller succeeds; a dispatched workflow is failed | Consumer compatibility | The linked exact candidate run and its jobs |
 | Validation/report succeed; merge fails | Live state or merge policy | Base/head movement, reviews, signatures and current rules |
 
 After configuration merges, manually dispatch the updater; manual dispatch retries
 an unchanged candidate, so a new nightly is unnecessary. Record the candidate's
 verified signed commit, every dispatched run, the bot-authored merge, and the
 effective rules. Then exercise a subsequent no-op and retain a real or controlled
-failure as evidence that unsuccessful candidates remain open. A merge performed
+failure as evidence that unsuccessful candidates remain open while the controller
+reports the rejection successfully. A merge performed
 with `GITHUB_TOKEN` does not normally trigger `push` workflows; dispatch separately
 authorized follow-up automation explicitly.
 

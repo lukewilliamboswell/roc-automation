@@ -35,10 +35,12 @@ Click a badge to inspect scheduled and manual runs on the default branch.
 | [roc-wasm4](https://github.com/lukewilliamboswell/roc-wasm4) | [![roc-wasm4 nightly updater](https://github.com/lukewilliamboswell/roc-wasm4/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-wasm4/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
 | [weaver](https://github.com/lukewilliamboswell/weaver) | [![weaver nightly updater](https://github.com/lukewilliamboswell/weaver/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/weaver/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
 
-A failed CI workflow dispatched by the updater also fails the nightly run. A
-successful run can skip validation when there is no new update to attempt, including
-an existing candidate already attempted. These badges show the latest updater
-result, not current CI health or how recently validation ran.
+A normally completed CI failure is recorded on the candidate PR without failing the
+nightly controller run; the incompatible candidate remains open and cannot merge.
+Cancelled, skipped, timed-out, malformed, or unverifiable validation still fails the
+controller. A successful run can also skip validation when there is no new update to
+attempt, including an existing candidate already attempted. These badges show
+automation health, not candidate compatibility or how recently validation ran.
 
 GitHub supplies the badge results; this repository list is maintained manually.
 
