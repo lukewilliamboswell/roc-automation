@@ -53,7 +53,7 @@ It explains the choices and the work that remains manual.
 Platform maintainers should also read the
 [build-input and provenance guide](docs/platform-build-inputs.md) for reusable
 host/engine outputs, external linker inputs, content-hash verification and a
-combined release that tests the exact bundles it publishes.
+release lifecycle that tests the exact bundles it publishes.
 
 ## Use
 

@@ -1,14 +1,30 @@
 # Reuse platform build inputs across validation and releases
 
-Platforms often need expensive native builds before Roc can link an application.
-Give those builds their own dependency releases so ordinary PRs and platform
-publication can consume verified outputs. The consumer repository owns this
-implementation; the shared nightly controller neither builds these artifacts nor
+Platforms often need native builds before Roc can link an application.
+Expensive outputs reused across releases can have their own dependency releases;
+small hosts can be built in a read-only job of the platform release workflow.
+In either case, test and publish the same artifact bytes. The consumer repository
+owns this implementation; the shared nightly controller neither builds these artifacts nor
 verifies their integrity or provenance.
 
 Use this guide alongside the [maintainer walkthrough](package-maintainer-guide.md)
 and [validation contract](consumer-validation.md). It describes the intended
 workflow, not a claim that adopting the shared controller implements it.
+
+Choose the smallest lifecycle that fits the project:
+
+| Project shape | Suitable starting point |
+| --- | --- |
+| Pure Roc library, such as roc-ansi or weaver | Bundle source; validate examples against their released platform. No native producer is needed for the library itself. |
+| Small platform host, such as the Zig template or roc-wasm4 | Build the host, bundle once, test the bundle, then publish those bytes in one workflow. |
+| Expensive hosts and external libraries, such as roc-signals or roc-ray | Release reusable inputs independently where useful; assemble them under reviewed locks. |
+
+These are architectural examples from the [Nightly status project set](../README.md#nightly-status),
+not compliance claims about their workflows. Test-only hosts in library repositories
+also need freshness checks when reused, but need not become public dependencies.
+During adoption, inventory existing inputs and establish their build recipes,
+digests and target coverage before enabling reuse. Explicit source builds remain
+valid; unverified existing binaries must not be relabeled as verified artifacts.
 
 ## Separate the artifacts by what can invalidate them
 
@@ -28,12 +44,15 @@ producer groups multiple outputs, document that granularity. A Roc compiler bump
 requires compatibility validation, but only invalidates host outputs when that
 compiler or its ABI artifacts actually contribute to their build identity.
 
-For macOS, review the required external interface catalog before generating and
-validating `.tbd` files. That generation belongs inside the external linker-input
-cycle. Publish the generated files in its immutable dependency release. The
-packaged `.tbd` files describe interfaces for Roc's final link; they are not a
-dependency of compiling the host. A host producer may separately require SDK
-headers or native build tools; record those actual build inputs in its identity.
+For platforms that package macOS interfaces, review the required catalog before
+generating and validating `.tbd` files. That generation belongs inside the external linker-input
+cycle. When released separately, publish the generated files as immutable inputs.
+For a static host archive, these files normally serve Roc's final link rather
+than host compilation. A producer that itself links executables or shared libraries
+may also consume linker interfaces. Record its actual SDK, headers, interfaces and
+native build tools in its identity; do not assume the two cycles have no dependencies.
+
+For a platform using independent producers, the flow is:
 
 ```mermaid
 flowchart TD
@@ -65,17 +84,35 @@ build alone does not establish that Roc can link the final application.
 
 Commit reviewed lock data with each dependency selection. Include the artifact
 name, target, exact release location, cryptographic digest such as SHA-256, byte
-size, and expected archive contents or extraction boundaries. Record the source
-revision and relevant build-input fingerprint separately from the archive digest.
+size, and expected archive contents or extraction boundaries. Record available source
+revision and producer build-input fingerprint separately from the archive digest.
 The fingerprint answers whether a build can be reused; the digest identifies the
 exact bytes a consumer accepts. Neither a version label nor a fingerprint alone
 verifies a downloaded archive.
 
+Recompute freshness fingerprints where the repository owns or vendors the producer
+inputs, such as its own host source. For external binaries, consumers verify the
+reviewed selection, digest, target and inventory; they need not fetch upstream
+source or install its toolchain to recompute the producer's fingerprint. Recorded
+producer metadata remains a claim subject to the chosen provenance policy.
+
+Final Roc bundles have a compiler-defined content identity: preserve the filename
+emitted by `roc bundle` in both localhost and published URLs. Roc uses its
+base58-encoded BLAKE3 hash to verify the downloaded bundle. An additional SHA-256
+in release metadata is useful but cannot replace that URL hash. See the
+[Roc bundle implementation](https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/src/bundle/bundle.zig#L266-L275)
+and [download contract](https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/src/bundle/download.zig#L42-L63).
+Application users consuming that bundle need no separate native-input fetcher.
+
 Consumers should resolve the locked artifact from a local cache, a mirror or the
 recorded release URL, check size and digest before extraction, and reject a
-mismatch. Enforce target and path boundaries when extracting, including rejection
-of escaping paths and unexpected links. Keep licenses and required runtime files
-in the declared inventory. Fail clearly when a required artifact is unavailable
+mismatch, including on cache hits. Extract into fresh staging with bounded member
+counts and expanded sizes. Accept only declared regular files and directories with
+unique, portable paths; reject escapes, path collisions, links and special files.
+Validate the complete inventory before making the staged result available, and do
+not trust an old extracted tree solely because its cached archive verified.
+Keep licenses and required runtime files in the declared inventory.
+Fail clearly when a required artifact is unavailable
 or stale; an ordinary consumer must not silently rebuild it or pick a newer
 release.
 
@@ -101,6 +138,10 @@ subject digest under a stated policy, not merely that some signature exists.
 Keep ordinary locked consumption independent of that service check unless the
 consumer explicitly adopts a stricter provenance policy. Verification required by
 an adopted policy must fail visibly rather than silently downgrade to hashes.
+Provenance does not inherently require an online check on every run: GitHub supports
+[offline verification](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/verify-attestations-offline)
+using previously obtained attestation bundles and trusted roots. Define how that
+verification material is obtained and updated when adopting such a policy.
 
 Describe only the evidence that was actually produced. A packaging workflow that
 downloads and bundles an archive can attest to that assembly; its attestation
@@ -115,29 +156,39 @@ exact validated archives, lock data, licenses and available provenance. Do not
 replace assets or move tags. Where the hosting service supports enforced release
 immutability, enable it and verify the resulting state; a naming convention alone
 does not enforce immutability. Hash checks remain necessary even with immutable
-hosting. If publication is interrupted, inspect existing assets and resume only
-when their identities match the recorded candidate; changed bytes need a new
-release identity.
+hosting. On GitHub, [stage an immutable release as a draft](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases),
+attach all assets, verify the complete inventory and tag commit, then publish.
+An interrupted draft may resume after existing assets match the recorded candidate.
+A complete published release needs only verification and any remaining follow-up;
+an incomplete published immutable release cannot accept missing assets and needs a
+new release identity. Changed candidate bytes also need a new identity. Preserve
+the original evidence and revalidate starters whenever their final URLs change.
 
 ## Keep rebuild selection narrow and complete
 
-Compute a deterministic fingerprint from every input that can affect an output:
+Producers computing reuse identities must include every input that can affect an output:
 relevant source paths and contents, generated inputs, dependency locks, build
 recipes, tool versions, target configuration and build flags. Record file paths
 and modes as needed to distinguish renames, deletions and symlinks. Validate the
-permitted source-file kinds. Do not substitute the whole repository commit for
-this identity: a documentation or example edit should not invalidate an unchanged
-host. Include the source revision separately for traceability.
+permitted source-file kinds. Include relevant environment and SDK identities;
+an unpinned runner image or ambient library can change output without a source edit.
+Use a versioned fingerprint recipe and compare the same input definitions.
+A whole-commit identity, together with the non-source inputs above, is a conservative
+starting point, but causes needless rebuilds for unrelated edits. Narrow the source
+selection only after testing the input inventory.
+Include the source revision separately for traceability.
 
 Treat workflow triggers and fingerprints as different controls. Path filters
 decide when to run a producer audit; fingerprints decide whether the selected
 published outputs still correspond to current inputs. A test-harness edit may
 justify rerunning an audit without requiring a new dependency release. Trace shared
 scripts and generated inputs transitively so a narrow filter cannot hide a real
-build change. Record the published fingerprint in lock data so a shallow checkout
-can compare current inputs without fetching an old producer commit.
+build change. For repository-owned inputs, record the published fingerprint in lock
+data or a digest-bound manifest so a shallow checkout can compare current inputs
+without fetching an old producer commit. A stale host blocks reuse; PR validation
+may explicitly build a new candidate in a read-only job without publishing it.
 
-Require meaningful checks for both directions: a relevant source, tool pin or
+For a narrowed fingerprint, require meaningful checks for both directions: a relevant source, tool pin or
 build-option change invalidates reuse, while an unrelated example or documentation
 change preserves it. Check archive digest rejection and target/path confinement.
 Exercise final linking against reused artifacts; a selector test alone does not
@@ -151,22 +202,22 @@ PR or a different commit SHA determines them.
 
 ## Keep final release preparation small
 
-Once the dependency producers have supplied current outputs, a combined release
+Once independent dependency producers have supplied current outputs, a release
 workflow needs the pinned Roc executable to bundle and link applications, the
 artifact verification helpers, and the runtime dependencies for its smoke tests.
 It should download and hash-verify the selected prebuilt inputs. Host-language
-compilers and SDK generators belong in producer workflows; a stale lock should
+compilers and SDK generators belong in producer jobs; a stale lock should
 send the maintainer back to that producer cycle.
 
-For a repository publishing web and native GUI platforms, create two distinct
-`roc bundle` packages. A web package may include its Wasm library and a native
+For a repository publishing web and native GUI platforms with distinct APIs,
+create separate `roc bundle` packages. A web package may include its Wasm library and a native
 test host that simulates the browser; a GUI package contains its native GUI hosts.
 Sharing an engine does not make their platform APIs or application roots
 interchangeable. Give examples separate roots and package URLs, even when they
 reuse application modules.
 
 Bundle once, then pass those exact archives to the target runners. Each runner
-should serve both packages over localhost and run the applicable example smoke
+should serve the applicable packages over localhost and run their example smoke
 tests against temporary roots using those URLs. Preserve the distinct APIs and
 test the advertised target matrix, with required runtime setup such as a display
 or browser where applicable. Do not count a simulated browser test as proof of
@@ -176,13 +227,23 @@ release target before publication. Check package size limits and target contents
 early, rather than discovering during publication that the proposed package
 cannot carry its advertised hosts.
 
-Use one publishing workflow for the combined release. After all required checks
+Combine publication when packages share a release version and must ship together.
+Independent APIs or target variants may have separate versions and workflows;
+record and test the advertised package/target/compiler combinations in each case.
+Keep preparation, validation and publication connected by recorded artifact digests
+and the exact source SHA, regardless of workflow layout. After all required checks
 pass, publish the exact tested platform archives and complete example starters
 whose headers name their distinct final asset URLs. Record archive digests,
 selected dependency identities, source revision and compiler requirement in the
 release manifest. Verify that URL substitution changes only the intended headers
 and test the published downloads as described in the
 [release follow-up contract](consumer-validation.md#release-follow-up-contract).
-Rebuilding after the smoke tests would produce a different candidate requiring
-its own validation. Keep write permission in the publication job and keep
-validation-only runs unable to publish.
+Publish the retained tested archives; any rebuilt artifact must have its identity
+checked and changed bytes validated as a new candidate. Keep write permission in
+the publication job, authorized only by an explicit release dispatch on an allowed
+reviewed branch and exact event SHA. Consume artifacts from that run; never execute
+unreviewed PR source or artifact-supplied scripts with release credentials. Pin
+shared actions and workflows to full SHAs, disable persisted checkout credentials,
+and keep PR and nightly-validation runs unable to publish, deploy or create follow-ups.
+Use the [release policy](maintenance-releases.md#release-and-backport-workflow) and
+[security model](security-model.md) for the remaining authority boundaries.

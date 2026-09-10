@@ -58,9 +58,11 @@ A single-example runner should retain terminal input/output when needed.
 
 For platforms, a fresh local bundle can combine current platform source with
 unchanged, hash-verified host/engine and external linker inputs. It does not
-require rebuilding every native input on every PR. Verify that each selected
-artifact's build-input fingerprint still matches its relevant source and build
-configuration; changed host inputs require new host outputs. The
+require rebuilding every native input on every PR. For repository-owned producer
+inputs, verify that reused artifacts match current source and build configuration;
+changed host inputs require new host outputs, which a read-only PR job may build.
+External artifacts require reviewed digest, target and inventory checks, without
+requiring consumers to reconstruct the upstream build environment. The
 [platform build-input contract](platform-build-inputs.md) explains those separate
 cycles, local hash verification, optional provenance and final-link feedback.
 
