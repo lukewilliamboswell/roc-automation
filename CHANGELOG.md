@@ -1,5 +1,16 @@
 # Release notes
 
+## Reusable platform build inputs
+
+- Document independent host/engine and external linker-input producer cycles,
+  narrow rebuild identities, and final application linking as interface feedback.
+- Define reviewed content hashes as the ordinary consumer contract and explain
+  what optional attestations can establish about producer and assembly provenance.
+- Describe combined platform releases that reuse verified inputs and publish the
+  exact bundles tested through localhost, with distinct example roots and URLs.
+
+Documentation only; consumers implement this contract in their own workflows.
+
 ## Report incompatible nightlies without failing the controller
 
 - Treat a normally completed candidate test failure as a handled compatibility

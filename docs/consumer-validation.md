@@ -56,6 +56,14 @@ loopback on an available port, copy examples into a temporary directory, and
 rewrite only those copies. Clean up the server and copies when execution ends.
 A single-example runner should retain terminal input/output when needed.
 
+For platforms, a fresh local bundle can combine current platform source with
+unchanged, hash-verified host/engine and external linker inputs. It does not
+require rebuilding every native input on every PR. Verify that each selected
+artifact's build-input fingerprint still matches its relevant source and build
+configuration; changed host inputs require new host outputs. The
+[platform build-input contract](platform-build-inputs.md) explains those separate
+cycles, local hash verification, optional provenance and final-link feedback.
+
 Require the relevant published, source, and artifact checks in the branch rules.
 If a required published-example or cross-version check fails while the local
 bundle passes, stop the nightly update and diagnose the difference. A source fix

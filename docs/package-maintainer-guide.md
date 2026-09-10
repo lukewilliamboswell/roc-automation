@@ -165,6 +165,15 @@ checklist](openssf.md). Adopting these files is not an OpenSSF compliance claim.
 
 ## 6. Publish a tested commit, then update the public experience
 
+For platforms with native or Wasm build outputs, follow the
+[platform build-input guide](platform-build-inputs.md) first. Publish reusable
+host/engine outputs and external linker inputs in their own dependency cycles.
+Ordinary validation and release assembly should download and check the reviewed
+content hashes. Attestations provide additional provenance under an explicit
+policy; they need not make every consumer depend on a verification service.
+Keep final bundling and example smoke tests in one release workflow, with distinct
+package URLs and app roots when publishing multiple platform APIs.
+
 1. Prepare a reviewed candidate on the appropriate compiler branch. Use a new
    package version independent of the compiler's version. If development remains
    compatible, it can supply the candidate; otherwise adapt it on the support branch.
