@@ -40,6 +40,33 @@ Lead with the outcome. Keep prerequisites close to the first step. Use complete,
 copyable examples and explain the observable result. Link to detailed reference
 or background when it would distract from the page's purpose.
 
+## Start from the reader's knowledge
+
+Name the primary audience and assume only the knowledge that audience normally
+has. A package user may understand Roc while knowing nothing about the native
+engine, protocol, algorithm, or build system behind the package. Introduce a
+concept in ordinary language before using its specialist name.
+
+For an unfamiliar tool, answer these questions before presenting its API:
+
+- What problem does this solve in the reader's application?
+- What must the reader provide?
+- What does the tool provide in return?
+- How does it differ from the approach the reader probably uses today?
+- What does a first successful result look like?
+- When is the tool a good fit, and when should the reader choose something else?
+
+Use progressive disclosure. Keep implementation names, escape hatches, internal
+architecture, and contributor concerns in explicitly advanced or internal
+material until a user task requires them. Do not use the introduction as a
+feature inventory.
+
+Before publication, ask a reviewer who did not design the feature to read from
+the primary audience's perspective. Have them list unanswered questions,
+undefined terms, assumed experience, and places where they could copy commands
+without understanding the purpose. Resolve adoption and first-use gaps before
+polishing expert reference material.
+
 ## Show structure and behavior
 
 Use a Mermaid diagram when relationships, state changes, trust boundaries, data
