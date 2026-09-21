@@ -8,6 +8,9 @@
   assets, and an optional compiler-generated API reference.
 - Ship the neutral theme and licensed fonts with the action so consumers keep
   only project-specific content and checks.
+- Add reusable documentation-authoring and project-evidence guides covering
+  reader-oriented structure, public project information, verification, and
+  periodic review.
 
 ## Report incompatible nightlies without failing the controller
 

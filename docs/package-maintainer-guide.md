@@ -5,6 +5,10 @@ package users examples that work with a documented compiler and published releas
 The shared automation handles compiler-update PRs and release-policy checks. Your
 repository supplies its examples, tests, package bundles and documentation.
 
+Use the [documentation guide](documentation-guide.md) to organize material around
+reader needs and the [project-practice evidence guide](openssf.md) to track the
+public, repository, CI, release, and operational evidence that must remain true.
+
 ## 1. Give each branch and version a clear job
 
 Keep `main` for development. Its package or platform roots declare the exact

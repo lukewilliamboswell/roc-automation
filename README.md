@@ -131,10 +131,11 @@ see [the trust model](docs/security-model.md) for their environment and outputs.
 ## Project practices
 
 - [Contributing](CONTRIBUTING.md)
+- [Documentation authoring guide](docs/documentation-guide.md)
+- [Project-practice evidence guide](docs/openssf.md)
 - [Reporting a vulnerability](SECURITY.md)
 - [Release notes](CHANGELOG.md)
 - [Third-party documentation assets](THIRD_PARTY_LICENSES.md)
-- [OpenSSF rollout checklist](docs/openssf.md)
 - [UPL-1.0 license](LICENSE)
 
 Report ordinary bugs and enhancements through GitHub issues. Proposed changes
