@@ -50,6 +50,11 @@ Follow the [package maintainer walkthrough](docs/package-maintainer-guide.md) to
 set up examples, compiler versions, releases and repository permissions in order.
 It explains the choices and the work that remains manual.
 
+Platform maintainers should also read the
+[build-input and provenance guide](docs/platform-build-inputs.md) for reusable
+host/engine outputs, external linker inputs, content-hash verification and a
+release lifecycle that tests the exact bundles it publishes.
+
 ## Use
 
 See [integration and permissions](docs/integration.md) for the complete caller
