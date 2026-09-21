@@ -1,5 +1,14 @@
 # Release notes
 
+## Shared AsciiDoc publications
+
+- Add a reusable, containerized documentation action that builds a themed HTML
+  site and PDF manual from one AsciiDoc source tree.
+- Support Roc syntax highlighting, Mermaid diagrams, static documentation
+  assets, and an optional compiler-generated API reference.
+- Ship the neutral theme and licensed fonts with the action so consumers keep
+  only project-specific content and checks.
+
 ## Report incompatible nightlies without failing the controller
 
 - Treat a normally completed candidate test failure as a handled compatibility

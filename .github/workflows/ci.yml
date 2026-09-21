@@ -14,6 +14,31 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -v
+  documentation-action:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: docs
+        uses: ./actions/build-docs
+        with:
+          docs-directory: tests/fixtures/docs-manual/docs
+          output-directory: .docs-test
+          pdf-filename: fixture.pdf
+          docs-version: test
+      - name: Check generated publication
+        env:
+          SITE: ${{ steps.docs.outputs.site-directory }}
+          PDF: ${{ steps.docs.outputs.pdf-path }}
+        run: |
+          test -s "$SITE/index.html"
+          test -s "$SITE/usage.html"
+          test -s "$SITE/example.json"
+          test -s "$SITE/fixture.pdf"
+          test -s "$PDF"
+          grep -q 'data-lang="roc"' "$SITE/usage.html"
+          grep -q 'diag-mermaid-' "$SITE/index.html"
   workflow-lint:
     runs-on: ubuntu-24.04
     steps:
