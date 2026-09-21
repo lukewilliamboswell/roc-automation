@@ -132,6 +132,7 @@ see [the trust model](docs/security-model.md) for their environment and outputs.
 
 - [Contributing](CONTRIBUTING.md)
 - [Documentation authoring guide](docs/documentation-guide.md)
+- [Released artifact verification](docs/artifact-verification.md)
 - [Project-practice evidence guide](docs/openssf.md)
 - [Reporting a vulnerability](SECURITY.md)
 - [Release notes](CHANGELOG.md)

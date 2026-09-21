@@ -45,11 +45,15 @@ with a newer compiler. An additional cross-version check can establish that
 promise; make any temporary compiler-pin adaptation explicit and retain the URLs.
 
 Published-example validation should check, test, run, and build examples where
-those operations are supported. Keep example URLs on the latest working release
-through a reviewed release follow-up PR. Test those committed URLs; do not silently
-replace them with a floating `latest` URL, a newly discovered release, or local
-source. An example may depend on both a library and a platform: preserve both
-released dependencies in this check.
+those operations are supported. Released binary inputs must use reviewed content
+hashes. Verify downloads and cached bytes locally before use; do not call a remote
+attestation or signing service in routine CI when those hashes are available.
+Verify provenance when admitting a new release or lock, following the
+[artifact verification guide](artifact-verification.md). Keep example URLs on
+the latest working release through a reviewed release follow-up PR. Test those
+committed URLs; do not silently replace them with a floating `latest` URL, a
+newly discovered release, or local source. An example may depend on both a
+library and a platform: preserve both released dependencies in this check.
 
 For local development, scripts should bundle current source, bind a server to
 loopback on an available port, copy examples into a temporary directory, and

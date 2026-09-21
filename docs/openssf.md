@@ -38,7 +38,7 @@ At minimum, review this inventory:
 | Reporting | Searchable issue history, enhancement path, private vulnerability channel, and actual response history |
 | Build and tests | Clean source build, documented test command, CI execution, and a policy to test significant new behavior |
 | Analysis | Appropriate warnings, linters, static analysis, dynamic analysis, and timely treatment of findings |
-| Dependencies and delivery | Reviewed updates, dependency inventory, HTTPS delivery, artifact verification, provenance, and credential checks |
+| Dependencies and delivery | Reviewed updates, dependency inventory, HTTPS delivery, locally verified content hashes, provenance review at adoption, and credential checks |
 | Maintenance | Recent activity, supported versions, vulnerability handling, and periodic review of stale claims |
 
 The [documentation guide](documentation-guide.md) expands the documentation row
