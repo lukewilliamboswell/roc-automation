@@ -118,6 +118,11 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(isolated.ROOT, n.ROOT)
         self.assertNotEqual(isolated.ROOT, MODULE.parent)
 
+    def test_merge_job_defers_policy_to_trusted_merge_phase(self):
+        workflow = (MODULE.parents[2] / '.github/workflows/update-roc-nightly.yml').read_text()
+        self.assertNotIn('needs.prepare.outputs.auto_merge', workflow)
+        self.assertIn("needs.validate.outputs.passed == 'true'", workflow)
+
     def test_tag_rejects_injection_and_floating_versions(self):
         for value in ['nightly', 'nightly-2026-09-05-b195f5b\nother=x', 'nightly-$(whoami)', '../main']:
             with self.subTest(value=value), self.assertRaises(ValueError): n.tag(value)

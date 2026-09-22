@@ -50,11 +50,41 @@ Follow the [package maintainer walkthrough](docs/package-maintainer-guide.md) to
 set up examples, compiler versions, releases and repository permissions in order.
 It explains the choices and the work that remains manual.
 
+Platform maintainers should also read the
+[build-input and provenance guide](docs/platform-build-inputs.md) for reusable
+host/engine outputs, external linker inputs, content-hash verification and a
+release lifecycle that tests the exact bundles it publishes.
+
 ## Use
 
 See [integration and permissions](docs/integration.md) for the complete caller
 workflow and rollout checks. Always reference a full commit SHA. Upgrade that
 reference through a PR; shared code changes do not silently change consumers.
+
+### Build an AsciiDoc manual
+
+`actions/build-docs` renders a repository's `docs/*.adoc` sources as an HTML
+site and PDF manual with a shared theme, Roc syntax highlighting, and Mermaid
+support. It can also place compiler-generated API documentation under
+`site/api` when the caller installs Roc and supplies `api-entrypoint`.
+
+```yaml
+- id: docs
+  uses: lukewilliamboswell/roc-automation/actions/build-docs@REVIEWED_FULL_SHA
+  with:
+    pdf-filename: my-project.pdf
+    docs-version: main
+    api-entrypoint: platform/main.roc
+- uses: actions/upload-pages-artifact@REVIEWED_FULL_SHA
+  with:
+    path: ${{ steps.docs.outputs.site-directory }}
+```
+
+The action accepts `docs-directory`, `entrypoint`, `output-directory`,
+`pdf-filename`, `docs-version`, `api-entrypoint`, `roc-command`, and an optional
+`theme-directory`. A custom theme directory must contain `docs.css`,
+`docs-theme.yml`, `mermaid-config.json`, and `fonts/`. The bundled
+`build_docs.py` exposes the same interface for local use and requires Docker.
 
 A header-based repository enables automatic merging by default:
 
@@ -106,9 +136,12 @@ see [the trust model](docs/security-model.md) for their environment and outputs.
 ## Project practices
 
 - [Contributing](CONTRIBUTING.md)
+- [Documentation authoring guide](docs/documentation-guide.md)
+- [Released artifact verification](docs/artifact-verification.md)
+- [Project-practice evidence guide](docs/openssf.md)
 - [Reporting a vulnerability](SECURITY.md)
 - [Release notes](CHANGELOG.md)
-- [OpenSSF rollout checklist](docs/openssf.md)
+- [Third-party documentation assets](THIRD_PARTY_LICENSES.md)
 - [UPL-1.0 license](LICENSE)
 
 Report ordinary bugs and enhancements through GitHub issues. Proposed changes

@@ -150,3 +150,15 @@ and `simulated-stable-line` permits a clearly labeled simulation only on the exa
 `roc-<line>.x` branch and only for that exact nightly. It still verifies the
 published nightly asset release and emits `compiler-channel: simulated-stable`.
 It never reports stable upstream availability. Remove the mapping after rehearsal.
+
+
+## Released artifact verification
+
+Consumers use reviewed content hashes as the runtime identity of released
+binary inputs. Routine CI verifies downloaded and cached bytes locally before
+extraction or execution. It must not depend on a remote signing, transparency,
+or attestation service when a reviewed hash is available. Provenance
+attestations are verified when a new release or lock is adopted, during an
+explicit audit, or by a downstream verifier. See the
+[artifact verification guide](artifact-verification.md) for the complete
+admission and consumption policy.

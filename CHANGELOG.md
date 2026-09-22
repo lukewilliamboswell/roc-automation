@@ -1,5 +1,37 @@
 # Release notes
 
+## Released artifact verification
+
+- Document reviewed content hashes as the trust anchor for routine CI and local
+  builds after a release is admitted.
+- Reserve remote attestation services for publication, lock adoption, explicit
+  audits, and downstream provenance verification.
+
+## Shared AsciiDoc publications
+
+- Add a reusable, containerized documentation action that builds a themed HTML
+  site and PDF manual from one AsciiDoc source tree.
+- Support Roc syntax highlighting, Mermaid diagrams, static documentation
+  assets, and an optional compiler-generated API reference.
+- Ship the neutral theme and licensed fonts with the action so consumers keep
+  only project-specific content and checks.
+- Add reusable documentation-authoring and project-evidence guides covering
+  reader-oriented structure, public project information, verification, and
+  periodic review.
+
+## Reusable platform build inputs
+
+- Document independent host/engine and external linker-input producer cycles,
+  narrow rebuild identities, and final application linking as interface feedback.
+- Define reviewed content hashes as the ordinary consumer contract and explain
+  what optional attestations can establish about producer and assembly provenance.
+- Cover simple host builds and independent dependency releases, producer freshness
+  versus consumer integrity, safe extraction, and Roc's bundle URL hashes.
+- Describe publication of the exact bundles tested through localhost, optional
+  combined releases, offline provenance verification and immutable draft recovery.
+
+Documentation only; consumers implement this contract in their own workflows.
+
 ## Report incompatible nightlies without failing the controller
 
 - Treat a normally completed candidate test failure as a handled compatibility

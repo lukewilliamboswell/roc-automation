@@ -5,6 +5,12 @@ package users examples that work with a documented compiler and published releas
 The shared automation handles compiler-update PRs and release-policy checks. Your
 repository supplies its examples, tests, package bundles and documentation.
 
+Use the [documentation guide](documentation-guide.md) to organize material around
+reader needs, the [artifact verification guide](artifact-verification.md) to
+separate release admission from routine content checks, and the
+[project-practice evidence guide](openssf.md) to track the public, repository,
+CI, release, and operational evidence that must remain true.
+
 ## 1. Give each branch and version a clear job
 
 Keep `main` for development. Its package or platform roots declare the exact
@@ -165,14 +171,26 @@ checklist](openssf.md). Adopting these files is not an OpenSSF compliance claim.
 
 ## 6. Publish a tested commit, then update the public experience
 
+For platforms with native or Wasm build outputs, follow the
+[platform build-input guide](platform-build-inputs.md) to choose a suitable lifecycle.
+Small hosts can build in the release workflow; expensive reusable outputs may have
+independent dependency releases. Verify reviewed content hashes when consuming
+prebuilt inputs, and check freshness against source owned by the repository.
+Attestations provide additional provenance under an explicit policy and can also
+be verified offline. Test the exact bundles intended for publication, with distinct
+package URLs and app roots for distinct platform APIs. Combine their releases only
+when they share a version and must ship together.
+
 1. Prepare a reviewed candidate on the appropriate compiler branch. Use a new
    package version independent of the compiler's version. If development remains
    compatible, it can supply the candidate; otherwise adapt it on the support branch.
 2. Dispatch release preparation on that branch. Capture its exact commit SHA,
    check the compiler policy, and test the source and actual proposed bundles.
 3. Tag that tested SHA and publish those same artifacts. Record named package URLs,
-   digests and the real compiler requirement in the notes and starter kit. A
-   multi-package repository should clearly label every package URL.
+   digests and the real compiler requirement in the notes and starter kit. Verify
+   provenance while adopting those digests; routine consumers then verify the
+   reviewed content hashes without calling an attestation service. A multi-package
+   repository should clearly label every package URL.
 4. Test the published downloads, generate versioned documentation and deploy it.
    Preserve earlier docs and the site's public landing page. Prefer deployment or
    release artifacts for rendered docs; the [release follow-up contract](consumer-validation.md#release-follow-up-contract)
@@ -193,6 +211,10 @@ a reviewed recovery procedure that checks source identity and existing assets;
 do not rebuild from a moving branch, replace old contents or blindly rerun a job
 that expects a new release. Fixing the workflow does not invalidate the recorded
 identity of already-tested artifacts.
+For immutable GitHub releases, upload and verify the complete asset inventory in
+a draft before publishing. Only an unfinished draft can resume missing uploads;
+an incomplete published immutable release needs a new release identity. See the
+[publication recovery rules](platform-build-inputs.md#publish-provenance-without-confusing-it-with-integrity).
 
 ## 7. Carry fixes forward and record what remains manual
 
