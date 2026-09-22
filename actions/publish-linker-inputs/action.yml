@@ -1,0 +1,49 @@
+name: Trusted linker-input publisher
+description: Validate or immutably publish an inert linker-input release payload
+
+inputs:
+  command:
+    description: Operation to perform (validate or publish)
+    required: true
+  root:
+    description: Directory containing the candidate release files
+    required: true
+  manifest:
+    description: Top-level release manifest file name
+    required: true
+  tag:
+    description: Immutable linker-input release tag
+    required: true
+  repository:
+    description: Repository receiving the release
+    required: true
+  commit:
+    description: Source commit represented by the release
+    required: true
+  release-name:
+    description: Human-readable release title
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run trusted publisher operation
+      shell: bash
+      env:
+        PUBLISH_COMMAND: ${{ inputs.command }}
+        PUBLISH_ROOT: ${{ inputs.root }}
+        PUBLISH_MANIFEST: ${{ inputs.manifest }}
+        PUBLISH_TAG: ${{ inputs.tag }}
+        PUBLISH_REPOSITORY: ${{ inputs.repository }}
+        PUBLISH_COMMIT: ${{ inputs.commit }}
+        PUBLISH_RELEASE_NAME: ${{ inputs.release-name }}
+      run: |
+        case "$PUBLISH_COMMAND" in
+          validate|publish) ;;
+          *) echo "command must be validate or publish" >&2; exit 2 ;;
+        esac
+        python3 "${{ github.action_path }}/publish.py" "$PUBLISH_COMMAND" \
+          --root "$PUBLISH_ROOT" --manifest "$PUBLISH_MANIFEST" \
+          --tag "$PUBLISH_TAG" --repository "$PUBLISH_REPOSITORY" \
+          --commit "$PUBLISH_COMMIT" --release-name "$PUBLISH_RELEASE_NAME"

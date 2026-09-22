@@ -6,6 +6,11 @@ independent `linker-inputs-vMAJOR.MINOR.PATCH` cadence. The reusable publisher i
 general release workflow: it downloads an Actions artifact but never checks out
 or executes caller-controlled code.
 
+The controller implementation is exposed as the composite action at
+`actions/publish-linker-inputs`. Privileged reusable workflows invoke that
+action at an exact reviewed commit instead of checking this repository out into
+their workspace.
+
 The caller must invoke the workflow from an explicit `workflow_dispatch` on its
 default branch and pin this repository with a full 40-character commit SHA. It
 uploads one artifact containing only top-level regular files:
