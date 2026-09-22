@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,6 +15,12 @@ spec.loader.exec_module(publisher)
 
 
 class PublisherTests(unittest.TestCase):
+    def test_privileged_workflow_uses_only_sha_pinned_action_bundle(self):
+        workflow = (Path(__file__).parents[1] / ".github/workflows/publish-linker-inputs.yml").read_text()
+        self.assertNotIn("actions/checkout", workflow)
+        refs = re.findall(r"uses: lukewilliamboswell/roc-automation/actions/publish-linker-inputs@([0-9a-f]{40})", workflow)
+        self.assertEqual(refs, ["e21bc1b63f8d5ae4f293f596e5102e5c8f21f637"] * 2)
+
     def candidate(self, root, *, extra=None, name="archive.tar.gz"):
         root = Path(root)
         data = b"deterministic archive"
