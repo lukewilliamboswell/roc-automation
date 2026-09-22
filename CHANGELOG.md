@@ -2,7 +2,7 @@
 
 ## Trusted pull-request build-input publication
 
-- Add a reusable default-branch publisher that dispatches an unprivileged PR
+- Add a trusted publisher controller that dispatches an unprivileged PR
   producer, verifies exact run and attestation evidence, publishes a
   manifest-hash-addressed immutable release, and commits only its content lock.
 - Change automatic nightly updates to normal merge commits so the exact verified,

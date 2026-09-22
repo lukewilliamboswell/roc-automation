@@ -92,11 +92,11 @@ status-write permission and independently rechecks the run and job evidence.
 
 ## Linker-input release publisher
 
-The linker-input publisher is a separate reusable workflow for inert, fully
-declared files produced by a caller's unprivileged build jobs. It checks out only
-this controller at the exact SHA used to invoke the reusable workflow. Caller
-source is never checked out, imported, sourced, or executed in its privileged
-job. Publication requires manual dispatch on the caller's live default-branch
+The pull-request linker-input publisher is a separate controller action for inert,
+fully declared files produced by a caller's unprivileged build jobs. A privileged
+consumer workflow invokes the controller at an exact reviewed SHA. Caller source
+is never checked out, imported, sourced, or executed in its privileged job.
+Publication requires manual dispatch on the caller's live default-branch
 commit. The controller validates the complete regular-file set and content
 identities, creates attestations, refuses existing tags/releases, verifies a
 draft by downloading it, and requires immutable-release enforcement after

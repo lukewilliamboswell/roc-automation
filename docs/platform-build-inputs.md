@@ -180,9 +180,9 @@ permanently selects the branch-built release; do not rebuild or relabel it on th
 default branch. A content-derived tag permits recovery only when the complete
 candidate is byte-identical.
 
-`publish-build-inputs.yml` implements this boundary for producers that emit
+`actions/publish-build-inputs` implements this boundary for producers that emit
 `build-input-release.json` and its declared target archives. The consumer wrapper
-exposes only a pull-request number and pins the reusable workflow to a reviewed
+exposes only a pull-request number and pins the controller action to a reviewed
 full SHA. Fork changes must first move to a same-repository branch because the
 controller never writes to forks.
 

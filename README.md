@@ -53,8 +53,8 @@ It explains the choices and the work that remains manual.
 Platform maintainers should also read the
 [build-input and provenance guide](docs/platform-build-inputs.md) for reusable
 host/engine outputs, external linker inputs, content-hash verification and a
-release lifecycle that tests the exact bundles it publishes. The reusable
-`publish-build-inputs.yml` workflow turns an attested same-repository PR candidate
+release lifecycle that tests the exact bundles it publishes. The
+`actions/publish-build-inputs` controller turns an attested same-repository PR candidate
 into an immutable content-addressed release and signed lock-only commit without
 granting release credentials to candidate code.
 
