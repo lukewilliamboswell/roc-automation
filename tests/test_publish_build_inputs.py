@@ -83,6 +83,18 @@ class BuildInputPublisherTests(unittest.TestCase):
                 p.checked_lock_path(value)
         self.assertEqual(p.checked_lock_path("link-inputs.lock.json"), "link-inputs.lock.json")
 
+    def test_publication_requires_repository_immutability(self):
+        manifest = self.candidate()
+        release = {"target_commitish": "b" * 40, "assets": [
+            {"name": "build-input-release.json", "size": (self.root / "build-input-release.json").stat().st_size},
+            {"name": "link-inputs.lock.json", "size": 3},
+            {"name": "link-inputs-x64glibc.tar", "size": 7},
+        ], "draft": False, "immutable": False}
+        with patch.object(p, "release_by_tag", side_effect=[release, release]):
+            with self.assertRaisesRegex(ValueError, "not immutable"):
+                p.publish(self.root, manifest, "d" * 64, "link-inputs-sha256-" + "d" * 64,
+                          "link-inputs.lock.json", b"{}\n", "https://example.invalid/run")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -250,6 +250,9 @@ def publish(directory, manifest, manifest_digest, tag, lock_path, lock_bytes, ru
             raise ValueError("published release asset size differs from the candidate")
     if release["draft"]:
         subprocess.run(["gh", "release", "edit", tag, "--repo", repository(), "--draft=false"], check=True)
+    published = release_by_tag(tag)
+    if published is None or published.get("draft") or published.get("immutable") is not True:
+        raise ValueError("published build-input release is not immutable")
 
 
 def signed_lock_commit(number, branch, expected_head, lock_path, lock_bytes, tag):
