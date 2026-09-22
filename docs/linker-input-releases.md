@@ -12,6 +12,14 @@ branch, while publication remains controlled by a workflow dispatched from the
 trusted default branch. The release belongs to that exact PR commit. It is not a
 temporary preview and is not rebuilt or promoted after merge.
 
+This resolves a deliberate ordering problem: the material change and its build
+recipe must be reviewed together, but routine validation cannot consume the new
+bytes until they have an immutable release and lock. Building on the PR preserves
+that exact source identity. Dispatching publication from the default branch keeps
+release credentials and controller selection under already-reviewed policy. A
+single PR job doing both would allow changed producer code to publish or write its
+own asserted digest.
+
 ## Producer contract
 
 The unprivileged producer workflow builds and tests every supported target from
@@ -134,6 +142,12 @@ branch. It modifies only the configured lock path and verifies the resulting
 signature, file set, parent, and live PR head. Any competing branch update stops
 publication adoption rather than being overwritten.
 
+The signature establishes the commit creator and integrity; the lock-only shape
+limits what that privileged identity can change. Neither protection substitutes
+for the other. The lease prevents the publisher from attaching a valid lock to a
+newer, unverified PR head or overwriting maintainer work that arrived during the
+release operation.
+
 ## Review and merge the adoption
 
 The generated lock records the manifest identity, source identity, input
@@ -157,6 +171,13 @@ Do not rebuild, copy, retag, or promote the release after merge. The merged lock
 permanently selects the PR-built bytes. If source or build inputs change again,
 produce a new candidate and content-derived release. Byte-identical recovery may
 reuse the same content identity; changed bytes require a new identity.
+
+Keeping the PR-built release is what preserves the chain from source SHA through
+producer tests and attestations to the reviewed lock. Rebuilding on the default
+branch would create different bytes with different evidence even if the source
+appeared equivalent, while promotion would add ceremony without strengthening a
+content-derived identity. Permanent releases consume storage, but avoid ambiguity
+about which candidate was actually admitted and support later audit or rollback.
 
 Fork pull requests cannot receive the signed lock commit. Move an accepted change
 to a same-repository branch before publication. Do not grant a fork or PR workflow

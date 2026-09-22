@@ -24,6 +24,10 @@ exact bytes that were reviewed. These checks belong at different stages:
 The reviewed hash is the trust anchor for ordinary builds after adoption.
 Attestation does not replace content verification, and repeating the same remote
 attestation lookup does not strengthen the identity of already pinned bytes.
+Admission asks whether the producer identity and source are acceptable; routine
+use asks whether storage returned those admitted bytes. Keeping those questions
+separate avoids turning every build into an online provenance-policy decision
+while still detecting corrupted or substituted downloads and cache entries.
 
 ## Routine CI policy
 

@@ -19,6 +19,15 @@ For a platform repository, keep three release cycles visibly separate:
 | Host release | Platform implementation outputs such as `libhost.a`, selected by their own host lock or built as an explicit host candidate | Reuse when the host fingerprint is current. A host-source or ABI change may intentionally build new host outputs without changing linker inputs. |
 | Platform bundle release | The user-facing Roc platform source plus the selected host and linker-input bytes | Assemble and test the exact selected inputs, then publish those exact bundle bytes. Do not turn bundle preparation into a native bootstrap build. |
 
+This separation keeps invalidation honest and limits the cost and authority of
+each operation. Treating every file that reaches the linker as one artifact would
+rebuild stable operating-system inputs for ordinary host changes; treating the
+bundle as its native build environment would make a source-only release depend on
+privileged toolchains and mutable ambient state. Separate locks let review answer
+which bytes changed and why. The tradeoff is more than one manifest and release
+lifecycle, so use independent releases only where reuse and build cost justify
+that bookkeeping.
+
 `libhost.a` and `host.lib` are host outputs, not linker-input release assets.
 Conversely, operating-system import libraries, runtime libraries, interface stubs,
 resource objects, and similar entries required by `platform/main.roc` are linker
@@ -221,7 +230,10 @@ An input fingerprint mismatch must be explicit. For a host, a read-only PR job m
 build a host candidate because host source commonly changes with the PR. For a
 locked linker-input release, routine validation fails with instructions to run the
 independent producer/publisher cycle. It must not bootstrap a replacement as a
-side effect of a cache miss or ordinary source validation.
+side effect of a cache miss or ordinary source validation. An implicit rebuild
+would silently substitute unreviewed bytes for the dependency selected by the
+lock, make results depend on whichever runner missed its cache, and hide that the
+repository's declared dependency is stale.
 
 ## Keep routine pull requests ignorant of production
 
@@ -236,6 +248,13 @@ SHA-256. A cache miss downloads the exact locked release asset. A download failu
 fails the job. A digest mismatch removes or ignores the bad entry and fails closed;
 it never selects another release. Extraction and manifest checks happen after the
 archive hash succeeds and before files become visible to the build.
+
+Derive cache keys from the locked content identity rather than a branch, workflow
+run, or mutable release label. This prevents unrelated revisions from sharing a
+slot merely because their human-readable names match and makes identical reviewed
+bytes reusable across PRs. Still rehash a cache hit: cache keys select storage but
+do not authenticate its contents, and a poisoned, truncated, or incorrectly
+restored entry can otherwise bypass the download-time check.
 
 Nightly compiler-pin PRs follow the same consumer path. The updater owns only the
 compiler-pin proposal and validation orchestration; it cannot publish platform
@@ -264,6 +283,13 @@ Keep the authorities distinct:
 - the platform release publisher consumes already selected dependencies and
   publishes only explicitly dispatched, tested platform bundles.
 
+This split is what makes running candidate build code acceptable: compromise of
+that job cannot write a release or branch. Conversely, the publisher has powerful
+credentials, so it accepts only inert declared files and never executes the PR.
+Least-privilege job permissions reduce the operations available if the pinned
+controller or hosting account is compromised; they do not make unreviewed code
+safe to run in that job.
+
 Roll out shared automation through a reviewed `roc-automation` PR, then pin the
 consumer caller to that PR's full commit SHA. The shared PR need not merge before
 a controlled trial, but consumers must never pin a branch name or abbreviated SHA.
@@ -271,6 +297,13 @@ If review changes the shared implementation, update the consumer pin to the new
 reviewed commit and repeat the trial. Merge the shared automation before treating
 the integration as the maintained default, then upgrade consumer pins through
 ordinary dependency PRs.
+
+The full SHA makes the reviewed controller bytes stable even while the automation
+PR remains open. A branch or tag could move after consumer review and silently
+change code running with write permission. Pinning an unmerged SHA is therefore a
+useful integration technique, not a relaxation of review: the consumer records
+exactly which revision it tested, while later automation changes require a new
+pin and another trial.
 
 ## Keep rebuild selection narrow and complete
 
