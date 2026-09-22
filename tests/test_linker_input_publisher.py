@@ -22,6 +22,7 @@ class PublisherTests(unittest.TestCase):
         self.assertNotIn("github.workflow_sha", workflow)
         refs = re.findall(r"uses: lukewilliamboswell/roc-automation/actions/publish-linker-inputs@([0-9a-f]{40})", workflow)
         self.assertEqual(refs, ["e21bc1b63f8d5ae4f293f596e5102e5c8f21f637"] * 2)
+        self.assertEqual(workflow.count("DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"), 2)
 
     def candidate(self, root, *, extra=None, name="archive.tar.gz"):
         root = Path(root)
