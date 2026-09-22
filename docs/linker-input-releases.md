@@ -12,7 +12,11 @@ action at an exact reviewed commit instead of checking this repository out into
 their workspace.
 
 The caller must invoke the workflow from an explicit `workflow_dispatch` on its
-default branch and pin this repository with a full 40-character commit SHA. It
+default branch and pin this reusable workflow with a full 40-character commit
+SHA in `jobs.<job>.uses`. GitHub exposes the caller identity through
+`github.workflow_ref` and `github.workflow_sha` inside a reusable workflow, so
+the callee cannot reliably re-read its own `@ref`; pinning is enforced by code
+review and repository tests in each caller. The workflow
 uploads one artifact containing only top-level regular files:
 
 - `dependency.json`, the release manifest;
