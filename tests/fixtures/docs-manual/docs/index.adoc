@@ -1,0 +1,14 @@
+= Documentation action fixture
+:doctype: book
+:toc: left
+:source-highlighter: rouge
+
+This fixture exercises the shared renderer at version `{docs-version}`.
+
+include::usage.adoc[leveloffset=+1]
+
+[mermaid]
+....
+flowchart LR
+  Source --> Manual
+....

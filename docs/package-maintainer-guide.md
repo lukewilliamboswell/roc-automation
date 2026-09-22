@@ -5,6 +5,12 @@ package users examples that work with a documented compiler and published releas
 The shared automation handles compiler-update PRs and release-policy checks. Your
 repository supplies its examples, tests, package bundles and documentation.
 
+Use the [documentation guide](documentation-guide.md) to organize material around
+reader needs, the [artifact verification guide](artifact-verification.md) to
+separate release admission from routine content checks, and the
+[project-practice evidence guide](openssf.md) to track the public, repository,
+CI, release, and operational evidence that must remain true.
+
 ## 1. Give each branch and version a clear job
 
 Keep `main` for development. Its package or platform roots declare the exact
@@ -181,8 +187,10 @@ when they share a version and must ship together.
 2. Dispatch release preparation on that branch. Capture its exact commit SHA,
    check the compiler policy, and test the source and actual proposed bundles.
 3. Tag that tested SHA and publish those same artifacts. Record named package URLs,
-   digests and the real compiler requirement in the notes and starter kit. A
-   multi-package repository should clearly label every package URL.
+   digests and the real compiler requirement in the notes and starter kit. Verify
+   provenance while adopting those digests; routine consumers then verify the
+   reviewed content hashes without calling an attestation service. A multi-package
+   repository should clearly label every package URL.
 4. Test the published downloads, generate versioned documentation and deploy it.
    Preserve earlier docs and the site's public landing page. Prefer deployment or
    release artifacts for rendered docs; the [release follow-up contract](consumer-validation.md#release-follow-up-contract)

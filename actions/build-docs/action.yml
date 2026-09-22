@@ -1,0 +1,65 @@
+name: Build AsciiDoc manual
+description: Build an AsciiDoc HTML site, PDF manual, and optional Roc API reference.
+
+inputs:
+  docs-directory:
+    description: Documentation source directory, relative to the repository root
+    default: docs
+  entrypoint:
+    description: Manual entrypoint, relative to docs-directory
+    default: index.adoc
+  output-directory:
+    description: Generated output directory, relative to the repository root
+    default: .docs-out
+  pdf-filename:
+    description: Filename for the generated PDF
+    default: manual.pdf
+  docs-version:
+    description: Version label passed to the AsciiDoc sources as docs-version
+    default: unreleased
+  api-entrypoint:
+    description: Optional Roc platform or package root used to generate site/api
+    default: ""
+  roc-command:
+    description: Roc executable used when api-entrypoint is set
+    default: roc
+  theme-directory:
+    description: Optional theme directory relative to the repository root
+    default: ""
+
+outputs:
+  site-directory:
+    description: Absolute path to the generated HTML site
+    value: ${{ steps.build.outputs.site-directory }}
+  pdf-path:
+    description: Absolute path to the generated PDF manual
+    value: ${{ steps.build.outputs.pdf-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: build
+      name: Render documentation
+      shell: bash
+      env:
+        DOCS_ACTION_PATH: ${{ github.action_path }}
+        DOCS_WORKSPACE: ${{ github.workspace }}
+        DOCS_DIRECTORY: ${{ inputs.docs-directory }}
+        DOCS_ENTRYPOINT: ${{ inputs.entrypoint }}
+        DOCS_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        DOCS_PDF_FILENAME: ${{ inputs.pdf-filename }}
+        DOCS_VERSION: ${{ inputs.docs-version }}
+        DOCS_API_ENTRYPOINT: ${{ inputs.api-entrypoint }}
+        DOCS_ROC_COMMAND: ${{ inputs.roc-command }}
+        DOCS_THEME_DIRECTORY: ${{ inputs.theme-directory }}
+      run: >-
+        python3 "$DOCS_ACTION_PATH/build_docs.py"
+        --workspace "$DOCS_WORKSPACE"
+        --docs-directory "$DOCS_DIRECTORY"
+        --entrypoint "$DOCS_ENTRYPOINT"
+        --output-directory "$DOCS_OUTPUT_DIRECTORY"
+        --pdf-filename "$DOCS_PDF_FILENAME"
+        --docs-version "$DOCS_VERSION"
+        --api-entrypoint "$DOCS_API_ENTRYPOINT"
+        --roc-command "$DOCS_ROC_COMMAND"
+        --theme-directory "$DOCS_THEME_DIRECTORY"
