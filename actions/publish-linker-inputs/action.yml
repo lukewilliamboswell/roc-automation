@@ -31,6 +31,7 @@ runs:
     - name: Run trusted publisher operation
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         PUBLISH_COMMAND: ${{ inputs.command }}
         PUBLISH_ROOT: ${{ inputs.root }}
         PUBLISH_MANIFEST: ${{ inputs.manifest }}
@@ -43,7 +44,7 @@ runs:
           validate|publish) ;;
           *) echo "command must be validate or publish" >&2; exit 2 ;;
         esac
-        python3 "${{ github.action_path }}/publish.py" "$PUBLISH_COMMAND" \
+        python3 "$ACTION_PATH/publish.py" "$PUBLISH_COMMAND" \
           --root "$PUBLISH_ROOT" --manifest "$PUBLISH_MANIFEST" \
           --tag "$PUBLISH_TAG" --repository "$PUBLISH_REPOSITORY" \
           --commit "$PUBLISH_COMMIT" --release-name "$PUBLISH_RELEASE_NAME"
