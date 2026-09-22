@@ -5,6 +5,9 @@
 - Add a trusted publisher controller that dispatches an unprivileged PR
   producer, verifies exact run and attestation evidence, publishes a
   manifest-hash-addressed immutable release, and commits only its content lock.
+- Remove the parallel default-branch/SemVer linker-input publisher so release
+  admission and recovery have one security policy. Existing full-SHA consumers
+  remain reproducible until they migrate to the PR-branch contract.
 - Change automatic nightly updates to normal merge commits so the exact verified,
   GitHub-signed candidate remains in repository history.
 

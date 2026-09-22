@@ -131,11 +131,11 @@ releases are rejected; an interrupted draft can be resumed only when every
 published byte matches the candidate.
 Enable immutable releases in the platform repository.
 
-This PR-branch admission action is distinct from the generic
-`.github/workflows/publish-linker-inputs.yml` reusable workflow. The generic
-workflow publishes a caller's default-branch artifact under an explicit semantic
-version and does not update an adoption lock. Use `actions/publish-build-inputs`
-when a platform must publish and adopt the exact material-change PR before merge.
+`actions/publish-build-inputs` is the single supported linker-input publication
+contract. Keeping one path matters because archive admission, draft recovery,
+attestation verification, immutable publication, and lock adoption are one trust
+boundary; parallel publishers would duplicate security-sensitive policy and could
+silently diverge.
 
 Finally, the controller creates one lease-guarded, GitHub-signed commit on the PR
 branch. It modifies only the configured lock path and verifies the resulting
