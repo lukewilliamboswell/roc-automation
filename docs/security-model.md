@@ -98,9 +98,10 @@ consumer workflow invokes the controller at an exact reviewed SHA. Caller source
 is never checked out, imported, sourced, or executed in its privileged job.
 Publication requires manual dispatch on the caller's live default-branch
 commit. The controller validates the complete regular-file set and content
-identities, creates attestations, refuses existing tags/releases, verifies a
-draft by downloading it, and requires immutable-release enforcement after
-publication. See `docs/linker-input-releases.md` for the caller contract.
+identities, verifies the producer's attestations, refuses mismatched existing
+tags/releases, re-downloads and hashes the complete draft asset inventory, and requires immutable-release
+enforcement after publication. See `docs/linker-input-releases.md` for the caller
+contract.
 
 ## Read-only release policy
 

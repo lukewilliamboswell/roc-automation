@@ -224,6 +224,23 @@ def make_lock(manifest, tag, manifest_digest, lock_path):
     }, indent=2).encode() + b"\n"
 
 
+def verify_release_download(tag, assets):
+    with tempfile.TemporaryDirectory(prefix="roc-build-input-release-verify-") as temporary:
+        destination = Path(temporary)
+        subprocess.run(["gh", "release", "download", tag, "--repo", repository(),
+                        "--dir", str(destination)], check=True)
+        observed = {path.name for path in destination.iterdir()}
+        expected = {path.name for path in assets}
+        if observed != expected:
+            raise ValueError("downloaded release asset set differs from the candidate")
+        for source in assets:
+            downloaded = destination / source.name
+            if (not downloaded.is_file() or downloaded.is_symlink()
+                    or downloaded.stat().st_size != source.stat().st_size
+                    or sha256(downloaded) != sha256(source)):
+                raise ValueError(f"downloaded release asset differs from the candidate: {source.name}")
+
+
 def publish(directory, manifest, manifest_digest, tag, lock_path, lock_bytes, run_url):
     lock_asset = directory / Path(lock_path).name
     lock_asset.write_bytes(lock_bytes)
@@ -248,6 +265,7 @@ def publish(directory, manifest, manifest_digest, tag, lock_path, lock_bytes, ru
         local = next(path for path in assets if path.name == asset["name"])
         if asset["size"] != local.stat().st_size:
             raise ValueError("published release asset size differs from the candidate")
+    verify_release_download(tag, assets)
     if release["draft"]:
         subprocess.run(["gh", "release", "edit", tag, "--repo", repository(), "--draft=false"], check=True)
     published = release_by_tag(tag)

@@ -90,10 +90,30 @@ class BuildInputPublisherTests(unittest.TestCase):
             {"name": "link-inputs.lock.json", "size": 3},
             {"name": "link-inputs-x64glibc.tar", "size": 7},
         ], "draft": False, "immutable": False}
-        with patch.object(p, "release_by_tag", side_effect=[release, release]):
+        with (patch.object(p, "release_by_tag", side_effect=[release, release]),
+              patch.object(p, "verify_release_download")):
             with self.assertRaisesRegex(ValueError, "not immutable"):
                 p.publish(self.root, manifest, "d" * 64, "link-inputs-sha256-" + "d" * 64,
                           "link-inputs.lock.json", b"{}\n", "https://example.invalid/run")
+
+    def test_release_recovery_redownloads_and_hashes_every_asset(self):
+        files = []
+        for name, data in (("one", b"same-size-a"), ("two", b"second")):
+            path = self.root / name
+            path.write_bytes(data)
+            files.append(path)
+        downloaded = self.root / "downloaded"
+        downloaded.mkdir()
+
+        def fake_run(command, check):
+            destination = Path(command[command.index("--dir") + 1])
+            for path in files:
+                (destination / path.name).write_bytes(path.read_bytes())
+            (destination / "one").write_bytes(b"same-size-b")
+
+        with patch.object(p.subprocess, "run", side_effect=fake_run):
+            with self.assertRaisesRegex(ValueError, "one"):
+                p.verify_release_download("tag", files)
 
 
 if __name__ == "__main__":
