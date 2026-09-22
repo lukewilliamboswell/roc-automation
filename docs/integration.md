@@ -236,7 +236,7 @@ The separate merge job performs no consumer checkout and reads policy at the
 original trusted event SHA through the API. It uses the existing GITHUB_TOKEN, with
 contents write and Actions/PR read access. No App registration, PAT, stored key,
 repository-wide auto-merge setting, or approval permission is needed. It requests
-an immediate squash merge only after live validation; it does not queue a merge
+an immediate merge commit only after live validation; it does not queue a merge
 that could later accept an unvalidated replacement commit.
 
 The controller checks the bot PR identity, same-repository reserved branch,

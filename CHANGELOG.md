@@ -1,5 +1,13 @@
 # Release notes
 
+## Trusted pull-request build-input publication
+
+- Add a reusable default-branch publisher that dispatches an unprivileged PR
+  producer, verifies exact run and attestation evidence, publishes a
+  manifest-hash-addressed immutable release, and commits only its content lock.
+- Change automatic nightly updates to normal merge commits so the exact verified,
+  GitHub-signed candidate remains in repository history.
+
 ## Released artifact verification
 
 - Document reviewed content hashes as the trust anchor for routine CI and local

@@ -72,3 +72,9 @@ Before adopting a released artifact, record evidence that:
 
 After adoption, a pull request that changes any URL or digest is a supply-chain
 change and receives the same review as a dependency update.
+
+A same-repository pull-request release is admissible when a trusted default-branch
+publisher binds it to the exact branch SHA and producer workflow, verifies its
+attestations, and commits only the resulting content lock. Merging that reviewed
+lock is the adoption event. Routine consumers then use the same local hash checks
+as for any other release; they do not query provenance again.

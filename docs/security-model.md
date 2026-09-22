@@ -61,7 +61,8 @@ never receive this merge token.
 Immediately before merging, the controller independently rechecks the PR, signed
 bot commit, published upstream tag, configured workflow paths and live run results,
 branch heads, and active pull-request/strict status-check rulesets. It passes the
-expected head SHA to GitHub's normal squash-merge endpoint. No bot approval or
+expected head SHA to GitHub's normal merge endpoint. The merge commit preserves
+the exact verified, GitHub-signed candidate commit in history. No bot approval or
 protection bypass is used. Repository rules must have no bot bypass; administrators
 remain responsible for protecting those rules and the trusted workflow/config.
 

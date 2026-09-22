@@ -164,6 +164,28 @@ an incomplete published immutable release cannot accept missing assets and needs
 new release identity. Changed candidate bytes also need a new identity. Preserve
 the original evidence and revalidate starters whenever their final URLs change.
 
+### Publish a pull-request candidate without granting it release authority
+
+A repository may need a linker-input release before the source change that
+requires it can merge. An unprivileged workflow on the same-repository pull-request
+branch builds, tests, and attests the exact candidate. A trusted workflow dispatched
+from the default branch then verifies the producer run, source SHA and ref, workflow
+identity, attestations, manifest, and content hashes before publishing those bytes.
+It never executes scripts supplied by the candidate artifact.
+
+The trusted workflow may add the generated content lock to the producer branch as
+one lease-guarded, GitHub-signed commit. That commit changes only the configured
+lock path and remains subject to ordinary review and checks. After merge, the lock
+permanently selects the branch-built release; do not rebuild or relabel it on the
+default branch. A content-derived tag permits recovery only when the complete
+candidate is byte-identical.
+
+`publish-build-inputs.yml` implements this boundary for producers that emit
+`build-input-release.json` and its declared target archives. The consumer wrapper
+exposes only a pull-request number and pins the reusable workflow to a reviewed
+full SHA. Fork changes must first move to a same-repository branch because the
+controller never writes to forks.
+
 ## Keep rebuild selection narrow and complete
 
 Producers computing reuse identities must include every input that can affect an output:
@@ -195,10 +217,10 @@ Exercise final linking against reused artifacts; a selector test alone does not
 prove the selected artifacts work.
 
 Cache hits can speed a scheduled build but do not decide whether a workflow runs,
-and a cache miss must not become an implicit source build in a consumer. Squash
-merging can trigger a new default-branch run even if the PR used a warm cache.
-Inspect the actual event filters and reuse decisions rather than assuming a green
-PR or a different commit SHA determines them.
+and a cache miss must not become an implicit source build in a consumer. Preserve
+the reviewed candidate commit with a merge commit so the exact validated history
+remains reachable. Inspect the actual event filters and reuse decisions rather
+than assuming a green PR or a different commit SHA determines them.
 
 ## Keep final release preparation small
 
