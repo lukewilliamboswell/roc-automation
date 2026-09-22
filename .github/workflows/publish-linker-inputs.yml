@@ -63,4 +63,5 @@ jobs:
           commit: ${{ github.sha }}
           release-name: ${{ inputs.release-name }}
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
