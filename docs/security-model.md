@@ -89,6 +89,18 @@ runs unattached to an Actions-bot PR. Statuses use the same check names and Acti
 identity; they do not replace or bypass the required checks. The merge job has no
 status-write permission and independently rechecks the run and job evidence.
 
+## Linker-input release publisher
+
+The linker-input publisher is a separate reusable workflow for inert, fully
+declared files produced by a caller's unprivileged build jobs. It checks out only
+this controller at the exact SHA used to invoke the reusable workflow. Caller
+source is never checked out, imported, sourced, or executed in its privileged
+job. Publication requires manual dispatch on the caller's live default-branch
+commit. The controller validates the complete regular-file set and content
+identities, creates attestations, refuses existing tags/releases, verifies a
+draft by downloading it, and requires immutable-release enforcement after
+publication. See `docs/linker-input-releases.md` for the caller contract.
+
 ## Read-only release policy
 
 `actions/check-release` is separate from the nightly controller. It requires an
