@@ -129,6 +129,13 @@ release fixtures tested with their documented compiler.
 The branch `automation/roc-nightly` is reserved for pin-only bot commits. Put manual
 compatibility fixes on separate branches. No branch-protection bypass is required.
 
+For platform repositories, configure merge commits as an allowed merge method.
+The nightly controller requests a merge commit so its exact verified pin-only
+commit remains in history. The linker-input adoption flow likewise relies on a
+merge commit to preserve the attested producer SHA and GitHub-signed lock-only
+commit. Do not make squash merging the only available method for these automation
+PRs. See the [platform build-input guide](platform-build-inputs.md#preserve-reviewed-history-and-authority).
+
 ## Live rollout and troubleshooting
 
 Resolve immutable references instead of completing an abbreviated SHA by hand.
@@ -236,7 +243,7 @@ The separate merge job performs no consumer checkout and reads policy at the
 original trusted event SHA through the API. It uses the existing GITHUB_TOKEN, with
 contents write and Actions/PR read access. No App registration, PAT, stored key,
 repository-wide auto-merge setting, or approval permission is needed. It requests
-an immediate squash merge only after live validation; it does not queue a merge
+an immediate merge commit only after live validation; it does not queue a merge
 that could later accept an unvalidated replacement commit.
 
 The controller checks the bot PR identity, same-repository reserved branch,

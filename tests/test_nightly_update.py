@@ -355,7 +355,7 @@ class ControllerTests(unittest.TestCase):
     def test_merge_rechecks_live_evidence_and_uses_exact_head_without_bypass(self):
         responses = self.merge_fixture()
         self.assertEqual(self.attempt_merge(responses), [
-            ('repos/owner/project/pulls/1/merge', {'sha': 'candidate', 'merge_method': 'squash'}, 'PUT')])
+            ('repos/owner/project/pulls/1/merge', {'sha': 'candidate', 'merge_method': 'merge'}, 'PUT')])
 
     def test_merge_refuses_untrusted_prs_and_commits(self):
         original = self.merge_fixture()

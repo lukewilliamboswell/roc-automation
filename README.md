@@ -51,9 +51,12 @@ set up examples, compiler versions, releases and repository permissions in order
 It explains the choices and the work that remains manual.
 
 Platform maintainers should also read the
-[build-input and provenance guide](docs/platform-build-inputs.md) for reusable
-host/engine outputs, external linker inputs, content-hash verification and a
-release lifecycle that tests the exact bundles it publishes.
+[platform build-input maintainer guide](docs/platform-build-inputs.md) for the
+separate linker-input, `libhost.a`/host, and platform-bundle lifecycles; routine
+cache/hash verification; material-change decisions; and PR rollout. The
+`actions/publish-build-inputs` controller turns an attested same-repository PR candidate
+into an immutable content-addressed release and signed lock-only commit without
+granting release credentials to candidate code.
 
 ## Use
 

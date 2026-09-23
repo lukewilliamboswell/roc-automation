@@ -1,4 +1,4 @@
-# Reuse platform build inputs across validation and releases
+# Manage platform build inputs across validation and releases
 
 Platforms often need native builds before Roc can link an application.
 Expensive outputs reused across releases can have their own dependency releases;
@@ -10,6 +10,30 @@ verifies their integrity or provenance.
 Use this guide alongside the [maintainer walkthrough](package-maintainer-guide.md)
 and [validation contract](consumer-validation.md). It describes the intended
 workflow, not a claim that adopting the shared controller implements it.
+
+For a platform repository, keep three release cycles visibly separate:
+
+| Cycle | Owner and identity | Normal PR behavior |
+| --- | --- | --- |
+| Linker-input release | Platform-owned native inputs selected by a content lock; published independently from a material producer change | Restore/download the selected target archives and verify their locked hashes. Never rebuild them implicitly. |
+| Host release | Platform implementation outputs such as `libhost.a`, selected by their own host lock or built as an explicit host candidate | Reuse when the host fingerprint is current. A host-source or ABI change may intentionally build new host outputs without changing linker inputs. |
+| Platform bundle release | The user-facing Roc platform source plus the selected host and linker-input bytes | Assemble and test the exact selected inputs, then publish those exact bundle bytes. Do not turn bundle preparation into a native bootstrap build. |
+
+This separation keeps invalidation honest and limits the cost and authority of
+each operation. Treating every file that reaches the linker as one artifact would
+rebuild stable operating-system inputs for ordinary host changes; treating the
+bundle as its native build environment would make a source-only release depend on
+privileged toolchains and mutable ambient state. Separate locks let review answer
+which bytes changed and why. The tradeoff is more than one manifest and release
+lifecycle, so use independent releases only where reuse and build cost justify
+that bookkeeping.
+
+`libhost.a` and `host.lib` are host outputs, not linker-input release assets.
+Conversely, operating-system import libraries, runtime libraries, interface stubs,
+resource objects, and similar entries required by `platform/main.roc` are linker
+inputs even when the platform repository contains their generation recipes.
+Classify by ownership and invalidation, not merely by the fact that the final Roc
+linker receives the file.
 
 Choose the smallest lifecycle that fits the project:
 
@@ -164,6 +188,123 @@ an incomplete published immutable release cannot accept missing assets and needs
 new release identity. Changed candidate bytes also need a new identity. Preserve
 the original evidence and revalidate starters whenever their final URLs change.
 
+### Publish a pull-request candidate without granting it release authority
+
+A repository may need a linker-input release before the source change that
+requires it can merge. An unprivileged workflow on the same-repository pull-request
+branch builds, tests, and attests the exact candidate. A trusted workflow dispatched
+from the default branch then verifies the producer run, source SHA and ref, workflow
+identity, attestations, manifest, and content hashes before publishing those bytes.
+It never executes scripts supplied by the candidate artifact.
+
+The trusted workflow may add the generated content lock to the producer branch as
+one lease-guarded, GitHub-signed commit. That commit changes only the configured
+lock path and remains subject to ordinary review and checks. After merge, the lock
+permanently selects the branch-built release; do not rebuild or relabel it on the
+default branch. A content-derived tag permits recovery only when the complete
+candidate is byte-identical.
+
+`actions/publish-build-inputs` implements this boundary for producers that emit
+`build-input-release.json` and its declared target archives. The consumer wrapper
+exposes only a pull-request number and pins the controller action to a reviewed
+full SHA. Fork changes must first move to a same-repository branch because the
+controller never writes to forks.
+
+The complete producer, publisher, generated-lock, recovery, review, and merge
+contract is in [Publish linker inputs from a pull request](linker-input-releases.md).
+
+## Choose the correct maintainer path
+
+Use the smallest lifecycle that corresponds to the changed ownership boundary:
+
+| Change | Required maintainer action |
+| --- | --- |
+| Roc source, examples, tests, docs, or an unrelated workflow | Run ordinary PR validation using the committed host/linker-input locks. No native dependency release. |
+| Roc compiler pin only, including a nightly update | Validate published examples and current source using the same committed locks. No native dependency release unless the compiler actually contributes to a native output's fingerprint or ABI. |
+| Host implementation, host dependency, host tool pin, host ABI, or exported project symbol | Build and validate affected host candidates. Publish/adopt new host outputs under the host lifecycle. Reuse the existing linker inputs unless their own inputs changed. |
+| Linker-input source, upstream binary, interface catalog, resource source, generation recipe, target matrix, or tool pin | Build the complete linker-input candidate on a same-repository PR branch, then run the trusted publisher and review its signed lock commit. |
+| `platform/main.roc` linker entries | Check classification first. A new project implementation symbol normally changes the host; a new external library/interface normally changes linker inputs. Validate that every referenced released path exists for every advertised target. |
+| Platform release | Require current host and linker-input locks, assemble once, exercise target applications, and publish the exact tested bundles. |
+
+An input fingerprint mismatch must be explicit. For a host, a read-only PR job may
+build a host candidate because host source commonly changes with the PR. For a
+locked linker-input release, routine validation fails with instructions to run the
+independent producer/publisher cycle. It must not bootstrap a replacement as a
+side effect of a cache miss or ordinary source validation. An implicit rebuild
+would silently substitute unreviewed bytes for the dependency selected by the
+lock, make results depend on whichever runner missed its cache, and hide that the
+repository's declared dependency is stale.
+
+## Keep routine pull requests ignorant of production
+
+Routine consumers need only the lock schema, a downloader/cache, digest and archive
+validation, and the selected extracted files. They do not need a native SDK,
+linker-input generator, publication token, attestation lookup, or knowledge of how
+the archives were produced. Keep producer jobs in their own workflow and path
+scope; do not call them from general CI merely to populate a cache.
+
+Every cache read is untrusted until the archived bytes match the locked size and
+SHA-256. A cache miss downloads the exact locked release asset. A download failure
+fails the job. A digest mismatch removes or ignores the bad entry and fails closed;
+it never selects another release. Extraction and manifest checks happen after the
+archive hash succeeds and before files become visible to the build.
+
+Derive cache keys from the locked content identity rather than a branch, workflow
+run, or mutable release label. This prevents unrelated revisions from sharing a
+slot merely because their human-readable names match and makes identical reviewed
+bytes reusable across PRs. Still rehash a cache hit: cache keys select storage but
+do not authenticate its contents, and a poisoned, truncated, or incorrectly
+restored entry can otherwise bypass the download-time check.
+
+Nightly compiler-pin PRs follow the same consumer path. The updater owns only the
+compiler-pin proposal and validation orchestration; it cannot publish platform
+dependencies. When a nightly reveals a genuine new host or linker requirement,
+leave that mechanical candidate open, make the material change in a separately
+reviewed PR, publish the required dependency there, and retry the nightly update
+after the platform's committed locks and source are compatible.
+
+## Preserve reviewed history and authority
+
+Use merge commits for automation PRs whose evidence names exact commits. This
+keeps the attested producer commit, the publisher's signed lock-only commit, and
+the nightly updater's signed pin-only commit reachable with their original
+identities. Squashing manufactures a different commit and discards that useful
+correspondence. It remains reasonable for a maintainer to clean up an ordinary
+development branch before review, but the trusted automation must not depend on
+history rewriting after it binds evidence to a SHA.
+
+Keep the authorities distinct:
+
+- producer and ordinary validation jobs may execute candidate code but are
+  read-only;
+- the platform's trusted publisher job invokes only its full-SHA-pinned shared
+  controller action with release and lock-write permission;
+- the nightly merge job can merge only its verified compiler-pin-only candidate;
+- the platform release publisher consumes already selected dependencies and
+  publishes only explicitly dispatched, tested platform bundles.
+
+This split is what makes running candidate build code acceptable: compromise of
+that job cannot write a release or branch. Conversely, the publisher has powerful
+credentials, so it accepts only inert declared files and never executes the PR.
+Least-privilege job permissions reduce the operations available if the pinned
+controller or hosting account is compromised; they do not make unreviewed code
+safe to run in that job.
+
+Roll out shared automation through a reviewed `roc-automation` PR, then pin the
+consumer caller to that PR's full commit SHA. The shared PR need not merge before
+a controlled trial, but consumers must never pin a branch name or abbreviated SHA.
+If review changes the shared implementation, update the consumer pin to the new
+reviewed commit and repeat the trial. Merge the shared automation before treating
+the integration as the maintained default, then upgrade consumer pins through
+ordinary dependency PRs.
+
+The full SHA makes the reviewed controller bytes stable even while the automation
+PR remains open. A branch or tag could move after consumer review and silently
+change code running with write permission. Pinning an unmerged SHA is therefore a
+useful integration technique, not a relaxation of review: the consumer records
+exactly which revision it tested, while later automation changes require a new
+pin and another trial.
+
 ## Keep rebuild selection narrow and complete
 
 Producers computing reuse identities must include every input that can affect an output:
@@ -195,10 +336,10 @@ Exercise final linking against reused artifacts; a selector test alone does not
 prove the selected artifacts work.
 
 Cache hits can speed a scheduled build but do not decide whether a workflow runs,
-and a cache miss must not become an implicit source build in a consumer. Squash
-merging can trigger a new default-branch run even if the PR used a warm cache.
-Inspect the actual event filters and reuse decisions rather than assuming a green
-PR or a different commit SHA determines them.
+and a cache miss must not become an implicit source build in a consumer. Preserve
+the reviewed candidate commit with a merge commit so the exact validated history
+remains reachable. Inspect the actual event filters and reuse decisions rather
+than assuming a green PR or a different commit SHA determines them.
 
 ## Keep final release preparation small
 

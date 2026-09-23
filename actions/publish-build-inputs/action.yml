@@ -1,0 +1,34 @@
+name: Publish pull-request build inputs
+description: Admit an exact PR producer run, publish its attested bytes, and commit only its lock
+
+inputs:
+  pull-request:
+    description: Same-repository pull request containing the exact producer source
+    required: true
+  producer-workflow:
+    description: Workflow filename to dispatch on the pull request branch
+    required: true
+  candidate-artifact:
+    description: Exact artifact name produced by the candidate workflow
+    required: true
+  lock-path:
+    description: Only repository path the trusted controller may commit
+    required: true
+  release-prefix:
+    description: Prefix for the manifest-hash-derived immutable release tag
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate, publish, and commit the selected lock
+      shell: bash
+      env:
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        INPUT_PULL_REQUEST: ${{ inputs.pull-request }}
+        INPUT_PRODUCER_WORKFLOW: ${{ inputs.producer-workflow }}
+        INPUT_CANDIDATE_ARTIFACT: ${{ inputs.candidate-artifact }}
+        INPUT_LOCK_PATH: ${{ inputs.lock-path }}
+        INPUT_RELEASE_PREFIX: ${{ inputs.release-prefix }}
+        CONTROLLER_PATH: ${{ github.action_path }}/publish_build_inputs.py
+      run: python3 "$CONTROLLER_PATH"

@@ -61,7 +61,8 @@ never receive this merge token.
 Immediately before merging, the controller independently rechecks the PR, signed
 bot commit, published upstream tag, configured workflow paths and live run results,
 branch heads, and active pull-request/strict status-check rulesets. It passes the
-expected head SHA to GitHub's normal squash-merge endpoint. No bot approval or
+expected head SHA to GitHub's normal merge endpoint. The merge commit preserves
+the exact verified, GitHub-signed candidate commit in history. No bot approval or
 protection bypass is used. Repository rules must have no bot bypass; administrators
 remain responsible for protecting those rules and the trusted workflow/config.
 
@@ -91,15 +92,16 @@ status-write permission and independently rechecks the run and job evidence.
 
 ## Linker-input release publisher
 
-The linker-input publisher is a separate reusable workflow for inert, fully
-declared files produced by a caller's unprivileged build jobs. It checks out only
-this controller at the exact SHA used to invoke the reusable workflow. Caller
-source is never checked out, imported, sourced, or executed in its privileged
-job. Publication requires manual dispatch on the caller's live default-branch
+The pull-request linker-input publisher is a separate controller action for inert,
+fully declared files produced by a caller's unprivileged build jobs. A privileged
+consumer workflow invokes the controller at an exact reviewed SHA. Caller source
+is never checked out, imported, sourced, or executed in its privileged job.
+Publication requires manual dispatch on the caller's live default-branch
 commit. The controller validates the complete regular-file set and content
-identities, creates attestations, refuses existing tags/releases, verifies a
-draft by downloading it, and requires immutable-release enforcement after
-publication. See `docs/linker-input-releases.md` for the caller contract.
+identities, verifies the producer's attestations, refuses mismatched existing
+tags/releases, re-downloads and hashes the complete draft asset inventory, and requires immutable-release
+enforcement after publication. See `docs/linker-input-releases.md` for the caller
+contract.
 
 ## Read-only release policy
 

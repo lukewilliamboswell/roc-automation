@@ -428,7 +428,7 @@ def merge():
     if head() != sha or api(f"repos/{repository}/git/ref/heads/{default}")["object"]["sha"] != base:
         raise ValueError("Candidate or default branch changed; revalidate before merging")
     result = api(f"repos/{repository}/pulls/{number}/merge",
-                 {"sha": sha, "merge_method": "squash"}, "PUT")
+                 {"sha": sha, "merge_method": "merge"}, "PUT")
     if not result["merged"]:
         raise ValueError("GitHub refused the merge")
     print(f"Merged nightly PR #{number}: {result['sha']}")
