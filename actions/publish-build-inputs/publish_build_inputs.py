@@ -288,9 +288,18 @@ def signed_lock_commit(number, branch, expected_head, lock_path, lock_bytes, tag
     if (not commit["commit"]["verification"]["verified"] or len(commit["files"]) != 1
             or commit["files"][0]["filename"] != lock_path):
         raise ValueError("lock adoption was not a verified lock-only commit")
-    current = api(f"repos/{repository()}/pulls/{number}")
-    if current["head"]["sha"] != sha:
-        raise ValueError("pull request did not advance to the signed lock commit")
+    # The GraphQL branch mutation and the REST pull-request projection are not
+    # atomically visible. Tolerate that projection lag only while REST still
+    # reports the exact head protected by the mutation's lease. A different
+    # third SHA is a real concurrent update and must fail immediately.
+    deadline = time.monotonic() + 30
+    while True:
+        current_sha = api(f"repos/{repository()}/pulls/{number}")["head"]["sha"]
+        if current_sha == sha:
+            break
+        if current_sha != expected_head or time.monotonic() >= deadline:
+            raise ValueError("pull request did not advance to the signed lock commit")
+        time.sleep(2)
     return sha
 
 
