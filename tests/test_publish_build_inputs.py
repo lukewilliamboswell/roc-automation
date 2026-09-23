@@ -77,6 +77,37 @@ class BuildInputPublisherTests(unittest.TestCase):
         self.assertEqual([item["path"] for item in request["fileChanges"]["additions"]],
                          ["link-inputs.lock.json"])
 
+    def test_signed_commit_tolerates_stale_pr_projection_of_leased_head(self):
+        responses = [
+            {"data": {"createCommitOnBranch": {"commit": {"oid": "d" * 40}}}},
+            {"commit": {"verification": {"verified": True}},
+             "files": [{"filename": "link-inputs.lock.json"}]},
+            {"head": {"sha": "b" * 40}},
+            {"head": {"sha": "d" * 40}},
+        ]
+        with (patch.object(p, "api", side_effect=responses),
+              patch.object(p.time, "sleep") as sleep):
+            result = p.signed_lock_commit("7", "feature", "b" * 40,
+                                          "link-inputs.lock.json", b"{}\n",
+                                          "deps-link-inputs-sha256-x")
+        self.assertEqual(result, "d" * 40)
+        sleep.assert_called_once_with(2)
+
+    def test_signed_commit_rejects_an_unexpected_pr_head(self):
+        responses = [
+            {"data": {"createCommitOnBranch": {"commit": {"oid": "d" * 40}}}},
+            {"commit": {"verification": {"verified": True}},
+             "files": [{"filename": "link-inputs.lock.json"}]},
+            {"head": {"sha": "e" * 40}},
+        ]
+        with (patch.object(p, "api", side_effect=responses),
+              patch.object(p.time, "sleep") as sleep):
+            with self.assertRaisesRegex(ValueError, "did not advance"):
+                p.signed_lock_commit("7", "feature", "b" * 40,
+                                     "link-inputs.lock.json", b"{}\n",
+                                     "deps-link-inputs-sha256-x")
+        sleep.assert_not_called()
+
     def test_lock_paths_cannot_escape_or_select_arbitrary_files(self):
         for value in ("../lock.json", "/lock.json", "README.md", "deep/path/to/too/many.lock.json"):
             with self.subTest(value=value), self.assertRaises(ValueError):
