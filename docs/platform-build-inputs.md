@@ -226,6 +226,17 @@ Use the smallest lifecycle that corresponds to the changed ownership boundary:
 | `platform/main.roc` linker entries | Check classification first. A new project implementation symbol normally changes the host; a new external library/interface normally changes linker inputs. Validate that every referenced released path exists for every advertised target. |
 | Platform release | Require current host and linker-input locks, assemble once, exercise target applications, and publish the exact tested bundles. |
 
+For a stale repository-owned linker-input lock, stage the material change in a
+same-repository PR first. An optional unprivileged producer run at that PR head
+can build, test, and attest a candidate without publishing. Then explicitly
+dispatch the trusted publisher **from the default branch** with the PR number;
+it reruns the producer at the exact PR head, verifies the candidate, publishes
+the immutable linker-input release, and adds a signed lock-only commit to that
+PR. Revalidate the updated PR against the released lock before merging. A Roc
+platform bundle is a separate, later release using that selected lock. The
+[publisher procedure](linker-input-releases.md) defines the exact admission and
+review checks.
+
 An input fingerprint mismatch must be explicit. For a host, a read-only PR job may
 build a host candidate because host source commonly changes with the PR. For a
 locked linker-input release, routine validation fails with instructions to run the
