@@ -116,12 +116,13 @@ class BuildInputPublisherTests(unittest.TestCase):
 
     def test_publication_requires_repository_immutability(self):
         manifest = self.candidate()
-        release = {"target_commitish": "b" * 40, "assets": [
+        release = {"id": 42, "tag_name": "link-inputs-sha256-" + "d" * 64, "target_commitish": "b" * 40, "assets": [
             {"name": "build-input-release.json", "size": (self.root / "build-input-release.json").stat().st_size},
             {"name": "link-inputs.lock.json", "size": 3},
             {"name": "link-inputs-x64glibc.tar", "size": 7},
         ], "draft": False, "immutable": False}
-        with (patch.object(p, "release_by_tag", side_effect=[release, release]),
+        with (patch.object(p, "release_by_tag", return_value=release),
+              patch.object(p, "api", return_value=release),
               patch.object(p, "verify_release_download")):
             with self.assertRaisesRegex(ValueError, "not immutable"):
                 p.publish(self.root, manifest, "d" * 64, "link-inputs-sha256-" + "d" * 64,
@@ -129,22 +130,109 @@ class BuildInputPublisherTests(unittest.TestCase):
 
     def test_release_recovery_redownloads_and_hashes_every_asset(self):
         files = []
-        for name, data in (("one", b"same-size-a"), ("two", b"second")):
+        records = []
+        for i, (name, data) in enumerate((("one", b"same-size-a"), ("two", b"second"))):
             path = self.root / name
             path.write_bytes(data)
             files.append(path)
-        downloaded = self.root / "downloaded"
-        downloaded.mkdir()
+            records.append({"name": name, "id": i + 1})
 
-        def fake_run(command, check):
-            destination = Path(command[command.index("--dir") + 1])
-            for path in files:
-                (destination / path.name).write_bytes(path.read_bytes())
-            (destination / "one").write_bytes(b"same-size-b")
+        def fake_run(command, *, stdout):
+            identifier = int(command[2].rsplit("/", 1)[-1])
+            stdout.write(b"same-size-b" if identifier == 1 else b"second")
 
-        with patch.object(p.subprocess, "run", side_effect=fake_run):
+        with patch.object(p, "run", side_effect=fake_run):
             with self.assertRaisesRegex(ValueError, "one"):
-                p.verify_release_download("tag", files)
+                p.verify_release_download({"assets": records}, files)
+
+    def test_existing_run_must_match_current_pr_and_successful_dispatch(self):
+        run = {"event": "workflow_dispatch", "head_sha": "b" * 40,
+               "head_branch": "feature", "path": ".github/workflows/link-inputs.yml",
+               "head_repository": {"full_name": "owner/project"},
+               "status": "completed", "conclusion": "success", "html_url": "run-url"}
+        with patch.object(p, "api", return_value=run):
+            self.assertEqual(p.completed_run("123", "link-inputs.yml", "feature", "b" * 40),
+                             ("123", "run-url"))
+        for change in ({"event": "pull_request"}, {"head_sha": "c" * 40},
+                       {"head_branch": "other"}, {"path": ".github/workflows/other.yml"},
+                       {"head_repository": {"full_name": "fork/project"}},
+                       {"status": "in_progress"}, {"conclusion": "failure"},
+                       {"conclusion": "cancelled"}):
+            with self.subTest(change=change), patch.object(p, "api", return_value={**run, **change}):
+                with self.assertRaises(ValueError):
+                    p.completed_run("123", "link-inputs.yml", "feature", "b" * 40)
+        with patch.object(p, "api") as api:
+            with self.assertRaises(ValueError):
+                p.completed_run("../other", "link-inputs.yml", "feature", "b" * 40)
+            api.assert_not_called()
+
+    def test_release_recovery_finds_a_draft_beyond_the_first_page(self):
+        wanted = {"id": 42, "tag_name": "wanted", "draft": True}
+        with patch.object(p, "api", side_effect=[[{"tag_name": str(i)} for i in range(100)], [wanted]]) as api:
+            self.assertEqual(p.release_by_tag("wanted"), wanted)
+            self.assertTrue(api.call_args.args[0].endswith("page=2"))
+
+    def test_new_draft_uses_returned_id_without_rediscovering_through_listing(self):
+        manifest = self.candidate()
+        tag = "link-inputs-sha256-" + "d" * 64
+        draft = {"id": 42, "tag_name": tag, "target_commitish": "b" * 40, "draft": True}
+        uploads = []
+        def upload(command):
+            self.assertIn("/releases/42/assets?name=", command[4])
+            path = Path(command[-1])
+            record = {"id": len(uploads) + 1, "name": path.name, "size": path.stat().st_size}
+            uploads.append(record)
+            return json.dumps(record)
+        def api(endpoint, data=None, method=None):
+            if endpoint.endswith("/releases"):
+                self.assertTrue(data["draft"])
+                return dict(draft)
+            self.assertTrue(endpoint.endswith("/releases/42"))
+            if method == "PATCH":
+                draft["draft"] = False
+            return {**draft, "assets": list(uploads), "immutable": not draft["draft"]}
+        with (patch.object(p, "release_by_tag", return_value=None) as lookup,
+              patch.object(p, "api", side_effect=api), patch.object(p, "run", side_effect=upload),
+              patch.object(p, "verify_release_download") as verify):
+            p.publish(self.root, manifest, "d" * 64, tag, "link-inputs.lock.json", b"{}\n", "run-url")
+            lookup.assert_called_once_with(tag)
+            self.assertEqual(verify.call_args.args[0]["id"], 42)
+            self.assertEqual(len(uploads), 3)
+
+    def test_recovery_never_publishes_a_draft_with_mismatched_bytes(self):
+        manifest = self.candidate()
+        tag = "link-inputs-sha256-" + "d" * 64
+        release = {"id": 42, "tag_name": tag, "target_commitish": "b" * 40, "draft": True,
+                   "assets": [{"id": i, "name": name, "size": size} for i, (name, size) in enumerate([
+                       ("build-input-release.json", (self.root / "build-input-release.json").stat().st_size),
+                       ("link-inputs.lock.json", 3), ("link-inputs-x64glibc.tar", 7)])]}
+        with (patch.object(p, "release_by_tag", return_value=release),
+              patch.object(p, "verify_release_download", side_effect=ValueError("digest mismatch")),
+              patch.object(p, "api") as api):
+            with self.assertRaisesRegex(ValueError, "digest mismatch"):
+                p.publish(self.root, manifest, "d" * 64, tag, "link-inputs.lock.json", b"{}\n", "run-url")
+            api.assert_not_called()
+
+    def test_resume_reverifies_candidate_and_attestations_without_dispatch(self):
+        env = {"INPUT_PULL_REQUEST": "31", "INPUT_PRODUCER_WORKFLOW": "link-inputs.yml",
+               "INPUT_CANDIDATE_ARTIFACT": "candidate", "INPUT_LOCK_PATH": "link-inputs.lock.json",
+               "INPUT_RELEASE_PREFIX": "link-inputs", "INPUT_PRODUCER_RUN": "123"}
+        manifest = self.candidate()
+        encoded = (self.root / "build-input-release.json").read_bytes()
+        with (patch.dict(os.environ, env), patch.object(p, "require_default_dispatch"),
+              patch.object(p, "pr_source", return_value=("feature", "b" * 40)),
+              patch.object(p, "completed_run", return_value=("123", "run-url")) as selected,
+              patch.object(p, "dispatch_and_wait") as dispatch,
+              patch.object(p, "download_candidate", return_value=self.root),
+              patch.object(p, "validate_candidate", wraps=p.validate_candidate) as validate,
+              patch.object(p, "verify_attestations") as attest,
+              patch.object(p, "publish") as publish, patch.object(p, "signed_lock_commit", return_value="c" * 40)):
+            p.main()
+            selected.assert_called_once_with("123", "link-inputs.yml", "feature", "b" * 40)
+            dispatch.assert_not_called()
+            validate.assert_called_once()
+            attest.assert_called_once_with(self.root, manifest)
+            self.assertEqual(publish.call_args.args[2], hashlib.sha256(encoded).hexdigest())
 
 
 if __name__ == "__main__":
