@@ -8,6 +8,10 @@ inputs:
   producer-workflow:
     description: Workflow filename to dispatch on the pull request branch
     required: true
+  producer-run:
+    description: Existing successful producer run for the exact current PR head; empty dispatches a new run
+    required: false
+    default: ''
   candidate-artifact:
     description: Exact artifact name produced by the candidate workflow
     required: true
@@ -26,6 +30,7 @@ runs:
       env:
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         INPUT_PULL_REQUEST: ${{ inputs.pull-request }}
+        INPUT_PRODUCER_RUN: ${{ inputs.producer-run }}
         INPUT_PRODUCER_WORKFLOW: ${{ inputs.producer-workflow }}
         INPUT_CANDIDATE_ARTIFACT: ${{ inputs.candidate-artifact }}
         INPUT_LOCK_PATH: ${{ inputs.lock-path }}

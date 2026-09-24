@@ -99,6 +99,23 @@ def pr_source(number):
     return item["head"]["ref"], item["head"]["sha"]
 
 
+def checked_run(run_id, workflow, branch, sha):
+    checked_name(str(run_id), "producer run ID", re.compile(r"[1-9][0-9]*"))
+    item = api(f"repos/{repository()}/actions/runs/{run_id}")
+    if (item["event"] != "workflow_dispatch" or item["head_sha"] != sha
+            or item["head_branch"] != branch or item["path"] != f".github/workflows/{workflow}"
+            or item["head_repository"]["full_name"] != repository()):
+        raise ValueError("candidate run does not belong to the selected producer and PR head")
+    return item
+
+
+def completed_run(run_id, workflow, branch, sha):
+    item = checked_run(run_id, workflow, branch, sha)
+    if item["status"] != "completed" or item["conclusion"] != "success":
+        raise ValueError("selected producer run must be completed successfully")
+    return run_id, item["html_url"]
+
+
 def dispatch_and_wait(workflow, branch, sha):
     dispatched = api(f"repos/{repository()}/actions/workflows/{workflow}/dispatches", {
         "ref": branch, "inputs": {"release_candidate": True, "expected_sha": sha},
@@ -106,10 +123,7 @@ def dispatch_and_wait(workflow, branch, sha):
     run_id = dispatched["workflow_run_id"]
     deadline = time.monotonic() + 175 * 60
     while True:
-        item = api(f"repos/{repository()}/actions/runs/{run_id}")
-        if (item["event"] != "workflow_dispatch" or item["head_sha"] != sha
-                or item["head_branch"] != branch or item["path"] != f".github/workflows/{workflow}"):
-            raise ValueError("candidate run does not belong to the selected producer and PR head")
+        item = checked_run(run_id, workflow, branch, sha)
         if item["status"] == "completed":
             if item["conclusion"] != "success":
                 raise ValueError("candidate producer did not succeed")
@@ -205,8 +219,14 @@ def verify_attestations(directory, manifest):
 
 
 def release_by_tag(tag):
-    releases = api(f"repos/{repository()}/releases?per_page=100")
-    matches = [item for item in releases if item["tag_name"] == tag]
+    matches = []
+    page = 1
+    while True:
+        releases = api(f"repos/{repository()}/releases?per_page=100&page={page}")
+        matches.extend(item for item in releases if item["tag_name"] == tag)
+        if len(releases) < 100:
+            break
+        page += 1
     if len(matches) > 1:
         raise ValueError("release identity is ambiguous")
     return matches[0] if matches else None
@@ -224,20 +244,18 @@ def make_lock(manifest, tag, manifest_digest, lock_path):
     }, indent=2).encode() + b"\n"
 
 
-def verify_release_download(tag, assets):
+def verify_release_download(release, assets):
+    # Draft tags need not exist yet. Read immutable asset IDs rather than
+    # rediscovering the draft through tag/list projections.
     with tempfile.TemporaryDirectory(prefix="roc-build-input-release-verify-") as temporary:
         destination = Path(temporary)
-        subprocess.run(["gh", "release", "download", tag, "--repo", repository(),
-                        "--dir", str(destination)], check=True)
-        observed = {path.name for path in destination.iterdir()}
-        expected = {path.name for path in assets}
-        if observed != expected:
-            raise ValueError("downloaded release asset set differs from the candidate")
-        for source in assets:
+        for record in release["assets"]:
+            source = next(path for path in assets if path.name == record["name"])
             downloaded = destination / source.name
-            if (not downloaded.is_file() or downloaded.is_symlink()
-                    or downloaded.stat().st_size != source.stat().st_size
-                    or sha256(downloaded) != sha256(source)):
+            with downloaded.open("xb") as stream:
+                run(["gh", "api", f"repos/{repository()}/releases/assets/{record['id']}",
+                     "-H", "Accept: application/octet-stream"], stdout=stream)
+            if downloaded.stat().st_size != source.stat().st_size or sha256(downloaded) != sha256(source):
                 raise ValueError(f"downloaded release asset differs from the candidate: {source.name}")
 
 
@@ -249,26 +267,34 @@ def publish(directory, manifest, manifest_digest, tag, lock_path, lock_bytes, ru
     expected = {path.name for path in assets}
     release = release_by_tag(tag)
     if release is None:
-        notes = directory / "release-notes.md"
-        notes.write_text(
-            f"Content-addressed `{manifest['kind']}` inputs built and tested by [{manifest['source']['workflow']}]({run_url}) "
-            f"from `{manifest['source']['sha']}`. Consumers must verify the committed SHA-256 values on every use.\n"
-        )
-        subprocess.run(["gh", "release", "create", tag, *map(str, assets), "--repo", repository(),
-                        "--target", manifest["source"]["sha"], "--latest=false", "--draft",
-                        "--title", f"{manifest['kind']} {manifest_digest}", "--notes-file", str(notes)], check=True)
-        release = release_by_tag(tag)
+        release = api(f"repos/{repository()}/releases", {
+            "tag_name": tag, "target_commitish": manifest["source"]["sha"],
+            "draft": True, "make_latest": "false",
+            "name": f"{manifest['kind']} {manifest_digest}",
+            "body": f"Content-addressed `{manifest['kind']}` inputs built and tested by [{manifest['source']['workflow']}]({run_url}) "
+                    f"from `{manifest['source']['sha']}`. Consumers must verify the committed SHA-256 values on every use.\n",
+        })
+        release_id = release["id"]
+        for asset in assets:
+            run(["gh", "api", "--method", "POST",
+                            f"https://uploads.github.com/repos/{repository()}/releases/{release_id}/assets?name={asset.name}",
+                            "-H", "Content-Type: application/octet-stream", "--input", str(asset)])
+        release = api(f"repos/{repository()}/releases/{release_id}")
+    # Reuse the exact release ID returned by creation (or by draft recovery).
+    # Never depend on immediate visibility in the release-list projection.
+    if release["tag_name"] != tag:
+        raise ValueError("release tag differs from the exact candidate")
     observed = {asset["name"] for asset in release["assets"]}
-    if release["target_commitish"] != manifest["source"]["sha"] or observed != expected:
+    if release["target_commitish"] != manifest["source"]["sha"] or observed != expected or len(release["assets"]) != len(expected):
         raise ValueError("existing release differs from the exact candidate")
     for asset in release["assets"]:
         local = next(path for path in assets if path.name == asset["name"])
         if asset["size"] != local.stat().st_size:
             raise ValueError("published release asset size differs from the candidate")
-    verify_release_download(tag, assets)
+    verify_release_download(release, assets)
     if release["draft"]:
-        subprocess.run(["gh", "release", "edit", tag, "--repo", repository(), "--draft=false"], check=True)
-    published = release_by_tag(tag)
+        api(f"repos/{repository()}/releases/{release['id']}", {"draft": False, "make_latest": "false"}, method="PATCH")
+    published = api(f"repos/{repository()}/releases/{release['id']}")
     if published is None or published.get("draft") or published.get("immutable") is not True:
         raise ValueError("published build-input release is not immutable")
 
@@ -311,7 +337,9 @@ def main():
     lock_path = checked_lock_path(os.environ["INPUT_LOCK_PATH"])
     prefix = checked_name(os.environ["INPUT_RELEASE_PREFIX"], "release prefix")
     branch, source_sha = pr_source(number)
-    run_id, run_url = dispatch_and_wait(workflow, branch, source_sha)
+    existing_run = os.environ.get("INPUT_PRODUCER_RUN", "")
+    run_id, run_url = (completed_run(existing_run, workflow, branch, source_sha) if existing_run
+                       else dispatch_and_wait(workflow, branch, source_sha))
     with tempfile.TemporaryDirectory(prefix="roc-build-input-publication-") as temporary:
         directory = download_candidate(run_id, artifact, Path(temporary))
         manifest, manifest_bytes, kind = validate_candidate(directory, workflow, branch, source_sha)

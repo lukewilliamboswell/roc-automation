@@ -148,6 +148,25 @@ for the other. The lease prevents the publisher from attaching a valid lock to a
 newer, unverified PR head or overwriting maintainer work that arrived during the
 release operation.
 
+## Recover interrupted publication
+
+The optional `producer-run` action input selects an existing successful producer
+run instead of dispatching another build. The run must be a completed successful
+manual dispatch of the configured workflow, from the same repository, branch,
+and exact current PR head. Recovery repeats candidate inventory, content, and
+attestation verification; it does not reuse a prior admission decision.
+
+Expose `producer-run` as an optional string in the trusted default-branch caller
+and pass it through to the action. Leave it empty for a new build. A moved PR head
+requires a new matching producer run.
+
+Draft recovery searches all release-list pages. New drafts use the release ID
+returned by creation, without requiring immediate visibility in tag or release
+list projections. Asset downloads use their numeric IDs, so a draft needs no
+published Git tag. Every recovered asset is downloaded and hashed before the
+same release ID is published and checked for immutability. Unexpected or partial
+asset sets fail without replacement or deletion.
+
 ## Review and merge the adoption
 
 The generated lock records the manifest identity, source identity, input
