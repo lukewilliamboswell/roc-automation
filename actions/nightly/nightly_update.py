@@ -78,7 +78,7 @@ def require_trusted_context(*, checkout=True):
 
 
 def sources_at(sha, config):
-    paths = config.get("compiler_roots", [".roc-version"])
+    paths = compiler_pins.configured_paths(config)
     sources = {}
     for path in paths:
         result = api(f"repos/{repo()}/contents/{path}?ref={sha}")
@@ -97,17 +97,17 @@ def config_at(sha):
 
 def pin_at(sha, config=None):
     config = load_config() if config is None else config
-    return tag(compiler_pins.version(compiler_pins.discover(sources_at(sha, config))))
+    return tag(compiler_pins.version(compiler_pins.discover(sources_at(sha, config), config.get("compiler_manifest"))))
 
 
 def verify_pin_candidate(base, sha, files, nightly, config):
-    pins = compiler_pins.discover(sources_at(base, config))
+    pins = compiler_pins.discover(sources_at(base, config), config.get("compiler_manifest"))
     expected = compiler_pins.replace(pins, nightly)
     if (len(files) != len(expected) or {item["filename"] for item in files} != set(expected)
             or any(item.get("status") != "modified" for item in files)):
-        raise ValueError("Candidate changes files outside the compiler header pins")
+        raise ValueError("Candidate changes files outside the selected compiler version")
     if sources_at(sha, config) != expected:
-        raise ValueError("Candidate contains changes beyond compiler pin literals")
+        raise ValueError("Candidate contains changes beyond selected compiler version literal")
 
 
 def head():
@@ -155,8 +155,8 @@ def push_base(base, old):
 
 def signed_pin(base, nightly):
     config = load_config()
-    sources = compiler_pins.local_sources(ROOT, config.get("compiler_roots"))
-    changes = compiler_pins.replace(compiler_pins.discover(sources), nightly)
+    sources = compiler_pins.local_sources(ROOT, config.get("compiler_roots"), config.get("compiler_manifest"))
+    changes = compiler_pins.replace(compiler_pins.discover(sources, config.get("compiler_manifest")), nightly)
     request = {"query": """mutation($input: CreateCommitOnBranchInput!) {
       createCommitOnBranch(input: $input) { commit { oid } }
     }""", "variables": {"input": {
@@ -180,7 +180,7 @@ def prepare():
     if release["draft"] or release["prerelease"] or not release["assets"]:
         raise ValueError("Latest release is not a published nightly with assets")
     config = load_config()
-    pins = compiler_pins.discover(compiler_pins.local_sources(ROOT, config.get("compiler_roots")))
+    pins = compiler_pins.discover(compiler_pins.local_sources(ROOT, config.get("compiler_roots"), config.get("compiler_manifest")), config.get("compiler_manifest"))
     if nightly == tag(compiler_pins.version(pins)):
         output("changed", "false")
         return
@@ -220,12 +220,11 @@ def prepare():
 
 def load_config(content=None):
     config = json.loads(content if content is not None else (ROOT / ".github/roc-nightly.json").read_text())
-    if not isinstance(config, dict) or "workflows" not in config or set(config) - {"workflows", "auto_merge", "compiler_roots"}:
+    if not isinstance(config, dict) or "workflows" not in config or set(config) - {"workflows", "auto_merge", "compiler_roots", "compiler_manifest"}:
         raise ValueError("Expected workflows and optional auto_merge configuration")
     if type(config.get("auto_merge", False)) is not bool:
         raise ValueError("auto_merge must be a boolean")
-    if "compiler_roots" in config:
-        compiler_pins.validate_paths(config["compiler_roots"])
+    compiler_pins.configured_paths(config)
     return config
 
 
@@ -247,7 +246,7 @@ def load_workflows(config=None, *, check_files=True):
 
 def check():
     config = load_config()
-    compiler_pins.discover(compiler_pins.local_sources(ROOT, config.get("compiler_roots")))
+    compiler_pins.discover(compiler_pins.local_sources(ROOT, config.get("compiler_roots"), config.get("compiler_manifest")), config.get("compiler_manifest"))
     workflows = load_workflows()
     print(f"Validated compiler pin and {len(workflows)} workflow filenames")
 
@@ -312,7 +311,7 @@ def report():
     runs = json.loads(os.environ.get("VALIDATION_RUNS") or "[]")
     expected = load_workflows()
     passed = status == "success" and validation_passed and [r["workflow"] for r in runs] == expected and all(r["conclusion"] == "success" for r in runs)
-    message = "**Passed:** all configured validation workflows passed." if passed else f"**Needs attention:** validation finished with status `{status}`. Do not merge until all validation passes."
+    message = "**Passed:** all configured validation workflows passed." if passed else f"**Needs attention:** candidate validation did not pass (controller job: `{status}`). See the individual workflow results below; do not merge."
     save_pr(sha, tag(os.environ["NIGHTLY_TAG"]), message, runs)
 
 
@@ -362,7 +361,7 @@ def publish_statuses(sha, contexts, state):
     for context in contexts:
         api(f"repos/{repo()}/statuses/{sha}", {
             "context": context, "state": state,
-            "description": "Nightly candidate validation " + ("passed" if state == "success" else "in progress"),
+            "description": "Nightly candidate validation " + ("passed" if state == "success" else "failed" if state == "failure" else "in progress"),
             "target_url": f"{os.environ['GITHUB_SERVER_URL']}/{repo()}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
         })
 
@@ -392,13 +391,13 @@ def merge():
             or current["head"]["ref"] != BRANCH or current["head"]["sha"] != sha
             or current["base"]["repo"]["full_name"] != repository
             or current["base"]["ref"] != default or current["base"]["sha"] != base
-            or current["commits"] != 1 or current["changed_files"] != len(config.get("compiler_roots", [".roc-version"]))):
+            or current["commits"] != 1 or current["changed_files"] != len(compiler_pins.configured_paths(config))):
         raise ValueError("PR is not the trusted pin-only candidate on the current base")
     commit = api(f"repos/{repository}/commits/{sha}")
     if (len(commit["parents"]) != 1 or commit["parents"][0]["sha"] != base
             or not commit["commit"]["verification"]["verified"]
             or (commit.get("author") or {}).get("login") != "github-actions[bot]"
-            or (not config.get("compiler_roots") and (len(commit["files"]) != 1
+            or ("compiler_roots" not in config and "compiler_manifest" not in config and (len(commit["files"]) != 1
             or commit["files"][0]["filename"] != ".roc-version"
             or commit["files"][0]["status"] != "modified"
             or commit["files"][0]["additions"] != 1 or commit["files"][0]["deletions"] != 1))):

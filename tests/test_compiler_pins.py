@@ -47,3 +47,38 @@ class HeaderTests(unittest.TestCase):
             self.assertEqual(pins.header_pin(f'package [] {{roc: "{version}"}}')[2], version)
         with self.assertRaises(ValueError):
             pins.header_pin('package [] {roc: "v0.1.0"}')
+
+class ManifestTests(unittest.TestCase):
+    manifest = {'path': 'scripts/deps.json', 'key': 'roc_nightly'}
+
+    def test_preserves_bytes_and_ignores_other_versions(self):
+        source = '{\r\n "nested": {"roc_nightly": "body"}, "roc_stable": "'+OLD+'",\r\n "roc_nightly" : "'+OLD+'"\r\n}\r\n'
+        found = pins.discover({'scripts/deps.json': source}, self.manifest)
+        result = pins.replace(found, NEW)['scripts/deps.json']
+        self.assertEqual(result, source.replace('"roc_nightly" : "'+OLD+'"', '"roc_nightly" : "'+NEW+'"'))
+
+    def test_rejects_ambiguous_or_invalid_json(self):
+        for source in ('[]', '{}', '{"roc_nightly": 1}', '{"roc_nightly":"latest"}',
+                       '{"roc_nightly":"'+OLD+'","roc_nightly":"'+OLD+'"}',
+                       '{"roc_nightly":"'+OLD+'","nested":{"x":0,"x":1}}',
+                       '{"roc_nightly":"'+OLD+'","bad":NaN}',
+                       '{"roc_nightly":"'+OLD.replace('n', '\\u006e', 1)+'"}'):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                pins.discover({'scripts/deps.json': source}, self.manifest)
+
+    def test_rejects_competing_authorities_and_unsafe_paths(self):
+        with self.assertRaises(ValueError):
+            pins.configured_paths({'compiler_manifest': self.manifest, 'compiler_roots': ['main.roc']})
+        for path in ('../deps.json', '/deps.json', '.git/deps.json', 'deps.roc'):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                pins.validate_manifest(dict(self.manifest, path=path))
+
+    def test_rejects_symlinked_parent_even_inside_checkout(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'real').mkdir()
+            (root / 'real/deps.json').write_text('{"roc_nightly":"'+OLD+'"}')
+            (root / 'scripts').symlink_to(root / 'real', target_is_directory=True)
+            with self.assertRaises(ValueError):
+                pins.local_sources(root, manifest=self.manifest)
