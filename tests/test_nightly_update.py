@@ -129,7 +129,7 @@ class ControllerTests(unittest.TestCase):
         pins = re.findall(r'lukewilliamboswell/roc-automation/actions/nightly@([0-9a-f]{40})', workflow)
         # This reviewed commit uses merge commits; squash-only action pins fail in
         # repositories that disable squash merges, even if the local source is fixed.
-        self.assertEqual(pins, ['5b7d9f1fa60428acf99ca7155b7a17a3999b5dd0'] * 4)
+        self.assertEqual(pins, ['c68e5ef4ba90c18f423fcd8ed1cb3fda81a18767'] * 4)
 
     def test_tag_rejects_injection_and_floating_versions(self):
         for value in ['nightly', 'nightly-2026-09-05-b195f5b\nother=x', 'nightly-$(whoami)', '../main']:
