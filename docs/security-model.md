@@ -164,3 +164,21 @@ attestations are verified when a new release or lock is adopted, during an
 explicit audit, or by a downstream verifier. See the
 [artifact verification guide](artifact-verification.md) for the complete
 admission and consumption policy.
+
+## Manifest compiler authority
+
+A consumer may instead set `compiler_manifest` to an object with a repository-relative
+JSON `path` and a top-level string `key`. This mode is mutually exclusive with
+`compiler_roots`; omitting both retains the legacy mode. The controller validates
+the whole JSON document, rejecting duplicate keys, and replaces only the selected
+literal's contents. It preserves whitespace, line endings, and all other fields.
+Paths and symlinked parent directories are checked before local reads. The API
+candidate verifier compares the full immutable blobs and exact changed-file set,
+including when validating an older candidate under its parent's configuration.
+The manifest does not give the controller permission to edit arbitrary metadata.
+
+The release guard accepts paired `compiler-manifest` and `compiler-key` inputs,
+mutually exclusive with `compiler-root`. This records a tested toolchain without
+embedding a compiler constraint in a reusable platform's header. Consumer workflows
+must install the selected compiler and verify its actual version. A moving latest
+release must be resolved once, not independently by each matrix job.

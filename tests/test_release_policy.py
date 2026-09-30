@@ -128,3 +128,25 @@ class ReleasePolicyTests(unittest.TestCase):
                 self.assertEqual(commands.call_args_list[1].args[0], ['gh', 'api', 'repos/roc-lang/nightlies/releases/tags/nightly-2026-09-05-b195f5b'])
             finally:
                 os.chdir(old)
+
+class ManifestReleasePolicyTests(unittest.TestCase):
+    def test_manifest_entrypoint_and_conflicting_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'deps.json').write_text('{"compiler":"nightly-2026-09-29-7f11a82", "unrelated":1}')
+            env = {'GITHUB_EVENT_NAME':'workflow_dispatch', 'GITHUB_REF':'refs/heads/main',
+                   'GITHUB_SHA':'a'*40, 'RELEASE_VERSION':'1.2.3', 'DEFAULT_BRANCH':'main',
+                   'GITHUB_OUTPUT':str(root/'output'), 'COMPILER_MANIFEST':'deps.json',
+                   'COMPILER_KEY':'compiler', 'ALLOW_DEFAULT_BRANCH':'true', 'ALLOW_NIGHTLY_BOOTSTRAP':'true'}
+            release = {'tag_name':'nightly-2026-09-29-7f11a82','draft':False,'prerelease':False,'assets':[{}]}
+            old = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.dict(os.environ, env, clear=True), patch.object(policy.subprocess, 'check_output', side_effect=['a'*40,json.dumps(release)]):
+                    policy.main()
+                self.assertIn('compiler-pin=nightly-2026-09-29-7f11a82', (root/'output').read_text())
+                for extra in ({'COMPILER_KEY':''}, {'COMPILER_ROOT':'main.roc'}):
+                    with patch.dict(os.environ, {**env, **extra}, clear=True), patch.object(policy.subprocess, 'check_output', return_value='a'*40), self.assertRaises(ValueError):
+                        policy.main()
+            finally:
+                os.chdir(old)

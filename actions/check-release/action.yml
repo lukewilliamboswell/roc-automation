@@ -13,6 +13,12 @@ inputs:
   compiler-root:
     description: Roc root file whose header owns the compiler pin; empty retains legacy .roc-version
     default: ''
+  compiler-manifest:
+    description: JSON file containing the tested compiler version; mutually exclusive with compiler-root
+    default: ''
+  compiler-key:
+    description: Top-level string key selected in compiler-manifest
+    default: ''
   simulated-stable-pin:
     description: Explicit temporary nightly tag representing a compiler line during rehearsal
     default: ''
@@ -44,6 +50,8 @@ runs:
     - id: policy
       shell: bash
       env:
+        COMPILER_MANIFEST: ${{ inputs.compiler-manifest }}
+        COMPILER_KEY: ${{ inputs.compiler-key }}
         COMPILER_ROOT: ${{ inputs.compiler-root }}
         SIMULATED_STABLE_PIN: ${{ inputs.simulated-stable-pin }}
         SIMULATED_STABLE_LINE: ${{ inputs.simulated-stable-line }}

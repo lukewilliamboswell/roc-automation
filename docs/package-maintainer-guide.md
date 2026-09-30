@@ -229,3 +229,29 @@ explicit and off by default. Keep those decisions visible in your README and
 contributor guide. Record successful runs, failures and outstanding setup in the
 rollout PR or active task plan; do not call the workflow complete while checks,
 review, deployment or the actual user download remain unverified.
+
+### Platforms with compiler-independent releases
+
+A platform can keep its tested compiler in workspace metadata rather than a
+`roc` header field. Configure the updater with, for example:
+
+```json
+{
+  "workflows": ["ci.yml", "release.yml"],
+  "compiler_manifest": {"path": "scripts/workspace-deps.json", "key": "roc_nightly"},
+  "auto_merge": true
+}
+```
+
+Use the same metadata for installation and the release guard's paired
+`compiler-manifest`/`compiler-key` inputs. Do not combine this configuration with
+`compiler_roots`. Existing header-based consumers need not migrate.
+
+In this model repository examples use relative paths to current source. Publish a
+complete examples archive for each platform release, with that release's immutable
+platform URL and publication compiler in the application headers. Nightly validation
+uses those frozen examples and the released bundle, changing only the application
+compiler selection in temporary copies. Separately test current source and candidate
+bundles. New APIs in current examples must not be mistaken for an incompatibility
+in a released platform. Passing compiler updates advance metadata, not the platform
+release number; a real incompatibility needs a repaired platform release.

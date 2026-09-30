@@ -69,7 +69,15 @@ def main():
         raise ValueError("Release policy requires an explicit workflow dispatch")
     checkout_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     root = os.environ.get("COMPILER_ROOT", "")
-    if root:
+    manifest_path = os.environ.get("COMPILER_MANIFEST", "")
+    manifest_key = os.environ.get("COMPILER_KEY", "")
+    if bool(manifest_path) != bool(manifest_key) or (root and manifest_path):
+        raise ValueError("Select either compiler-root or paired compiler-manifest/compiler-key")
+    if manifest_path:
+        manifest = {"path": manifest_path, "key": manifest_key}
+        sources = compiler_pins.local_sources(Path.cwd(), manifest=manifest)
+        compiler_pin = compiler_pins.version(compiler_pins.discover(sources, manifest))
+    elif root:
         compiler_pins.validate_paths([root])
         path = Path(root)
         if path.is_symlink() or not path.resolve().is_relative_to(Path.cwd().resolve()):

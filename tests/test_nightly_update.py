@@ -129,7 +129,7 @@ class ControllerTests(unittest.TestCase):
         pins = re.findall(r'lukewilliamboswell/roc-automation/actions/nightly@([0-9a-f]{40})', workflow)
         # This reviewed commit uses merge commits; squash-only action pins fail in
         # repositories that disable squash merges, even if the local source is fixed.
-        self.assertEqual(pins, ['5b7d9f1fa60428acf99ca7155b7a17a3999b5dd0'] * 4)
+        self.assertEqual(pins, ['c68e5ef4ba90c18f423fcd8ed1cb3fda81a18767'] * 4)
 
     def test_tag_rejects_injection_and_floating_versions(self):
         for value in ['nightly', 'nightly-2026-09-05-b195f5b\nother=x', 'nightly-$(whoami)', '../main']:
@@ -511,3 +511,31 @@ class ControllerTests(unittest.TestCase):
         run.assert_not_called()
 
 if __name__ == '__main__': unittest.main()
+
+class ManifestControllerTests(unittest.TestCase):
+    setUp = ControllerTests.setUp
+
+    def test_manifest_candidate_only_replaces_selected_literal(self):
+        config = {'workflows': ['ci.yml'], 'compiler_manifest': {'path': 'deps.json', 'key': 'roc_nightly'}}
+        before = '{"roc_nightly":"nightly-2026-09-04-c125b82", "other": 1}\n'
+        after = before.replace('nightly-2026-09-04-c125b82', os.environ['NIGHTLY_TAG'])
+        files = [{'filename': 'deps.json', 'status': 'modified'}]
+        with patch.object(n, 'sources_at', side_effect=[{'deps.json': before}, {'deps.json': after}]):
+            n.verify_pin_candidate('base', 'candidate', files, os.environ['NIGHTLY_TAG'], config)
+        for edited in (after.replace('"other": 1', '"other": 2'), after + '\n'):
+            with patch.object(n, 'sources_at', side_effect=[{'deps.json': before}, {'deps.json': edited}]), self.assertRaises(ValueError):
+                n.verify_pin_candidate('base', 'candidate', files, os.environ['NIGHTLY_TAG'], config)
+        with patch.object(n, 'sources_at', return_value={'deps.json': before}), self.assertRaises(ValueError):
+            n.verify_pin_candidate('base', 'candidate', files + [{'filename':'other', 'status':'modified'}], os.environ['NIGHTLY_TAG'], config)
+
+    def test_signed_manifest_commit_preserves_unselected_metadata(self):
+        config = {'workflows': ['ci.yml'], 'compiler_manifest': {'path': 'deps.json', 'key': 'roc_nightly'}}
+        (n.ROOT / '.github/roc-nightly.json').write_text(json.dumps(config))
+        source = '{"roc_nightly":"nightly-2026-09-04-c125b82", "other": 1}\n'
+        (n.ROOT / 'deps.json').write_text(source)
+        with patch.object(n, 'api', side_effect=[{'data': {'createCommitOnBranch': {'commit': {'oid': 'signed'}}}}, {'commit': {'verification': {'verified': True}}}]) as api:
+            n.signed_pin('base', os.environ['NIGHTLY_TAG'])
+        changes = api.call_args_list[0].args[1]['variables']['input']['fileChanges']['additions']
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]['path'], 'deps.json')
+        self.assertEqual(base64.b64decode(changes[0]['contents']).decode(), source.replace('nightly-2026-09-04-c125b82', os.environ['NIGHTLY_TAG']))
