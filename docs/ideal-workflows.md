@@ -90,8 +90,6 @@ config = [
 		"dev",
 		[
 			Overlays(["roc"]),
-			# Illustrative: the setting that renames a tool's command is not
-			# yet part of roc-blueprint.
 			Command("roc-stable", "rocpkgs.nightly-2026-09-10-a670e34"),
 		],
 	),
@@ -109,9 +107,8 @@ overlay revision that supplies that release's download URLs and hashes. There is
 no shared registry of stable versions: each repository chooses its own tag, and
 "stable" means only that the repository does not move it without review.
 
-Status: Proposed. roc-blueprint cannot yet expose a tool under another command
-name. roc-parser, roc-gui and weaver carry a `Blueprint.roc` today that installs
-an explicit nightly tag as plain `roc`.
+Status: Proposed. roc-parser, roc-gui and weaver carry a `Blueprint.roc` today
+that installs an explicit nightly tag as plain `roc`.
 
 ### Work locally
 

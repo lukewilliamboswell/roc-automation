@@ -28,7 +28,7 @@ each when it lands.
 | Requirement | Repository | Revision |
 | --- | --- | --- |
 | A release whose CLI and platform bundle agree | roc-blueprint | Pending |
-| A setting that exposes a tool under another command name, with a test that runs a `roc-stable` shebang script | roc-blueprint | Pending |
+| The `Command` environment setting, with a test that runs a `roc-stable` shebang script | roc-blueprint | Pending |
 | Updating a single named input | roc-blueprint | Pending |
 | macOS host execution, exercised in CI | roc-blueprint | Pending |
 | `roc-nightly` alias, resolved-tag output, and release-digest verification for the latest nightly | setup-roc | Pending |
@@ -135,9 +135,7 @@ and what remains unresolved.
 A scratch project on x86_64 Linux installed a `roc-stable` launcher for one
 nightly release from the overlay. `blueprint update` then `blueprint run`
 executed a `#!/usr/bin/env roc-stable` script on that release, and the caller's
-own `roc` stayed visible inside the environment. The launcher came from a
-trial overlay attribute; the supported route is a Blueprint setting that renames
-a tool's command.
+own `roc` stayed visible inside the environment.
 
 - `blueprint run` fetched the `nixpkgs-unstable` channel while entering the
   environment, which `Blueprint.lock` does not record. The cause is not yet
