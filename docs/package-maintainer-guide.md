@@ -5,6 +5,13 @@ package users examples that work with a documented compiler and published releas
 The shared automation handles compiler-update PRs and release-policy checks. Your
 repository supplies its examples, tests, package bundles and documentation.
 
+> **Earlier model.** This walkthrough describes the compiler-pin model that most
+> repositories still use. New work follows the
+> [target workflows](ideal-workflows.md), which remove header pins, committed
+> release URLs in repository examples, and the pin-bump updater. Check the
+> [rollout page](rollout.md) for your repository's status before following the
+> steps below.
+
 Use the [documentation guide](documentation-guide.md) to organize material around
 reader needs, the [artifact verification guide](artifact-verification.md) to
 separate release admission from routine content checks, and the

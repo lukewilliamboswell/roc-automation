@@ -1,5 +1,27 @@
 # Release notes
 
+## Target workflows for package repositories
+
+- Document the target model for package repositories: a `roc-stable` tooling
+  compiler pinned by `Blueprint.lock`, Roc automation scripts, a floating
+  package compiler, relative-path repository examples with a published examples
+  archive, and a nightly workflow that tests the latest release.
+- Add a rollout page with the migration checklist, pilot order, and repository
+  status.
+- Mark the compiler-pin walkthrough, validation contract, and integration guide
+  as the earlier model. The pin-bump updater remains supported for security
+  fixes while repositories migrate.
+- Correct the security model's description of the merge job when automatic
+  merging is disabled.
+
+## Manifest compiler authority
+
+- Let a consumer record its tested compiler in one key of a JSON manifest
+  through `compiler_manifest`, as an alternative to header pins and
+  `.roc-version`.
+- Accept paired `compiler-manifest` and `compiler-key` inputs in the release
+  guard.
+
 ## Trusted pull-request build-input publication
 
 - Add a trusted publisher controller that dispatches an unprivileged PR

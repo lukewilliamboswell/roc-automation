@@ -51,8 +51,10 @@ is described below.
 ## Merge authority
 
 The boolean `auto_merge` in trusted configuration defaults to true. Consumers may
-set it to false to opt out, in which case prepare skips the merge job entirely.
-The merge job runs only after successful validation and reporting.
+set it to false to opt out. The merge job still starts after successful
+validation and reporting; its merge phase reads that policy at the trusted event
+SHA and exits without merging. The workflow does not gate the job on a value
+produced by an earlier job.
 It performs no consumer checkout: it reads configuration through the API at the
 original default-branch event SHA and executes only the pinned shared controller.
 It has contents write, pull-requests read, and actions read permissions. Test jobs
@@ -182,3 +184,55 @@ mutually exclusive with `compiler-root`. This records a tested toolchain without
 embedding a compiler constraint in a reusable platform's header. Consumer workflows
 must install the selected compiler and verify its actual version. A moving latest
 release must be resolved once, not independently by each matrix job.
+
+## Target workflows
+
+The [target workflows](ideal-workflows.md) replace the pin-bump controller in
+migrated repositories. This section states their intended trust boundaries. It
+is a design constraint for the shared actions and reusable workflows that
+implement them; none of that code exists yet, and each addition must arrive with
+regression tests for the boundaries below.
+
+| Workflow and job | Token access | Runs repository code |
+| --- | --- | --- |
+| `ci.yml` test | contents: read | Yes, including pull-request code |
+| `release.yml` build and test | contents: read | Yes |
+| `release.yml` publish | contents: write, behind a protected environment | No: it uploads artifacts produced by earlier jobs |
+| `nightly.yml` test | contents: read | Yes: default-branch scripts and the published examples archive |
+| `nightly.yml` report | issues: write | No |
+| `update-blueprint.yml` update | contents: write; pull-requests: write | Default-branch `Blueprint.roc` only |
+
+The nightly compatibility workflow has no contents, pull-request, actions or
+status write access in any job. It cannot commit, merge, dispatch or publish, so
+it needs none of the candidate, lease, signature and ruleset checks that the
+pin-bump controller performs. Its report job receives only job results and run
+links from the test job, never text produced by the examples under test, and
+edits a single tracking issue.
+
+The lock updater runs only for schedule or manual events on the default branch
+and rejects tags. It evaluates the default branch's `Blueprint.roc`, which is
+reviewed source, and never a pull-request version. It creates one commit through
+GitHub's commit API, verifies that GitHub reports the signature as verified, and
+refuses a result that changes any file other than `Blueprint.lock`. It does not
+approve or merge its pull request. Token scopes cannot restrict contents write to
+that one file, so the lock-only restriction is controller policy backed by
+required review.
+
+`Blueprint.lock` pins the Roc overlay by revision and content digest. The
+compiler used for repository tooling is therefore reviewed twice: when the
+overlay names a release as stable, and when a repository accepts the lock
+update. Nix verifies the compiler archive against the hash recorded in the
+overlay. This is content integrity under a reviewed hash, as described in
+[released artifact verification](#released-artifact-verification); it is not
+provenance for the upstream compiler build.
+
+The package compiler in these workflows is the latest published nightly and is
+not pinned. The `setup-roc` revision a workflow uses must verify the download
+against the digest GitHub reports for the release asset; revisions without that
+check are not acceptable here. Release notes record the version used. A workflow must
+resolve that moving release once and pass the tag to every job.
+
+`actions/setup-blueprint` installs Nix and the `blueprint` CLI at a full commit
+SHA supplied by the caller. It needs no token. A cache that requires
+`id-token: write` widens a test job's token and must be an explicit caller
+choice, never a default.

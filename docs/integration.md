@@ -3,6 +3,10 @@
 New to the workflow? Start with the [package maintainer walkthrough](package-maintainer-guide.md).
 This page contains the exact caller configuration and rollout requirements.
 
+> **Earlier model.** This page configures the pin-bump nightly updater, which is
+> supported for security fixes only while repositories migrate to the
+> [target workflows](ideal-workflows.md). Do not add it to a new repository.
+
 A repository keeps its validation workflows and exact compiler versions in the
 `roc` field of selected app/package/platform root headers.
 Declare workflow filenames in `.github/roc-nightly.json`:
