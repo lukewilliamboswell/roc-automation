@@ -22,9 +22,9 @@ the earlier compiler-pin model.
 
 | Concern | Earlier model | Target model |
 | --- | --- | --- |
-| Tooling compiler | Whatever the repository pins | `roc-stable`, pinned by `Blueprint.lock` |
+| Tooling compiler | Whatever the repository pins | `roc-stable`: a release named in `Blueprint.roc` and pinned by `Blueprint.lock` |
 | Package compiler | `.roc-version` or `roc` header pins | The floating latest nightly; no pin |
-| Compiler updates | Daily pin-bump PR with automatic merge | None for the package; a lock PR when `roc-stable` moves |
+| Compiler updates | Daily pin-bump PR with automatic merge | None for the package; a reviewed edit to `Blueprint.roc` when the tooling compiler moves |
 | Automation scripts | Python, some bash | Roc scripts run by `roc-stable` |
 | Repository examples | Released package URL, `roc` pin | Relative package path, no `roc` pin |
 | Published examples | The repository's files | An examples archive attached to each release |
@@ -36,7 +36,7 @@ A migrated repository uses two Roc compilers. They are never interchangeable.
 
 | Command | Selected by | Used for |
 | --- | --- | --- |
-| `roc-stable` | `Blueprint.lock`, through the Roc overlay | Running the repository's automation scripts |
+| `roc-stable` | The release tag named in `Blueprint.roc` | Running the repository's automation scripts |
 | `roc` (in CI also `roc-nightly`) | Not pinned: the latest published nightly | Checking, testing, bundling and running the package and its examples |
 
 `roc-stable` exists so that repository tooling keeps working when a nightly
@@ -74,9 +74,11 @@ pins them. Both are committed. The environment is realised by
 [roc-blueprint](https://github.com/lukewilliamboswell/roc-blueprint) using Nix,
 on a contributor's machine and in CI alike.
 
-The pinned compiler comes from
-[roc-overlay](https://github.com/lukewilliamboswell/roc-overlay), which names one
-nightly release as stable and exposes it under the command name `roc-stable`:
+`Blueprint.roc` names the exact nightly release the repository uses for
+tooling. The binary comes from
+[roc-overlay](https://github.com/lukewilliamboswell/roc-overlay), which packages
+every recorded nightly under its release tag. The environment exposes that one
+release under the command name `roc-stable`, and provides no bare `roc`:
 
 ```roc
 app [config] { pf: platform "<roc-blueprint release URL>" }
@@ -84,26 +86,32 @@ app [config] { pf: platform "<roc-blueprint release URL>" }
 config = [
 	Name("roc-example"),
 	Overlay("roc", "github:lukewilliamboswell/roc-overlay"),
-	Environment("dev", [Overlays(["roc"]), Tools(["rocpkgs.roc-stable"])]),
+	Environment(
+		"dev",
+		[
+			Overlays(["roc"]),
+			# Illustrative: the setting that renames a tool's command is not
+			# yet part of roc-blueprint.
+			Command("roc-stable", "rocpkgs.nightly-2026-09-10-a670e34"),
+		],
+	),
 	Shell("default", [Use("dev")]),
 	Task("check", [Use("dev"), Run(["scripts/check_all.roc"])]),
 ]
 ```
 
-Add other tools the scripts call, such as `pandoc`, to the same `Tools` list so
-CI and contributors use the same versions.
+Add other tools the scripts call, such as `pandoc`, to the environment so CI and
+contributors use the same versions.
 
-`Blueprint.lock` records the overlay's git revision, not a compiler tag. The
-compiler a repository uses for tooling is therefore whichever release the
-overlay named stable at that revision. Two consequences follow:
+The two files divide the work. `Blueprint.roc` states which release is the
+tooling compiler, where a reviewer can read it. `Blueprint.lock` pins the
+overlay revision that supplies that release's download URLs and hashes. There is
+no shared registry of stable versions: each repository chooses its own tag, and
+"stable" means only that the repository does not move it without review.
 
-- Changing the stable compiler is a reviewed change in the overlay, followed by
-  a lock update in each repository.
-- A repository cannot choose its own stable compiler without leaving this model.
-
-Status: Proposed. The overlay's stable channel and its `roc-stable` attribute do
-not exist yet. roc-parser, roc-gui and weaver carry a `Blueprint.roc` today, each
-pinning an explicit nightly tag instead.
+Status: Proposed. roc-blueprint cannot yet expose a tool under another command
+name. roc-parser, roc-gui and weaver carry a `Blueprint.roc` today that installs
+an explicit nightly tag as plain `roc`.
 
 ### Work locally
 
@@ -246,17 +254,20 @@ pull request whose only changed file is `Blueprint.lock`. The commit is created
 through GitHub's commit API so that it is signed. A maintainer reviews and merges
 it after `ci.yml` passes; there is no automatic merge.
 
-This is how a newly promoted `roc-stable` reaches a repository.
+A lock update moves the overlay revision and tool versions. It never changes
+which release is `roc-stable`, because that tag is written in `Blueprint.roc`.
 
-## Promote a stable compiler
+## Change the tooling compiler
 
-1. Choose a published nightly that the pilot repositories' scripts pass on.
-2. Open a pull request in roc-overlay changing only the stable entry.
-3. After it merges, each repository's next lock update picks it up. Review those
-   pull requests individually: a promotion can break scripts in every repository
-   at once, and the lock pull request is where that shows.
+1. Choose a published nightly release.
+2. Open a pull request changing the tag in `Blueprint.roc`. If the locked overlay
+   revision predates that release, run `blueprint update` for the overlay input
+   in the same pull request.
+3. Merge after `ci.yml` passes. Fix any script the new compiler breaks in that
+   pull request, so the tag and the scripts move together.
 
-Promotion is never automatic.
+This is a maintainer's decision per repository. Nothing changes it
+automatically, and repositories need not agree.
 
 ## Evidence for each claim
 
