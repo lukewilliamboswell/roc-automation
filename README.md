@@ -46,6 +46,13 @@ GitHub supplies the badge results; this repository list is maintained manually.
 
 ## Start here
 
+Package repositories are migrating to the
+[target workflows](docs/ideal-workflows.md): a pinned `roc-stable` tooling
+compiler, Roc automation scripts, and a nightly check of the latest release in
+place of the pin-bump updater. The [rollout page](docs/rollout.md) lists each
+repository's status and the migration steps. The guides below describe the
+earlier model, which remains supported until a repository migrates.
+
 Follow the [package maintainer walkthrough](docs/package-maintainer-guide.md) to
 set up examples, compiler versions, releases and repository permissions in order.
 It explains the choices and the work that remains manual.

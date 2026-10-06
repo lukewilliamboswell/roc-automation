@@ -3,6 +3,11 @@
 Use the [package maintainer walkthrough](package-maintainer-guide.md) to choose
 and adopt the workflow. This page specifies what each validation proves.
 
+> **Earlier model.** The contract below belongs to the compiler-pin model. A
+> repository that has migrated to the [target workflows](ideal-workflows.md)
+> tests its published examples archive in a separate nightly workflow and has no
+> pin-bump candidate to validate.
+
 The nightly compatibility policy advances selected public-example and development
 compiler pins together. Public examples retain their released dependency URLs:
 the candidate must work with those releases and with current source before it can
