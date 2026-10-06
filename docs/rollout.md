@@ -13,7 +13,7 @@ target page.
 | Stage | Scope | State |
 | --- | --- | --- |
 | 0 | Document the target in this repository | In progress |
-| 1 | Foundations: overlay stable channel, Blueprint upgrades, `roc-nightly` alias in setup-roc, `actions/setup-blueprint` | Not started |
+| 1 | Foundations: Blueprint upgrades, `roc-nightly` alias in setup-roc, `actions/setup-blueprint` | Not started |
 | 2 | Pilot: roc-pandoc | Not started |
 | 3 | Pilot: roc-ansi; extract shared reusable workflows | Not started |
 | 4 | Pilot: roc-parser | Not started |
@@ -27,9 +27,8 @@ each when it lands.
 
 | Requirement | Repository | Revision |
 | --- | --- | --- |
-| A stable entry, exported as `rocpkgs.stable` and `rocpkgs.roc-stable`, preserved by the metadata updater | roc-overlay | Pending |
 | A release whose CLI and platform bundle agree | roc-blueprint | Pending |
-| A test that realises `rocpkgs.roc-stable` and runs a shebang script | roc-blueprint | Pending |
+| The `Command` environment setting, with a test that runs a `roc-stable` shebang script | roc-blueprint | Pending |
 | Updating a single named input | roc-blueprint | Pending |
 | macOS host execution, exercised in CI | roc-blueprint | Pending |
 | `roc-nightly` alias, resolved-tag output, and release-digest verification for the latest nightly | setup-roc | Pending |
@@ -133,11 +132,10 @@ and what remains unresolved.
 
 ### 2026-10-06: foundations, local chain test
 
-A scratch project on x86_64 Linux declared `Tools(["rocpkgs.roc-stable"])`
-against the overlay's stable entry.
-`blueprint update` then `blueprint run` executed a `#!/usr/bin/env roc-stable`
-script on the promoted release, and the caller's own `roc` stayed visible inside
-the environment. Blueprint needed no change for this.
+A scratch project on x86_64 Linux installed a `roc-stable` launcher for one
+nightly release from the overlay. `blueprint update` then `blueprint run`
+executed a `#!/usr/bin/env roc-stable` script on that release, and the caller's
+own `roc` stayed visible inside the environment.
 
 - `blueprint run` fetched the `nixpkgs-unstable` channel while entering the
   environment, which `Blueprint.lock` does not record. The cause is not yet

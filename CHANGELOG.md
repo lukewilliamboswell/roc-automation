@@ -3,7 +3,7 @@
 ## Target workflows for package repositories
 
 - Document the target model for package repositories: a `roc-stable` tooling
-  compiler pinned by `Blueprint.lock`, Roc automation scripts, a floating
+  compiler named in `Blueprint.roc` and pinned by `Blueprint.lock`, Roc automation scripts, a floating
   package compiler, relative-path repository examples with a published examples
   archive, and a nightly workflow that tests the latest release.
 - Add a rollout page with the migration checklist, pilot order, and repository

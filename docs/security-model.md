@@ -218,11 +218,11 @@ approve or merge its pull request. Token scopes cannot restrict contents write t
 that one file, so the lock-only restriction is controller policy backed by
 required review.
 
-`Blueprint.lock` pins the Roc overlay by revision and content digest. The
-compiler used for repository tooling is therefore reviewed twice: when the
-overlay names a release as stable, and when a repository accepts the lock
-update. Nix verifies the compiler archive against the hash recorded in the
-overlay. This is content integrity under a reviewed hash, as described in
+`Blueprint.roc` names the release tag used for repository tooling, and
+`Blueprint.lock` pins the Roc overlay by revision and content digest. Changing
+the tooling compiler is therefore a reviewed source change in the repository,
+not something the lock updater can do. Nix verifies the compiler archive against
+the hash the pinned overlay revision records for that tag. This is content integrity under a reviewed hash, as described in
 [released artifact verification](#released-artifact-verification); it is not
 provenance for the upstream compiler build.
 
