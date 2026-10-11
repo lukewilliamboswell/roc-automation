@@ -120,6 +120,111 @@ The expected-output specification for examples, described in
 xref:examples.adoc#record-expected-output[Record expected output], is one such
 list of cases run by the same driver.
 
+== Property-based tests with roc-fuzz
+
+Unit tests and integration cases check the inputs someone thought of. Most bugs
+live in the inputs nobody thought of: the empty list, the string that ends in a
+delimiter, the two values that are equal, the length one past a boundary.
+A property-based test closes that gap. You state a rule that must hold for
+every input, and a tool searches for an input that breaks it.
+
+https://github.com/lukewilliamboswell/roc-fuzz[roc-fuzz] is that tool for Roc.
+It is a platform: a fuzz target is a small Roc application that names what
+values to try, what code to run, and what must be true afterwards.
+
+[cols="1,3",options="header"]
+|===
+| Part | Role
+
+| Generator
+| Produces typed Roc values to try: numbers, strings, lists, records, or shapes built from them
+
+| Operation
+| Calls the package code under test
+
+| Property
+| Decides whether the result is acceptable for that input
+|===
+
+=== Why it suits pure Roc code
+
+Most of a Roc package is pure functions, and pure functions are the best case
+for this kind of testing.
+
+* *Nothing to set up.* A pure function needs no files, network, clock or
+  state. The target calls it with a generated value and inspects the result.
+* *Failures reproduce exactly.* The same input always gives the same output, so
+  a saved failing input is a complete bug report. There is no flakiness to rule
+  out.
+* *Properties are easy to state.* Pure code invites rules that hold for every
+  input: decoding an encoded value returns the original; formatting twice
+  changes nothing the second time; a parser returns an error and never crashes;
+  an optimised implementation agrees with a simple one.
+* *The search is guided.* roc-fuzz watches which parts of the compiled program
+  each input reaches and keeps the inputs that reach something new, so it works
+  its way into branches that random values would rarely hit.
+* *Failures arrive small.* roc-fuzz saves a failing input, shows it as a Roc
+  value, replays it, and minimises it to the smallest case that still fails.
+
+The benefit is largest exactly where a package carries the most risk: parsers,
+encoders and decoders, data structures, arithmetic on sizes and indexes, and
+anything that handles text.
+
+=== What a target looks like
+
+[source,roc]
+----
+app [target] {
+	fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/<version>/<hash>.tar.zst",
+	pkg: "../../package/main.roc",
+}
+
+import fuzz.Fuzz
+import pkg.Stack
+
+# After pushing an item, popping must return that item and the original stack.
+test : List(U8) -> Fuzz.Outcome
+test = |initial| {
+	item = 0
+	pushed = Stack.push(initial, item)
+
+	match Stack.pop(pushed) {
+		Ok({ value, rest }) if value == item and rest == initial => Fuzz.keep
+		Ok(_) => crash "pop did not undo push"
+		Err(Empty) => crash "the stack was empty after push"
+	}
+}
+
+target = Fuzz.target_with({
+	name: "stack-push-pop",
+	generator: Fuzz.list(Fuzz.u8, 8),
+	test,
+	show: |initial| Str.inspect(initial),
+})
+----
+
+The target depends on the working tree by relative path, like every other Roc
+application in the repository, and on a roc-fuzz release by URL. It lives
+under `fuzz/`, outside the package root, so it is never bundled.
+
+=== How targets are managed
+
+* Write one operation and one property per target, so that a failure says what
+  went wrong.
+* Add a target when a module has a rule that should hold for all inputs. Every
+  parser and every encode and decode pair should have one.
+* When roc-fuzz finds a bug, fix it and keep the minimised input as an ordinary
+  `expect` test. The unit test stops that bug returning; the target keeps
+  searching for the next one.
+* Commit a small corpus for each target. Pull-request CI builds every target
+  and replays that corpus as its smoke run.
+* Run the real search on a schedule, as described in
+  xref:optional-workflows.adoc#fuzzing[Fuzzing].
+
+A weak property finds nothing, and a passing fuzz run is not a proof. The
+https://lukewilliamboswell.github.io/roc-fuzz/[roc-fuzz manual] covers writing
+generators and properties, running campaigns, and reading a saved failure.
+
 == Formatting
 
 Run `roc fmt --check` in pull-request CI, over every Roc source in the

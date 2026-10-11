@@ -81,6 +81,10 @@ permissions and deploys an artifact built by a read-only job.
 
 == Fuzzing
 
+Fuzz targets are written with roc-fuzz; see
+xref:testing.adoc#property-based-tests-with-roc-fuzz[Property-based tests with roc-fuzz]
+for why and how.
+
 `fuzz.yml` runs each target for a fixed duration on a schedule. It restores and
 saves the corpus through the Actions cache, uploads any reproducer as a workflow
 artifact, and fails when a target fails. Fuzz targets are Roc applications that
