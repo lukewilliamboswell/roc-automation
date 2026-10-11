@@ -31,6 +31,7 @@ Reference an action by full commit SHA and upgrade it through a pull request.
 | Action | Purpose |
 | --- | --- |
 | `actions/setup-blueprint` | Install Nix and the verified `blueprint` binary |
+| `actions/setup-roc-nightly` | Install the latest nightly as `roc-nightly` for CI |
 | `actions/build-docs` | Render `docs/*.adoc` as an HTML site and PDF manual |
 | `actions/publish-build-inputs` | Publish linker inputs built on a pull request, and commit only their lock |
 

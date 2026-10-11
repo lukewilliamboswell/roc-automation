@@ -25,6 +25,29 @@ It needs no token and no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
 what the checksum does and does not establish.
 
+[#setup-roc-nightly]
+== `actions/setup-roc-nightly`
+
+Installs the latest published Roc nightly for package work in CI.
+
+* Resolves the most recent release of `roc-lang/nightlies`, or installs the
+  release named by the optional `tag` input.
+* Verifies the download against the digest GitHub reports for the release asset,
+  and fails on a mismatch.
+* Puts the compiler on `PATH` as `roc-nightly` only. It provides no bare `roc`,
+  so a CI job cannot run package work on some other compiler by accident.
+* Sets `ROC_NIGHTLY` to that command, which is what the repository's scripts
+  read.
+* Reports the resolved release as the `tag` output and the compiler's version
+  string as the `version` output.
+
+The first job of a workflow calls it with no `tag` and passes its `tag` output
+to every later job, so one run uses one compiler. It needs no token beyond the
+default read access.
+
+Contributors do not use this action or the `roc-nightly` name. Locally the
+scripts fall back to the contributor's own `roc`.
+
 [#build-docs]
 == `actions/build-docs`
 

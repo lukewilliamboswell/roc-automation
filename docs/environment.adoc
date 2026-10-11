@@ -86,8 +86,9 @@ xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint].
 
 == Work locally
 
-A contributor needs Nix, the `blueprint` binary, and a current nightly `roc` on
-`PATH` for package work.
+A contributor needs Nix, the `blueprint` binary, and a current nightly installed
+as `roc`, the way Roc is normally installed. Nothing else has to be set up: the
+scripts use `roc` when `ROC_NIGHTLY` is not set.
 
 [source,sh]
 ----
@@ -109,7 +110,9 @@ the latest nightly, then calls a task:
 
 . Set up Nix and the verified `blueprint` binary with
   `actions/setup-blueprint`.
-. Install the latest nightly with `setup-roc` and record its tag.
+. Install the latest nightly as `roc-nightly` with
+  xref:actions.adoc#setup-roc-nightly[`actions/setup-roc-nightly`]. It provides no
+  bare `roc`, sets `ROC_NIGHTLY`, and reports the tag it resolved.
 . Run `blueprint run <task>`.
 
 The job needs no cache account and no token for this. A Nix cache is an

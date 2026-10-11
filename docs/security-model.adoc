@@ -68,9 +68,8 @@ Bundles listed under `RocPackages` are locked the same way. A bundle a script
 names and the environment does not list is downloaded by Roc, which checks it
 against the content hash in its URL.
 
-The package compiler is the latest published nightly and is not pinned. The
-`setup-roc` revision a workflow uses must verify the download against the digest
-GitHub reports for the release asset. A workflow resolves that moving release
+The package compiler is the latest published nightly and is not pinned. `actions/setup-roc-nightly` verifies the download against the digest GitHub
+reports for the release asset, and installs it only as `roc-nightly`. A workflow resolves that moving release
 once and passes the tag to every job. Release notes record the version used.
 
 [#the-blueprint-binary]
