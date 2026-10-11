@@ -2,7 +2,7 @@
 :doctype: book
 :author: The roc-automation contributors
 :revnumber: {docs-version}
-:revremark: One way to maintain Roc packages and platforms
+:revremark: An opinionated approach for managing Roc packages and platforms
 :toc: left
 :toclevels: 3
 :sectnums:
@@ -11,7 +11,8 @@
 :source-highlighter: rouge
 
 [.lead]
-This manual describes one way to run a Roc package or platform repository: how
+This manual describes an opinionated approach for managing a Roc package or
+platform repository: how
 its tooling is pinned, what its pull-request, release and nightly workflows
 prove, and what every release contains. roc-automation holds the shared actions
 that implement the parts every repository needs identically.

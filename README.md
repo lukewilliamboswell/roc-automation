@@ -1,6 +1,6 @@
 # Roc automation
 
-One way to maintain Roc packages and platforms, and the shared actions that
+An opinionated approach for managing Roc packages and platforms, and the shared actions that
 implement it.
 
 **[Read the manual](https://lukewilliamboswell.github.io/roc-automation/)** ·
