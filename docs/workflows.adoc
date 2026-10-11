@@ -47,6 +47,9 @@ xref:optional-workflows.adoc#optional-workflows[Optional workflows].
   xref:environment.adoc#use-the-environment-in-ci[Use the environment in CI].
 . Run `blueprint run check`.
 
+xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
+lists what the `check` task covers.
+
 A repository that supports several targets runs this as a matrix, one job per
 runner, and ends with a single aggregate job that requires every matrix job to
 have succeeded. The aggregate job's name is the required status check, so the

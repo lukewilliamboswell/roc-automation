@@ -22,7 +22,7 @@ can write.
 | `contents: read`
 
 | `bench.yml`
-| Schedule; manual dispatch; optional pull-request smoke run
+| Schedule; manual dispatch
 | Measure performance against a recorded baseline.
 | `contents: read`
 
@@ -86,13 +86,16 @@ saves the corpus through the Actions cache, uploads any reproducer as a workflow
 artifact, and fails when a target fails. Fuzz targets are Roc applications that
 depend on the working tree, so the latest nightly builds them.
 
-`ci.yml` replays the committed corpus, which is fast and deterministic. The
-scheduled run is the only place new inputs are searched for.
+`ci.yml` gives every target a smoke run: it builds the target and replays the
+committed corpus, which is fast and deterministic. That keeps the targets
+building between scheduled runs. The scheduled run is the only place new inputs
+are searched for, and the only place a target is built with `--opt=speed`.
 
 == Benchmarks
 
-`bench.yml` measures on a schedule and on request. A pull request may run a
-short smoke version that proves the benchmarks still build and run.
+`bench.yml` measures on a schedule and on request, never on a pull request.
+`ci.yml` gives every benchmark a smoke run, one small iteration built with
+`--opt=dev`, so that a benchmark cannot fall behind the API it measures.
 
 A measurement that depends on the compiler, such as an allocation count, is
 compared as a ratchet: the build fails when the value is worse than the recorded

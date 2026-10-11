@@ -60,7 +60,9 @@ pull request exists, and the default branch never names its own release URL.
 == Record expected output
 
 An example that only compiles proves little. Record what each example prints,
-and compare it on every run.
+and compare it on every run. Examples are run by the same driver as the
+integration tests; see
+xref:testing.adoc#integration-tests[Integration tests].
 
 * Keep expected output under `tests/`, in one specification the scripts read:
   the arguments each example runs with, its standard input where it has one,

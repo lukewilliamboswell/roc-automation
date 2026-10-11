@@ -142,9 +142,12 @@ changes them together.
 === The check script
 
 One script, conventionally `scripts/check_all.roc` behind the `check` task, runs
-everything a pull request must pass: script tests, the static checks in this
-chapter, `roc check` and `roc test` on the package, every example, and a dry-run
-build of what a release would publish.
+everything a pull request must pass: the static checks in this chapter,
+`roc fmt --check`, the script tests, `roc test` on the package root, every
+example and integration case, a smoke run of each benchmark and fuzz target,
+and a dry-run build of what a release would publish.
+xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
+describes each.
 
 == What is committed
 

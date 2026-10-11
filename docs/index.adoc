@@ -27,8 +27,8 @@ endif::[]
 New to the model:: Start with <<how-a-roc-repository-is-maintained>> for the
 compilers involved, the three workflows, and what the model leaves out.
 Package maintainer:: Read <<pin-the-tooling-environment>>,
-<<lay-out-the-repository>>, <<examples-and-the-examples-archive>> and
-<<the-three-workflows>> in order.
+<<lay-out-the-repository>>, <<examples-and-the-examples-archive>>,
+<<test-in-pull-request-ci>> and <<the-three-workflows>> in order.
 Platform maintainer:: Read the same chapters, then
 <<maintain-a-platform>> for host bindings, target matrices and native build
 inputs, and <<publish-linker-inputs-from-a-pull-request>>.
@@ -49,6 +49,8 @@ include::environment.adoc[leveloffset=+1]
 include::repository.adoc[leveloffset=+1]
 
 include::examples.adoc[leveloffset=+1]
+
+include::testing.adoc[leveloffset=+1]
 
 include::workflows.adoc[leveloffset=+1]
 
