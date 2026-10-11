@@ -66,13 +66,44 @@ URL and hash, the package source, and each locked bundle.
 Nothing that `blueprint` generates is committed. Its generated Nix files stay in
 `.blueprint/`, which the repository's `.gitignore` lists.
 
-== Get the `blueprint` binary
+[#get-the-blueprint-binary]
+== Get `blueprint`
 
-`blueprint` is a prebuilt binary attached to each roc-blueprint release, with a
-`blueprint.sha256` file. Check the download against a reviewed SHA-256 before
-running it. CI does the same on every run, through
-xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`]. Nobody
-builds the CLI from source in CI.
+Blueprint needs Nix on the machine, so install https://nixos.org/download[Nix]
+first. There are then two ways to get the `blueprint` command. Whichever you
+use, take the same roc-blueprint release as the platform URL in the
+repository's `Blueprint.roc` header.
+
+=== With Nix
+
+Nix can run or install `blueprint` straight from the release tag, with nothing
+to download or verify by hand:
+
+[source,sh]
+----
+# run it once, without installing
+nix run github:lukewilliamboswell/roc-blueprint/<version> -- run check
+
+# or install it into your profile
+nix profile install github:lukewilliamboswell/roc-blueprint/<version>
+----
+
+This is the simplest route for a contributor. Nix builds the command from the
+tagged source the first time, which takes longer than a download, and the flake
+provides it for x86_64 Linux and Apple Silicon macOS.
+
+=== As a release binary
+
+Each roc-blueprint release also attaches prebuilt `blueprint-<system>` binaries
+and a `blueprint.sha256` file. Download the one for your system, check it
+against the published SHA-256, make it executable and put it on `PATH`.
+
+CI always uses the release binary, through
+xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`],
+which checks it against a reviewed SHA-256 on every run. Nobody builds the CLI
+from source in CI.
+
+=== What the command needs
 
 The binary needs Nix on the machine. It needs neither Python nor Roc installed.
 To evaluate `Blueprint.roc` it uses a `roc` on `PATH` when that is exactly the
@@ -90,7 +121,7 @@ xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint].
 
 == Work locally
 
-A contributor needs Nix, the `blueprint` binary, and a current nightly installed
+A contributor needs Nix, the `blueprint` command, and a current nightly installed
 as `roc`, the way Roc is normally installed. Nothing else has to be set up: the
 scripts use `roc` when `ROC_NIGHTLY` is not set.
 

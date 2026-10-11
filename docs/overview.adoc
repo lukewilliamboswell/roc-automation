@@ -84,7 +84,7 @@ interchangeable.
 
 A maintainer chooses the second and observes the third. The first is hidden:
 `blueprint` fetches it when needed, as described in
-xref:environment.adoc#get-the-blueprint-binary[Get the `blueprint` binary].
+xref:environment.adoc#get-the-blueprint-binary[Get `blueprint`].
 
 Blueprint has a compiler of its own because Blueprint is itself written in Roc.
 It has to evaluate `Blueprint.roc` before any environment exists, so it cannot
