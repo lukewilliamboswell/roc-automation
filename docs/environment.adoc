@@ -80,6 +80,10 @@ nightly the binary was built with; otherwise it fetches that nightly itself from
 a roc-overlay revision pinned inside the binary. The `ROC` environment variable
 overrides this choice and must name that same nightly.
 
+This compiler is separate from `roc-stable` for a reason: Blueprint is written
+in Roc and must run before the environment it describes exists. See
+xref:overview.adoc#three-compilers-three-jobs[Three compilers, three jobs].
+
 A release's binary must be used with that release's platform URL in the
 `Blueprint.roc` header. The two move together; see
 xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint].
