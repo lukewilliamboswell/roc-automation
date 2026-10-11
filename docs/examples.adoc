@@ -1,9 +1,51 @@
 = Examples and the examples archive
 
-Examples do two jobs that pull in different directions. In the repository they
-must exercise the code being changed. For a user they must work against a
-release that will never change. One set of files cannot do both, so the
-repository keeps the first and each release publishes the second.
+Examples are realistic demonstrations of the package for the people who will
+use it. They are where most new visitors land, and for many they are the first
+Roc code written against the package that they read. This chapter covers what
+an example is for, and how the same example is kept correct in two places: the
+repository, and each release.
+
+== What an example is for
+
+The audience of an example is a user of the package who is probably not
+familiar with it. It is not a contributor.
+
+An example is not a test, a benchmark or a fixture. Those have their own
+directories and their own standards. Code that exists to cover an edge case, to
+measure something, or to feed another tool does not belong under `examples/`,
+however convenient it is to put it there.
+
+Manage examples with the care their position deserves:
+
+* *Realistic.* Each one solves a problem a user would recognise, with input and
+  output worth looking at.
+* *Focused.* Each one demonstrates one thing. Several short examples serve a
+  reader better than one that shows everything.
+* *Documented.* Each one carries ample comments that walk the reader through
+  the code: what it is about to do, why it is done that way, and what to change
+  to adapt it. Write them for someone reading top to bottom with no other
+  context.
+* *High quality.* An example is copied into real projects. It should be code
+  the maintainers would be content to see copied.
+* *Few.* Every example is a promise to keep it working. Add one when it teaches
+  something the others do not.
+
+== Why examples live in two places
+
+The repository and its releases are rarely in step. Pull requests land
+continuously; releases happen now and then. At most commits the package in the
+repository is ahead of the last release.
+
+An example in the repository must work with the package at that same commit, so
+it may use an API that no release has yet. A user reading it beside the latest
+release could copy code that does not compile for them. An example published
+with a release has the opposite property: it works with that release and will
+never change.
+
+One set of files cannot be both. The repository therefore keeps examples that
+follow the working tree, and each release publishes a frozen copy of them that
+names that release.
 
 == Repository examples test the working tree
 

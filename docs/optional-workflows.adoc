@@ -56,14 +56,28 @@ The deploy job runs only for the default branch. It has `pages: write` and
 `id-token: write`, uses the `github-pages` environment, checks out nothing, and
 deploys the artifact the build job produced.
 
-The site always shows the default branch. Older versions are not kept in the
-repository: each release attaches its documentation archive, and the site build
-restores those archives beside the current documentation when the repository
-publishes versioned documentation. A repository never commits rendered
-documentation.
+=== What the site points at
 
-`release.yml` builds the same documentation with the release version as its
-label and attaches it to the release. It does not deploy the site.
+A visitor to the site is almost always a user, and a user has the latest
+release. The site therefore leads with the latest release, not with the default
+branch:
+
+* its primary API reference is the `roc docs` output generated for the latest
+  release, restored from that release's documentation archive;
+* its examples link is the examples archive attached to the latest release; and
+* its install snippet names the latest release's bundle URL.
+
+"Latest" excludes prereleases; see
+xref:workflows.adoc#release-candidates[Release candidates].
+
+The site may also carry the default branch's documentation, under a path and a
+label that mark it as unreleased, and the documentation of earlier releases,
+each restored from its own archive. Nothing rendered is committed: the site is
+assembled at build time from the working tree and from release assets.
+
+A new release changes what "latest" means, so `release.yml` rebuilds and
+deploys the site after it publishes, in a job that holds only the Pages
+permissions and deploys an artifact built by a read-only job.
 
 == Fuzzing
 

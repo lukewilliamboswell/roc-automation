@@ -30,6 +30,10 @@ Two rules carry most of the weight:
 | `contents: write`, behind a protected environment
 | No: it uploads artifacts produced by earlier jobs
 
+| `release.yml` site deploy
+| `pages: write`, `id-token: write`
+| No: it deploys an artifact built by a read-only job
+
 | `nightly.yml` test
 | `contents: read`
 | Yes: default-branch scripts and the published examples archive

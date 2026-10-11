@@ -131,6 +131,10 @@ flowchart TD
   repository script. It creates a draft release at the tested commit, uploads
   every asset, downloads each one back and verifies it against the tested
   artifact, then publishes.
+. *Update the site.* For a final release, rebuild the documentation site so
+  that it points at the new release, and deploy it; see
+  xref:optional-workflows.adoc#what-the-site-points-at[What the site points at].
+  A release candidate does not change the site.
 
 The publish job consumes the artifacts of its own run. It never rebuilds, and
 never resolves a moving branch.
@@ -147,11 +151,31 @@ archive names only its own bundle, plus any sibling bundle its examples need.
 The release notes list every bundle URL by name. All of them are tested before
 any of them is published.
 
-=== Prereleases
+[#release-candidates]
+=== Release candidates
 
-A release candidate is a release with a prerelease version such as
-`1.4.0-rc1`, marked as a prerelease on GitHub. It follows every step above.
-`nightly.yml` ignores prereleases.
+A release candidate, such as `0.12.0-rc1`, is a prerelease published for users
+to test before the maintainers commit to the release. It answers the question
+the workflows cannot: does this version work in real projects, and is the API
+right?
+
+* Publish a candidate through `release.yml` with a prerelease version. It
+  follows every step above and holds the same assets, so what users test is
+  built exactly as the final release will be.
+* Mark it as a prerelease on GitHub. It is never the repository's latest
+  release.
+* Announce it where users will see it, and say what feedback is wanted and for
+  how long.
+* Fix what the feedback finds on the default branch, and publish `-rc2`. A
+  candidate is immutable like any other release and is never amended.
+* When a candidate has stood without change, release the final version from
+  the same commit. Its bundle is a new artifact under a new tag, and it goes
+  through the release workflow in full.
+
+Everything that speaks of "the latest release" means the latest release that is
+not a prerelease. `nightly.yml` tests that one, and the documentation site
+links to that one. A candidate is found from the releases page and from its
+announcement.
 
 === Recover an interrupted publication
 
