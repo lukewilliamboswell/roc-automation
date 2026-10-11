@@ -1,5 +1,26 @@
 # Release notes
 
+## One manual for packages and platforms
+
+- Replace the Markdown guides with a single AsciiDoc manual in `docs/`, built by
+  `actions/build-docs` and deployed to GitHub Pages by a new `docs.yml`
+  workflow. Links to the former `docs/*.md` pages no longer resolve.
+- Describe one model for packages and platforms: a floating package compiler,
+  `roc-stable` tooling from Blueprint on every runner, three core workflows, and
+  an immutable release holding the bundle, a pinned examples archive, a
+  documentation archive and the manual.
+- Remove `update-blueprint.yml` from the model. Lock updates, tooling-compiler
+  changes, Blueprint upgrades and host-binding regeneration are manual pull
+  requests.
+- Add platform practice: committed `roc glue` bindings checked in pull-request
+  CI only, per-target matrices, several bundles per release, and the
+  build-input guidance without compiler-pin steps.
+- Remove the pin-bump walkthrough, integration guide, validation contract,
+  compatibility-branch guide and rollout log. The trust model keeps its
+  description of the pin-bump controller and release guard, which remain in this
+  repository.
+- Remove the nightly-updater badge grid from the README.
+
 ## Target workflows for package repositories
 
 - Document the target model for package repositories: a `roc-stable` tooling

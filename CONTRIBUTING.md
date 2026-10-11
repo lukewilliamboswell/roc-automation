@@ -21,7 +21,8 @@ reusable workflows to that exact action commit. This gives the nested action an
 immutable revision without a self-referential commit hash. Run CI and a consumer
 configuration check before selecting the workflow commit for consumer PRs.
 
-Document behavior and migration changes in CHANGELOG.md. Use unique version tags
+Document behavior changes in CHANGELOG.md, and keep the manual in `docs/` in step
+with them. Use unique version tags
 for published releases, record any assigned vulnerability identifiers for fixes,
 and never move an existing release tag. Consumers review full-SHA updates through
 Dependabot PRs or a maintainer-created PR. No updater approves or merges itself.
