@@ -1,0 +1,92 @@
+= Shared actions
+
+roc-automation provides the pieces every repository needs identically.
+Reference each one by full commit SHA, and upgrade that reference through a pull
+request. A shared change never reaches a repository silently.
+
+[source,yaml]
+----
+- uses: lukewilliamboswell/roc-automation/actions/<name>@REVIEWED_FULL_SHA
+----
+
+[#setup-blueprint]
+== `actions/setup-blueprint`
+
+Installs Nix and the `blueprint` binary, so that `blueprint run <task>` works in
+the next step. It builds nothing.
+
+The caller supplies the roc-blueprint version and the reviewed SHA-256 of that
+release's binary for each runner it uses. The action downloads the binary for
+the runner's system, checks it against the supplied value, fails on a mismatch,
+and puts it on `PATH`. The version and checksums must come from the same
+roc-blueprint release as the platform URL in `Blueprint.roc`.
+
+It needs no token and no cache account.
+xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
+what the checksum does and does not establish.
+
+[#build-docs]
+== `actions/build-docs`
+
+Renders a repository's `docs/*.adoc` sources as an HTML site and a PDF manual
+with a shared theme, Roc syntax highlighting and Mermaid diagrams. It can also
+place compiler-generated API documentation under `site/api`.
+
+[source,yaml]
+----
+- id: docs
+  uses: lukewilliamboswell/roc-automation/actions/build-docs@REVIEWED_FULL_SHA
+  with:
+    pdf-filename: my-project.pdf
+    docs-version: main
+    api-entrypoint: platform/main.roc
+- uses: actions/upload-pages-artifact@REVIEWED_FULL_SHA
+  with:
+    path: ${{ steps.docs.outputs.site-directory }}
+----
+
+[cols="2,2,4",options="header"]
+|===
+| Input | Default | Meaning
+
+| `docs-directory` | `docs` | Source directory, relative to the repository root
+| `entrypoint` | `index.adoc` | The manual's entrypoint, relative to `docs-directory`
+| `output-directory` | `.docs-out` | Generated output, relative to the repository root
+| `pdf-filename` | `manual.pdf` | Filename of the generated PDF
+| `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
+| `api-entrypoint` | empty | Roc package or platform root for the generated API reference
+| `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
+| `theme-directory` | empty | A replacement theme directory, relative to the repository root
+|===
+
+Outputs are `site-directory` and `pdf-path`, both absolute paths.
+
+The action needs Docker and Python on the runner, which GitHub's Ubuntu runners
+provide. A replacement theme directory must contain `docs.css`,
+`docs-theme.yml`, `mermaid-config.json` and `fonts/`.
+xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
+lists what the renderer expects of the sources.
+
+[#publish-build-inputs]
+== `actions/publish-build-inputs`
+
+Publishes native linker inputs built on a same-repository pull request as an
+immutable, content-addressed release, and commits only the resulting lock to
+that pull request. The job that holds release credentials never checks out or
+runs the pull request's code.
+
+[cols="2,4",options="header"]
+|===
+| Input | Meaning
+
+| `pull-request` | Number of the same-repository pull request that holds the producer source
+| `producer-workflow` | Filename of the producer workflow to dispatch on that branch
+| `producer-run` | Optional: an existing successful producer run for the current head, used for recovery
+| `candidate-artifact` | Name of the artifact the producer uploads
+| `lock-path` | The only repository path the action may commit
+| `release-prefix` | Prefix of the content-derived release tag
+|===
+
+xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request]
+specifies the producer, the caller workflow and its permissions, recovery, and
+review.

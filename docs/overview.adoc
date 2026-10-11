@@ -1,0 +1,140 @@
+= How a Roc repository is maintained
+
+A Roc package or platform has two audiences with opposite needs. Its users
+install whatever compiler is current, so the maintainer has to know whether the
+package works with today's compiler. Its maintainers need scripts, checks and
+release steps that keep working on the day a new compiler breaks something.
+
+The model in this manual separates those concerns. The package always meets the
+newest compiler. The repository's own tooling stays on a compiler the maintainer
+chose and moves only when the maintainer moves it. Everything else follows from
+that split.
+
+== The model in one page
+
+[cols="1,3",options="header"]
+|===
+| Concern | Practice
+
+| Package compiler
+| The latest published Roc nightly. Nothing in the repository pins it.
+
+| Tooling compiler
+| `roc-stable`: one release named in `Blueprint.roc`, changed by a reviewed pull request.
+
+| Tools and toolchains
+| Declared in `Blueprint.roc`, pinned by `Blueprint.lock`, identical for contributors and CI.
+
+| Automation
+| Roc scripts under `scripts/`, run by `roc-stable`.
+
+| Repository examples
+| Depend on the working tree by relative path.
+
+| Pull requests
+| Scripts pass on `roc-stable`; the working tree passes on the latest nightly; a platform's committed host bindings match what that nightly generates.
+
+| A release
+| One immutable release holding the bundle, an examples archive pinned to that bundle, a documentation archive, and the manual where there is one. Every asset is tested as the exact bytes that are published.
+
+| Nightly
+| Runs the latest release's own examples archive on the latest nightly. A failure means the package needs a patch release.
+
+| Upkeep
+| Blueprint, the lock, the tooling compiler, the scripts and a platform's host bindings are each changed by hand, in a pull request.
+|===
+
+== Three compilers, three jobs
+
+A repository involves three Roc compilers. Each has one job, and they are never
+interchangeable.
+
+[cols="2,2,3",options="header"]
+|===
+| Compiler | Selected by | Used for
+
+| Blueprint's own; it has no command name
+| The `blueprint` binary
+| Evaluating `Blueprint.roc`
+
+| `roc-stable`
+| The release tag named in `Blueprint.roc`
+| Running the repository's automation scripts
+
+| `roc`, the latest nightly
+| Nothing: it is whatever https://github.com/roc-lang/nightlies[`roc-lang/nightlies`] published most recently
+| Checking, testing, bundling and running the package, the platform and their examples
+|===
+
+A maintainer chooses the second and observes the third. The first is hidden:
+`blueprint` fetches it when needed, as described in
+xref:environment.adoc#get-the-blueprint-binary[Get the `blueprint` binary].
+
+`roc-stable` exists so that repository tooling keeps working when a nightly
+breaks something. The package deliberately floats, because the question a
+maintainer needs answered is whether the package works with the compiler users
+will install today. "Stable" means only that the repository does not move the
+tag without review. There is no shared registry of stable versions, and
+repositories need not agree.
+
+"Latest nightly" means the most recent release published by `roc-lang/nightlies`.
+This model treats that as the last good build and does not check upstream CI
+separately.
+
+== What each workflow answers
+
+.The three workflows and the question each one answers
+[mermaid]
+....
+flowchart LR
+    PR[Pull request] --> CI[ci.yml]
+    CI --> Q1[Does this change work with today's compiler?]
+    D[Maintainer dispatch] --> REL[release.yml]
+    REL --> Q2[Do these exact bytes work? Then publish them once.]
+    S[Daily schedule] --> N[nightly.yml]
+    N --> Q3[Does the latest release still work with today's compiler?]
+....
+
+`ci.yml` tests the working tree. `release.yml` tests and publishes artifacts.
+`nightly.yml` tests what users already have. Each can fail without the others
+being wrong: a new nightly can break `ci.yml` on an untouched pull request, and
+`nightly.yml` can fail while the default branch is green because the fix has not
+been released. xref:workflows.adoc#the-three-workflows[The three workflows]
+describes each in full.
+
+== What is shared and what a repository owns
+
+Anything two repositories need identically belongs in roc-automation, referenced
+by full commit SHA. A repository keeps only what knows its own package.
+
+[cols="1,2",options="header"]
+|===
+| Lives in roc-automation | Lives in the repository
+
+| `actions/setup-blueprint`: install Nix and the verified `blueprint` binary
+| `Blueprint.roc` and `Blueprint.lock`
+
+| `actions/build-docs`: render an AsciiDoc manual as a site and PDF
+| `docs/*.adoc`
+
+| `actions/publish-build-inputs`: publish linker inputs from a pull request
+| The producer workflow and its build recipe
+
+| This manual
+| Thin caller workflows, `scripts/`, tests and expected output
+|===
+
+xref:actions.adoc#shared-actions[Shared actions] is the reference for each
+action.
+
+== What the model does not do
+
+* It does not make package builds reproducible. The package compiler floats by
+  design; only the tooling environment is pinned.
+* It does not verify upstream compiler quality beyond using a published nightly.
+* It does not support holding a package on an older compiler line. There are no
+  compiler-compatibility branches: a release works with the compilers named in
+  its notes, and a patch release follows when a newer compiler breaks it.
+* It does not describe application repositories that publish no package. They
+  can use the environment and script conventions, and have no release or
+  nightly workflow.

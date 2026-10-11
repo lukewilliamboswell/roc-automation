@@ -1,0 +1,97 @@
+= Adopt the model in a repository
+
+This chapter is for a maintainer bringing a repository in line with the model.
+It assumes the earlier chapters. Work from a fresh branch of the remote default
+branch, and open one pull request per numbered step so that a failure points at
+one change.
+
+== Steps
+
+. *Environment.* Add `Blueprint.roc` and `Blueprint.lock` with `roc-stable`,
+  the script dependencies under `RocPackages`, and every tool and toolchain the
+  repository uses. Using the released `blueprint` binary, confirm that
+  `blueprint run` executes a shebang script. Remove any `flake.nix`,
+  `flake.lock`, `.envrc` or other environment definition this replaces, and add
+  `.blueprint/` to `.gitignore`.
+. *Scripts.* Before porting a script, decide whether it earns its place:
+  consolidate scripts that overlap, and delete one that only repeats another
+  test. Port what remains to Roc following
+  xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts].
+  Carry each script's tests across first, as `expect` tests or cases the check
+  script runs. Delete the original only when its replacement runs in CI.
+. *Pins.* Remove `.roc-version`, `.github/roc-nightly.json` and every `roc`
+  header field. Make the check script fail if any reappears. A platform also
+  commits its generated host bindings and adds the check that regenerates and
+  compares them.
+. *Examples.* Point every Roc application in the repository at the working tree
+  by relative path. Record expected output. Remove any step that rewrites
+  committed examples after a release.
+. *Release artifacts.* Add tasks that build the bundle, the examples archive,
+  the documentation archive and the manual, and a task that tests the archive
+  against a loopback bundle.
+. *Workflows.* Replace the repository's workflows with `ci.yml`, `release.yml`
+  and `nightly.yml`, plus any
+  xref:optional-workflows.adoc#optional-workflows[optional workflows] it needs.
+  Take the `blueprint` version and checksums from the same roc-blueprint release
+  as the platform URL in `Blueprint.roc`.
+. *Repository settings.* Apply
+  xref:settings.adoc#repository-settings[Repository settings], update the
+  required check names, and delete branches that earlier automation owned.
+
+== Acceptance
+
+Record a link for each item in the final pull request.
+
+* `blueprint run check` passes locally, using the released `blueprint` binary
+  and a current nightly `roc` on `PATH`.
+* A search finds no `.roc-version`, no `roc: "` header field, no committed flake
+  files, no rendered documentation, and no Python, bash or PowerShell
+  automation.
+* `ci.yml` passes on the pull request, and its log shows the `blueprint`
+  checksum verified before `blueprint run check`.
+* A `release.yml` dry run produces every release asset, and the archived
+  examples differ from the repository's only in the package dependency.
+* A manual `nightly.yml` run passes against the latest release.
+* A deliberately failing nightly run opens exactly one tracking issue, a second
+  failure comments on it, and a passing run closes it.
+* A real pull request with a failing check is blocked from merging.
+* For a platform: a deliberate edit to the committed bindings fails `ci.yml`.
+
+== Evidence for each claim
+
+A claim about the repository is only as good as the check behind it.
+
+[cols="2,3",options="header"]
+|===
+| Claim | Evidence
+
+| CI runs the reviewed `blueprint` binary
+| The setup step verifies the download's SHA-256 against the reviewed value before running it
+
+| Tooling uses the pinned compiler
+| Scripts start with the `roc-stable` shebang; CI prints `roc-stable version`
+
+| No compiler pins remain
+| The check script fails when a `roc:` header field or `.roc-version` exists
+
+| Repository examples test the working tree
+| The check script fails unless each application names the relative package path
+
+| Examples behave as documented
+| The check script compares each example's output with the recorded specification
+
+| A platform's bindings match the compiler
+| `ci.yml` regenerates them with the latest nightly and fails on a difference
+
+| Published examples work
+| `release.yml` tests the archive before upload; `nightly.yml` tests the published archive
+
+| Published bytes are the tested bytes
+| The publish job downloads each uploaded asset and compares it with the tested artifact
+
+| The release names its compilers
+| Release notes contain both version strings
+
+| The latest release works on the latest nightly
+| The most recent `nightly.yml` run, and the absence of an open tracking issue
+|===

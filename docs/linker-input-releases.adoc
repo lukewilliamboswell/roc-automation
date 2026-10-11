@@ -1,9 +1,10 @@
-# Publish linker inputs from a pull request
+= Publish linker inputs from a pull request
 
-This page specifies the operational contract for
-`actions/publish-build-inputs`. Read the
-[platform build-input guide](platform-build-inputs.md) first for the ownership,
-rebuild, and consumer model. The [security model](security-model.md) is normative
+This chapter specifies the operational contract for
+`actions/publish-build-inputs`. Read
+xref:platforms.adoc#native-build-inputs[Native build inputs] first for the ownership,
+rebuild, and consumer model. The
+xref:security-model.adoc#linker-input-release-publisher[trust model] is normative
 for the publisher's authority boundaries.
 
 A platform repository can need new linker-input bytes before the change that uses
@@ -20,18 +21,19 @@ release credentials and controller selection under already-reviewed policy. A
 single PR job doing both would allow changed producer code to publish or write its
 own asserted digest.
 
-## Producer contract
+== Producer contract
 
 The unprivileged producer workflow builds and tests every supported target from
 the PR branch. It uploads one flat Actions artifact containing top-level regular
 files only:
 
-- `build-input-release.json`; and
-- one deterministic archive for every target declared by the manifest.
+* `build-input-release.json`; and
+* one deterministic archive for every target declared by the manifest.
 
 The manifest is canonical JSON with this envelope:
 
-```json
+[source,json]
+----
 {
   "schema_version": 1,
   "kind": "link-inputs",
@@ -50,7 +52,7 @@ The manifest is canonical JSON with this envelope:
     }
   }
 }
-```
+----
 
 Use the platform's complete supported target set rather than publishing a partial
 replacement under the same contract. The input fingerprint covers every source,
@@ -63,22 +65,23 @@ permission. Generate GitHub build-provenance attestations for the manifest and
 each target archive. Producer jobs may compile and execute PR code because they
 do not possess publication authority.
 
-## Trusted publisher contract
+== Trusted publisher contract
 
 The platform owns a small `workflow_dispatch` publisher workflow on its default
 branch. That workflow uses the `actions/publish-build-inputs` composite action
 from `roc-automation` at one reviewed full commit SHA and supplies only:
 
-- the same-repository pull-request number;
-- the producer workflow filename;
-- the candidate Actions artifact name;
-- the repository-relative lock path; and
-- the release tag prefix.
+* the same-repository pull-request number;
+* the producer workflow filename;
+* the candidate Actions artifact name;
+* the repository-relative lock path; and
+* the release tag prefix.
 
 Give that job `actions: write`, `attestations: read`, `contents: write`, and
 `pull-requests: read`; set all other permissions to none. A typical caller is:
 
-```yaml
+[source,yaml]
+----
 name: Publish linker inputs
 
 on:
@@ -107,7 +110,7 @@ jobs:
           candidate-artifact: link-input-release
           lock-path: link-inputs.lock.json
           release-prefix: linker-inputs
-```
+----
 
 The composite action obtains its controller implementation from that exact
 `roc-automation` revision. Its privileged job does not check out the platform PR,
@@ -148,7 +151,7 @@ for the other. The lease prevents the publisher from attaching a valid lock to a
 newer, unverified PR head or overwriting maintainer work that arrived during the
 release operation.
 
-## Recover interrupted publication
+== Recover interrupted publication
 
 The optional `producer-run` action input selects an existing successful producer
 run instead of dispatching another build. The run must be a completed successful
@@ -167,7 +170,7 @@ published Git tag. Every recovered asset is downloaded and hashed before the
 same release ID is published and checked for immutability. Unexpected or partial
 asset sets fail without replacement or deletion.
 
-## Review and merge the adoption
+== Review and merge the adoption
 
 The generated lock records the manifest identity, source identity, input
 fingerprint, release, repository, and every target archive's filename, SHA-256,
@@ -176,15 +179,16 @@ lock is not adopted until the updated PR passes its required checks and is merge
 
 Review the PR as a dependency change:
 
-1. Confirm that the source changes actually require or intentionally regenerate
-   linker inputs and that the producer-input inventory is complete.
-2. Inspect the producer and publisher run links, exact source SHA, attestations,
-   target coverage, and consumer-facing link tests.
-3. Confirm that the publisher added only the lock and that its commit is verified.
-4. Rerun routine validation on the new PR head. It must consume the release through
-   the lock and must not rebuild linker inputs.
-5. Merge with a merge commit so the exact attested producer commit and signed
-   lock commit remain in history.
+[arabic]
+. Confirm that the source changes actually require or intentionally regenerate
+linker inputs and that the producer-input inventory is complete.
+. Inspect the producer and publisher run links, exact source SHA, attestations,
+target coverage, and consumer-facing link tests.
+. Confirm that the publisher added only the lock and that its commit is verified.
+. Rerun routine validation on the new PR head. It must consume the release through
+the lock and must not rebuild linker inputs.
+. Merge with a merge commit so the exact attested producer commit and signed
+lock commit remain in history.
 
 Do not rebuild, copy, retag, or promote the release after merge. The merged lock
 permanently selects the PR-built bytes. If source or build inputs change again,
@@ -202,9 +206,9 @@ Fork pull requests cannot receive the signed lock commit. Move an accepted chang
 to a same-repository branch before publication. Do not grant a fork or PR workflow
 write credentials as a workaround.
 
-## Routine consumption
+== Routine consumption
 
-Ordinary pull requests, nightly compiler updates, local builds, and platform
+Ordinary pull requests, nightly compatibility runs, local builds, and platform
 release assembly read the committed lock. They restore or download each selected
 archive, recompute size and SHA-256 even on a cache hit, validate the archive and
 manifest, and install it through fresh staging. They do not call the attestation
@@ -213,6 +217,6 @@ service and do not fall back to a source build when the cache is empty.
 A cache key is an optimization derived from the reviewed content identity. The
 lock, not the cache key or release name, authorizes bytes. A missing archive is a
 download/cache failure; a stale input fingerprint is a request for an intentional
-new linker-input release. See the
-[artifact verification guide](artifact-verification.md) for the distinction
+new linker-input release. See
+xref:artifact-verification.adoc#separate-admission-from-routine-use[Separate admission from routine use] for the distinction
 between admission evidence and routine integrity checks.
