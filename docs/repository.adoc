@@ -42,9 +42,15 @@ a pin cannot return unnoticed.
 == Roc applications in the repository
 
 Every Roc application in the repository depends on the working tree by relative
-path and is checked with the latest nightly. That covers `examples/` and also
-anything outside it: fuzz targets, benchmarks, documentation examples, test
-cases, and a site generator.
+path. Pull-request CI checks them with the latest nightly compiler. That covers
+`examples/` and also anything outside it: fuzz targets, benchmarks,
+documentation examples, test cases, and a site generator.
+
+These are not what the nightly workflow tests. They change with every pull
+request and may use APIs that no release has. The nightly workflow runs the
+examples archive attached to the latest release, whose headers name that
+release's exact bundle URL; see
+xref:examples.adoc#the-examples-archive[The examples archive].
 
 [source,roc]
 ----

@@ -56,8 +56,10 @@ the default branch, not the release.
 The archive that is tested is the archive that is published. Nothing is rebuilt
 between the test and the upload.
 
-. Build the bundle from the tested commit. Its filename is its content hash, so
-  the final release URL is known before anything is published.
+. Build the bundle from the tested commit with `roc bundle`. Its filename is its
+  content hash and the release tag is the version being released, so the final
+  URL, `.../releases/download/<tag>/<hash>.tar.zst`, is known before anything
+  is published.
 . Build the archive with that real release URL in every example.
 . Serve the bundle from a loopback address.
 . Run the archived examples with `--replace-dep <release URL> <loopback URL>`,
