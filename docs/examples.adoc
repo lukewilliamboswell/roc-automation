@@ -45,6 +45,16 @@ Nothing else in an example changes. The archived examples differ from the
 repository's at the tested commit only in the package dependency, and the check
 script verifies that.
 
+.The one line that differs between the repository and the archive
+[source,diff]
+----
+ app [main!] {
+ 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+-	ansi: "../package/main.roc",
++	ansi: "https://github.com/<owner>/roc-ansi/releases/download/<tag>/<hash>.tar.zst",
+ }
+----
+
 A user who wants a starter downloads the archive for the release they are
 installing. The archive is also the fixed input to
 xref:workflows.adoc#nightly-compatibility[nightly compatibility], which is why

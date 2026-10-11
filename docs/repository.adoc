@@ -46,12 +46,7 @@ path. Pull-request CI checks them with the latest nightly compiler. That covers
 `examples/` and also anything outside it: fuzz targets, benchmarks,
 documentation examples, test cases, and a site generator.
 
-These are not what the nightly workflow tests. They change with every pull
-request and may use APIs that no release has. The nightly workflow runs the
-examples archive attached to the latest release, whose headers name that
-release's exact bundle URL; see
-xref:examples.adoc#the-examples-archive[The examples archive].
-
+.In the repository: the package is a relative path
 [source,roc]
 ----
 app [main!] {
@@ -62,6 +57,24 @@ app [main!] {
 
 The package is a relative path. Every other dependency, including the platform,
 is an immutable release URL with its content hash.
+
+These are not what the nightly workflow tests. They change with every pull
+request and may use APIs that no release has. The nightly workflow runs the
+examples archive attached to the latest release. In the archive the same example
+names that release's exact bundle URL, and nothing else differs:
+
+.In a release's examples archive: the package is that release's bundle
+[source,roc]
+----
+app [main!] {
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+	ansi: "https://github.com/<owner>/roc-ansi/releases/download/<tag>/<hash>.tar.zst",
+}
+----
+
+The release workflow writes the second form when it builds the archive; the
+repository only ever contains the first. See
+xref:examples.adoc#the-examples-archive[The examples archive].
 
 The single exception is `scripts/`. A script never depends on the repository's
 own package by relative path, because a script must keep working while the
