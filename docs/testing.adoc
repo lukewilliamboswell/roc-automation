@@ -27,6 +27,9 @@ tests are organised.
 | Integration tests
 | The test driver, over its full list of cases
 
+| Allocation ratchets
+| The cases that record an allocation ceiling, on a test platform that counts allocations
+
 | Benchmarks
 | A smoke run: each benchmark builds and completes one small iteration
 
@@ -119,6 +122,106 @@ The driver is a Roc script under `scripts/`, and the cases live under `tests/`.
 The expected-output specification for examples, described in
 xref:examples.adoc#record-expected-output[Record expected output], is one such
 list of cases run by the same driver.
+
+== Skip a broken case, visibly
+
+Sometimes a case is broken for a reason that cannot be fixed today: a compiler
+bug, a dependency that has not been released, a platform limitation. Deleting
+the case loses it, and leaving it failing blocks every pull request. Skip it,
+and make the skip impossible to forget.
+
+* Mark the skip where the case is defined, with a `TODO` note and a link to a
+  GitHub issue that tracks the cause.
++
+[source,roc]
+----
+# TODO: skipped until the compiler handles nested tag unions here.
+# https://github.com/roc-lang/roc/issues/<number>
+{ name: "nested-tags", skip: Skip("compiler bug, roc-lang/roc#<number>"), ... }
+----
+* A skip always carries a reason. The harness rejects a skip with no note.
+* The harness prints every skipped case with its note, and counts skips in the
+  summary. Nobody should have to search the source to learn what is not being
+  tested or why.
+* A skip is temporary. When the linked issue closes, the skip is removed in the
+  pull request that confirms the case passes again.
+
+The same applies outside the harness: an example, benchmark or fuzz target that
+is switched off says why, in a `TODO` with an issue link, at the place it is
+switched off.
+
+== Report progress and results
+
+A harness is read far more often than it is written, usually by someone waiting
+for it or trying to find out what failed. Its output is part of its job.
+
+.What a run looks like
+[source,text]
+----
+Running 20 cases
+ [ 1/20] parse-empty-input ............ PASS      12ms
+ [ 2/20] parse-nested-lists ........... PASS      48ms
+ [ 3/20] render-wide-table ............ FAIL   1_204ms
+ [ 4/20] nested-tags .................. SKIP          compiler bug, roc-lang/roc#1234
+ ...
+ [20/20] rejects-missing-file ......... PASS       9ms
+
+Failed
+  render-wide-table: expected exit code 0, got 1
+    tests/cases/render-wide-table
+
+Skipped
+  nested-tags: compiler bug, roc-lang/roc#1234
+
+Summary: 18 passed, 1 failed, 1 skipped in 10_312ms
+Slowest: render-wide-table 1_204ms, build 6_870ms
+----
+
+* *Show progress as it happens.* Print each step with its position, such as
+  `3/20`, and its result as soon as it finishes. A run that prints nothing for
+  a minute looks the same as a run that has hung.
+* *End with a summary.* Report how many cases passed, failed and were skipped,
+  list each failure with enough detail to act on, and list each skip with its
+  note. The summary is what a reader sees first in a CI log, so it stands alone.
+* *Report timing.* Give the time of each case, the total, and the slowest
+  steps, including the build.
+* *Use one unit for time.* Print every duration in milliseconds, with digit
+  separators and aligned to the right: `12ms`, `1_204ms`, `10_000ms`. With a
+  single unit the eye compares lengths, and a slow case stands out. A column
+  that mixes `850ms`, `1.2s` and `2m` hides exactly the outlier worth seeing.
+* *Use color.* `FAIL` is red, `PASS` green, `SKIP` yellow. Color is an aid and
+  never the only signal: the word is always printed, and color is turned off
+  when output is not a terminal or when `NO_COLOR` is set.
+* *Exit accurately.* Any failure gives a non-zero exit code. Skips alone do
+  not.
+
+== Measure allocations
+
+Memory behavior is a quality of Roc code in its own right, and it is invisible
+unless it is measured. A change that keeps a reference alive a little longer
+can turn an in-place update into a copy of a whole list, on every call. The
+result is still correct, every test still passes, and the package is now
+several times slower for its users.
+
+Most packages and platforms should therefore test on a platform that counts
+allocations, and hold the counts with ratchets.
+
+* Use a test platform whose host records allocations, reallocations and frees
+  while a case runs, and reports the counts to the harness.
+* Record a ceiling for the cases that matter: the hot paths, and the
+  operations users will call in a loop.
+* The harness fails a case whose count exceeds its ceiling, and prints the
+  ceiling beside the measured value.
+* A ceiling is a ratchet. It is compared as "no more than", never for
+  equality, because the compiler floats and a newer one may do better. When a
+  count improves, lower the ceiling in the same pull request so the gain cannot
+  be lost quietly.
+* Raising a ceiling is a reviewed decision with a stated reason, not a way to
+  make a red build green.
+
+Allocation counts are deterministic for a given compiler, which makes them a
+far steadier signal than timing. They run in pull-request CI with everything
+else; wall-clock benchmarks do not.
 
 == Property-based tests with roc-fuzz
 
