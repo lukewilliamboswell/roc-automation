@@ -1,14 +1,30 @@
 = How a Roc repository is maintained
 
-A Roc package or platform has two audiences with opposite needs. Its users
-install whatever compiler is current, so the maintainer has to know whether the
-package works with today's compiler. Its maintainers need scripts, checks and
-release steps that keep working on the day a new compiler breaks something.
+This manual is end-to-end guidance for managing Roc packages, platforms and the
+infrastructure that supports them: the tooling environment, the repository
+layout, continuous integration, releases, documentation, and the routine upkeep
+in between.
 
-The model in this manual separates those concerns. The package always meets the
-newest compiler. The repository's own tooling stays on a compiler the maintainer
-chose and moves only when the maintainer moves it. Everything else follows from
-that split.
+Keeping a Roc project in good shape means juggling several things that move at
+different speeds. The compiler is still changing, and breaking changes are
+routine. A bug can sit in the compiler, in a platform, in a dependency, or in
+the project itself. Releases rarely line up: a package may need a platform
+release that has not happened, or a fix may be merged long before users can
+download it. Each repository that solves these problems alone solves them
+slightly differently, and each difference is something a maintainer has to
+remember.
+
+A common baseline is the answer this manual offers. It records the practices
+that have worked across these repositories and the reasons behind them, so that
+a lesson learnt in one place is applied everywhere. The practices are
+opinionated, and they are not finished: when experience shows a better way, the
+baseline changes here first and the repositories follow.
+
+One decision shapes most of the rest. The package or platform always meets the
+newest compiler, because that is what its users will install. The repository's
+own tooling stays on a compiler the maintainer chose and moves only when the
+maintainer moves it, so that scripts, checks and release steps keep working on
+the day a new compiler breaks something.
 
 == The model in one page
 
