@@ -50,7 +50,7 @@ python3 -m unittest discover -s tests -v
 Build the manual locally with Docker:
 
 ```sh
-python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf
+python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 1
 ```
 
 The sources are in `docs/`. Read the
