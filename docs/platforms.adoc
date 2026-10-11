@@ -1,7 +1,7 @@
 = Maintain a platform
 
 A platform follows the same model as a package: the same environment, layout,
-examples archive and three workflows, and no compiler pin in any header. This
+examples archive and three workflows, and no compiler pin in the platform or its examples. This
 chapter covers what a platform adds, which is a native host. A host brings
 generated bindings, a target matrix, and build inputs that are too expensive or
 too sensitive to rebuild on every pull request.

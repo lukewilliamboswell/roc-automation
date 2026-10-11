@@ -24,20 +24,24 @@ root directory, such as `package/` and `tzdb/package/`, or `platform-web/` and
 others in one release; see
 xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release].
 
-== No compiler pins
+== Where a compiler pin belongs
 
-No Roc file carries a `roc: "..."` header field: not the package, not a
-platform, not an example, not a script. The repository has no `.roc-version`
-file and no `.github/roc-nightly.json`.
+The `roc: "..."` header field appears in exactly one place: the scripts under
+`scripts/`, where it names the same release as `roc-stable`. Nothing else is
+pinned. The package, a platform, the examples and every other Roc application
+carry no `roc` field, and the repository has no `.roc-version` file and no
+`.github/roc-nightly.json`.
 
-This applies to platforms as much as packages. `roc check` exits with an error
+The rule for the package applies to platforms as much as packages. `roc check` exits with an error
 on a warning, and a dependency whose header pins a different nightly produces a
 version-mismatch warning. A pinned platform therefore fails every application
 that floats, and a package cannot float until every platform its examples use
 has dropped the field.
 
-The check script fails when a `roc:` header field or `.roc-version` appears, so
-a pin cannot return unnoticed.
+The check script enforces both halves. It fails when a `roc` field or
+`.roc-version` appears outside `scripts/`, and it fails when a script's pin
+differs from the tooling compiler; see
+xref:repository.adoc#keep-the-script-pins-in-step[Keep the script pins in step].
 
 == Roc applications in the repository
 
@@ -94,12 +98,13 @@ Each entry point under `scripts/` is an executable Roc application:
 #!/usr/bin/env roc-stable
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+	roc: "nightly-2026-10-09-258ab27",
 }
 ----
 
 * Start with the `roc-stable` shebang and commit the file as executable.
-* Omit the `roc` header field. The tag in `Blueprint.roc` is the only compiler
-  authority for scripts.
+* Set the `roc` header field to the release that `Blueprint.roc` names as
+  `roc-stable`.
 * Reference every dependency by immutable release URL with its content hash,
   and list the same URLs under `RocPackages` in `Blueprint.roc`.
 * Run package work with the compiler named by the `ROC_NIGHTLY` environment
@@ -114,6 +119,27 @@ app [main!] {
 
 Automation is not written in Python, bash or PowerShell. A script that exists
 only to wrap one command is deleted in favour of a `Task` that runs the command.
+
+=== Keep the script pins in step
+
+A script is written for one compiler and one set of dependencies. Someone who
+runs it with a newer `roc`, instead of through `blueprint`, may find it broken
+for reasons that have nothing to do with their change. The `roc` field makes
+the compiler say so: it warns that the script targets a different release,
+which points at the cause before anyone debugs the script.
+
+The field is useful only while it is true, so one cheap check keeps it true.
+The check script reads the tag from the `Command("roc-stable", ...)` setting in
+`Blueprint.roc` and requires every file under `scripts/` that has an `app`
+header to carry exactly that tag in its `roc` field. It reads text and runs no
+compiler, so it costs nothing in pull-request CI.
+
+`Blueprint.roc` remains the authority. The header fields are copies that the
+check holds to it, and
+xref:maintenance.adoc#change-the-tooling-compiler[Change the tooling compiler]
+changes them together.
+
+=== The check script
 
 One script, conventionally `scripts/check_all.roc` behind the `check` task, runs
 everything a pull request must pass: script tests, the static checks in this

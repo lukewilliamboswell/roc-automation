@@ -17,10 +17,10 @@ that split.
 | Concern | Practice
 
 | Package compiler
-| The latest published Roc nightly. Nothing in the repository pins it.
+| The latest published Roc nightly. The package, platform and examples carry no pin.
 
 | Tooling compiler
-| `roc-stable`: one release named in `Blueprint.roc`, changed by a reviewed pull request.
+| `roc-stable`: one release named in `Blueprint.roc` and repeated in each script's `roc` header field, changed by a reviewed pull request.
 
 | Tools and toolchains
 | Declared in `Blueprint.roc`, pinned by `Blueprint.lock`, identical for contributors and CI.

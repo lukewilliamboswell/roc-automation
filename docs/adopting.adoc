@@ -20,7 +20,8 @@ one change.
   Carry each script's tests across first, as `expect` tests or cases the check
   script runs. Delete the original only when its replacement runs in CI.
 . *Pins.* Remove `.roc-version`, `.github/roc-nightly.json` and every `roc`
-  header field. Make the check script fail if any reappears. A platform also
+  header field outside `scripts/`. Set the `roc` field of every script to the
+  `roc-stable` tag. Make the check script enforce both. A platform also
   commits its generated host bindings and adds the check that regenerates and
   compares them.
 . *Examples.* Point every Roc application in the repository at the working tree
@@ -44,7 +45,7 @@ Record a link for each item in the final pull request.
 
 * `blueprint run check` passes locally, using the released `blueprint` binary
   and a current nightly `roc` on `PATH`.
-* A search finds no `.roc-version`, no `roc: "` header field, no committed flake
+* A search finds no `.roc-version`, no `roc: "` header field outside `scripts/`, no committed flake
   files, no rendered documentation, and no Python, bash or PowerShell
   automation.
 * `ci.yml` passes on the pull request, and its log shows the `blueprint`
@@ -71,8 +72,11 @@ A claim about the repository is only as good as the check behind it.
 | Tooling uses the pinned compiler
 | Scripts start with the `roc-stable` shebang; CI prints `roc-stable version`
 
-| No compiler pins remain
-| The check script fails when a `roc:` header field or `.roc-version` exists
+| Nothing but the scripts is pinned
+| The check script fails when a `roc` header field or `.roc-version` exists outside `scripts/`
+
+| Every script names the tooling compiler
+| The check script fails unless each script's `roc` field equals the `roc-stable` tag in `Blueprint.roc`
 
 | Repository examples test the working tree
 | The check script fails unless each application names the relative package path

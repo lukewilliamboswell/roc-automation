@@ -19,7 +19,7 @@ and not a chore to automate.
 | To take newer tool versions, or to make a newer nightly selectable as `roc-stable`
 
 | Change the tooling compiler
-| `Blueprint.roc`, sometimes `Blueprint.lock`, sometimes scripts
+| `Blueprint.roc`, the `roc` field of every script, sometimes `Blueprint.lock`
 | When scripts need a newer compiler, or periodically to stay close to current
 
 | Upgrade Blueprint
@@ -56,6 +56,8 @@ xref:platforms.adoc#choose-the-correct-maintainer-path[Choose the correct mainta
 
 . Choose a published nightly release.
 . Change the tag in the `Command("roc-stable", ...)` setting of `Blueprint.roc`.
+. Change the `roc` field in every script header to the same tag. The check
+  script fails until they all match.
 . If the locked overlay revision predates that release, run
   `blueprint update roc` and commit `Blueprint.lock` in the same pull request.
 . Fix any script the new compiler breaks in that pull request, so the tag and
