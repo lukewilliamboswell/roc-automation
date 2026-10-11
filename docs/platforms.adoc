@@ -96,6 +96,44 @@ Expensive outputs that are reused across releases can have their own dependency
 releases; a small host can be built in a read-only job of the release workflow.
 In either case, test and publish the same artifact bytes.
 
+=== No binary blobs in the repository
+
+As a general rule, a platform repository does not commit binaries. A committed
+library or object file has no visible origin: a reviewer cannot tell what
+source it came from, what built it, or whether it changed for a reason.
+
+Binaries such as linker inputs are built by their own workflow, independent of
+ordinary CI, and published as an immutable release that carries:
+
+* the archives for every supported target;
+* a build-provenance attestation for each of them;
+* the licenses of everything inside; and
+* an SBOM.
+
+The software supply chain can then be followed and verified end to end: from a
+source commit, through the workflow run that built it, to the exact bytes a
+platform links.
+
+Routine use goes through content hashes. The repository commits a lock that
+names each archive, its release and its SHA-256, and every build verifies the
+bytes against that lock. A hash check is local and fast, it makes the archives
+safe to cache, and it needs no network service. The attestation API is reserved
+for the moments that need it: admitting a new release into the lock, auditing
+one, or an end user who wants to verify what they downloaded. It is not called
+on every build.
+xref:artifact-verification.adoc#separate-admission-from-routine-use[Separate admission from routine use]
+sets out that division.
+
+There are exceptions. A platform may depend on libraries that another project
+already publishes, for example the prebuilt libraries of a graphics library it
+wraps. Those may be vendored in the repository, so that builds do not make
+repeated network calls on someone else's project. A vendored binary records
+where it came from: the upstream project, the release, the download URL, its
+hash and its license. It is the upstream project's published artifact,
+unmodified, and never something the repository built and then committed.
+
+=== Three release cycles
+
 Keep three release cycles visibly separate:
 
 [cols="1,2,2",options="header"]

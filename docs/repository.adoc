@@ -162,7 +162,7 @@ build of what a release would publish.
 | Rendered API documentation and the built site
 
 | A platform's generated host bindings
-| Native build outputs, which are consumed through a content lock
+| Native binaries, which are released independently and consumed through a content lock; see xref:platforms.adoc#no-binary-blobs-in-the-repository[No binary blobs in the repository]
 |===
 
 Generated data that is committed has a script that regenerates it and a check
