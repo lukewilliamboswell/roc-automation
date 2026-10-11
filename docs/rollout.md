@@ -27,10 +27,10 @@ each when it lands.
 
 | Requirement | Repository | Revision |
 | --- | --- | --- |
-| A release whose CLI and platform bundle agree | roc-blueprint | Pending |
-| The `Command` environment setting, with a test that runs a `roc-stable` shebang script | roc-blueprint | Pending |
-| Updating a single named input | roc-blueprint | Pending |
-| macOS host execution, exercised in CI | roc-blueprint | Pending |
+| A release whose CLI and platform bundle agree | roc-blueprint | 0.4.0 |
+| The `Command` environment setting, with a test that runs a `roc-stable` shebang script | roc-blueprint | 0.4.0 |
+| Updating a single named input | roc-blueprint | 0.4.0 |
+| macOS host execution, exercised in CI | roc-blueprint | 0.4.0; weaver runs it on `macos-latest` |
 | `roc-nightly` alias, resolved-tag output, and release-digest verification for the latest nightly | setup-roc | Pending |
 | `actions/setup-blueprint` | roc-automation | Pending |
 
@@ -112,7 +112,7 @@ until the pilots are reviewed.
 | roc-signals | Earlier | |
 | roc-time | Earlier | |
 | roc-wasm4 | Earlier | Platform: build-input guide applies |
-| weaver | Earlier | Has a `Blueprint.roc` |
+| weaver | Target; unscheduled pilot | Migrated in weaver #36 to #40. Carries its own `setup-tooling` action until `actions/setup-blueprint` exists |
 
 ## The earlier controller during the rollout
 
@@ -142,3 +142,54 @@ own `roc` stayed visible inside the environment.
   confirmed. Resolve it before describing the environment as fully pinned.
 - Not yet exercised: the same chain in CI, on macOS, and through a published
   roc-blueprint release rather than a source checkout.
+
+### 2026-10-12: weaver, unscheduled pilot
+
+weaver migrated ahead of the three scheduled pilots because its nightly pin
+pull requests had failed since 2026-09-23. Every claim below was exercised in
+weaver's pull-request CI on `ubuntu-latest`, `macos-latest` and
+`windows-latest`, except where it says otherwise.
+
+What the target page got wrong or left open:
+
+- **A platform with a `roc` header pin breaks every consumer that floats.**
+  `roc check` exits 2 on a warning, and a dependency whose header pins another
+  nightly produces a version-mismatch warning. weaver's examples moved from
+  roc-platform-template-zig to basic-cli 0.25.0, which has no pin. A package
+  cannot float until every platform its examples use has dropped the field.
+- **Windows cannot run Blueprint.** There is no Nix and no `blueprint` binary.
+  weaver reads the `roc-stable` tag from `Blueprint.roc`, downloads that
+  release from `roc-lang/nightlies`, checks it against the release's recorded
+  digest, and installs it as `roc-stable.exe`. Scripts are invoked as
+  `roc-stable scripts/<name>.roc`. The target page should say how a Windows job
+  gets `roc-stable`, or say that Windows is out of scope.
+- **The examples archive needs its expected output.** The target page lists
+  only the examples and a README. `nightly.yml` has to know what a release's
+  examples should print, and the default branch's spec describes the default
+  branch. weaver's archive includes `spec.json`.
+- **A release can test the exact archive it uploads.** `roc check`, `test` and
+  `build` accept `--replace-dep OLD NEW`. The release workflow builds the
+  archive with the real release URL, serves the candidate bundle on loopback,
+  and passes the declared URL as `OLD`. Nothing is rebuilt between the test
+  and the upload.
+- **Roc rejects version `0.0.0` in a package URL.** A dry run needs another
+  placeholder; weaver uses `0.0.1-dry-run`.
+- **An immutable archive must not be format-checked.** A later formatter
+  change would fail `nightly.yml` for a reason no patch release fixes, so the
+  archive is checked, tested, built and run, but not passed to `roc fmt`.
+- **Pull requests opened with `GITHUB_TOKEN` do not start CI.**
+  `update-blueprint.yml` opens its pull request that way, so a maintainer has
+  to close and reopen it. A shared workflow needs an answer for this.
+
+Working substitutes for missing foundations:
+
+- `actions/setup-blueprint`: weaver's `.github/actions/setup-tooling` installs
+  Nix with `cachix/install-nix-action` and downloads the `blueprint` 0.4.0
+  binary, verified against a sha256 written in the action.
+- `roc-nightly` alias and resolved-tag output in setup-roc: weaver installs
+  the latest nightly as plain `roc` with upstream setup-roc and prints
+  `roc version`. `nightly.yml` resolves the tag in its own first job.
+
+Not yet exercised: `nightly.yml`, `update-blueprint.yml` and the publish job of
+`release.yml`, which run only from the default branch, and a release that
+ships an examples archive.

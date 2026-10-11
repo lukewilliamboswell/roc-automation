@@ -33,7 +33,6 @@ Click a badge to inspect scheduled and manual runs on the default branch.
 | [roc-signals](https://github.com/lukewilliamboswell/roc-signals) | [![roc-signals nightly updater](https://github.com/lukewilliamboswell/roc-signals/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-signals/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
 | [roc-time](https://github.com/lukewilliamboswell/roc-time) | [![roc-time nightly updater](https://github.com/lukewilliamboswell/roc-time/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-time/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
 | [roc-wasm4](https://github.com/lukewilliamboswell/roc-wasm4) | [![roc-wasm4 nightly updater](https://github.com/lukewilliamboswell/roc-wasm4/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/roc-wasm4/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
-| [weaver](https://github.com/lukewilliamboswell/weaver) | [![weaver nightly updater](https://github.com/lukewilliamboswell/weaver/actions/workflows/update-roc-nightly.yml/badge.svg?branch=main)](https://github.com/lukewilliamboswell/weaver/actions/workflows/update-roc-nightly.yml?query=branch%3Amain) |
 
 A normally completed CI failure is recorded on the candidate PR without failing the
 nightly controller run; the incompatible candidate remains open and cannot merge.
