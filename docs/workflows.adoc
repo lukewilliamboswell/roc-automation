@@ -185,12 +185,14 @@ therefore use a placeholder, and the workflow fills it in:
 * After building the bundles, `release.yml` renders the notes with each
   placeholder set to the real URL, tag and hash. A placeholder that is left
   unresolved, or one the notes never use, fails the release.
-* The rendered notes become the body of the GitHub release, followed by the
-  output of `roc version` and `roc-stable version`. That record is the
-  statement of what the release was built and tested with; no header pin makes
-  it.
+* The rendered notes become the body of the GitHub release, followed by a
+  section headed "Compilers" that holds the output of `roc version` and
+  `roc-stable version`. That record is the statement of what the release was
+  built and tested with; no header pin makes it.
 * A dry run renders the notes too, so a mistake in them fails on the pull
-  request.
+  request. It renders one file: the notes for the highest version under
+  `docs/releases/`, which are the notes of the next release whenever a pull
+  request adds or edits them. It asks nothing of GitHub to choose that file.
 
 The committed file keeps its placeholders. It is never rewritten after the
 release, and no follow-up pull request is needed.
@@ -246,6 +248,12 @@ one examples archive for each, in the same run, under the same version. Each
 archive names only its own bundle, plus any sibling bundle its examples need.
 The release notes list every bundle URL by name. All of them are tested before
 any of them is published.
+
+Each bundle keeps the filename `roc bundle` gave it, which is its content hash.
+Two bundles in one release have different contents and so different names, and
+they sit side by side in the release without a prefix. What tells them apart
+for a reader is the release notes, where each URL appears under its package's
+name. A renamed bundle no longer matches the hash that Roc checks it against.
 
 [#release-candidates]
 === Release candidates
