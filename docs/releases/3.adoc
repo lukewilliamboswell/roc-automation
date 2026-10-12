@@ -89,8 +89,9 @@ matrix and no aggregate job, and skips the platform chapters.
   `docs/releases/`.
 * The compiler versions follow the rendered notes under the heading
   "Compilers".
-* Several bundles in one release keep their content-hash filenames and are
-  never given a prefix.
+* Several bundles in one release each carry a filename prefix that names the
+  package, because Roc identifies a package by its URL without the version and
+  hash. The prefix is part of the package's identity.
 
 See xref:workflows.adoc#write-the-release-notes[Write the release notes] and
 xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release].

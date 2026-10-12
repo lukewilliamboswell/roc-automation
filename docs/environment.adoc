@@ -92,6 +92,10 @@ This is the simplest route for a contributor. Nix builds the command from the
 tagged source the first time, which takes longer than a download, and the flake
 provides it for x86_64 Linux and Apple Silicon macOS.
 
+Blueprint does not run on Intel macOS. nixpkgs no longer supports that system,
+so there is no environment for Blueprint to realise there and no
+`blueprint-x86_64-darwin` binary is released.
+
 === As a release binary
 
 Each roc-blueprint release also attaches prebuilt `blueprint-<system>` binaries
@@ -147,6 +151,12 @@ the latest nightly, then calls a task:
 . Install the latest nightly as `roc` with the official `roc-lang/setup-roc`
   action; see xref:actions.adoc#install-the-nightly-compiler[Install the nightly compiler].
 . Run `blueprint run <task>`.
+
+A matrix names only runners Blueprint supports: x86_64 and arm64 Linux, and
+Apple Silicon macOS. It cannot include an Intel macOS runner. A platform can
+still cross-compile a host for that target in
+xref:platforms.adoc#the-builder-job[the builder job], but no job runs the
+repository's scripts there.
 
 The job needs no cache account and no token for this. A Nix cache is an
 optimisation a repository may add; a cache that requires `id-token: write`

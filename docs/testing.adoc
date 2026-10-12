@@ -330,8 +330,9 @@ generators and properties, running campaigns, and reading a saved failure.
 
 == Formatting
 
-Run `roc fmt --check` in pull-request CI, over every Roc source in the
-repository. It fails the pull request that introduces unformatted code, which is
+Run `roc fmt --check` in pull-request CI, over every Roc source the package
+compiler builds, and `roc-stable fmt --check` over the scripts, whose `roc`
+field another compiler's formatter would rewrite. It fails the pull request that introduces unformatted code, which is
 the only moment at which fixing it is cheap.
 
 Do not run it in `nightly.yml`. A new nightly can change the formatter, and a

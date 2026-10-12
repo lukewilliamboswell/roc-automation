@@ -82,7 +82,7 @@ One immutable GitHub release per version holds:
 | Asset | Purpose
 
 | The bundle, under the filename `roc bundle` emits
-| What users depend on. The filename is its content hash; never rename it.
+| What users depend on. The filename ends in its content hash, which is never changed. xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release] says when the filename also carries a name.
 
 | `<name>-examples-<version>.zip`
 | Examples pinned to this release's bundle, with their expected output.
@@ -251,11 +251,36 @@ archive names only its own bundle, plus any sibling bundle its examples need.
 The release notes list every bundle URL by name. All of them are tested before
 any of them is published.
 
-Each bundle keeps the filename `roc bundle` gave it, which is its content hash.
-Two bundles in one release have different contents and so different names, and
-they sit side by side in the release without a prefix. What tells them apart
-for a reader is the release notes, where each URL appears under its package's
-name. A renamed bundle no longer matches the hash that Roc checks it against.
+Two bundles under one tag need different names as well as different hashes.
+Roc identifies a package by its URL with the version and the content hash
+removed. Two files named only `<hash>.tar.zst` under one tag are therefore one
+package with two contents, and Roc refuses the pair as soon as one depends on
+the other:
+
+[source,text]
+----
+The same package version is being served with two different content hashes
+----
+
+Give each bundle a prefix that names its package and ends in a hyphen, such as
+`example-tzdb-<hash>.tar.zst`. Roc reads the hash as the run of base58
+characters at the end of the filename, so the prefix must end in a character
+that is not base58, and a hyphen is one. The hash itself is never changed.
+
+* At most one bundle in a release may go without a prefix. In a repository that
+  starts with several packages, name every one.
+* The prefix is part of the package's identity. Adding, removing or changing it
+  makes a different package as far as Roc is concerned, so choose it before the
+  first release, and treat a change to it as a breaking release.
+* `roc bundle` writes `<hash>.tar.zst`. The script that builds the release
+  copies that file to its prefixed name, and the prefixed file is what is
+  tested and published.
+* `roc bundle` resolves the dependencies of the package it bundles. A package
+  that names a sibling by its final release URL is bundled after that sibling,
+  with the sibling's bundle already in the package cache, because the URL does
+  not exist until the release is published.
+* `roc unbundle` accepts only the bare `<hash>.tar.zst` name. A script that
+  unpacks a prefixed bundle copies it to that name first.
 
 [#release-candidates]
 === Release candidates
