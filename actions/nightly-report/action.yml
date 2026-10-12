@@ -1,0 +1,42 @@
+name: Nightly report
+description: Keep one tracking issue for a nightly compatibility workflow, opened on failure and closed by the next pass.
+
+inputs:
+  outcome:
+    description: Outcome of the step that ran the examples; success closes the issue, failure opens or comments, anything else is a setup failure
+    required: true
+  nightly-tag:
+    description: Roc nightly tag the examples ran on, named in the issue text
+    required: true
+  release-tag:
+    description: Release tag whose examples ran, named in the issue text
+    required: true
+  title:
+    description: Exact title of the tracking issue
+    default: The latest release fails on the latest Roc nightly
+  token:
+    description: Token with issues write access to this repository
+    default: ${{ github.token }}
+
+outputs:
+  issue-number:
+    description: Number of the tracking issue that was opened, commented on or closed; empty when the action is none
+    value: ${{ steps.report.outputs.issue-number }}
+  action:
+    description: What was done, one of opened, commented, closed or none
+    value: ${{ steps.report.outputs.action }}
+
+runs:
+  using: composite
+  steps:
+    - id: report
+      name: Update the tracking issue
+      shell: bash
+      env:
+        INPUT_OUTCOME: ${{ inputs.outcome }}
+        INPUT_NIGHTLY_TAG: ${{ inputs.nightly-tag }}
+        INPUT_RELEASE_TAG: ${{ inputs.release-tag }}
+        INPUT_TITLE: ${{ inputs.title }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        REPORTER: ${{ github.action_path }}/nightly_report.py
+      run: python3 "$REPORTER"

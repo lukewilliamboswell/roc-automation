@@ -95,6 +95,77 @@ compiler:
   run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
 ----
 
+[#nightly-report]
+== `actions/nightly-report`
+
+Keeps the one tracking issue of a
+xref:workflows.adoc#nightly-compatibility[nightly compatibility] workflow. It
+checks out nothing and runs no repository code.
+
+[source,yaml]
+----
+report:
+  needs: test
+  if: ${{ always() }}
+  runs-on: ubuntu-latest
+  permissions:
+    issues: write
+  steps:
+    - uses: lukewilliamboswell/roc-automation/actions/nightly-report@REVIEWED_FULL_SHA
+      with:
+        outcome: ${{ needs.test.outputs.outcome }}
+        nightly-tag: ${{ needs.test.outputs.nightly }}
+        release-tag: ${{ needs.test.outputs.release }}
+----
+
+[cols="2,3,4",options="header"]
+|===
+| Input | Default | Meaning
+
+| `outcome` | Required | Outcome of the step that ran the examples
+| `nightly-tag` | Required | The Roc nightly the examples ran on, named in the issue text
+| `release-tag` | Required | The release whose examples ran, named in the issue text
+| `title` | `The latest release fails on the latest Roc nightly` | Exact title of the tracking issue
+| `token` | `${{ github.token }}` | Token used to read and write issues
+|===
+
+Outputs are `action`, which is `opened`, `commented`, `closed` or `none`, and
+`issue-number`, the issue that action concerned. `issue-number` is empty when
+`action` is `none`.
+
+The tracking issue is the open issue whose title equals `title` exactly and
+whose author is a bot account. The action never comments on, closes or reopens
+any other issue. An issue with the same title that a person opened is ignored,
+as are a pull request and a closed issue.
+
+[cols="1,3",options="header"]
+|===
+| `outcome` | What the action does
+
+| `success`
+| Comments on the tracking issue and closes it. With no tracking issue open it
+  does nothing, and `action` is `none`.
+
+| `failure`
+| Comments on the tracking issue. With no tracking issue open it opens one.
+
+| Anything else
+| Fails the step with an error and reads or writes no issue. An empty value,
+  `skipped` and `cancelled` all mean that the examples did not run to a verdict,
+  which is a setup failure and not evidence about the release.
+|===
+
+The issue body and every comment name the release and the nightly and link to
+the workflow run. Tags are limited to 100 letters, digits and `.`, `_`, `+`,
+`/`, `-` characters, and a title to 256 characters with no control characters.
+A malformed input fails the step before any request is made.
+
+The calling job needs `issues: write` and no other permission. It has no
+checkout step, and it passes the action only the step outcome and the two tags,
+never text produced by the examples.
+xref:workflows.adoc#reporting[Reporting] states what the calling workflow must
+provide.
+
 [#build-docs]
 == `actions/build-docs`
 

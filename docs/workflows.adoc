@@ -341,16 +341,25 @@ is a patch release that works with the new compiler.
 
 === Reporting
 
-A separate job reports the result. It checks out nothing, runs no repository or
-archive code, and receives only job results and the run link, never text
-produced by the examples under test. It keeps one tracking issue:
+A separate job reports the result by calling
+xref:actions.adoc#nightly-report[`actions/nightly-report`], which keeps one
+tracking issue: opened on the first failure, commented on by each later
+failure, and closed by the next pass. The action defines which issue that is and
+what each outcome does. The workflow supplies the rest:
 
-* opened on the first failure;
-* commented on by each later failure;
-* closed by the next pass.
+* The report job has `if: ${{ always() }}`, so that it runs when the test job
+  fails, and holds `issues: write` and nothing else.
+* It checks out nothing and runs no repository or archive code.
+* The test job gives the step that runs the examples an `id` and exposes that
+  step's `outcome` as a job output, with the nightly tag and the release tag.
+  The report job passes those three values to the action and nothing else:
+  never text produced by the examples under test.
+* The outcome is the step's, not the test job's result. A job that failed while
+  installing the compiler or downloading the archive has a failed result and an
+  examples step that never ran. The action reports that as a setup failure and
+  leaves the compatibility issue alone.
 
-It only ever touches an issue it opened itself. A run in which setup failed
-before any example ran is reported as a setup failure and does not open the
-compatibility issue. A repository with no release yet passes with a notice.
+A repository with no release yet passes with a notice and does not call the
+action.
 
 This workflow never opens a pull request, commits, merges, or publishes.

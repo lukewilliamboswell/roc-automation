@@ -50,9 +50,13 @@ with release credentials.
 
 The nightly compatibility workflow has no contents, pull-request, actions or
 status write access in any job. It cannot commit, merge, dispatch or publish.
-Its report job receives only job results and run links from the test job, never
-text produced by the examples under test, and edits a single tracking issue that
-it opened itself.
+Its report job runs `actions/nightly-report` at a full commit SHA and checks out
+nothing. It receives only the outcome of the examples step, the nightly tag and
+the release tag from the test job, never text produced by the examples under
+test. It edits a single tracking issue, identified by its exact title and a bot
+author. Every workflow in a repository shares the GitHub Actions bot identity,
+so that test excludes issues opened by people and does not prove which workflow
+opened the issue.
 
 No workflow in the model opens a pull request, approves one, or merges one.
 Every change to the repository is a maintainer's pull request under the

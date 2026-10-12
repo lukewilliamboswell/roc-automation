@@ -62,6 +62,30 @@ jobs:
           test "$(command -v blueprint)" = "$BLUEPRINT"
           nix --version
           blueprint --help
+  nightly-report-action:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # A pass with no tracking issue only lists issues, so it needs no write access.
+      - id: report
+        uses: ./actions/nightly-report
+        with:
+          outcome: success
+          nightly-tag: nightly-ci-probe
+          release-tag: 0.0.0
+          title: nightly-report CI probe, never opened
+      - name: Check that nothing was done
+        env:
+          ACTION: ${{ steps.report.outputs.action }}
+          ISSUE: ${{ steps.report.outputs.issue-number }}
+        run: |
+          test "$ACTION" = none
+          test -z "$ISSUE"
   workflow-lint:
     runs-on: ubuntu-24.04
     steps:

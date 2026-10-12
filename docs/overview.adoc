@@ -191,6 +191,9 @@ by full commit SHA. A repository keeps only what knows its own package.
 | `actions/setup-blueprint`: install Nix and the verified `blueprint` binary
 | `Blueprint.roc` and `Blueprint.lock`
 
+| `actions/nightly-report`: keep the nightly tracking issue
+| The test job of `nightly.yml`, its matrix and its schedule
+
 | `actions/build-docs`: render an AsciiDoc manual as a site and PDF
 | `docs/*.adoc`
 
