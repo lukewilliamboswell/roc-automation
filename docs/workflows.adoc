@@ -51,10 +51,13 @@ xref:optional-workflows.adoc#optional-workflows[Optional workflows].
 xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
 lists what the `check` task covers.
 
-A repository that supports several targets runs this as a matrix, one job per
-runner, and ends with a single aggregate job that requires every matrix job to
-have succeeded. The aggregate job's name is the required status check, so the
-ruleset does not need editing when the matrix changes.
+A xref:overview.adoc#a-pure-roc-package[pure Roc package] runs this as one job
+on `ubuntu-latest`, and that job's name is the required status check.
+
+A repository whose code can behave differently by target runs it as a matrix,
+one job per runner, and ends with a single aggregate job that requires every
+matrix job to have succeeded. The aggregate job's name is the required status
+check, so the ruleset does not need editing when the matrix changes.
 
 A platform adds the host-bindings check described in
 xref:platforms.adoc#host-bindings[Host bindings]. It runs here and nowhere else.
@@ -79,7 +82,7 @@ One immutable GitHub release per version holds:
 | Asset | Purpose
 
 | The bundle, under the filename `roc bundle` emits
-| What users depend on. The filename is its content hash; never rename it.
+| What users depend on. The filename ends in its content hash, which is never changed. xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release] says when the filename also carries a name.
 
 | `<name>-examples-<version>.zip`
 | Examples pinned to this release's bundle, with their expected output.
@@ -182,12 +185,14 @@ therefore use a placeholder, and the workflow fills it in:
 * After building the bundles, `release.yml` renders the notes with each
   placeholder set to the real URL, tag and hash. A placeholder that is left
   unresolved, or one the notes never use, fails the release.
-* The rendered notes become the body of the GitHub release, followed by the
-  output of `roc version` and `roc-stable version`. That record is the
-  statement of what the release was built and tested with; no header pin makes
-  it.
+* The rendered notes become the body of the GitHub release, followed by a
+  section headed "Compilers" that holds the output of `roc version` and
+  `roc-stable version`. That record is the statement of what the release was
+  built and tested with; no header pin makes it.
 * A dry run renders the notes too, so a mistake in them fails on the pull
-  request.
+  request. It renders one file: the notes for the highest version under
+  `docs/releases/`, which are the notes of the next release whenever a pull
+  request adds or edits them. It asks nothing of GitHub to choose that file.
 
 The committed file keeps its placeholders. It is never rewritten after the
 release, and no follow-up pull request is needed.
@@ -221,9 +226,11 @@ flowchart TD
   xref:examples.adoc#build-and-test-the-exact-archive[Build and test the exact archive].
 . *Publish.* A separate job, with `contents: write` and a protected
   environment, downloads the tested artifacts. It checks out nothing and runs no
-  repository script. It creates a draft release at the tested commit, uploads
-  every asset, downloads each one back and verifies it against the tested
-  artifact, then publishes.
+  repository script. It hands the version, the rendered notes and the asset
+  files to
+  xref:actions.adoc#publish-release[`actions/publish-release`], which stages a
+  draft at the tested commit, verifies every uploaded asset against the tested
+  file, and then publishes.
 . *Update the site.* For a final release, rebuild the documentation site so
   that it points at the new release, and deploy it; see
   xref:optional-workflows.adoc#what-the-site-points-at[What the site points at].
@@ -243,6 +250,37 @@ one examples archive for each, in the same run, under the same version. Each
 archive names only its own bundle, plus any sibling bundle its examples need.
 The release notes list every bundle URL by name. All of them are tested before
 any of them is published.
+
+Two bundles under one tag need different names as well as different hashes.
+Roc identifies a package by its URL with the version and the content hash
+removed. Two files named only `<hash>.tar.zst` under one tag are therefore one
+package with two contents, and Roc refuses the pair as soon as one depends on
+the other:
+
+[source,text]
+----
+The same package version is being served with two different content hashes
+----
+
+Give each bundle a prefix that names its package and ends in a hyphen, such as
+`example-tzdb-<hash>.tar.zst`. Roc reads the hash as the run of base58
+characters at the end of the filename, so the prefix must end in a character
+that is not base58, and a hyphen is one. The hash itself is never changed.
+
+* At most one bundle in a release may go without a prefix. In a repository that
+  starts with several packages, name every one.
+* The prefix is part of the package's identity. Adding, removing or changing it
+  makes a different package as far as Roc is concerned, so choose it before the
+  first release, and treat a change to it as a breaking release.
+* `roc bundle` writes `<hash>.tar.zst`. The script that builds the release
+  copies that file to its prefixed name, and the prefixed file is what is
+  tested and published.
+* `roc bundle` resolves the dependencies of the package it bundles. A package
+  that names a sibling by its final release URL is bundled after that sibling,
+  with the sibling's bundle already in the package cache, because the URL does
+  not exist until the release is published.
+* `roc unbundle` accepts only the bare `<hash>.tar.zst` name. A script that
+  unpacks a prefixed bundle copies it to that name first.
 
 [#release-candidates]
 === Release candidates
@@ -272,16 +310,25 @@ announcement.
 
 === Recover an interrupted publication
 
-If publication stops, inspect exactly what exists before retrying.
+If publication stops, inspect exactly what exists before retrying. The publish
+job's error says which of these states it left.
 
-* An unfinished draft can be resumed: upload the missing assets from the same
-  run's artifacts, verify the complete inventory, then publish.
-* A published release that is incomplete cannot be repaired, because it is
-  immutable. Publish a new version.
-* Changed bytes are always a new version.
+* *A draft and no tag.* Nothing is public. The error names the draft, which
+  holds whatever was uploaded before the failure. Look at it to see how far the
+  job got, delete it, and re-run the failed publish job of the same workflow
+  run. That job publishes the files the run already tested. The publish action
+  never adopts a draft it finds, so the draft is deleted first.
+* *A published release.* It is immutable and is never repaired. If it is
+  complete, the version is released and nothing is re-run. If it is not, publish
+  a new version.
+* *Unknown.* When the answer to the publish request was lost, look at the
+  releases page and treat what is there as one of the two states above.
 
-Do not rebuild from a moving branch, replace an asset, or rerun a job that
-expects no release to exist.
+Changed bytes are always a new version. Do not publish a draft by hand, replace
+an asset, or rebuild from a moving branch. If the run's artifacts have expired,
+delete the draft and dispatch the release again from the default branch. The
+version was never published, so it is still free, and the new run builds and
+tests its own files.
 
 == Nightly compatibility
 
@@ -308,7 +355,9 @@ flowchart LR
   and do not test the default branch's examples here: new APIs on the default
   branch are not evidence about a release.
 * Use the default branch's scripts, on `roc-stable`, to drive the test.
-* Run on every target the release supports.
+* Run on every target the release is tested on: the one runner of a
+  xref:overview.adoc#a-pure-roc-package[pure Roc package], or the same matrix
+  as `ci.yml`.
 * A platform's host bindings are not checked here. A released host is fixed;
   what matters is whether its applications still build and run.
 
@@ -317,16 +366,25 @@ is a patch release that works with the new compiler.
 
 === Reporting
 
-A separate job reports the result. It checks out nothing, runs no repository or
-archive code, and receives only job results and the run link, never text
-produced by the examples under test. It keeps one tracking issue:
+A separate job reports the result by calling
+xref:actions.adoc#nightly-report[`actions/nightly-report`], which keeps one
+tracking issue: opened on the first failure, commented on by each later
+failure, and closed by the next pass. The action defines which issue that is and
+what each outcome does. The workflow supplies the rest:
 
-* opened on the first failure;
-* commented on by each later failure;
-* closed by the next pass.
+* The report job has `if: ${{ always() }}`, so that it runs when the test job
+  fails, and holds `issues: write` and nothing else.
+* It checks out nothing and runs no repository or archive code.
+* The test job gives the step that runs the examples an `id` and exposes that
+  step's `outcome` as a job output, with the nightly tag and the release tag.
+  The report job passes those three values to the action and nothing else:
+  never text produced by the examples under test.
+* The outcome is the step's, not the test job's result. A job that failed while
+  installing the compiler or downloading the archive has a failed result and an
+  examples step that never ran. The action reports that as a setup failure and
+  leaves the compatibility issue alone.
 
-It only ever touches an issue it opened itself. A run in which setup failed
-before any example ran is reported as a setup failure and does not open the
-compatibility issue. A repository with no release yet passes with a notice.
+A repository with no release yet passes with a notice and does not call the
+action.
 
 This workflow never opens a pull request, commits, merges, or publishes.

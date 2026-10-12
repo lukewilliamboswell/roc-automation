@@ -28,7 +28,7 @@ Two rules carry most of the weight:
 
 | `release.yml` publish
 | `contents: write`, behind a protected environment
-| No: it uploads artifacts produced by earlier jobs
+| No: it runs `actions/publish-release` on artifacts produced by earlier jobs
 
 | `release.yml` site deploy
 | `pages: write`, `id-token: write`
@@ -40,7 +40,7 @@ Two rules carry most of the weight:
 
 | `nightly.yml` report
 | `issues: write`
-| No
+| No: it runs `actions/nightly-report`
 |===
 
 The publish job accepts only a manual dispatch on the default branch, uses the
@@ -50,13 +50,63 @@ with release credentials.
 
 The nightly compatibility workflow has no contents, pull-request, actions or
 status write access in any job. It cannot commit, merge, dispatch or publish.
-Its report job receives only job results and run links from the test job, never
-text produced by the examples under test, and edits a single tracking issue that
-it opened itself.
+Its report job runs `actions/nightly-report` at a full commit SHA and checks out
+nothing. It receives only the outcome of the examples step, the nightly tag and
+the release tag from the test job, never text produced by the examples under
+test. It edits a single tracking issue, identified by its exact title and a bot
+author. Every workflow in a repository shares the GitHub Actions bot identity,
+so that test excludes issues opened by people and does not prove which workflow
+opened the issue.
 
 No workflow in the model opens a pull request, approves one, or merges one.
 Every change to the repository is a maintainer's pull request under the
 repository's own rules.
+
+[#what-the-jobs-with-write-access-run]
+=== What the jobs with write access run
+
+The publish job and the report job hold the tokens that can change a
+repository's releases and issues. Each runs one shared action,
+`actions/publish-release` or `actions/nightly-report`, and each action is a Roc
+script that runs from the action's own copy of roc-automation, at the full
+commit SHA the workflow names. What runs in those two jobs is therefore:
+
+* Nix, installed by an install action that the shared action references by
+  full commit SHA; that action fixes the Nix version and downloads its
+  installer from the Nix project over HTTPS;
+* the `blueprint` binary, for the release that roc-automation's own
+  `Blueprint.roc` names, admitted by its reviewed SHA-256 as
+  xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary]
+  describes;
+* the environment that roc-automation's `Blueprint.lock` pins: `roc-stable`,
+  which runs the script, the basic-cli platform the script is built on, the
+  `gh` CLI, which makes every request, and coreutils, which provides
+  `sha256sum`; and
+* the script and its modules under `scripts/` in roc-automation.
+
+The one full SHA in the workflow's `uses:` line fixes all of these. The install
+action's SHA, the recorded hashes of the binary, the lock and the script are all
+files of that commit, and the lock pins each input by revision and content
+digest. Nix takes the compiler and the platform by the hashes those inputs
+record, and takes the tools from nixpkgs at the pinned revision, as built by
+its binary cache, whose signatures it checks.
+
+Neither job checks out the calling repository, and neither action runs any of
+its code. The calling repository's `Blueprint.roc`, lock and scripts play no
+part. The report action reads no file from the job's workspace. The publish
+action reads the notes file and the asset files it is given, which an earlier
+job built: it sends the notes as text, and it hashes, uploads and compares the
+assets as bytes, and executes none of them.
+
+The token is in the environment of the one step that runs the script, where
+`gh` reads it. It is never a command-line argument and is never printed, and
+the scripts check every input before the first request.
+
+Nix does not hold the token. The install action would otherwise write the job's
+default token into Nix's configuration, for Nix to present to GitHub on its own
+fetches. These two actions clear that setting, and stop before installing
+anything further if Nix still reports a token. Every input Nix fetches is public
+and pinned by the lock, so it needs none.
 
 == Compilers
 
@@ -87,18 +137,28 @@ record the version used.
 `actions/setup-blueprint` installs Nix, through an action referenced by full
 commit SHA, and downloads the prebuilt `blueprint` binary from a roc-blueprint
 release. It builds nothing. Before the binary runs, the action checks it against
-a SHA-256 that the caller has reviewed, and fails on a mismatch. Routine CI
-verifies that reviewed hash locally and does not call an attestation service.
-The hash establishes which bytes run; it is not provenance for the roc-blueprint
-build. A release's binary must be used with that release's platform URL in
-`Blueprint.roc`, so a reviewed change moves both together.
+a reviewed SHA-256 and fails on a mismatch. Routine CI verifies that reviewed
+hash locally and does not call an attestation service. The hash establishes
+which bytes run; it is not provenance for the roc-blueprint build.
 
-The action accepts only a release version in its `version` input and builds the
-download URL itself, under the roc-blueprint releases of this project, so an
-input cannot redirect the download. The binary is written to a private
-temporary file and becomes executable and visible on `PATH` only after its hash
-matches. A mismatch, a missing checksum for the runner, or a system with no
-released binary fails the step and installs nothing.
+The reviewed hashes are recorded in the action, one set for each roc-blueprint
+release, and are reviewed in the pull request that adds them. A caller
+references the action by full commit SHA, so the hashes it trusts are fixed by
+the same reference as the code that checks them. A caller may supply a hash of
+its own for its runner, which then takes the place of the recorded one.
+
+A release's binary must be used with that release's platform URL in
+`Blueprint.roc`, so the action takes the release from that URL. The file is
+candidate content in a pull request, and that is safe: the version it names can
+only choose among releases whose hashes are already reviewed. A version the
+action does not record, with no hash from the caller, fails the step.
+
+The action accepts only a release version, from its `version` input or from
+`Blueprint.roc`, and builds the download URL itself, under the roc-blueprint
+releases of this project, so neither can redirect the download. The binary is
+written to a private temporary file and becomes executable and visible on `PATH`
+only after its hash matches. A mismatch, a release with no reviewed hash for the
+runner, or a system with no released binary fails the step and installs nothing.
 
 The binary evaluates `Blueprint.roc` with a Roc compiler of its own. It uses a
 `roc` on `PATH` only when that is exactly the nightly the binary was built with.
@@ -106,8 +166,10 @@ Otherwise it fetches that nightly through Nix from a roc-overlay revision pinned
 inside the binary, and Nix verifies the archive against the hash that revision
 records. The `ROC` environment variable overrides this selection.
 
-The action needs no token. A cache that requires `id-token: write` widens a test
-job's token and must be an explicit caller choice, never a default.
+The action takes no token as an input. The Nix installer it runs reads the
+job's default token and configures Nix to present it to GitHub when it fetches
+from there. A cache that requires `id-token: write` widens a test job's token
+and must be an explicit caller choice, never a default.
 
 == Documentation deployment
 

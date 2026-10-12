@@ -2,6 +2,8 @@
 
 Each version of this manual has its notes in `docs/releases/`, newest first.
 
+include::releases/3.adoc[leveloffset=+1]
+
 include::releases/2.adoc[leveloffset=+1]
 
 include::releases/1.adoc[leveloffset=+1]

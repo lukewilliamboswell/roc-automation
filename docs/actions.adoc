@@ -12,43 +12,55 @@ request. A shared change never reaches a repository silently.
 [#setup-blueprint]
 == `actions/setup-blueprint`
 
-Installs Nix and the released `blueprint` binary, so that `blueprint run <task>`
-works in the next step. It builds nothing.
+Installs Nix and the `blueprint` binary that `Blueprint.roc` names, so that
+`blueprint run <task>` works in the next step. It builds nothing.
 
 [source,yaml]
 ----
-- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
+- uses: actions/checkout@REVIEWED_FULL_SHA
   with:
-    version: 0.4.0
-    sha256-x86_64-linux: <SHA-256 of blueprint-x86_64-linux>
-    sha256-aarch64-linux: <SHA-256 of blueprint-aarch64-linux>
-    sha256-aarch64-darwin: <SHA-256 of blueprint-aarch64-darwin>
+    persist-credentials: false
+- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
 - run: blueprint run check
 ----
+
+The call takes no inputs. The action reads the roc-blueprint release from the
+platform URL in the checked-out `Blueprint.roc`, and it records the reviewed
+SHA-256 of every binary of each release it installs. `Blueprint.roc` is
+therefore the one place a repository names its Blueprint release, and a
+workflow cannot disagree with it.
 
 [cols="2,4",options="header"]
 |===
 | Input | Meaning
 
-| `version` | The roc-blueprint release to install. Required.
-| `sha256-x86_64-linux` | Reviewed SHA-256 of that release's binary for x86_64 Linux runners
-| `sha256-aarch64-linux` | Reviewed SHA-256 of that release's binary for arm64 Linux runners
-| `sha256-aarch64-darwin` | Reviewed SHA-256 of that release's binary for Apple Silicon macOS runners
+| `version` | The roc-blueprint release to install. Defaults to the release named by the platform URL in `Blueprint.roc` at the root of the workspace. Set it only in a job that has no checkout.
+| `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
+| `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
+| `sha256-aarch64-darwin` | Reviewed SHA-256 of the binary for Apple Silicon macOS runners. Overrides the recorded value.
 |===
 
-Outputs are `blueprint-path`, the absolute path of the installed binary, and
-`system`, the release system name chosen for the runner.
+Outputs are `blueprint-path`, the absolute path of the installed binary,
+`system`, the release system name chosen for the runner, and `version`, the
+release that was installed.
 
-Take the version and the checksums from the same roc-blueprint release as the
-platform URL in `Blueprint.roc`; each release publishes them in its
-`blueprint.sha256` file. Supply a checksum for every runner the workflow uses.
-A job on a runner with no checksum fails, as does a job on a system for which
-no binary is released.
+The recorded checksums live in `actions/setup-blueprint/releases.json`, one
+entry for each roc-blueprint release, copied from that release's
+`blueprint.sha256` file. A new roc-blueprint release is reviewed once, in the
+pull request that adds its entry there, and reaches a repository when that
+repository moves its reference to the action. The reference is a full commit
+SHA, so the recorded checksums are pinned by the same review as the action's
+code.
+
+A release the referenced revision does not record fails the step, unless the
+caller supplies a `sha256-<system>` input for the runner. Use those inputs to
+install a release ahead of the action, such as a release candidate. A system for
+which no binary is released also fails.
 
 The action downloads the binary for the runner's system into a private
-temporary file, compares its SHA-256 with the supplied value, and only then
+temporary file, compares its SHA-256 with the reviewed value, and only then
 makes it executable and puts it on `PATH`. A mismatch fails the step and
-installs nothing. It needs no token and no cache account.
+installs nothing. It takes no token and needs no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
 what the checksum does and does not establish.
 
@@ -82,6 +94,123 @@ compiler:
     GH_TOKEN: ${{ github.token }}
   run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
 ----
+
+[#actions-that-run-a-roc-script]
+== Actions that run a Roc script
+
+`actions/nightly-report` and `actions/publish-release` are Roc scripts in
+roc-automation, `scripts/nightly_report.roc` and `scripts/publish_release.roc`,
+written as
+xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+describes. Each runs from source in the calling job, from the action's own copy
+of roc-automation at the referenced commit. The action:
+
+. installs Nix, with the install action `actions/setup-blueprint` uses, at the
+  same full commit SHA;
+. downloads the `blueprint` binary that roc-automation's `Blueprint.roc` names
+  and checks it against its recorded SHA-256, as
+  xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary]
+  describes; and
+. runs its task, `blueprint run nightly-report` or
+  `blueprint run publish-release`, in that copy of roc-automation.
+
+roc-automation's `Blueprint.lock` at the referenced commit pins what the task
+starts: `roc-stable`, which runs the script, the platform the script is built
+on, the `gh` CLI, which makes every request to GitHub, and coreutils. The full
+SHA in the `uses:` line therefore fixes the script and everything under it.
+Nothing comes from the calling repository: its `Blueprint.roc` is not read, and
+the binary is installed in a directory of the action's own and is not put on
+`PATH`, so a `blueprint` the job set up earlier is left as it was.
+
+The script is given the action's inputs and the token in its environment, never
+as arguments. `gh` reads the token from `GH_TOKEN` and sends requests to the
+GitHub host it is configured for, which is GitHub.com unless the job sets
+`GH_HOST`.
+
+These actions need a runner Blueprint supports, which is x86-64 or arm64 Linux
+or Apple Silicon macOS, and `python3` for the installer, which GitHub's hosted
+runners provide. On a runner with an empty Nix store, installing Nix and
+downloading the environment is most of the job's time: the environment is about
+a gigabyte once unpacked, so allow a minute or two. The script itself finishes
+in seconds.
+
+[#nightly-report]
+== `actions/nightly-report`
+
+Keeps the one tracking issue of a
+xref:workflows.adoc#nightly-compatibility[nightly compatibility] workflow. It
+checks out nothing from the calling repository and runs none of its code.
+
+[source,yaml]
+----
+report:
+  needs: test
+  if: ${{ always() }}
+  runs-on: ubuntu-latest
+  permissions:
+    issues: write
+  steps:
+    - uses: lukewilliamboswell/roc-automation/actions/nightly-report@REVIEWED_FULL_SHA
+      with:
+        outcome: ${{ needs.test.outputs.outcome }}
+        nightly-tag: ${{ needs.test.outputs.nightly }}
+        release-tag: ${{ needs.test.outputs.release }}
+----
+
+[cols="2,3,4",options="header"]
+|===
+| Input | Default | Meaning
+
+| `outcome` | Required | Outcome of the step that ran the examples
+| `nightly-tag` | Required | The Roc nightly the examples ran on, named in the issue text
+| `release-tag` | Required | The release whose examples ran, named in the issue text
+| `title` | `The latest release fails on the latest Roc nightly` | Exact title of the tracking issue
+| `token` | `${{ github.token }}` | Token used to read and write issues
+|===
+
+Outputs are `action`, which is `opened`, `commented`, `closed` or `none`, and
+`issue-number`, the issue that action concerned. `issue-number` is empty when
+`action` is `none`.
+
+The tracking issue is the open issue whose title equals `title` exactly and
+whose author is a bot account. The action never comments on, closes or reopens
+any other issue. An issue with the same title that a person opened is ignored,
+as are a pull request and a closed issue.
+
+[cols="1,3",options="header"]
+|===
+| `outcome` | What the action does
+
+| `success`
+| Comments on the tracking issue and closes it. With no tracking issue open it
+  does nothing, and `action` is `none`.
+
+| `failure`
+| Comments on the tracking issue. With no tracking issue open it opens one.
+
+| Anything else
+| Fails the step with an error and reads or writes no issue. An empty value,
+  `skipped` and `cancelled` all mean that the examples did not run to a verdict,
+  which is a setup failure and not evidence about the release.
+|===
+
+The issue body and every comment name the release and the nightly and link to
+the workflow run. Tags are limited to 100 letters, digits and `.`, `_`, `+`,
+`/`, `-` characters, and a title to 256 characters with no control, format or
+private-use characters. A malformed input, or an empty token, fails the step
+before any request is made.
+
+The action reads the open issues a page at a time. A listing it cannot read in
+full, or a record in it that is not an issue record, fails the step: it never
+opens an issue while it cannot tell whether one exists.
+
+The calling job needs `issues: write` and no other permission. It has no
+checkout step, and it passes the action only the step outcome and the two tags,
+never text produced by the examples.
+xref:workflows.adoc#reporting[Reporting] states what the calling workflow must
+provide, and
+xref:actions.adoc#actions-that-run-a-roc-script[Actions that run a Roc script]
+what the action needs of the runner.
 
 [#build-docs]
 == `actions/build-docs`
@@ -124,6 +253,117 @@ provide. A replacement theme directory must contain `docs.css`,
 `docs-theme.yml`, `mermaid-config.json` and `fonts/`.
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
 lists what the renderer expects of the sources.
+
+[#publish-release]
+== `actions/publish-release`
+
+Publishes one release from files an earlier job built and tested. It stages
+them in a draft, reads every asset back and compares it with the tested file,
+and only then publishes. It checks out nothing from the calling repository and
+runs none of its code.
+
+[source,yaml]
+----
+publish:
+  needs: [build, test]
+  if: github.event_name == 'workflow_dispatch'
+  runs-on: ubuntu-24.04
+  environment: release
+  permissions:
+    contents: write
+  steps:
+    - uses: actions/download-artifact@REVIEWED_FULL_SHA
+      with:
+        name: release-candidate
+        path: candidate
+    - uses: lukewilliamboswell/roc-automation/actions/publish-release@REVIEWED_FULL_SHA
+      with:
+        version: ${{ needs.build.outputs.release-version }}
+        prerelease: ${{ needs.build.outputs.is-prerelease }}
+        notes-file: candidate/release-notes.md
+        assets: |
+          candidate/dist/*
+          candidate/docs/*.pdf
+----
+
+The job names the `release` environment, holds `contents: write` and nothing
+else, and has no checkout step. Its only inputs are the artifact the build job
+uploaded and the test jobs verified. What the assets are, how they are built and
+tested, and any attestation of them stay in the repository's earlier jobs.
+
+[cols="2,2,4",options="header"]
+|===
+| Input | Default | Meaning
+
+| `version` | required | The release version, such as `0.12.0` or `0.12.0-rc1`
+| `prerelease` | required | Exactly `true` or `false`. It must agree with whether `version` has a prerelease suffix.
+| `notes-file` | required | Path of the rendered release notes, which become the body of the release
+| `assets` | required | Globs of the tested files, one per line, relative to the workspace
+| `tag` | `version` | The tag to create: the version, or `<name>-<version>` in a repository that releases more than one thing
+| `target` | `${{ github.sha }}` | Full SHA of the tested commit the tag points at
+| `token` | `${{ github.token }}` | A token with `contents: write` on the repository
+|===
+
+Outputs are `release-url`, the URL of the published release, and `digests`, the
+path of a listing of the published assets in the format `sha256sum` writes and
+`sha256sum --check` reads.
+
+The tag is the bare version, without a `v`. A repository that publishes a
+second, independently versioned package gives that package's releases a name
+with the `tag` input, such as `kit-0.1.0`. The tag must end with the version,
+so the two cannot disagree.
+
+The action does the following, in this order, and stops at the first failure.
+
+. *Check the inputs.* The version, tag, target and `prerelease` value must be
+  well formed and agree with each other. The notes file must be a non-empty
+  regular file of UTF-8 text.
+. *Collect the assets.* Every glob must match at least one file. Every match
+  must be a regular, non-empty file and not a symbolic link, and no two may
+  share a filename. Filenames are limited to letters, digits, `.`, `_` and `-`,
+  because GitHub rewrites other characters and the published name would then
+  differ from the tested one. The SHA-256 of each file is recorded now. The
+  token and the repository name are checked last, so every check that needs no
+  request has passed before the first request is made.
+. *Require a new version.* The target must be a commit of the repository. The
+  tag must not exist, and no release for it may exist, published or draft.
+. *Create a draft* at the target commit, with the notes file as its body.
+. *Upload* every asset to the draft.
+. *Verify the draft.* It must hold exactly the collected filenames. Each asset
+  is downloaded into a new, empty directory and must equal the tested file in
+  size and SHA-256. A download is cut off one byte past the tested size.
+. *Publish.* A prerelease version is published as a prerelease and is not made
+  the latest release. Any other version is published as the latest release.
+. *Confirm.* The published release must carry the requested tag and be
+  immutable. The digest listing is written to the job summary.
+
+Nothing is public before the publish step. With immutable releases enabled,
+publishing a draft is the moment its tag and assets become permanent, which is
+why every check comes before it. A failure after the draft exists leaves the
+draft unpublished and the tag uncreated; the error names the draft.
+xref:workflows.adoc#recover-an-interrupted-publication[Recover an interrupted publication]
+says what to do with it.
+
+The action does not adopt an existing draft, replace an asset, or add to a
+published release. Once it has created the draft, every request names that
+draft by its numeric identifier, never by tag. It publishes the notes file as
+written and does not ask GitHub to generate notes: release notes are authored,
+as xref:workflows.adoc#write-the-release-notes[Write the release notes]
+describes.
+
+A glob in `assets` is a path relative to the workspace. Within one path segment
+`*` matches any run of characters and `?` any one character, and neither
+matches the dot at the start of a name. `.` segments are ignored. Nothing else
+is a pattern: `**`, `[`, a backslash, a `..` segment and an absolute path are
+each an error, so a glob names only paths under the workspace.
+
+Every request is a `gh api` call. `gh` adds the token to requests for the
+GitHub host and does not repeat it when GitHub redirects an asset download to
+the storage host that serves the bytes. A repository without immutable releases
+fails the last step, after the release is published;
+xref:settings.adoc#releases[Releases] lists the setting.
+xref:actions.adoc#actions-that-run-a-roc-script[Actions that run a Roc script]
+states what the action needs of the runner.
 
 [#publish-build-inputs]
 == `actions/publish-build-inputs`

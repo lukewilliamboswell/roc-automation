@@ -51,18 +51,54 @@ jobs:
           persist-credentials: false
       - id: blueprint
         uses: ./actions/setup-blueprint
-        with:
-          version: 0.4.0
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
       - name: Check the installed command
         env:
           BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+          VERSION: ${{ steps.blueprint.outputs.version }}
         run: |
+          # The action took the release from Blueprint.roc; the binary must agree.
+          test -n "$VERSION"
+          test "$(blueprint --version)" = "$VERSION"
           test "$(command -v blueprint)" = "$BLUEPRINT"
           nix --version
           blueprint --help
+  nightly-report-action:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The action runs its Roc script from source: it installs Nix and the
+      # verified blueprint, then runs the nightly-report task of this checkout.
+      # A pass with no tracking issue only lists issues, so it needs no write access.
+      - id: report
+        uses: ./actions/nightly-report
+        with:
+          outcome: success
+          nightly-tag: nightly-ci-probe
+          release-tag: 0.0.0
+          title: nightly-report CI probe, never opened
+      - name: Check that nothing was done
+        env:
+          ACTION: ${{ steps.report.outputs.action }}
+          ISSUE: ${{ steps.report.outputs.issue-number }}
+        run: |
+          test "$ACTION" = none
+          test -z "$ISSUE"
+  # The repository's own Roc scripts, on the pinned tooling compiler. This does
+  # not ask GitHub about any repository's settings: that needs administration
+  # access, which no workflow token has, so a maintainer runs check-settings.
+  roc-scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/setup-blueprint
+      - run: blueprint run check
   workflow-lint:
     runs-on: ubuntu-24.04
     steps:

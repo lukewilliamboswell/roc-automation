@@ -5,6 +5,10 @@ It assumes the earlier chapters. Work from a fresh branch of the remote default
 branch, and open one pull request per numbered step so that a failure points at
 one change.
 
+A xref:overview.adoc#a-pure-roc-package[pure Roc package] follows every step,
+with one runner in each workflow. The sentences below that begin "A platform"
+and the acceptance item that begins "For a platform" do not apply to it.
+
 == Steps
 
 . *Environment.* Add `Blueprint.roc` and `Blueprint.lock` with `roc-stable`,
@@ -33,11 +37,13 @@ one change.
 . *Workflows.* Replace the repository's workflows with `ci.yml`, `release.yml`
   and `nightly.yml`, plus any
   xref:optional-workflows.adoc#optional-workflows[optional workflows] it needs.
-  Take the `blueprint` version and checksums from the same roc-blueprint release
-  as the platform URL in `Blueprint.roc`.
+  Call `actions/setup-blueprint` with no inputs, after the checkout; it
+  installs the release that `Blueprint.roc` names.
 . *Repository settings.* Apply
   xref:settings.adoc#repository-settings[Repository settings], update the
   required check names, and delete branches that earlier automation owned.
+  Confirm the result with the `check-settings` task, as
+  xref:settings.adoc#confirm-the-settings[Confirm the settings] describes.
 
 == Acceptance
 
@@ -55,6 +61,8 @@ Record a link for each item in the final pull request.
 * A manual `nightly.yml` run passes against the latest release.
 * A deliberately failing nightly run opens exactly one tracking issue, a second
   failure comments on it, and a passing run closes it.
+* `blueprint run check-settings -- <owner>/<name>`, run from roc-automation,
+  passes every line for the repository.
 * A real pull request with a failing check is blocked from merging.
 * For a platform: a deliberate edit to the committed bindings fails `ci.yml`.
 
@@ -95,6 +103,9 @@ A claim about the repository is only as good as the check behind it.
 
 | The release names its compilers
 | Release notes contain both version strings
+
+| The repository settings are in place
+| The `check-settings` task reads them from GitHub and passes every line
 
 | The latest release works on the latest nightly
 | The most recent `nightly.yml` run, and the absence of an open tracking issue

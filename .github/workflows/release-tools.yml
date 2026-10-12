@@ -1,0 +1,158 @@
+name: Release tools
+# Builds the Roc scripts behind the shared actions as static Linux executables,
+# tests those exact files on both runner architectures, and publishes them once.
+# A pull request runs the build and the tests as a dry run and publishes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, such as 0.1.0; the tag is tools-<version>
+        required: true
+        type: string
+  pull_request:
+permissions: {}
+concurrency:
+  group: release-tools-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    name: Build the tools
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/setup-blueprint
+      - run: blueprint run check
+      - run: blueprint run build-tools
+      # A dispatch must have authored notes for its version. A dry run renders
+      # the notes for the highest version, which are those of the next release.
+      - id: version
+        name: Choose the version and its notes
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            version="$REQUESTED"
+            notes="docs/releases/tools-$version.md"
+          else
+            version=0.0.1-dry-run
+            notes="$(printf '%s\n' docs/releases/tools-*.md | sort -V | tail -n 1)"
+          fi
+          test -s "$notes"
+          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          {
+            cat "$notes"
+            printf '\n## Compilers\n\n```\n'
+            blueprint run compiler-version
+            printf '```\n'
+          } > release-notes.md
+      - name: List the digests
+        working-directory: dist
+        run: |
+          sha256sum -- * > sha256sums.txt
+          cat sha256sums.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tools
+          if-no-files-found: error
+          path: |
+            dist/
+            release-notes.md
+
+  # The exact files that would be published, on a runner with no checkout, no
+  # Nix and no compiler: what a calling job has when an action runs one.
+  test:
+    name: Test the built tools (${{ matrix.system }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      issues: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tools
+          path: tools
+      - name: Check the digests
+        working-directory: tools/dist
+        run: |
+          sha256sum --check --strict sha256sums.txt
+          chmod +x -- *-"$SYSTEM"
+        env:
+          SYSTEM: ${{ matrix.system }}
+      - name: A setup failure touches nothing
+        env:
+          SYSTEM: ${{ matrix.system }}
+          INPUT_OUTCOME: skipped
+        run: |
+          if tools/dist/nightly-report-"$SYSTEM" 2> error.txt; then exit 1; fi
+          grep -q 'setup failure' error.txt
+      # A pass with no tracking issue only lists issues, so it needs no write access.
+      - name: A pass with no tracking issue does nothing
+        env:
+          SYSTEM: ${{ matrix.system }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_OUTCOME: success
+          INPUT_NIGHTLY_TAG: nightly-tools-probe
+          INPUT_RELEASE_TAG: 0.0.0
+          INPUT_TITLE: nightly-report tools probe, never opened
+        run: |
+          tools/dist/nightly-report-"$SYSTEM"
+          grep -qx 'action=none' "$GITHUB_OUTPUT"
+      # The version and the prerelease flag disagree, which is refused before
+      # any request is made. No token is supplied.
+      - name: A malformed release is refused before any request
+        env:
+          SYSTEM: ${{ matrix.system }}
+          INPUT_VERSION: 0.1.0
+          INPUT_PRERELEASE: 'true'
+          INPUT_NOTES_FILE: tools/release-notes.md
+          INPUT_ASSETS: tools/dist/*
+          INPUT_TAG: tools-0.1.0
+          INPUT_TARGET: ${{ github.sha }}
+        run: |
+          if tools/dist/publish-release-"$SYSTEM" 2> error.txt; then exit 1; fi
+          cat error.txt
+          grep -q 'prerelease' error.txt
+
+  publish:
+    name: Publish the tools
+    needs: [build, test]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tools
+          path: tools
+      # The action at an earlier commit of this repository, which runs its
+      # script from source. It publishes the executables that later revisions
+      # of the action download.
+      - uses: lukewilliamboswell/roc-automation/actions/publish-release@f21044c2035a71b6fcd2a02cdb333fb11dc797e8
+        with:
+          version: ${{ needs.build.outputs.version }}
+          prerelease: ${{ needs.build.outputs.prerelease }}
+          tag: tools-${{ needs.build.outputs.version }}
+          notes-file: tools/release-notes.md
+          assets: tools/dist/*

@@ -135,6 +135,50 @@ being wrong: a new nightly can break `ci.yml` on an untouched pull request, and
 been released. xref:workflows.adoc#the-three-workflows[The three workflows]
 describes each in full.
 
+[#a-pure-roc-package]
+== A pure Roc package
+
+Most repositories are the simplest kind, and the model is at its smallest for
+them. A repository is a pure Roc package when all of these hold:
+
+* it publishes a package and has no host or platform code;
+* it fetches no native build inputs;
+* none of its code behaves differently from one target to another.
+
+Such a package is expected to work wherever Roc does. A difference between
+targets is a compiler defect to report upstream, not something the package's
+own CI is there to find. It therefore tests on one runner.
+
+[cols="1,3",options="header"]
+|===
+| Concern | A pure Roc package
+
+| Runners
+| One. `ci.yml`, the test job of `release.yml` and `nightly.yml` each run on `ubuntu-latest` only.
+
+| Required status checks
+| The job names themselves. With no matrix there is no aggregate job.
+
+| Examples
+| Run on a published platform, such as basic-cli, and are tested on the one runner.
+
+| Chapters that do not apply
+| xref:platforms.adoc#maintain-a-platform[Maintain a platform] and xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request]: host bindings, native build inputs, rebuild selection and `actions/publish-build-inputs`.
+|===
+
+Everything else applies unchanged: the two compilers, the Blueprint
+environment, the Roc scripts, the three workflows, and what a release contains.
+
+The cost is stated here so that it is a decision and not an accident: a
+compiler defect that appears on one target only is not detected by this
+package's CI.
+
+A package leaves this profile as soon as it gains behaviour that can differ by
+target, for example when it starts a process, interprets file paths, or depends
+on the width of a pointer. It then adds a runner for each target it claims, and
+takes on the matrix and the aggregate job described in
+xref:workflows.adoc#continuous-integration[Continuous integration].
+
 == What is shared and what a repository owns
 
 Anything two repositories need identically belongs in roc-automation, referenced
@@ -147,11 +191,20 @@ by full commit SHA. A repository keeps only what knows its own package.
 | `actions/setup-blueprint`: install Nix and the verified `blueprint` binary
 | `Blueprint.roc` and `Blueprint.lock`
 
+| `actions/nightly-report`: keep the nightly tracking issue
+| The test job of `nightly.yml`, its matrix and its schedule
+
 | `actions/build-docs`: render an AsciiDoc manual as a site and PDF
 | `docs/*.adoc`
 
+| `actions/publish-release`: stage a draft release, verify every asset, then publish
+| What a release contains, and the jobs that build and test it
+
 | `actions/publish-build-inputs`: publish linker inputs from a pull request
 | The producer workflow and its build recipe
+
+| The `check-settings` task: compare a repository's GitHub settings with this manual
+| The settings themselves, applied by a maintainer
 
 | This manual
 | Thin caller workflows, `scripts/`, tests and expected output

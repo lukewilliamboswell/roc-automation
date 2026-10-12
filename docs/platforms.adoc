@@ -362,8 +362,9 @@ reviewed selection, digest, target and inventory; they need not fetch upstream
 source or install its toolchain to recompute the producer's fingerprint. Recorded
 producer metadata remains a claim subject to the chosen provenance policy.
 
-Final Roc bundles have a compiler-defined content identity: preserve the filename
-emitted by `roc bundle` in both localhost and published URLs. Roc uses its
+Final Roc bundles have a compiler-defined content identity: preserve the hash
+that `roc bundle` puts in the filename, and use one filename in both localhost
+and published URLs. Roc uses its
 base58-encoded BLAKE3 hash to verify the downloaded bundle. An additional SHA-256
 in release metadata is useful but cannot replace that URL hash. See the
 https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/src/bundle/bundle.zig#L266-L275[Roc bundle implementation]

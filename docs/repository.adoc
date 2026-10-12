@@ -123,14 +123,26 @@ only to wrap one command is deleted in favour of a `Task` that runs the command.
 A script is written for one compiler and one set of dependencies. Someone who
 runs it with a newer `roc`, instead of through `blueprint`, may find it broken
 for reasons that have nothing to do with their change. The `roc` field makes
-the compiler say so: it warns that the script targets a different release,
-which points at the cause before anyone debugs the script.
+the compiler say so: a compiler other than the one the field names refuses the
+file and names the release it targets, which points at the cause before anyone
+debugs the script.
 
 The field is useful only while it is true, so one cheap check keeps it true.
 The check script reads the tag from the `Command("roc-stable", ...)` setting in
 `Blueprint.roc` and requires every file under `scripts/` that has an `app`
 header to carry exactly that tag in its `roc` field. It reads text and runs no
 compiler, so it costs nothing in pull-request CI.
+
+Two things follow from the compiler enforcing the field:
+
+* Format the scripts with `roc-stable fmt`. `roc fmt` on another compiler
+  rewrites the field to that compiler's own release, and the check then fails.
+* The field belongs only on a file that `roc-stable` runs. A program under
+  `scripts/` that the latest nightly builds, or that a compiler the repository
+  itself produces builds, cannot carry it: that compiler would refuse the file.
+  Keep such a program outside `scripts/` where that is practical. Where it
+  stays, the check script lists it by path as an exception and requires that it
+  has no `roc` field at all.
 
 `Blueprint.roc` remains the authority. The header fields are copies that the
 check holds to it, and
@@ -141,7 +153,7 @@ changes them together.
 
 One script, conventionally `scripts/check_all.roc` behind the `check` task, runs
 everything a pull request must pass: the static checks in this chapter,
-`roc fmt --check`, the script tests, `roc test` on the package root, every
+`roc fmt --check` and `roc-stable fmt --check`, the script tests, `roc test` on the package root, every
 example and integration case, a smoke run of each benchmark and fuzz target,
 and a dry-run build of what a release would publish.
 xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]

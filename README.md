@@ -15,7 +15,9 @@ build inputs, and the trust model behind the shared actions.
 | Action | Purpose |
 | --- | --- |
 | `actions/setup-blueprint` | Install Nix and the verified `blueprint` binary |
+| `actions/nightly-report` | Keep the one tracking issue of a nightly compatibility workflow |
 | `actions/build-docs` | Render `docs/*.adoc` as an HTML site and PDF manual |
+| `actions/publish-release` | Stage a draft release, verify every asset against the tested file, then publish |
 | `actions/publish-build-inputs` | Publish linker inputs built on a pull request, and commit only their lock |
 
 See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions.html)

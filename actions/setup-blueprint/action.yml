@@ -1,18 +1,18 @@
 name: Set up Blueprint
-description: Install Nix and the released blueprint binary, admitted only by a reviewed SHA-256.
+description: Install Nix and the blueprint binary that Blueprint.roc names, admitted only by a reviewed SHA-256.
 
 inputs:
   version:
-    description: roc-blueprint release to install; use the release named by the platform URL in Blueprint.roc
-    required: true
+    description: roc-blueprint release to install; by default the release named by the platform URL in the checked-out Blueprint.roc
+    default: ''
   sha256-x86_64-linux:
-    description: Reviewed SHA-256 of that release's blueprint-x86_64-linux binary
+    description: Reviewed SHA-256 of the blueprint-x86_64-linux binary, for a release this action does not record
     default: ''
   sha256-aarch64-linux:
-    description: Reviewed SHA-256 of that release's blueprint-aarch64-linux binary
+    description: Reviewed SHA-256 of the blueprint-aarch64-linux binary, for a release this action does not record
     default: ''
   sha256-aarch64-darwin:
-    description: Reviewed SHA-256 of that release's blueprint-aarch64-darwin binary
+    description: Reviewed SHA-256 of the blueprint-aarch64-darwin binary, for a release this action does not record
     default: ''
 
 outputs:
@@ -22,6 +22,9 @@ outputs:
   system:
     description: Release system name selected for this runner
     value: ${{ steps.install.outputs.system }}
+  version:
+    description: roc-blueprint release that was installed
+    value: ${{ steps.install.outputs.version }}
 
 runs:
   using: composite

@@ -20,7 +20,7 @@ Build the site and PDF locally with Docker:
 
 [source,sh]
 ----
-python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 2
+python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 3
 ----
 
 The output is written to `.docs-out/`. The `Documentation` workflow runs the
@@ -37,8 +37,12 @@ Read xref:security-model.adoc#the-three-workflows[the trust model] first. It is
 normative: a change to an action's behavior or permissions keeps those
 boundaries and arrives with regression tests for them.
 
-Python 3.10 or later and the standard library are sufficient for the action
-tests:
+`actions/nightly-report` and `actions/publish-release` are Roc scripts,
+`scripts/nightly_report.roc` and `scripts/publish_release.roc`, and their tests
+are `expect` tests that `blueprint run check` runs;
+xref:contributing.adoc#change-an-action-that-is-a-roc-script[Change an action that is a Roc script]
+says how they are built and tested. The other actions are Python. Python 3.10
+or later and the standard library are sufficient for their tests:
 
 [source,sh]
 ----
@@ -54,6 +58,103 @@ python3 -m unittest discover -s tests -v
 * Use the standard library unless an additional runtime dependency has an
   explicit justification.
 * Review dependency changes and address actionable static-analysis findings.
+
+== Change a script
+
+The repository's own automation is Roc scripts under `scripts/`, written as
+xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+describes. With `blueprint` installed as
+xref:environment.adoc#get-the-blueprint-binary[Get `blueprint`] describes:
+
+[source,sh]
+----
+blueprint run check
+----
+
+It runs the `expect` tests of the modules under `scripts/src/`, checks each
+script with `roc-stable`, checks their formatting, and holds every script's
+`roc` field to the release `Blueprint.roc` names. CI runs the same task.
+
+`scripts/check_settings.roc` must stay read-only. Its one request function
+states the `GET` method, and what it decides from GitHub's answers is pure
+logic in `scripts/src/Settings.roc`. A change to a check arrives with `expect`
+tests for the passing and the failing answer, and a setting that cannot be read
+is reported as unknown. CI does not run it against a repository, because that
+needs administration access; see
+xref:settings.adoc#confirm-the-settings[Confirm the settings].
+
+[#change-an-action-that-is-a-roc-script]
+=== Change an action that is a Roc script
+
+`scripts/nightly_report.roc` and `scripts/publish_release.roc` run with write
+tokens, so they are held to
+xref:security-model.adoc#what-the-jobs-with-write-access-run[What the jobs with write access run]
+and to the rules for every shared action.
+
+Every decision is in a module without effects: `scripts/src/NightlyReport.roc`,
+`scripts/src/PublishRelease.roc`, and `scripts/src/GitHub.roc` for the `gh`
+invocation and the checks the two share. A module checks the inputs into a
+plan, and then decides one step at a time: given the answer to the last
+request, it names the next request or the end. The script only carries each
+request to `gh`, or to the runner's disk, and brings the answer back.
+
+* A change to a validation rule, to the order of the requests, to what a
+  failure leaves behind or to an error message arrives with an `expect` test.
+  The tests drive the same step functions against a pretend repository and
+  compare the whole sequence of requests, so none of them reaches GitHub.
+* Keep the method of every request stated in `GitHub.args`, and the token out
+  of every plan, argument and message. `gh` reads it from `GH_TOKEN`.
+* A local check comes before the first request. In `PublishRelease` the local
+  steps and the requests are different types, so a step that reads GitHub
+  cannot be placed among the local checks.
+* The composite `action.yml` repeats the two steps of
+  `actions/setup-blueprint`, because an action cannot reference a sibling at
+  its own commit. Change the install action's SHA in all three files together.
+
+To run a script by hand, give it the environment the action gives it: the
+inputs as `INPUT_*`, the token as `GH_TOKEN`, and the runner's `GITHUB_*`
+variables. A pass with a title that no issue has only lists issues:
+
+[source,sh]
+----
+GH_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=<owner>/<name> \
+  GITHUB_SERVER_URL=https://github.com GITHUB_RUN_ID=1 GITHUB_OUTPUT=/tmp/outputs \
+  INPUT_OUTCOME=success INPUT_NIGHTLY_TAG=probe INPUT_RELEASE_TAG=0.0.0 \
+  INPUT_TITLE='nightly-report probe, never opened' \
+  blueprint run nightly-report
+----
+
+`ci.yml` runs `actions/nightly-report` itself with those inputs, in a job whose
+token can only read issues. No job there holds a token that can write issues or
+releases, so the requests that write are covered by the `expect` tests and not
+by a run against GitHub.
+
+== Release the tools
+
+The scripts behind the shared actions are also built as static Linux
+executables, so that a calling job can run one without Nix or a compiler.
+
+[source,sh]
+----
+blueprint run build-tools
+----
+
+It writes `dist/<tool>-<system>` for `x86_64-linux` and `aarch64-linux`. Both
+are built on one machine, and two builds of the same commit give the same
+bytes.
+
+The `Release tools` workflow publishes them under the tag `tools-<version>`. It
+follows xref:workflows.adoc#the-order-of-a-release[The order of a release]:
+
+. The build job runs `blueprint run check`, builds the executables and lists
+  their SHA-256 digests in `sha256sums.txt`.
+. A test job on each runner architecture downloads those exact files and runs
+  them with no checkout, no Nix and no compiler.
+. The publish job, on dispatch only, hands the tested files to
+  `actions/publish-release`.
+
+A pull request runs the first two steps as a dry run. Before dispatching a
+release, commit its notes as `docs/releases/tools-<version>.md`.
 
 == Release a shared action
 
