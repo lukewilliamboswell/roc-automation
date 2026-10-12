@@ -100,9 +100,13 @@ assets as bytes, and executes none of them.
 
 The token is in the environment of the one step that runs the script, where
 `gh` reads it. It is never a command-line argument and is never printed, and
-the scripts check every input before the first request. Apart from that, the Nix
-installer writes the job's default token into Nix's configuration, and Nix
-presents it to GitHub when it fetches a pinned input from there.
+the scripts check every input before the first request.
+
+Nix does not hold the token. The install action would otherwise write the job's
+default token into Nix's configuration, for Nix to present to GitHub on its own
+fetches. These two actions clear that setting, and stop before installing
+anything further if Nix still reports a token. Every input Nix fetches is public
+and pinned by the lock, so it needs none.
 
 == Compilers
 

@@ -35,8 +35,22 @@ outputs:
 runs:
   using: composite
   steps:
+    # The install action writes the job's token into Nix's configuration as a
+    # GitHub access token. This job's token can write, and Nix has no use for
+    # it: every input is public and pinned by Blueprint.lock. The empty setting
+    # comes later in the file and replaces it.
     - name: Install Nix
       uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      with:
+        extra_nix_config: access-tokens =
+
+    - name: Check that Nix holds no token
+      shell: bash
+      run: |
+        if [ -n "$(nix config show access-tokens | tr -d '[:space:]')" ]; then
+          echo "::error::Nix is configured with a GitHub access token; refusing to continue"
+          exit 1
+        fi
 
     # The installer reads Blueprint.roc from GITHUB_WORKSPACE, installs under
     # RUNNER_TEMP and adds that directory to GITHUB_PATH. Here it is given this
