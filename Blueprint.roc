@@ -40,4 +40,10 @@ config = [
 	# environment, and Blueprint.lock fixes everything the task starts.
 	Task("nightly-report", [Use("dev"), Run(["scripts/nightly_report.roc"])]),
 	Task("publish-release", [Use("dev"), Run(["scripts/publish_release.roc"])]),
+	# The scripts as static Linux executables, one for each runner architecture,
+	# in dist/. A release of these is what the shared actions download, so that a
+	# calling job needs neither Nix nor a compiler.
+	Task("build-tools", [Use("dev"), Run(["scripts/build_tools.roc"])]),
+	# The tooling compiler, as release notes record it.
+	Task("compiler-version", [Use("dev"), Run(["roc-stable", "version"])]),
 ]

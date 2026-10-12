@@ -129,6 +129,33 @@ token can only read issues. No job there holds a token that can write issues or
 releases, so the requests that write are covered by the `expect` tests and not
 by a run against GitHub.
 
+== Release the tools
+
+The scripts behind the shared actions are also built as static Linux
+executables, so that a calling job can run one without Nix or a compiler.
+
+[source,sh]
+----
+blueprint run build-tools
+----
+
+It writes `dist/<tool>-<system>` for `x86_64-linux` and `aarch64-linux`. Both
+are built on one machine, and two builds of the same commit give the same
+bytes.
+
+The `Release tools` workflow publishes them under the tag `tools-<version>`. It
+follows xref:workflows.adoc#the-order-of-a-release[The order of a release]:
+
+. The build job runs `blueprint run check`, builds the executables and lists
+  their SHA-256 digests in `sha256sums.txt`.
+. A test job on each runner architecture downloads those exact files and runs
+  them with no checkout, no Nix and no compiler.
+. The publish job, on dispatch only, hands the tested files to
+  `actions/publish-release`.
+
+A pull request runs the first two steps as a dry run. Before dispatching a
+release, commit its notes as `docs/releases/tools-<version>.md`.
+
 == Release a shared action
 
 Repositories reference an action by full commit SHA and adopt a new one through
