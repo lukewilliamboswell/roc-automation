@@ -55,6 +55,30 @@ python3 -m unittest discover -s tests -v
   explicit justification.
 * Review dependency changes and address actionable static-analysis findings.
 
+== Change a script
+
+The repository's own automation is Roc scripts under `scripts/`, written as
+xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+describes. With `blueprint` installed as
+xref:environment.adoc#get-the-blueprint-binary[Get `blueprint`] describes:
+
+[source,sh]
+----
+blueprint run check
+----
+
+It runs the `expect` tests of the modules under `scripts/src/`, checks each
+script with `roc-stable`, checks their formatting, and holds every script's
+`roc` field to the release `Blueprint.roc` names. CI runs the same task.
+
+`scripts/check_settings.roc` must stay read-only. Its one request function
+states the `GET` method, and what it decides from GitHub's answers is pure
+logic in `scripts/src/Settings.roc`. A change to a check arrives with `expect`
+tests for the passing and the failing answer, and a setting that cannot be read
+is reported as unknown. CI does not run it against a repository, because that
+needs administration access; see
+xref:settings.adoc#confirm-the-settings[Confirm the settings].
+
 == Release a shared action
 
 Repositories reference an action by full commit SHA and adopt a new one through

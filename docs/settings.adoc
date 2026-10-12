@@ -24,7 +24,8 @@ Protect the default branch with a ruleset:
   xref:overview.adoc#a-pure-roc-package[pure Roc package], and the build job
   of the `release.yml` dry run.
 * Require signed commits.
-* Grant no bypass to any bot.
+* Grant no bypass to any bot: neither an app nor a deploy key is on the
+  ruleset's bypass list.
 
 Verify the rules with a real pull request: a failing check must block the merge,
 and a check name that no job produces must be noticed before it is relied on. If
@@ -41,13 +42,17 @@ xref:platforms.adoc#preserve-reviewed-history-and-authority[Preserve reviewed hi
 * Enable immutable releases.
 * Create a `release` environment restricted to the default branch, with a
   required reviewer where the project has more than one maintainer. The publish
-  job of `release.yml` names it.
-* Protect tags, so that an existing version tag cannot be moved or deleted.
+  job of `release.yml` names it. Restrict it by name: choose "Selected branches
+  and tags" and add the default branch alone. "Protected branches only" is
+  wider, because it admits every branch a ruleset later covers.
+* Protect tags with a ruleset that targets all tags and restricts updates and
+  deletions, so that an existing version tag cannot be moved or deleted.
 
 == Pages
 
 * Set the Pages source to GitHub Actions.
-* Restrict the `github-pages` environment to the default branch.
+* Restrict the `github-pages` environment to the default branch, by name as for
+  `release`.
 
 == Dependencies
 
@@ -60,3 +65,41 @@ any other dependency update, and never replace a full SHA with a branch or tag.
 Enable private vulnerability reporting and keep `SECURITY.md` accurate.
 xref:project-practices.adoc#project-practice-evidence[Project-practice evidence]
 lists what else a public project should be able to show.
+
+== Confirm the settings
+
+The `check-settings` task of roc-automation reads a repository's settings from
+GitHub and reports each line of this chapter as passing or failing. Run it from
+a checkout of roc-automation and name the repository:
+
+[source,sh]
+----
+blueprint run check-settings -- <owner>/<name>
+----
+
+Three answers only a maintainer can give are flags:
+
+`--platform`:: The repository publishes linker inputs. The report notes whether
+merge commits are allowed.
+`--reviewer-required`:: The project has more than one maintainer. The `release`
+environment must have a required reviewer.
+`--no-site`:: The repository publishes no site. The Pages lines are left out.
+
+Each failing line is followed by its fix: the settings page to change, or the
+`gh api` command that changes it. A setting that GitHub would not show is
+reported as unknown, never as passing. The task exits with an error while any
+line fails or is unknown.
+
+* It only reads. Every request it makes is a `GET`. Applying a setting stays a
+  maintainer's decision, made on the settings page or by running the printed
+  command.
+* It uses the maintainer's own `gh` login, which must be able to administer the
+  repository. GitHub shows a ruleset's bypass list and the Actions
+  permissions to nobody else. A workflow's token cannot be granted that access,
+  so the task runs on a maintainer's machine and not in CI.
+* It shows that the rules exist, not that they are enforced. A real pull
+  request with a failing check is still what shows that the merge is blocked.
+* It compares the required check names with the jobs that ran on the pull
+  request behind the latest commit on the default branch. It cannot tell
+  whether those are the right jobs to require.
+* It confirms that `SECURITY.md` exists, not that it is accurate.

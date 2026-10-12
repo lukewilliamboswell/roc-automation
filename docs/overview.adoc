@@ -203,6 +203,9 @@ by full commit SHA. A repository keeps only what knows its own package.
 | `actions/publish-build-inputs`: publish linker inputs from a pull request
 | The producer workflow and its build recipe
 
+| The `check-settings` task: compare a repository's GitHub settings with this manual
+| The settings themselves, applied by a maintainer
+
 | This manual
 | Thin caller workflows, `scripts/`, tests and expected output
 |===
