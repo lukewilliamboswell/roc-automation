@@ -91,10 +91,12 @@ downloads.
 
 == Native build inputs
 
-Platforms often need native builds before Roc can link an application.
-Expensive outputs that are reused across releases can have their own dependency
-releases; a small host can be built in a read-only job of the release workflow.
-In either case, test and publish the same artifact bytes.
+Platforms need native builds before Roc can link an application, and native
+builds are where CI time goes. A maintainer has a limited budget of runner
+minutes and of patience, and spends it well only by planning what gets built
+when, and by watching how that changes as the project grows. This section is
+about building each thing once, reusing it until it changes, and testing and
+publishing the same bytes.
 
 === No binary blobs in the repository
 
@@ -132,35 +134,76 @@ where it came from: the upstream project, the release, the download URL, its
 hash and its license. It is the upstream project's published artifact,
 unmodified, and never something the repository built and then committed.
 
-=== Three release cycles
+=== Two releases, three build steps
 
-Keep three release cycles visibly separate:
+A platform's host and its Roc source usually change together and are released
+together: one platform release holds both. Linker inputs are different. They
+change rarely, cost the most to build, and are published as their own release.
+
+So there are two kinds of release, and three things that are built:
 
 [cols="1,2,2",options="header"]
 |===
-| Cycle | Owner and identity | Behavior in an ordinary pull request
+| What is built | How it is released | In an ordinary pull request
 
-| Linker-input release
-| Platform-owned native inputs selected by a content lock; published independently from a material producer change
-| Download the selected target archives and verify their locked hashes. Never rebuild them implicitly.
+| Linker inputs
+| Their own immutable release, selected by a content lock
+| Download the locked archives and verify their hashes. Never rebuild them.
 
-| Host release
-| Platform implementation outputs such as `libhost.a`, selected by their own host lock or built as an explicit host candidate
-| Reuse when the host fingerprint is current. A host-source change may build new host outputs without changing linker inputs.
+| The host, such as `libhost.a`
+| As part of the platform release
+| Build it in its own job, and skip that job when the host's fingerprint has not changed.
 
-| Platform bundle release
-| The user-facing platform source plus the selected host and linker-input bytes
-| Assemble and test the exact selected inputs. Bundle preparation is never a native bootstrap build.
+| The platform bundle
+| The platform release: the Roc source with the host and linker inputs
+| Assemble from the outputs above and test. Bundling compiles nothing native.
 |===
 
-This separation keeps invalidation honest and limits the cost and authority of
-each operation. Treating every file that reaches the linker as one artifact
-would rebuild stable operating-system inputs for ordinary host changes. Treating
-the bundle as its own native build environment would make a source-only release
-depend on privileged toolchains and ambient state. Separate locks let review
-answer which bytes changed and why. The cost is more than one manifest and
-release cycle, so use independent releases only where reuse and build cost
-justify the bookkeeping.
+The host is not given a release lifecycle of its own. It is given a job of its
+own. The point of the separation is that each step can be skipped when its
+inputs have not changed.
+
+=== Skip what has not changed
+
+Compute a content fingerprint of everything that can affect the host: its
+source, generated bindings, dependency versions, toolchain, target and build
+options. Use the fingerprint as a cache key.
+
+* When the fingerprint matches a cached build, the host job restores it and
+  finishes in seconds. A pull request that touches only Roc source, examples or
+  documentation compiles no native code.
+* When it does not match, the job builds the host and saves it under the new
+  fingerprint.
+* Later jobs take the host as an artifact from that job. They do not know or
+  care whether it was built or restored.
+
+xref:platforms.adoc#keep-rebuild-selection-narrow-and-complete[Keep rebuild selection narrow and complete]
+says what a fingerprint must include. A cache is storage, not a source of
+trust: restored bytes come from the same repository's own earlier job, and
+anything that crosses a release boundary is verified against a locked hash.
+
+Separate steps and caches pay off beyond runner minutes. A failure points at
+the step that failed. A contributor without the native toolchain can still work
+on the Roc side. Review is easier when a pull request shows which step it
+invalidated.
+
+=== Watch what CI costs
+
+Plan the pipeline, then keep watching it, because it drifts as changes are
+made.
+
+* Know roughly how long a routine pull request takes, and what takes the time.
+  The harness and each workflow report durations for this reason.
+* A routine change, one that touches no native code, should be fast. If
+  pull-request CI takes a long time for routine changes, something is wrong and
+  should be investigated: a fingerprint that includes too much, a cache key
+  that changes on every commit, a job that rebuilds what an earlier job already
+  built, a matrix that grew.
+* Treat a slow pipeline as a defect with a cause, not as the price of the
+  project. Slow CI is paid for on every pull request by every contributor.
+* Spend resources where they prove something. Run the expensive matrix when
+  native inputs change and before a release; run the cheap path the rest of the
+  time.
 
 `libhost.a` and `host.lib` are host outputs, not linker-input release assets.
 Operating-system import libraries, runtime libraries, interface stubs and
@@ -180,11 +223,11 @@ Choose the smallest lifecycle that fits the project:
 | Package with a test-only host
 | Build the host in a read-only job of `ci.yml`. It is never published.
 
-| Small platform host
-| Build the host, bundle once, test the bundle, then publish those bytes, all in `release.yml`.
+| Platform with a small host and no external inputs
+| Build the host in its own fingerprinted job, bundle once, test the bundle, then publish those bytes.
 
-| Expensive hosts and external libraries
-| Release reusable inputs independently, and assemble them under reviewed locks.
+| Platform with expensive external inputs
+| The same, with the linker inputs released independently and consumed through a reviewed lock.
 |===
 
 An existing binary is not a verified artifact until its build recipe, digest and
@@ -217,22 +260,23 @@ cycle. When released separately, publish the generated files as immutable inputs
 For a static host archive, these files normally serve Roc's final link rather
 than host compilation. A producer that itself links executables or shared libraries
 may also consume linker interfaces. Record its actual SDK, headers, interfaces and
-native build tools in its identity; do not assume the two cycles have no dependencies.
+native build tools in its identity; do not assume the host build and the linker inputs have no dependencies.
 
-For a platform using independent producers, the flow is:
+For a platform with a separate host step and an independent linker-input
+release, the flow is:
 
 [mermaid]
 ....
 flowchart TD
     H[Host or engine build inputs change] --> HP[Build and validate affected project outputs]
-    HP --> HR[Immutable host and engine dependency release]
+    HP --> HR[Host outputs, cached by fingerprint]
 
     M[Review macOS interface catalog] --> E
     X[External upstream inputs or generation recipe change] --> E
     E[External linker-input cycle: generate and validate inputs, including macOS TBDs] --> ER[Immutable external linker-input dependency release]
 
-    HR --> V[Download or reuse cached archives; verify locked content hashes]
-    ER --> V
+    HR --> B
+    ER --> V[Download or reuse cached archives; verify locked content hashes]
     P[Current platform API source] --> B[Make platform bundles with roc bundle]
     V --> B
     B --> T[Serve exact bundles on localhost; Roc links apps and runs smoke tests]
@@ -376,7 +420,7 @@ Use the smallest lifecycle that corresponds to the changed ownership boundary:
 | xref:platforms.adoc#upgrade-the-bindings[Upgrade the bindings], with any host change, in one pull request.
 
 | Host implementation, host dependency, host toolchain, host ABI, or exported project symbol
-| Build and validate affected host candidates. Publish or adopt new host outputs under the host lifecycle. Reuse the existing linker inputs unless their own inputs changed.
+| The host job rebuilds, because its fingerprint changed. The new host ships in the next platform release. Reuse the existing linker inputs unless their own inputs changed.
 
 | Linker-input source, upstream binary, interface catalog, resource source, generation recipe, target matrix, or toolchain
 | Build the complete linker-input candidate on a same-repository pull-request branch, then run the trusted publisher and review its signed lock commit.
@@ -388,7 +432,7 @@ Use the smallest lifecycle that corresponds to the changed ownership boundary:
 | Check classification first. A new project implementation symbol normally changes the host; a new external library or interface normally changes linker inputs. Validate that every referenced released path exists for every advertised target.
 
 | Platform release
-| Require current host and linker-input locks, assemble once, exercise applications on every target, and publish the exact tested bundles.
+| Require a current linker-input lock, build or restore the host, assemble once, exercise applications on every target, and publish the exact tested bundles.
 |===
 
 For a stale linker-input lock, stage the material change in a same-repository
@@ -402,9 +446,9 @@ is a separate, later release that uses the selected lock.
 xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request]
 defines the admission and review checks.
 
-An input fingerprint mismatch must be explicit. For a host, a read-only
-pull-request job may build a host candidate, because host source commonly
-changes with the pull request. For a locked linker-input release, routine
+An input fingerprint mismatch must be explicit. For a host, the read-only host
+job simply builds it, because host source commonly changes with the pull
+request. For a locked linker-input release, routine
 validation fails with instructions to run the producer and publisher cycle. It
 must not bootstrap a replacement as a side effect of a cache miss. An implicit
 rebuild would substitute unreviewed bytes for the dependency the lock selects,
@@ -495,12 +539,12 @@ Exercise final linking against reused artifacts; a selector test alone does not
 
 == Keep final release preparation small
 
-Once independent producers have supplied current outputs, the release workflow
-needs only the latest nightly to bundle and link applications, the artifact
-verification step, and the runtime dependencies of its tests. It downloads and
-hash-verifies the selected prebuilt inputs. Host-language compilers and SDK
-generators belong in producer jobs; a stale lock sends the maintainer back to
-the producer cycle.
+Once the linker inputs are locked and the host job has built or restored the
+host, the rest of the release needs only the latest nightly to bundle and link
+applications, the artifact verification step, and the runtime dependencies of
+its tests. It downloads and hash-verifies the locked linker inputs. SDK
+generators belong in the linker-input producer; a stale lock sends the
+maintainer back to that cycle.
 
 Bundle once, then pass those exact archives to the target runners. Each runner
 serves the applicable bundles on a loopback address and runs the archived
