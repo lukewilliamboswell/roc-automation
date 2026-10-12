@@ -1,0 +1,61 @@
+= Repository settings
+
+Workflow files do not enforce a process by themselves. The settings in this
+chapter are part of the model, and a repository has not adopted it until they
+are in place and have been exercised with a real pull request.
+
+== Actions
+
+* Set the default workflow token to read-only. Each job that needs to write
+  states its own permission.
+* If the repository restricts which actions may run, allow each shared action at
+  its reviewed full SHA. An allowlist entry without `@...` does not match an
+  action reference.
+* Do not enable "Allow GitHub Actions to create and approve pull requests". No
+  workflow in this model opens a pull request.
+
+== Branch rules
+
+Protect the default branch with a ruleset:
+
+* Require a pull request.
+* Require status checks to pass on the current commit, with the branch up to
+  date. Name the aggregate job of `ci.yml` and the build job of the
+  `release.yml` dry run.
+* Require signed commits.
+* Grant no bypass to any bot.
+
+Verify the rules with a real pull request: a failing check must block the merge,
+and a check name that no job produces must be noticed before it is relied on. If
+a required name identifies both a check run and a commit status, GitHub requires
+both.
+
+Platform repositories that publish linker inputs allow merge commits. The
+publisher binds its evidence to exact commit SHAs, and a squash would replace
+them; see
+xref:platforms.adoc#preserve-reviewed-history-and-authority[Preserve reviewed history and authority].
+
+== Releases
+
+* Enable immutable releases.
+* Create a `release` environment restricted to the default branch, with a
+  required reviewer where the project has more than one maintainer. The publish
+  job of `release.yml` names it.
+* Protect tags, so that an existing version tag cannot be moved or deleted.
+
+== Pages
+
+* Set the Pages source to GitHub Actions.
+* Restrict the `github-pages` environment to the default branch.
+
+== Dependencies
+
+Keep a weekly `github-actions` entry in Dependabot. Shared actions are pinned by
+full SHA, and Dependabot proposes each new one as a pull request. Review it like
+any other dependency update, and never replace a full SHA with a branch or tag.
+
+== Reporting
+
+Enable private vulnerability reporting and keep `SECURITY.md` accurate.
+xref:project-practices.adoc#project-practice-evidence[Project-practice evidence]
+lists what else a public project should be able to show.

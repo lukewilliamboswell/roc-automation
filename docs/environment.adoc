@@ -1,0 +1,160 @@
+= Pin the tooling environment
+
+`Blueprint.roc` declares every tool a contributor and CI need. `Blueprint.lock`
+pins them. Both are committed. The `blueprint` command from
+https://github.com/lukewilliamboswell/roc-blueprint[roc-blueprint] realises that
+environment, the same way on a contributor's machine and on every CI runner.
+
+The environment holds the tooling compiler, the tools the scripts call, and the
+native toolchains a platform host or a test host needs. It does not hold the
+package compiler, which is never pinned.
+
+== Declare the environment
+
+[source,roc]
+----
+app [config] { pf: platform "<roc-blueprint release URL>" }
+
+config = [
+	Name("roc-example"),
+	Overlay("roc", "github:roc-lang/roc-overlay"),
+	Environment(
+		"dev",
+		[
+			Overlays(["roc"]),
+			Command("roc-stable", "rocpkgs.nightly-2026-10-09-258ab27"),
+			RocPackages([
+				"https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+				"https://github.com/roc-lang/http/releases/download/<version>/<hash>.tar.zst",
+			]),
+			Tools(["coreutils", "gh", "git", "unzip", "zip"]),
+		],
+	),
+	Shell("default", [Use("dev")]),
+	Task("check", [Use("dev"), Run(["scripts/check_all.roc"])]),
+	Task("bundle", [Use("dev"), Run(["scripts/build_bundle.roc"])]),
+	Task("test-bundle", [Use("dev"), Run(["scripts/test_bundle.roc"])]),
+	Task("package-examples", [Use("dev"), Run(["scripts/package_examples.roc"])]),
+	Task("package-docs", [Use("dev"), Run(["scripts/package_docs.roc"])]),
+	Task("test-published", [Use("dev"), Run(["scripts/test_published.roc"])]),
+]
+----
+
+Each setting has one job:
+
+`Command("roc-stable", ...)`:: Names the exact nightly release used for tooling.
+The compiler comes from https://github.com/roc-lang/roc-overlay[roc-overlay],
+which packages recorded nightlies under their release tags. `Command` exposes
+that one release as `roc-stable` without adding the tool's own executables, so
+the environment provides no bare `roc`.
+`RocPackages`:: Locks the Roc bundles the scripts depend on, so a script
+resolves them without downloading. List every bundle, including dependencies of
+dependencies; `roc-stable deps scripts/check_all.roc` prints them. Blueprint
+does not read package headers and cannot add a missing one.
+`Tools`:: Every program a script starts, and every toolchain a build needs: for
+example `pandoc`, `zig`, a Rust toolchain or `go`. A tool that a script calls
+and the environment does not declare is a defect, because CI and contributors
+then run different versions.
+`Task`:: A named entry point. CI calls tasks, never script paths, so the
+workflow and a contributor run the same command.
+
+The two files divide the work. `Blueprint.roc` states which release is the
+tooling compiler and which tools are needed, where a reviewer can read it.
+`Blueprint.lock` pins the overlay revision that supplies that release's download
+URL and hash, the package source, and each locked bundle.
+
+Nothing that `blueprint` generates is committed. Its generated Nix files stay in
+`.blueprint/`, which the repository's `.gitignore` lists.
+
+[#get-the-blueprint-binary]
+== Get `blueprint`
+
+Blueprint needs Nix on the machine, so install https://nixos.org/download[Nix]
+first. There are then two ways to get the `blueprint` command. Whichever you
+use, take the same roc-blueprint release as the platform URL in the
+repository's `Blueprint.roc` header.
+
+=== With Nix
+
+Nix can run or install `blueprint` straight from the release tag, with nothing
+to download or verify by hand:
+
+[source,sh]
+----
+# run it once, without installing
+nix run github:lukewilliamboswell/roc-blueprint/<version> -- run check
+
+# or install it into your profile
+nix profile install github:lukewilliamboswell/roc-blueprint/<version>
+----
+
+This is the simplest route for a contributor. Nix builds the command from the
+tagged source the first time, which takes longer than a download, and the flake
+provides it for x86_64 Linux and Apple Silicon macOS.
+
+=== As a release binary
+
+Each roc-blueprint release also attaches prebuilt `blueprint-<system>` binaries
+and a `blueprint.sha256` file. Download the one for your system, check it
+against the published SHA-256, make it executable and put it on `PATH`.
+
+CI always uses the release binary, through
+xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`],
+which checks it against a reviewed SHA-256 on every run. Nobody builds the CLI
+from source in CI.
+
+=== What the command needs
+
+The binary needs Nix on the machine. It needs neither Python nor Roc installed.
+To evaluate `Blueprint.roc` it uses a `roc` on `PATH` when that is exactly the
+nightly the binary was built with; otherwise it fetches that nightly itself from
+a roc-overlay revision pinned inside the binary. The `ROC` environment variable
+overrides this choice and must name that same nightly.
+
+This compiler is separate from `roc-stable` for a reason: Blueprint is written
+in Roc and must run before the environment it describes exists. See
+xref:overview.adoc#three-compilers-three-jobs[Three compilers, three jobs].
+
+A release's binary must be used with that release's platform URL in the
+`Blueprint.roc` header. The two move together; see
+xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint].
+
+== Work locally
+
+A contributor needs Nix, the `blueprint` command, and a current nightly installed
+as `roc`, the way Roc is normally installed. Nothing else has to be set up: the
+scripts use `roc` when `ROC_NIGHTLY` is not set.
+
+[source,sh]
+----
+blueprint run check      # run a declared task in the pinned environment
+blueprint shell          # or enter the environment and run scripts directly
+blueprint tasks          # list the declared tasks
+----
+
+`blueprint` is the outer command. Run it from an ordinary shell: there is no
+`nix develop` step first and no nested shell.
+
+Inside the environment `roc-stable` is the pinned compiler, and the
+contributor's own `roc` remains visible for package work.
+
+== Use the environment in CI
+
+Every job that runs repository scripts sets up Blueprint first, then installs
+the latest nightly, then calls a task:
+
+. Set up Nix and the verified `blueprint` binary with
+  `actions/setup-blueprint`.
+. Install the latest nightly as `roc-nightly` with
+  xref:actions.adoc#setup-roc-nightly[`actions/setup-roc-nightly`]. It provides no
+  bare `roc`, sets `ROC_NIGHTLY`, and reports the tag it resolved.
+. Run `blueprint run <task>`.
+
+The job needs no cache account and no token for this. A Nix cache is an
+optimisation a repository may add; a cache that requires `id-token: write`
+widens a test job's token and must be an explicit choice.
+
+A change to `Blueprint.lock` changes the tools every build uses. Where a
+repository fingerprints native build inputs, `Blueprint.lock` is one of the
+fingerprinted files; see
+xref:platforms.adoc#keep-rebuild-selection-narrow-and-complete[Keep rebuild selection narrow and complete].

@@ -1,0 +1,341 @@
+= Test in pull-request CI
+
+Code that only compiles proves little. That is true of examples, and equally of
+tests, benchmarks, fuzz targets and fixtures. Anything in the repository that is
+not run goes stale without anyone noticing, and is found broken on the day it is
+needed.
+
+The rule is that every Roc program in the repository runs in pull-request CI,
+even if only briefly. This chapter says what runs, how much of it, and how the
+tests are organised.
+
+== What runs on every pull request
+
+[cols="2,3",options="header"]
+|===
+| Check | What it runs
+
+| Formatting
+| `roc fmt --check` over the repository's Roc sources
+
+| Unit tests
+| `roc test` on the package or platform root
+
+| Examples
+| Every example, built once and run against its recorded cases
+
+| Integration tests
+| The test driver, over its full list of cases
+
+| Allocation ratchets
+| The cases that record an allocation ceiling, on a test platform that counts allocations
+
+| Benchmarks
+| A smoke run: each benchmark builds and completes one small iteration
+
+| Fuzz targets
+| A smoke run: each target builds and replays its committed corpus
+
+| Scripts
+| The `expect` tests of the modules under `scripts/src/`
+|===
+
+The `check` task runs all of these, so a contributor runs the same set with
+`blueprint run check` before opening a pull request.
+
+== Heavy runs stay out of pull-request CI
+
+A long fuzzing campaign or a full benchmark run never runs on a pull request.
+They take too long, their results vary from run to run, and a pull request
+should not wait on them or fail because of noise. They run on a schedule or on
+request, as described in
+xref:optional-workflows.adoc#fuzzing[Fuzzing] and
+xref:optional-workflows.adoc#benchmarks[Benchmarks].
+
+What pull-request CI owes them is a smoke run. A benchmark that has not been
+built since the API it measures changed will not run on the night it is
+scheduled. A few seconds per target on every pull request keeps each of them
+building and running, so the scheduled job measures and searches instead of
+discovering that it is broken.
+
+== Build with `--opt=dev`
+
+Build and run with `--opt=dev` unless there is a reason not to. It compiles
+quickly, which is what a test run spends most of its time on, and the checks in
+this chapter ask whether the program is correct, not how fast it is.
+
+Use `--opt=speed` only where the optimised build is the thing under test: a
+benchmark's measured run, a long fuzzing campaign, or a release artifact that
+ships optimised. A benchmark's smoke run in pull-request CI uses `--opt=dev`
+like everything else.
+
+== Unit tests
+
+Run `roc test` once, on the root: `package/main.roc` for a package,
+`platform/main.roc` for a platform. Roc runs the `expect` tests of every module
+the root imports, transitively, so there is no need to list files or to run the
+command per module. A module that the root does not reach is either dead code or
+missing from the package, and either is worth knowing.
+
+A repository with several roots runs `roc test` once on each.
+
+== Integration tests
+
+An integration test runs a built program and looks at what it does: its output,
+its exit code, the files it writes. Organise these around an external driver
+and a list of cases, not as one program per test.
+
+.One build, many cases
+[mermaid]
+....
+flowchart LR
+    S[Application source] --> B[Build once]
+    C[List of cases] --> D[Test driver]
+    B --> D
+    D --> R1[Run: case 1]
+    D --> R2[Run: case 2]
+    D --> R3[Run: case n]
+    R1 --> V[Compare with expected result]
+    R2 --> V
+    R3 --> V
+....
+
+* *Build once.* The driver builds the application a single time and runs the
+  resulting executable for every case. Compiling dominates the cost of a test
+  run, so this is the difference between a suite that takes seconds and one
+  that takes minutes.
+* *Cases are data.* Each case names its arguments, its standard input, any
+  files it needs, and the expected output and exit code. Adding a case is
+  adding an entry, not writing a program.
+* *Cover failure as well as success.* The same executable is run on the error
+  paths: bad input, missing files, invalid arguments. A case that expects a
+  particular error message and a non-zero exit code is as ordinary as one that
+  expects success.
+* *The driver owns the environment.* Because it sits outside the program under
+  test, the driver decides how cases run. It can give each case its own process
+  and working directory, run cases in parallel, set up and tear down what a case
+  needs, and apply a timeout. None of that leaks into the application.
+* *An update mode.* The driver accepts `--update` to rewrite expected results,
+  so an intended change in behavior is a reviewed diff.
+
+The driver is a Roc script under `scripts/`, and the cases live under `tests/`.
+The expected-output specification for examples, described in
+xref:examples.adoc#record-expected-output[Record expected output], is one such
+list of cases run by the same driver.
+
+== Skip a broken case, visibly
+
+Sometimes a case is broken for a reason that cannot be fixed today: a compiler
+bug, a dependency that has not been released, a platform limitation. Deleting
+the case loses it, and leaving it failing blocks every pull request. Skip it,
+and make the skip impossible to forget.
+
+* Mark the skip where the case is defined, with a `TODO` note and a link to a
+  GitHub issue that tracks the cause.
++
+[source,roc]
+----
+# TODO: skipped until the compiler handles nested tag unions here.
+# https://github.com/roc-lang/roc/issues/<number>
+{ name: "nested-tags", skip: Skip("compiler bug, roc-lang/roc#<number>"), ... }
+----
+* A skip always carries a reason. The harness rejects a skip with no note.
+* The harness prints every skipped case with its note, and counts skips in the
+  summary. Nobody should have to search the source to learn what is not being
+  tested or why.
+* A skip is temporary. When the linked issue closes, the skip is removed in the
+  pull request that confirms the case passes again.
+
+The same applies outside the harness: an example, benchmark or fuzz target that
+is switched off says why, in a `TODO` with an issue link, at the place it is
+switched off.
+
+== Report progress and results
+
+A harness is read far more often than it is written, usually by someone waiting
+for it or trying to find out what failed. Its output is part of its job.
+
+.What a run looks like
+[source,text]
+----
+Running 20 cases
+ [ 1/20] parse-empty-input ............ PASS      12ms
+ [ 2/20] parse-nested-lists ........... PASS      48ms
+ [ 3/20] render-wide-table ............ FAIL   1_204ms
+ [ 4/20] nested-tags .................. SKIP          compiler bug, roc-lang/roc#1234
+ ...
+ [20/20] rejects-missing-file ......... PASS       9ms
+
+Failed
+  render-wide-table: expected exit code 0, got 1
+    tests/cases/render-wide-table
+
+Skipped
+  nested-tags: compiler bug, roc-lang/roc#1234
+
+Summary: 18 passed, 1 failed, 1 skipped in 10_312ms
+Slowest: render-wide-table 1_204ms, build 6_870ms
+----
+
+* *Show progress as it happens.* Print each step with its position, such as
+  `3/20`, and its result as soon as it finishes. A run that prints nothing for
+  a minute looks the same as a run that has hung.
+* *End with a summary.* Report how many cases passed, failed and were skipped,
+  list each failure with enough detail to act on, and list each skip with its
+  note. The summary is what a reader sees first in a CI log, so it stands alone.
+* *Report timing.* Give the time of each case, the total, and the slowest
+  steps, including the build.
+* *Use one unit for time.* Print every duration in milliseconds, with digit
+  separators and aligned to the right: `12ms`, `1_204ms`, `10_000ms`. With a
+  single unit the eye compares lengths, and a slow case stands out. A column
+  that mixes `850ms`, `1.2s` and `2m` hides exactly the outlier worth seeing.
+* *Use color.* `FAIL` is red, `PASS` green, `SKIP` yellow. Color is an aid and
+  never the only signal: the word is always printed, and color is turned off
+  when output is not a terminal or when `NO_COLOR` is set.
+* *Exit accurately.* Any failure gives a non-zero exit code. Skips alone do
+  not.
+
+== Measure allocations
+
+Memory behavior is a quality of Roc code in its own right, and it is invisible
+unless it is measured. A change that keeps a reference alive a little longer
+can turn an in-place update into a copy of a whole list, on every call. The
+result is still correct, every test still passes, and the package is now
+several times slower for its users.
+
+Most packages and platforms should therefore test on a platform that counts
+allocations, and hold the counts with ratchets.
+
+* Use a test platform whose host records allocations, reallocations and frees
+  while a case runs, and reports the counts to the harness.
+* Record a ceiling for the cases that matter: the hot paths, and the
+  operations users will call in a loop.
+* The harness fails a case whose count exceeds its ceiling, and prints the
+  ceiling beside the measured value.
+* A ceiling is a ratchet. It is compared as "no more than", never for
+  equality, because the compiler floats and a newer one may do better. When a
+  count improves, lower the ceiling in the same pull request so the gain cannot
+  be lost quietly.
+* Raising a ceiling is a reviewed decision with a stated reason, not a way to
+  make a red build green.
+
+Allocation counts are deterministic for a given compiler, which makes them a
+far steadier signal than timing. They run in pull-request CI with everything
+else; wall-clock benchmarks do not.
+
+== Property-based tests with roc-fuzz
+
+Unit tests and integration cases check the inputs someone thought of. Most bugs
+live in the inputs nobody thought of: the empty list, the string that ends in a
+delimiter, the two values that are equal, the length one past a boundary.
+A property-based test closes that gap. You state a rule that must hold for
+every input, and a tool searches for an input that breaks it.
+
+https://github.com/lukewilliamboswell/roc-fuzz[roc-fuzz] is that tool for Roc.
+It is a platform: a fuzz target is a small Roc application that names what
+values to try, what code to run, and what must be true afterwards.
+
+[cols="1,3",options="header"]
+|===
+| Part | Role
+
+| Generator
+| Produces typed Roc values to try: numbers, strings, lists, records, or shapes built from them
+
+| Operation
+| Calls the package code under test
+
+| Property
+| Decides whether the result is acceptable for that input
+|===
+
+=== Why it suits pure Roc code
+
+Most of a Roc package is pure functions, and pure functions are the best case
+for this kind of testing.
+
+* *Nothing to set up.* A pure function needs no files, network, clock or
+  state. The target calls it with a generated value and inspects the result.
+* *Failures reproduce exactly.* The same input always gives the same output, so
+  a saved failing input is a complete bug report. There is no flakiness to rule
+  out.
+* *Properties are easy to state.* Pure code invites rules that hold for every
+  input: decoding an encoded value returns the original; formatting twice
+  changes nothing the second time; a parser returns an error and never crashes;
+  an optimised implementation agrees with a simple one.
+* *The search is guided.* roc-fuzz watches which parts of the compiled program
+  each input reaches and keeps the inputs that reach something new, so it works
+  its way into branches that random values would rarely hit.
+* *Failures arrive small.* roc-fuzz saves a failing input, shows it as a Roc
+  value, replays it, and minimises it to the smallest case that still fails.
+
+The benefit is largest exactly where a package carries the most risk: parsers,
+encoders and decoders, data structures, arithmetic on sizes and indexes, and
+anything that handles text.
+
+=== What a target looks like
+
+[source,roc]
+----
+app [target] {
+	fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/<version>/<hash>.tar.zst",
+	pkg: "../../package/main.roc",
+}
+
+import fuzz.Fuzz
+import pkg.Stack
+
+# After pushing an item, popping must return that item and the original stack.
+test : List(U8) -> Fuzz.Outcome
+test = |initial| {
+	item = 0
+	pushed = Stack.push(initial, item)
+
+	match Stack.pop(pushed) {
+		Ok({ value, rest }) if value == item and rest == initial => Fuzz.keep
+		Ok(_) => crash "pop did not undo push"
+		Err(Empty) => crash "the stack was empty after push"
+	}
+}
+
+target = Fuzz.target_with({
+	name: "stack-push-pop",
+	generator: Fuzz.list(Fuzz.u8, 8),
+	test,
+	show: |initial| Str.inspect(initial),
+})
+----
+
+The target depends on the working tree by relative path, like every other Roc
+application in the repository, and on a roc-fuzz release by URL. It lives
+under `fuzz/`, outside the package root, so it is never bundled.
+
+=== How targets are managed
+
+* Write one operation and one property per target, so that a failure says what
+  went wrong.
+* Add a target when a module has a rule that should hold for all inputs. Every
+  parser and every encode and decode pair should have one.
+* When roc-fuzz finds a bug, fix it and keep the minimised input as an ordinary
+  `expect` test. The unit test stops that bug returning; the target keeps
+  searching for the next one.
+* Commit a small corpus for each target. Pull-request CI builds every target
+  and replays that corpus as its smoke run.
+* Run the real search on a schedule, as described in
+  xref:optional-workflows.adoc#fuzzing[Fuzzing].
+
+A weak property finds nothing, and a passing fuzz run is not a proof. The
+https://lukewilliamboswell.github.io/roc-fuzz/[roc-fuzz manual] covers writing
+generators and properties, running campaigns, and reading a saved failure.
+
+== Formatting
+
+Run `roc fmt --check` in pull-request CI, over every Roc source in the
+repository. It fails the pull request that introduces unformatted code, which is
+the only moment at which fixing it is cheap.
+
+Do not run it in `nightly.yml`. A new nightly can change the formatter, and a
+formatting difference says nothing about whether a release still works. The
+check would raise an alarm that no patch release answers. When a new formatter
+does change the output, the next pull request sees it, and reformatting is a
+small pull request of its own.

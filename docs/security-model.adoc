@@ -1,4 +1,142 @@
-# Automation trust model
+= Automation trust model
+
+This chapter states who may do what in the workflows and shared actions this
+manual describes, and why each boundary is drawn where it is. It is normative
+for the shared actions in roc-automation: a change to their behavior or
+permissions must keep these boundaries and arrive with regression tests for
+them.
+
+Two rules carry most of the weight:
+
+* A job that runs repository or candidate code has no write access.
+* A job with write access runs only reviewed code at a full commit SHA, and
+  handles candidate output as inert files.
+
+== The three workflows
+
+[cols="2,2,3",options="header"]
+|===
+| Workflow and job | Token access | Runs repository code
+
+| `ci.yml` test
+| `contents: read`
+| Yes, including pull-request code
+
+| `release.yml` build and test
+| `contents: read`
+| Yes
+
+| `release.yml` publish
+| `contents: write`, behind a protected environment
+| No: it uploads artifacts produced by earlier jobs
+
+| `release.yml` site deploy
+| `pages: write`, `id-token: write`
+| No: it deploys an artifact built by a read-only job
+
+| `nightly.yml` test
+| `contents: read`
+| Yes: default-branch scripts and the published examples archive
+
+| `nightly.yml` report
+| `issues: write`
+| No
+|===
+
+The publish job accepts only a manual dispatch on the default branch, uses the
+event commit throughout, and consumes the artifacts of its own run. It never
+checks out the repository, so a script changed in the tested commit cannot run
+with release credentials.
+
+The nightly compatibility workflow has no contents, pull-request, actions or
+status write access in any job. It cannot commit, merge, dispatch or publish.
+Its report job receives only job results and run links from the test job, never
+text produced by the examples under test, and edits a single tracking issue that
+it opened itself.
+
+No workflow in the model opens a pull request, approves one, or merges one.
+Every change to the repository is a maintainer's pull request under the
+repository's own rules.
+
+== Compilers
+
+`Blueprint.roc` names the release tag used for repository tooling, and
+`Blueprint.lock` pins the overlay by revision and content digest. Changing the
+tooling compiler is therefore a reviewed source change. Nix verifies the
+compiler archive against the hash the pinned overlay revision records for that
+tag. This is content integrity under a reviewed hash, as in
+xref:security-model.adoc#released-artifact-verification[Released artifact verification];
+it is not provenance for the upstream compiler build.
+
+Bundles listed under `RocPackages` are locked the same way. A bundle a script
+names and the environment does not list is downloaded by Roc, which checks it
+against the content hash in its URL.
+
+The package compiler is the latest published nightly and is not pinned. `actions/setup-roc-nightly` verifies the download against the digest GitHub
+reports for the release asset, and installs it only as `roc-nightly`. A workflow resolves that moving release
+once and passes the tag to every job. Release notes record the version used.
+
+[#the-blueprint-binary]
+== The `blueprint` binary
+
+`actions/setup-blueprint` installs Nix, through an action referenced by full
+commit SHA, and downloads the prebuilt `blueprint` binary from a roc-blueprint
+release. It builds nothing. Before the binary runs, the action checks it against
+a SHA-256 that the caller has reviewed, and fails on a mismatch. Routine CI
+verifies that reviewed hash locally and does not call an attestation service.
+The hash establishes which bytes run; it is not provenance for the roc-blueprint
+build. A release's binary must be used with that release's platform URL in
+`Blueprint.roc`, so a reviewed change moves both together.
+
+The binary evaluates `Blueprint.roc` with a Roc compiler of its own. It uses a
+`roc` on `PATH` only when that is exactly the nightly the binary was built with.
+Otherwise it fetches that nightly through Nix from a roc-overlay revision pinned
+inside the binary, and Nix verifies the archive against the hash that revision
+records. The `ROC` environment variable overrides this selection.
+
+The action needs no token. A cache that requires `id-token: write` widens a test
+job's token and must be an explicit caller choice, never a default.
+
+== Documentation deployment
+
+The build job of `docs.yml` runs repository sources through
+`actions/build-docs` with `contents: read`. The deploy job holds `pages: write`
+and `id-token: write`, runs only for the default branch, checks out nothing, and
+deploys the artifact the build job uploaded. A pull request can build the site
+and cannot deploy it.
+
+== Linker-input release publisher
+
+The pull-request linker-input publisher is a separate controller action for inert,
+fully declared files produced by a caller's unprivileged build jobs. A privileged
+consumer workflow invokes the controller at an exact reviewed SHA. Caller source
+is never checked out, imported, sourced, or executed in its privileged job.
+Publication requires manual dispatch on the caller's live default-branch
+commit. The controller validates the complete regular-file set and content
+identities, verifies the producer's attestations, refuses mismatched existing
+tags/releases, re-downloads and hashes the complete draft asset inventory, and requires immutable-release
+enforcement after publication. See
+xref:linker-input-releases.adoc#trusted-publisher-contract[Trusted publisher contract]
+for the caller contract.
+
+== Released artifact verification
+
+Consumers use reviewed content hashes as the runtime identity of released
+binary inputs. Routine CI verifies downloaded and cached bytes locally before
+extraction or execution. It must not depend on a remote signing, transparency,
+or attestation service when a reviewed hash is available. Provenance
+attestations are verified when a new release or lock is adopted, during an
+explicit audit, or by a downstream verifier. See
+xref:artifact-verification.adoc#separate-admission-from-routine-use[Verify released artifacts] for the complete
+admission and consumption policy.
+
+== The pin-bump controller and the release guard
+
+roc-automation also contains `actions/nightly`, the reusable
+`update-roc-nightly.yml` and `check-config.yml` workflows, and
+`actions/check-release`. They are not part of the model this manual describes.
+This section is the trust reference for that code: read it before changing
+their behavior or permissions.
 
 Consumers pin both reusable workflows to a reviewed full SHA. Each shared workflow
 pins the controller action and checkout action to full SHAs. The controller source
@@ -13,12 +151,14 @@ GitHub reports the signature as verified.
 
 The caller grants a permission ceiling. Actual jobs reduce it:
 
-| Job | Token access |
-| --- | --- |
-| prepare | contents: write; pull-requests: write |
-| validate | contents: read; actions: write; statuses: write |
-| report | contents: read; pull-requests: write |
-| configuration check | contents: read |
+[cols="1,2",options="header"]
+|===
+|Job |Token access
+|prepare |contents: write; pull-requests: write
+|validate |contents: read; actions: write; statuses: write
+|report |contents: read; pull-requests: write
+|configuration check |contents: read
+|===
 
 The controller uses `GH_TOKEN` from `github.token`, `DEFAULT_BRANCH`, and GitHub's
 standard repository/workspace/run environment. Prepare additionally accepts `FORCE`
@@ -48,7 +188,7 @@ By default the action merges only its validated pin-only PR. It never approves P
 bypasses repository rules, publishes releases, or deploys sites. The merge policy
 is described below.
 
-## Merge authority
+=== Merge authority
 
 The boolean `auto_merge` in trusted configuration defaults to true. Consumers may
 set it to false to opt out. The merge job still starts after successful
@@ -83,7 +223,6 @@ explicit event/ref guards and verify it equals the event SHA before doing work. 
 immutable SHA through the API and checks the live default branch before merging.
 If the branch moves, retry the updater on its current commit.
 
-
 Opted-in validation publishes pending commit statuses for the active ruleset's
 required Actions contexts, then publishes success only after the exact dispatched
 runs and all corresponding jobs have succeeded. Missing, skipped, or failed jobs
@@ -92,20 +231,7 @@ runs unattached to an Actions-bot PR. Statuses use the same check names and Acti
 identity; they do not replace or bypass the required checks. The merge job has no
 status-write permission and independently rechecks the run and job evidence.
 
-## Linker-input release publisher
-
-The pull-request linker-input publisher is a separate controller action for inert,
-fully declared files produced by a caller's unprivileged build jobs. A privileged
-consumer workflow invokes the controller at an exact reviewed SHA. Caller source
-is never checked out, imported, sourced, or executed in its privileged job.
-Publication requires manual dispatch on the caller's live default-branch
-commit. The controller validates the complete regular-file set and content
-identities, verifies the producer's attestations, refuses mismatched existing
-tags/releases, re-downloads and hashes the complete draft asset inventory, and requires immutable-release
-enforcement after publication. See `docs/linker-input-releases.md` for the caller
-contract.
-
-## Read-only release policy
+=== Read-only release policy
 
 `actions/check-release` is separate from the nightly controller. It requires an
 explicit dispatch and exact event checkout, reads the compiler pin from that
@@ -124,7 +250,7 @@ The official release metadata is upstream evidence, not verification of compiler
 binary integrity. Consumers retain compiler installation, actual version checks,
 tests, artifact identity, tag uniqueness, and publication permissions.
 
-## Header compiler roots
+=== Header compiler roots
 
 Consumers may set `compiler_roots` in trusted `.github/roc-nightly.json` to select
 exact source-root paths instead of legacy `.roc-version`. This is an edit-authority
@@ -155,19 +281,7 @@ and `simulated-stable-line` permits a clearly labeled simulation only on the exa
 published nightly asset release and emits `compiler-channel: simulated-stable`.
 It never reports stable upstream availability. Remove the mapping after rehearsal.
 
-
-## Released artifact verification
-
-Consumers use reviewed content hashes as the runtime identity of released
-binary inputs. Routine CI verifies downloaded and cached bytes locally before
-extraction or execution. It must not depend on a remote signing, transparency,
-or attestation service when a reviewed hash is available. Provenance
-attestations are verified when a new release or lock is adopted, during an
-explicit audit, or by a downstream verifier. See the
-[artifact verification guide](artifact-verification.md) for the complete
-admission and consumption policy.
-
-## Manifest compiler authority
+=== Manifest compiler authority
 
 A consumer may instead set `compiler_manifest` to an object with a repository-relative
 JSON `path` and a top-level string `key`. This mode is mutually exclusive with
@@ -185,54 +299,3 @@ embedding a compiler constraint in a reusable platform's header. Consumer workfl
 must install the selected compiler and verify its actual version. A moving latest
 release must be resolved once, not independently by each matrix job.
 
-## Target workflows
-
-The [target workflows](ideal-workflows.md) replace the pin-bump controller in
-migrated repositories. This section states their intended trust boundaries. It
-is a design constraint for the shared actions and reusable workflows that
-implement them; none of that code exists yet, and each addition must arrive with
-regression tests for the boundaries below.
-
-| Workflow and job | Token access | Runs repository code |
-| --- | --- | --- |
-| `ci.yml` test | contents: read | Yes, including pull-request code |
-| `release.yml` build and test | contents: read | Yes |
-| `release.yml` publish | contents: write, behind a protected environment | No: it uploads artifacts produced by earlier jobs |
-| `nightly.yml` test | contents: read | Yes: default-branch scripts and the published examples archive |
-| `nightly.yml` report | issues: write | No |
-| `update-blueprint.yml` update | contents: write; pull-requests: write | Default-branch `Blueprint.roc` only |
-
-The nightly compatibility workflow has no contents, pull-request, actions or
-status write access in any job. It cannot commit, merge, dispatch or publish, so
-it needs none of the candidate, lease, signature and ruleset checks that the
-pin-bump controller performs. Its report job receives only job results and run
-links from the test job, never text produced by the examples under test, and
-edits a single tracking issue.
-
-The lock updater runs only for schedule or manual events on the default branch
-and rejects tags. It evaluates the default branch's `Blueprint.roc`, which is
-reviewed source, and never a pull-request version. It creates one commit through
-GitHub's commit API, verifies that GitHub reports the signature as verified, and
-refuses a result that changes any file other than `Blueprint.lock`. It does not
-approve or merge its pull request. Token scopes cannot restrict contents write to
-that one file, so the lock-only restriction is controller policy backed by
-required review.
-
-`Blueprint.roc` names the release tag used for repository tooling, and
-`Blueprint.lock` pins the Roc overlay by revision and content digest. Changing
-the tooling compiler is therefore a reviewed source change in the repository,
-not something the lock updater can do. Nix verifies the compiler archive against
-the hash the pinned overlay revision records for that tag. This is content integrity under a reviewed hash, as described in
-[released artifact verification](#released-artifact-verification); it is not
-provenance for the upstream compiler build.
-
-The package compiler in these workflows is the latest published nightly and is
-not pinned. The `setup-roc` revision a workflow uses must verify the download
-against the digest GitHub reports for the release asset; revisions without that
-check are not acceptable here. Release notes record the version used. A workflow must
-resolve that moving release once and pass the tag to every job.
-
-`actions/setup-blueprint` installs Nix and the `blueprint` CLI at a full commit
-SHA supplied by the caller. It needs no token. A cache that requires
-`id-token: write` widens a test job's token and must be an explicit caller
-choice, never a default.

@@ -1,0 +1,5 @@
+= Release notes
+
+Each version of this manual has its notes in `docs/releases/`, newest first.
+
+include::releases/1.adoc[leveloffset=+1]

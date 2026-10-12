@@ -1,0 +1,117 @@
+= Optional workflows
+
+Some repositories need more than the three core workflows. Each addition below
+has a fixed name and purpose, so that the same file means the same thing
+everywhere. All of them follow the rules in
+xref:workflows.adoc#the-three-workflows[The three workflows]: full-SHA
+references, `permissions: {}` at the top, and no repository code in a job that
+can write.
+
+[cols="2,2,3,2",options="header"]
+|===
+| Workflow | Trigger | Purpose | Token access
+
+| `docs.yml`
+| Push to the default branch; pull request
+| Build the site and manual; deploy to GitHub Pages from the default branch.
+| Build `contents: read`; deploy `pages: write`, `id-token: write`
+
+| `fuzz.yml`
+| Schedule; manual dispatch
+| Run fuzz targets for a bounded time and keep reproducers.
+| `contents: read`
+
+| `bench.yml`
+| Schedule; manual dispatch
+| Measure performance against a recorded baseline.
+| `contents: read`
+
+| `codeql.yml`, `scorecard.yml`
+| Push, pull request, schedule
+| Static analysis and repository-practice scoring.
+| As each tool documents
+
+| `link-inputs.yml`
+| Pull request touching producer inputs; manual dispatch
+| Build, test and attest native linker inputs.
+| `contents: read`, `attestations: write`, `id-token: write`
+
+| `publish-link-inputs.yml`
+| Manual dispatch from the default branch
+| Publish an attested candidate and commit its lock.
+| See xref:linker-input-releases.adoc#trusted-publisher-contract[Trusted publisher contract]
+|===
+
+== Documentation site
+
+`docs.yml` has two jobs.
+
+The build job checks out the repository, builds the site, and uploads it as a
+Pages artifact. A repository with an AsciiDoc manual uses
+xref:actions.adoc#build-docs[`actions/build-docs`], which also produces the PDF.
+A pull request runs this job, so a broken manual fails review, and the artifact
+can be downloaded to preview the change.
+
+The deploy job runs only for the default branch. It has `pages: write` and
+`id-token: write`, uses the `github-pages` environment, checks out nothing, and
+deploys the artifact the build job produced.
+
+=== What the site points at
+
+A visitor to the site is almost always a user, and a user has the latest
+release. The site therefore leads with the latest release, not with the default
+branch:
+
+* its primary API reference is the `roc docs` output generated for the latest
+  release, restored from that release's documentation archive;
+* its examples link is the examples archive attached to the latest release; and
+* its install snippet names the latest release's bundle URL.
+
+"Latest" excludes prereleases; see
+xref:workflows.adoc#release-candidates[Release candidates].
+
+The site may also carry the default branch's documentation, under a path and a
+label that mark it as unreleased, and the documentation of earlier releases,
+each restored from its own archive. Nothing rendered is committed: the site is
+assembled at build time from the working tree and from release assets.
+
+A new release changes what "latest" means, so `release.yml` rebuilds and
+deploys the site after it publishes, in a job that holds only the Pages
+permissions and deploys an artifact built by a read-only job.
+
+== Fuzzing
+
+Fuzz targets are written with roc-fuzz; see
+xref:testing.adoc#property-based-tests-with-roc-fuzz[Property-based tests with roc-fuzz]
+for why and how.
+
+`fuzz.yml` runs each target for a fixed duration on a schedule. It restores and
+saves the corpus through the Actions cache, uploads any reproducer as a workflow
+artifact, and fails when a target fails. Fuzz targets are Roc applications that
+depend on the working tree, so the latest nightly builds them.
+
+`ci.yml` gives every target a smoke run: it builds the target and replays the
+committed corpus, which is fast and deterministic. That keeps the targets
+building between scheduled runs. The scheduled run is the only place new inputs
+are searched for, and the only place a target is built with `--opt=speed`.
+
+== Benchmarks
+
+`bench.yml` measures on a schedule and on request, never on a pull request.
+`ci.yml` gives every benchmark a smoke run, one small iteration built with
+`--opt=dev`, so that a benchmark cannot fall behind the API it measures.
+
+A measurement that depends on the compiler, such as an allocation count, is
+compared as a ratchet: the build fails when the value is worse than the recorded
+ceiling, and a maintainer lowers the ceiling when it improves. It is never
+compared for equality, because the compiler floats and an exact value would fail
+on a compiler that did better.
+
+== Linker inputs
+
+Platforms that consume prebuilt native inputs have a producer workflow and a
+publisher workflow. These are the only route by which native build inputs are
+released. xref:platforms.adoc#maintain-a-platform[Maintain a platform] explains
+when a platform needs them, and
+xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request]
+specifies both.

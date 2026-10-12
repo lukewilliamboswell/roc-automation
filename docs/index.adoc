@@ -1,0 +1,83 @@
+= The roc-automation manual
+:doctype: book
+:author: The roc-automation contributors
+:revnumber: {docs-version}
+:revremark: An opinionated approach for managing Roc packages and platforms
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectanchors:
+:icons: font
+:source-highlighter: rouge
+
+[.lead]
+This manual describes an opinionated approach for managing a Roc package or
+platform repository: how
+its tooling is pinned, what its pull-request, release and nightly workflows
+prove, and what every release contains. roc-automation holds the shared actions
+that implement the parts every repository needs identically.
+
+ifdef::backend-html5[]
+link:roc-automation.pdf[Download the standalone PDF manual] ·
+https://github.com/lukewilliamboswell/roc-automation[View roc-automation on GitHub].
+endif::[]
+
+.How to use this manual
+****
+New to the model:: Start with <<how-a-roc-repository-is-maintained>> for the
+compilers involved, the three workflows, and what the model leaves out.
+Package maintainer:: Read <<pin-the-tooling-environment>>,
+<<lay-out-the-repository>>, <<examples-and-the-examples-archive>>,
+<<test-in-pull-request-ci>> and <<the-three-workflows>> in order.
+Platform maintainer:: Read the same chapters, then
+<<maintain-a-platform>> for host bindings, target matrices and native build
+inputs, and <<publish-linker-inputs-from-a-pull-request>>.
+Routine upkeep:: <<manual-maintenance-tasks>> lists the changes that only a
+maintainer makes, and how to make each one.
+Adopting the model:: Follow <<adopt-the-model-in-a-repository>> and its
+acceptance list.
+Reviewing trust boundaries:: Read <<automation-trust-model>> and
+<<verify-released-artifacts>>.
+Writing a project manual:: <<write-project-documentation>> covers the
+conventions this manual itself follows.
+Changing roc-automation:: <<contribute-to-roc-automation>> covers the manual
+and the shared actions.
+****
+
+include::overview.adoc[leveloffset=+1]
+
+include::environment.adoc[leveloffset=+1]
+
+include::repository.adoc[leveloffset=+1]
+
+include::examples.adoc[leveloffset=+1]
+
+include::testing.adoc[leveloffset=+1]
+
+include::workflows.adoc[leveloffset=+1]
+
+include::optional-workflows.adoc[leveloffset=+1]
+
+include::platforms.adoc[leveloffset=+1]
+
+include::linker-input-releases.adoc[leveloffset=+1]
+
+include::maintenance.adoc[leveloffset=+1]
+
+include::settings.adoc[leveloffset=+1]
+
+include::adopting.adoc[leveloffset=+1]
+
+include::actions.adoc[leveloffset=+1]
+
+include::artifact-verification.adoc[leveloffset=+1]
+
+include::security-model.adoc[leveloffset=+1]
+
+include::documentation.adoc[leveloffset=+1]
+
+include::project-practices.adoc[leveloffset=+1]
+
+include::contributing.adoc[leveloffset=+1]
+
+include::releases.adoc[leveloffset=+1]

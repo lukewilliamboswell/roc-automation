@@ -1,6 +1,6 @@
 # Automation changes
 
-Read docs/security-model.md before changing controller behavior or permissions.
+Read docs/security-model.adoc and docs/contributing.adoc before changing controller behavior or permissions.
 Keep candidate code out of privileged controller jobs. All shared action/workflow
 references must use full SHAs. Add meaningful regression tests for security and
 state-transition changes. Do not weaken validation or claim badge compliance from

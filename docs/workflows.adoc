@@ -1,0 +1,331 @@
+= The three workflows
+
+Every package and platform repository has the same three workflows. Each answers
+one question, and none of them changes the repository.
+
+[cols="1,2,3,2",options="header"]
+|===
+| Workflow | Trigger | What it proves | Token access
+
+| `ci.yml`
+| Pull request; push to the default branch
+| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly.
+| `contents: read`
+
+| `release.yml`
+| Manual dispatch; pull request as a dry run
+| The exact bundle, examples archive and documentation proposed for publication work.
+| `contents: read`. The publish job alone has `contents: write`, behind a protected environment.
+
+| `nightly.yml`
+| Daily schedule; manual dispatch
+| The latest published release and its examples archive work with the latest nightly.
+| Test jobs `contents: read`; the report job `issues: write`
+|===
+
+Rules that hold in all three:
+
+* Every `uses:` reference is a full commit SHA.
+* Top-level `permissions` is `{}`, and each job states what it needs.
+* Checkout sets `persist-credentials: false`.
+* A job that runs repository code has no write access. A job with write access
+  runs no repository code.
+* The nightly tag is resolved once, in the first job, and passed to every other
+  job as the `tag` input of `actions/setup-roc-nightly`. Matrix jobs never each resolve "latest" for themselves, or one run could
+  test several compilers.
+* Each job calls a `blueprint run <task>` and holds no logic of its own.
+
+Workflows beyond these three, such as a documentation site or scheduled fuzzing,
+are described in
+xref:optional-workflows.adoc#optional-workflows[Optional workflows].
+
+== Continuous integration
+
+`ci.yml` tests the working tree.
+
+. Set up Blueprint and install the latest nightly, as in
+  xref:environment.adoc#use-the-environment-in-ci[Use the environment in CI].
+. Run `blueprint run check`.
+
+xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
+lists what the `check` task covers.
+
+A repository that supports several targets runs this as a matrix, one job per
+runner, and ends with a single aggregate job that requires every matrix job to
+have succeeded. The aggregate job's name is the required status check, so the
+ruleset does not need editing when the matrix changes.
+
+A platform adds the host-bindings check described in
+xref:platforms.adoc#host-bindings[Host bindings]. It runs here and nowhere else.
+
+A pull request can fail because a new nightly arrived, with no fault in the
+change itself. Compare with the latest `nightly.yml` run and with the default
+branch before treating a failure as a regression in the pull request.
+
+== Release
+
+`release.yml` builds what a release would contain, tests those exact bytes, and
+publishes them once. A maintainer dispatches it from the default branch with a
+version. A pull request runs the same build and tests as a dry run and publishes
+nothing.
+
+=== What a release contains
+
+One immutable GitHub release per version holds:
+
+[cols="2,3",options="header"]
+|===
+| Asset | Purpose
+
+| The bundle, under the filename `roc bundle` emits
+| What users depend on. The filename is its content hash; never rename it.
+
+| `<name>-examples-<version>.zip`
+| Examples pinned to this release's bundle, with their expected output.
+
+| `<name>-docs-<version>.zip`
+| The generated API reference and site for this version, so the documentation of any release can be restored.
+
+| `<name>-<version>.pdf`
+| The manual, where the repository has one.
+
+| Release notes
+| An authored account of what changed, with the real bundle URLs and the compiler versions used.
+
+| SBOM and build-provenance attestations
+| Where the repository produces them.
+|===
+
+Managing releases carefully is a large part of what makes a package dependable.
+A user meets a release through three things: its version number, its notes, and
+the URL they paste into a header. Each is handled deliberately.
+
+=== Choose the version with `roc bump`
+
+A version number is a promise about compatibility, and `roc bump` checks the
+promise against the code. It compares the public API of the package with a
+previous release and reports the semantic-version bump the difference requires:
+patch, minor or major.
+
+[source,sh]
+----
+# what bump does this change need, and what is the next version?
+roc-nightly bump --old <previous release bundle URL> package/main.roc
+
+# in release.yml: fail unless the chosen version bumps far enough
+roc-nightly bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
+----
+
+* Run it before choosing a version, so the number follows from the change and
+  not from habit.
+* `release.yml` runs it with `--expect` in its validate step, against the
+  latest release, and stops when the requested version understates the change.
+  A breaking change can then never go out as a patch.
+* A repository with several packages runs it once per package root.
+* It compares only the modules the package header exposes. A change in behavior
+  behind an unchanged signature is still the maintainer's call, and belongs in
+  the notes.
+
+A package version is independent of any compiler version. A changed package is
+always a new version. Nothing is ever republished under an existing version.
+
+=== Write the release notes
+
+Each release has its notes in `docs/releases/<version>.adoc`, for example
+`docs/releases/0.12.0.adoc`. They are committed in a pull request before the
+release is dispatched, and the workflow refuses to release a version whose
+notes file is missing.
+A top-level `docs/releases.adoc` chapter includes each file, so the notes of
+every release are part of the manual; see
+xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
+
+The notes are an authored narrative, written for a user deciding whether and
+how to upgrade. They are not a list of commits or merged pull requests.
+
+* Open with what this release is for, in a sentence or two.
+* Describe what changed in terms of what a user can now do, or must now do
+  differently.
+* For a breaking change, show the code before and after.
+* Say what was fixed, naming the visible symptom.
+* Thank contributors, and link issues where a reader may want the background.
+
+.docs/releases/0.12.0.adoc
+[source,asciidoc]
+------
+= roc-example 0.12.0
+
+This release adds streaming decoders and removes the deprecated `Table.render`.
+
+== Use this release
+
+[source,roc]
+----
+app [main!] {
+    cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+    example: "{package-url}",
+}
+----
+
+== Streaming decoders
+
+...
+------
+
+The bundle URL cannot be written by hand, because it contains the content hash
+of a bundle that does not exist until the release builds it. The notes
+therefore use a placeholder, and the workflow fills it in:
+
+* `+{package-url}+` stands for the released bundle's URL. A release with several
+  bundles has one placeholder for each, named after the package, such as
+  `+{tzdb-url}+`.
+* After building the bundles, `release.yml` renders the notes with each
+  placeholder set to the real URL, tag and hash. A placeholder that is left
+  unresolved, or one the notes never use, fails the release.
+* The rendered notes become the body of the GitHub release, followed by the
+  output of `roc-nightly version` and `roc-stable version`. That record is the
+  statement of what the release was built and tested with; no header pin makes
+  it.
+* A dry run renders the notes too, so a mistake in them fails on the pull
+  request.
+
+The committed file keeps its placeholders. It is never rewritten after the
+release, and no follow-up pull request is needed.
+
+=== The order of a release
+
+.A release tests exact bytes, then publishes once
+[mermaid]
+....
+flowchart TD
+    C[Tested commit on the default branch] --> B[Build bundle, examples archive, docs archive, manual]
+    B --> T[Test those exact files against a loopback bundle]
+    T -->|any failure| X[Stop: nothing is published]
+    T -->|pass| D[Create draft release at the tested commit]
+    D --> U[Upload every asset]
+    U --> V[Download each asset and verify name, size and hash]
+    V --> P[Publish the release]
+....
+
+. *Validate.* Require the default branch. Reject a version whose tag or release
+  already exists. Require `docs/releases/<version>.adoc`. Check the version
+  with `roc bump --expect`. Record the event commit and use that SHA in every
+  later job.
+. *Check.* Run `blueprint run check` on that commit.
+. *Build.* Build the bundle with the latest nightly, then the examples archive
+  with the real release URL, the documentation archive, and the manual.
+  Render the release notes with the real bundle URLs.
+  Upload them as workflow artifacts.
+. *Test.* On every supported target, download those artifacts and test them as
+  described in
+  xref:examples.adoc#build-and-test-the-exact-archive[Build and test the exact archive].
+. *Publish.* A separate job, with `contents: write` and a protected
+  environment, downloads the tested artifacts. It checks out nothing and runs no
+  repository script. It creates a draft release at the tested commit, uploads
+  every asset, downloads each one back and verifies it against the tested
+  artifact, then publishes.
+. *Update the site.* For a final release, rebuild the documentation site so
+  that it points at the new release, and deploy it; see
+  xref:optional-workflows.adoc#what-the-site-points-at[What the site points at].
+  A release candidate does not change the site.
+
+The publish job consumes the artifacts of its own run. It never rebuilds, and
+never resolves a moving branch.
+
+Enable immutable releases in the repository, so that a published release cannot
+gain, lose or replace an asset. Hash checks remain necessary even with immutable
+hosting.
+
+=== Several bundles in one release
+
+A repository that publishes several packages or platforms builds one bundle and
+one examples archive for each, in the same run, under the same version. Each
+archive names only its own bundle, plus any sibling bundle its examples need.
+The release notes list every bundle URL by name. All of them are tested before
+any of them is published.
+
+[#release-candidates]
+=== Release candidates
+
+A release candidate, such as `0.12.0-rc1`, is a prerelease published for users
+to test before the maintainers commit to the release. It answers the question
+the workflows cannot: does this version work in real projects, and is the API
+right?
+
+* Publish a candidate through `release.yml` with a prerelease version. It
+  follows every step above and holds the same assets, so what users test is
+  built exactly as the final release will be.
+* Mark it as a prerelease on GitHub. It is never the repository's latest
+  release.
+* Announce it where users will see it, and say what feedback is wanted and for
+  how long.
+* Fix what the feedback finds on the default branch, and publish `-rc2`. A
+  candidate is immutable like any other release and is never amended.
+* When a candidate has stood without change, release the final version from
+  the same commit. Its bundle is a new artifact under a new tag, and it goes
+  through the release workflow in full.
+
+Everything that speaks of "the latest release" means the latest release that is
+not a prerelease. `nightly.yml` tests that one, and the documentation site
+links to that one. A candidate is found from the releases page and from its
+announcement.
+
+=== Recover an interrupted publication
+
+If publication stops, inspect exactly what exists before retrying.
+
+* An unfinished draft can be resumed: upload the missing assets from the same
+  run's artifacts, verify the complete inventory, then publish.
+* A published release that is incomplete cannot be repaired, because it is
+  immutable. Publish a new version.
+* Changed bytes are always a new version.
+
+Do not rebuild from a moving branch, replace an asset, or rerun a job that
+expects no release to exist.
+
+== Nightly compatibility
+
+`nightly.yml` answers one question each day: does the release users download
+today still work with today's compiler? A failure means the package or platform
+needs a patch release.
+
+.The inputs to one nightly run and its two outcomes
+[mermaid]
+....
+flowchart LR
+    N[Latest nightly] --> T[Test job]
+    R[Latest release bundle] --> T
+    A[That release's examples archive] --> T
+    T -->|pass| G[Close the tracking issue]
+    T -->|fail| I[Open or update one tracking issue]
+....
+
+* Resolve the latest nightly tag and the latest release once. Accept both as
+  optional dispatch inputs, so a maintainer can re-run a past combination.
+* Skip prereleases when choosing the latest release.
+* Download that release's examples archive and run it unchanged, comparing with
+  the expected output inside the archive. Do not rebind it to the working tree,
+  and do not test the default branch's examples here: new APIs on the default
+  branch are not evidence about a release.
+* Use the default branch's scripts, on `roc-stable`, to drive the test.
+* Run on every target the release supports.
+* A platform's host bindings are not checked here. A released host is fixed;
+  what matters is whether its applications still build and run.
+
+The archive is immutable, so a failure is never a reason to change it. The fix
+is a patch release that works with the new compiler.
+
+=== Reporting
+
+A separate job reports the result. It checks out nothing, runs no repository or
+archive code, and receives only job results and the run link, never text
+produced by the examples under test. It keeps one tracking issue:
+
+* opened on the first failure;
+* commented on by each later failure;
+* closed by the next pass.
+
+It only ever touches an issue it opened itself. A run in which setup failed
+before any example ran is reported as a setup failure and does not open the
+compatibility issue. A repository with no release yet passes with a notice.
+
+This workflow never opens a pull request, commits, merges, or publishes.

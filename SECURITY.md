@@ -14,4 +14,4 @@ in place. Release notes will identify assigned vulnerability identifiers where
 applicable. A response within 14 days is the project's response target; evidence
 of actual response times must be assessed during Best Practices review.
 
-See [the trust model](docs/security-model.md) for the automation's boundaries.
+See [the trust model](docs/security-model.adoc) for the automation's boundaries.

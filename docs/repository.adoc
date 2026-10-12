@@ -1,0 +1,180 @@
+= Lay out the repository
+
+A consistent layout lets the same checks, scripts and workflows apply to every
+repository, and lets a maintainer who knows one repository find their way in
+another.
+
+== The layout
+
+[source,text]
+----
+Blueprint.roc        development environment and named tasks
+Blueprint.lock       pinned inputs
+package/main.roc     a package; or platform/main.roc for a platform
+examples/            applications that depend on the working tree
+scripts/*.roc        executable automation entry points
+scripts/src/*.roc    modules shared by those scripts
+tests/               package-specific cases and expected output
+docs/*.adoc          the manual, where the repository has one
+----
+
+A repository that publishes several packages or platforms gives each its own
+root directory, such as `package/` and `tzdb/package/`, or `platform-web/` and
+`platform-gui/`. Each root is bundled, versioned and released together with the
+others in one release; see
+xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release].
+
+== Where a compiler pin belongs
+
+The `roc: "..."` header field appears in exactly one place: the scripts under
+`scripts/`, where it names the same release as `roc-stable`. Nothing else is
+pinned. The package, a platform, the examples and every other Roc application
+carry no `roc` field, and the repository has no `.roc-version` file and no
+`.github/roc-nightly.json`.
+
+The rule for the package applies to platforms as much as packages. `roc check` exits with an error
+on a warning, and a dependency whose header pins a different nightly produces a
+version-mismatch warning. A pinned platform therefore fails every application
+that floats, and a package cannot float until every platform its examples use
+has dropped the field.
+
+The check script enforces both halves. It fails when a `roc` field or
+`.roc-version` appears outside `scripts/`, and it fails when a script's pin
+differs from the tooling compiler; see
+xref:repository.adoc#keep-the-script-pins-in-step[Keep the script pins in step].
+
+== Roc applications in the repository
+
+Every Roc application in the repository depends on the working tree by relative
+path. Pull-request CI checks them with the latest nightly compiler. That covers
+`examples/` and also anything outside it: fuzz targets, benchmarks,
+documentation examples, test cases, and a site generator.
+
+.In the repository: the package is a relative path
+[source,roc]
+----
+app [main!] {
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+	ansi: "../package/main.roc",
+}
+----
+
+The package is a relative path. Every other dependency, including the platform,
+is an immutable release URL with its content hash.
+
+These are not what the nightly workflow tests. They change with every pull
+request and may use APIs that no release has. The nightly workflow runs the
+examples archive attached to the latest release. In the archive the same example
+names that release's exact bundle URL, and nothing else differs:
+
+.In a release's examples archive: the package is that release's bundle
+[source,roc]
+----
+app [main!] {
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+	ansi: "https://github.com/<owner>/roc-ansi/releases/download/<tag>/<hash>.tar.zst",
+}
+----
+
+The release workflow writes the second form when it builds the archive; the
+repository only ever contains the first. See
+xref:examples.adoc#the-examples-archive[The examples archive].
+
+The single exception is `scripts/`. A script never depends on the repository's
+own package by relative path, because a script must keep working while the
+package is broken.
+
+An example that needs more than one file is a directory: `examples/report/`
+holds `main.roc`, its sibling modules and any data files it reads. A local
+helper package that several examples share sits beside them and is referenced by
+relative path.
+
+== Write automation as Roc scripts
+
+Each entry point under `scripts/` is an executable Roc application:
+
+[source,roc]
+----
+#!/usr/bin/env roc-stable
+app [main!] {
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+	roc: "nightly-2026-10-09-258ab27",
+}
+----
+
+* Start with the `roc-stable` shebang and commit the file as executable.
+* Set the `roc` header field to the release that `Blueprint.roc` names as
+  `roc-stable`.
+* Reference every dependency by immutable release URL with its content hash,
+  and list the same URLs under `RocPackages` in `Blueprint.roc`.
+* Run package work with the compiler named by the `ROC_NIGHTLY` environment
+  variable, falling back to `roc`. CI sets the variable to `roc-nightly`, so a
+  CI job can never pick up some other `roc`; a contributor leaves it unset and
+  uses their own `roc`. Never use `roc-stable` to check, test or bundle the
+  package.
+* Put pure logic in `scripts/src/` modules with `expect` tests, and run those
+  tests from the check script.
+* Pass arguments after `--`, for example `scripts/test_goldens.roc -- --update`.
+* Declare every entry point as a `Task` in `Blueprint.roc`.
+
+Automation is not written in Python, bash or PowerShell. A script that exists
+only to wrap one command is deleted in favour of a `Task` that runs the command.
+
+=== Keep the script pins in step
+
+A script is written for one compiler and one set of dependencies. Someone who
+runs it with a newer `roc`, instead of through `blueprint`, may find it broken
+for reasons that have nothing to do with their change. The `roc` field makes
+the compiler say so: it warns that the script targets a different release,
+which points at the cause before anyone debugs the script.
+
+The field is useful only while it is true, so one cheap check keeps it true.
+The check script reads the tag from the `Command("roc-stable", ...)` setting in
+`Blueprint.roc` and requires every file under `scripts/` that has an `app`
+header to carry exactly that tag in its `roc` field. It reads text and runs no
+compiler, so it costs nothing in pull-request CI.
+
+`Blueprint.roc` remains the authority. The header fields are copies that the
+check holds to it, and
+xref:maintenance.adoc#change-the-tooling-compiler[Change the tooling compiler]
+changes them together.
+
+=== The check script
+
+One script, conventionally `scripts/check_all.roc` behind the `check` task, runs
+everything a pull request must pass: the static checks in this chapter,
+`roc fmt --check`, the script tests, `roc test` on the package root, every
+example and integration case, a smoke run of each benchmark and fuzz target,
+and a dry-run build of what a release would publish.
+xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
+describes each.
+
+== What is committed
+
+[cols="1,2",options="header"]
+|===
+| Committed | Not committed
+
+| Source, `Blueprint.roc`, `Blueprint.lock`
+| `.blueprint/` and anything else `blueprint` generates
+
+| Expected output and golden files under `tests/`
+| Build output, bundles, archives
+
+| Generated data the package ships, with the recipe and inputs that produced it
+| Rendered API documentation and the built site
+
+| A platform's generated host bindings
+| Native binaries, which are released independently and consumed through a content lock; see xref:platforms.adoc#no-binary-blobs-in-the-repository[No binary blobs in the repository]
+|===
+
+Generated data that is committed has a script that regenerates it and a check
+that fails when the committed copy is stale. Rendered documentation is published
+as a release asset and a Pages deployment, never committed.
+
+== What goes in a bundle
+
+A bundle holds what a user of the package needs and nothing else: the package's
+Roc modules and any data files they import. Fuzz targets, benchmarks and test
+modules stay outside the package root, so that `roc bundle` on the root produces
+the release artifact with no exclusion list.

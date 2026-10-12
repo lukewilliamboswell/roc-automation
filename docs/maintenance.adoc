@@ -1,0 +1,95 @@
+= Manual maintenance tasks
+
+The package compiler moves by itself, every day. Nothing else does. The tasks in
+this chapter are the only way the repository's tooling changes, and each is a
+pull request a maintainer opens and reviews.
+
+No workflow performs them on a schedule. A pull request opened by a workflow
+with the repository's `GITHUB_TOKEN` does not start CI, so an automated update
+would arrive untested and wait for a maintainer anyway. More to the point, each
+of these changes decides which code runs in CI, which is a decision to review
+and not a chore to automate.
+
+[cols="2,2,3",options="header"]
+|===
+| Task | Files changed | When
+
+| Update the lock
+| `Blueprint.lock`
+| To take newer tool versions, or to make a newer nightly selectable as `roc-stable`
+
+| Change the tooling compiler
+| `Blueprint.roc`, the `roc` field of every script, sometimes `Blueprint.lock`
+| When scripts need a newer compiler, or periodically to stay close to current
+
+| Upgrade Blueprint
+| `Blueprint.roc` header, the `blueprint` version and checksums
+| For a new roc-blueprint release
+
+| Update script dependencies
+| Script headers, `RocPackages` in `Blueprint.roc`, `Blueprint.lock`
+| For a new release of a platform or package the scripts use
+
+| Regenerate host bindings
+| A platform's committed bindings
+| When `ci.yml` reports that the latest nightly generates different bindings
+|===
+
+== Update the lock
+
+. Run `blueprint update`, or `blueprint update <input>` to move one input and
+  keep every other pin.
+. Run `blueprint run check`.
+. Open a pull request whose only changed file is `Blueprint.lock`.
+. Merge after `ci.yml` passes.
+
+A lock update moves the overlay revision, the package source and tool versions.
+It never changes which release is `roc-stable`, because that tag is written in
+`Blueprint.roc`. It does not change the `blueprint` binary or the platform URL.
+
+Where the repository fingerprints native build inputs, a lock change can make
+those inputs stale. `ci.yml` reports that, and the fix is a new linker-input
+release in the same pull request; see
+xref:platforms.adoc#choose-the-correct-maintainer-path[Choose the correct maintainer path].
+
+== Change the tooling compiler
+
+. Choose a published nightly release.
+. Change the tag in the `Command("roc-stable", ...)` setting of `Blueprint.roc`.
+. Change the `roc` field in every script header to the same tag. The check
+  script fails until they all match.
+. If the locked overlay revision predates that release, run
+  `blueprint update roc` and commit `Blueprint.lock` in the same pull request.
+. Fix any script the new compiler breaks in that pull request, so the tag and
+  the scripts move together.
+. Merge after `ci.yml` passes.
+
+This is a maintainer's decision for each repository. Repositories need not
+agree.
+
+== Upgrade Blueprint
+
+A release's `blueprint` binary must be used with that release's platform URL.
+Change both in one pull request:
+
+. Choose a roc-blueprint release.
+. Change the platform URL in the `Blueprint.roc` header.
+. Change the `blueprint` version and SHA-256 values the workflows pass to
+  `actions/setup-blueprint`, taken from that release's `blueprint.sha256`.
+. Run `blueprint update` if the new release refuses the existing lock.
+. Merge after `ci.yml` passes.
+
+Contributors then download the binary from the same release.
+
+== Update script dependencies
+
+. Change the release URL in each script header that uses the dependency.
+. Change the same URL under `RocPackages` in `Blueprint.roc`, and add any new
+  dependencies of that dependency. `roc-stable deps scripts/check_all.roc`
+  lists them.
+. Run `blueprint update` and commit `Blueprint.lock`.
+. Merge after `ci.yml` passes.
+
+== Regenerate host bindings
+
+See xref:platforms.adoc#upgrade-the-bindings[Upgrade the bindings].

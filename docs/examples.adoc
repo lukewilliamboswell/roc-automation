@@ -1,0 +1,138 @@
+= Examples and the examples archive
+
+Examples are realistic demonstrations of the package for the people who will
+use it. They are where most new visitors land, and for many they are the first
+Roc code written against the package that they read. This chapter covers what
+an example is for, and how the same example is kept correct in two places: the
+repository, and each release.
+
+== What an example is for
+
+The audience of an example is a user of the package who is probably not
+familiar with it. It is not a contributor.
+
+An example is not a test, a benchmark or a fixture. Those have their own
+directories and their own standards. Code that exists to cover an edge case, to
+measure something, or to feed another tool does not belong under `examples/`,
+however convenient it is to put it there.
+
+Manage examples with the care their position deserves:
+
+* *Realistic.* Each one solves a problem a user would recognise, with input and
+  output worth looking at.
+* *Focused.* Each one demonstrates one thing. Several short examples serve a
+  reader better than one that shows everything.
+* *Documented.* Each one carries ample comments that walk the reader through
+  the code: what it is about to do, why it is done that way, and what to change
+  to adapt it. Write them for someone reading top to bottom with no other
+  context.
+* *High quality.* An example is copied into real projects. It should be code
+  the maintainers would be content to see copied.
+* *Few.* Every example is a promise to keep it working. Add one when it teaches
+  something the others do not.
+
+== Why examples live in two places
+
+The repository and its releases are rarely in step. Pull requests land
+continuously; releases happen now and then. At most commits the package in the
+repository is ahead of the last release.
+
+An example in the repository must work with the package at that same commit, so
+it may use an API that no release has yet. A user reading it beside the latest
+release could copy code that does not compile for them. An example published
+with a release has the opposite property: it works with that release and will
+never change.
+
+One set of files cannot be both. The repository therefore keeps examples that
+follow the working tree, and each release publishes a frozen copy of them that
+names that release.
+
+== Repository examples test the working tree
+
+Every example names the package by relative path, as described in
+xref:repository.adoc#roc-applications-in-the-repository[Roc applications in the repository].
+A pull request that changes the package and breaks an example fails on that pull
+request.
+
+Committed examples are never rewritten after a release. No release follow-up
+pull request exists, and the default branch never names its own release URL.
+
+== Record expected output
+
+An example that only compiles proves little. Record what each example prints,
+and compare it on every run. Examples are run by the same driver as the
+integration tests; see
+xref:testing.adoc#integration-tests[Integration tests].
+
+* Keep expected output under `tests/`, in one specification the scripts read:
+  the arguments each example runs with, its standard input where it has one,
+  and the exact output expected.
+* The check script runs every example and fails on a difference.
+* The same script accepts `--update` to rewrite the expected output, so that an
+  intended change is a reviewed diff.
+* An example that cannot run in CI, such as one needing a display or a console
+  runtime, is still checked and built, and the specification says so
+  explicitly. It is never silently skipped.
+
+== The examples archive
+
+Each release attaches an examples archive named
+`<name>-examples-<version>.zip`, where `<name>` is the repository, or the
+package when the repository publishes several. It contains:
+
+* complete copies of the examples, including sibling modules and data files, in
+  which the package dependency is that release's bundle URL;
+* the expected-output specification those examples were tested with; and
+* a short README naming the release, the bundle URL and how to run an example.
+
+Nothing else in an example changes. The archived examples differ from the
+repository's at the tested commit only in the package dependency, and the check
+script verifies that.
+
+.The one line that differs between the repository and the archive
+[source,diff]
+----
+ app [main!] {
+ 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
+-	ansi: "../package/main.roc",
++	ansi: "https://github.com/<owner>/roc-ansi/releases/download/<tag>/<hash>.tar.zst",
+ }
+----
+
+A user who wants a starter downloads the archive for the release they are
+installing. The archive is also the fixed input to
+xref:workflows.adoc#nightly-compatibility[nightly compatibility], which is why
+it carries its own expected output: the default branch's specification describes
+the default branch, not the release.
+
+== Build and test the exact archive
+
+The archive that is tested is the archive that is published. Nothing is rebuilt
+between the test and the upload.
+
+. Build the bundle from the tested commit with `roc bundle`. Its filename is its
+  content hash and the release tag is the version being released, so the final
+  URL, `.../releases/download/<tag>/<hash>.tar.zst`, is known before anything
+  is published.
+. Build the archive with that real release URL in every example.
+. Serve the bundle from a loopback address.
+. Run the archived examples with `--replace-dep <release URL> <loopback URL>`,
+  which `roc check`, `roc test` and `roc build` accept. The files are unchanged;
+  only the download location differs for the duration of the test.
+. Compare the output with the archived specification.
+. Publish the same bundle and the same archive.
+
+Run the test with an empty Roc package cache, so that the bundle is fetched and
+verified and not found from an earlier run.
+
+== Dry runs
+
+A pull request runs the release steps with a placeholder version and publishes
+nothing. Roc rejects `0.0.0` in a package URL, so the placeholder is
+`0.0.1-dry-run`.
+
+== An archive is never reformatted
+
+An archive is immutable, so it is checked, tested, built and run, and never
+passed to `roc fmt`. A later formatter change would fail the nightly check for a
+reason that no patch release can fix.

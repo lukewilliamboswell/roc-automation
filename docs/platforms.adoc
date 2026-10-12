@@ -1,0 +1,615 @@
+= Maintain a platform
+
+A platform follows the same model as a package: the same environment, layout,
+examples archive and three workflows, and no compiler pin in the platform or its examples. This
+chapter covers what a platform adds, which is a native host. A host brings
+generated bindings, a target matrix, and build inputs that are too expensive or
+too sensitive to rebuild on every pull request.
+
+== Host bindings
+
+A host is compiled against bindings that `roc glue` generates from
+`platform/main.roc`: a Zig, Rust or C description of the types and entry points
+the Roc side expects. The compiler generates them, so a new nightly can change
+them when nothing in the repository changed.
+
+The bindings are committed. The host build reads the committed file and never
+runs `roc glue` itself, so a host builds the same way on every runner and a
+reviewer sees every change to the interface as a diff.
+
+=== Check the bindings in pull-request CI
+
+`ci.yml` has one job that regenerates the bindings with the latest nightly and
+requires the committed file to match:
+
+. Obtain the glue specification that belongs to the resolved nightly, from that
+  nightly's source archive, and verify the archive's digest.
+. Run `roc glue <spec> <output directory> platform/main.roc` with the latest
+  nightly.
+. Run `git diff --exit-code` on the committed bindings.
+
+This check runs on pull requests and on pushes to the default branch. It does
+not run in `nightly.yml`: a released host is fixed, and what
+xref:workflows.adoc#nightly-compatibility[nightly compatibility] asks is whether
+applications still build and run against it.
+
+The job is part of the required aggregate check. When a nightly changes the
+generated bindings, every open pull request fails this job until the bindings
+are upgraded. That is intended: the default branch should not accept changes on
+top of an interface that no longer matches the compiler.
+
+=== Upgrade the bindings
+
+Regenerating the bindings is a manual task, because a changed interface usually
+needs host code to change with it.
+
+. Run the bindings script with its update flag, using the latest nightly.
+. Review the diff. A changed layout or signature needs matching host changes.
+. Build the host for every target and run the examples.
+. Open a pull request containing the bindings and any host changes. Merge after
+  `ci.yml` passes.
+. If the released platform no longer works with the new nightly,
+  `nightly.yml` has already reported it. Release a new platform version.
+
+== Cross-compile once, run on every target
+
+A platform advertises a set of targets, and each workflow validates all of
+them. The usual shape is one builder job that cross-compiles for every target,
+followed by a matrix of runner jobs that execute the result on each one.
+
+.One builder, a matrix of runners
+[mermaid]
+....
+flowchart LR
+    S[Host source and linker inputs] --> B[Builder job: cross-compile every target]
+    B --> P[One platform bundle]
+    P --> L[Linux x64 runner]
+    P --> A[Linux arm64 runner]
+    P --> M[macOS runner]
+    P --> W[Windows runner]
+    L --> G[Aggregate check]
+    A --> G
+    M --> G
+    W --> G
+....
+
+=== The builder job
+
+* One job, on one runner, cross-compiles the host for every supported target.
+  A single toolchain version then produces every host, and the expensive work
+  happens in one place where its cache is easy to manage.
+* It assembles the hosts with the locked linker inputs and bundles once. The
+  bundle is uploaded as a workflow artifact.
+* Where a target cannot be cross-compiled, because it needs an SDK or a
+  toolchain that exists on one operating system only, that host is built by a
+  job on that system and handed to the builder as an artifact. This is the
+  exception to plan around, not the default.
+
+=== The runner jobs
+
+* One job per supported target downloads the bundle and runs applications
+  against it. A runner job never rebuilds the host or the bundle, so every
+  target tests the same bytes, and those are the bytes a release publishes.
+* One aggregate job requires every runner job to have passed. Its name is the
+  required status check.
+
+The purpose of the matrix is narrow: to show that the host and the linker
+inputs for each target link and run correctly there. Cross-compilation proves a
+host compiles for a target; only running on that target proves that it links,
+starts, and talks to the operating system as expected.
+
+=== What the runners run
+
+Run the examples. They exercise the platform through its public API the way an
+application does, and between them they usually reach enough of the host to
+show that a target works. They are already written, already have recorded
+expected output, and are what a user will try first.
+
+Add dedicated tests where the examples leave a gap: a host service no example
+uses, a code path that differs per operating system, a failure that should be
+reported in a particular way. Keep them few and aimed at the host, because
+everything in the matrix runs once per target.
+
+What does not belong in the matrix is anything that does not depend on the
+target. Unit tests of pure Roc code, formatting and the static checks run once,
+on one runner.
+
+=== Runner environments
+
+* State each runner's runtime needs in the workflow: a display server, a
+  software GPU, an audio sink, a browser. A simulated environment is reported as
+  simulated; it is not evidence about the real one.
+* An example that can be built but not run on a hosted runner is built and
+  checked, and its expected-output specification records that it is not run.
+
+The native toolchains come from `Blueprint.roc`, as described in
+xref:environment.adoc#declare-the-environment[Declare the environment], so a
+contributor and every CI job compile the host with the same versions.
+
+== Several platforms in one repository
+
+A repository that publishes more than one platform, such as a web platform and
+a native platform that share an engine, gives each its own root, its own bundle
+and its own examples archive, as in
+xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release].
+Sharing an engine does not make two platform APIs or their application roots
+interchangeable. Give examples separate roots and package URLs even when they
+share application modules.
+
+== Template repositories
+
+A template's examples are the product: they are what a user copies. A template
+follows the model without exception. Its examples depend on the working tree by
+relative path, and each release's examples archive is the starter a user
+downloads.
+
+== Native build inputs
+
+Platforms need native builds before Roc can link an application, and native
+builds are where CI time goes. A maintainer has a limited budget of runner
+minutes and of patience, and spends it well only by planning what gets built
+when, and by watching how that changes as the project grows. This section is
+about building each thing once, reusing it until it changes, and testing and
+publishing the same bytes.
+
+=== No binary blobs in the repository
+
+As a general rule, a platform repository does not commit binaries. A committed
+library or object file has no visible origin: a reviewer cannot tell what
+source it came from, what built it, or whether it changed for a reason.
+
+Binaries such as linker inputs are built by their own workflow, independent of
+ordinary CI, and published as an immutable release that carries:
+
+* the archives for every supported target;
+* a build-provenance attestation for each of them;
+* the licenses of everything inside; and
+* an SBOM.
+
+The software supply chain can then be followed and verified end to end: from a
+source commit, through the workflow run that built it, to the exact bytes a
+platform links.
+
+Routine use goes through content hashes. The repository commits a lock that
+names each archive, its release and its SHA-256, and every build verifies the
+bytes against that lock. A hash check is local and fast, it makes the archives
+safe to cache, and it needs no network service. The attestation API is reserved
+for the moments that need it: admitting a new release into the lock, auditing
+one, or an end user who wants to verify what they downloaded. It is not called
+on every build.
+xref:artifact-verification.adoc#separate-admission-from-routine-use[Separate admission from routine use]
+sets out that division.
+
+There are exceptions. A platform may depend on libraries that another project
+already publishes, for example the prebuilt libraries of a graphics library it
+wraps. Those may be vendored in the repository, so that builds do not make
+repeated network calls on someone else's project. A vendored binary records
+where it came from: the upstream project, the release, the download URL, its
+hash and its license. It is the upstream project's published artifact,
+unmodified, and never something the repository built and then committed.
+
+=== Two releases, three build steps
+
+A platform's host and its Roc source usually change together and are released
+together: one platform release holds both. Linker inputs are different. They
+change rarely, cost the most to build, and are published as their own release.
+
+So there are two kinds of release, and three things that are built:
+
+[cols="1,2,2",options="header"]
+|===
+| What is built | How it is released | In an ordinary pull request
+
+| Linker inputs
+| Their own immutable release, selected by a content lock
+| Download the locked archives and verify their hashes. Never rebuild them.
+
+| The host, such as `libhost.a`
+| As part of the platform release
+| Build it in its own job, and skip that job when the host's fingerprint has not changed.
+
+| The platform bundle
+| The platform release: the Roc source with the host and linker inputs
+| Assemble from the outputs above and test. Bundling compiles nothing native.
+|===
+
+The host is not given a release lifecycle of its own. It is given a job of its
+own. The point of the separation is that each step can be skipped when its
+inputs have not changed.
+
+=== Skip what has not changed
+
+Compute a content fingerprint of everything that can affect the host: its
+source, generated bindings, dependency versions, toolchain, target and build
+options. Use the fingerprint as a cache key.
+
+* When the fingerprint matches a cached build, the host job restores it and
+  finishes in seconds. A pull request that touches only Roc source, examples or
+  documentation compiles no native code.
+* When it does not match, the job builds the host and saves it under the new
+  fingerprint.
+* Later jobs take the host as an artifact from that job. They do not know or
+  care whether it was built or restored.
+
+xref:platforms.adoc#keep-rebuild-selection-narrow-and-complete[Keep rebuild selection narrow and complete]
+says what a fingerprint must include. A cache is storage, not a source of
+trust: restored bytes come from the same repository's own earlier job, and
+anything that crosses a release boundary is verified against a locked hash.
+
+Separate steps and caches pay off beyond runner minutes. A failure points at
+the step that failed. A contributor without the native toolchain can still work
+on the Roc side. Review is easier when a pull request shows which step it
+invalidated.
+
+=== Watch what CI costs
+
+Plan the pipeline, then keep watching it, because it drifts as changes are
+made.
+
+* Know roughly how long a routine pull request takes, and what takes the time.
+  The harness and each workflow report durations for this reason.
+* A routine change, one that touches no native code, should be fast. If
+  pull-request CI takes a long time for routine changes, something is wrong and
+  should be investigated: a fingerprint that includes too much, a cache key
+  that changes on every commit, a job that rebuilds what an earlier job already
+  built, a matrix that grew.
+* Treat a slow pipeline as a defect with a cause, not as the price of the
+  project. Slow CI is paid for on every pull request by every contributor.
+* Spend resources where they prove something. Run the expensive matrix when
+  native inputs change and before a release; run the cheap path the rest of the
+  time.
+
+`libhost.a` and `host.lib` are host outputs, not linker-input release assets.
+Operating-system import libraries, runtime libraries, interface stubs and
+resource objects required by `platform/main.roc` are linker inputs, even when
+the platform repository holds their generation recipes. Classify by ownership
+and invalidation, not by the fact that the final link receives the file.
+
+Choose the smallest lifecycle that fits the project:
+
+[cols="1,2",options="header"]
+|===
+| Project shape | Lifecycle
+
+| Pure Roc package
+| Bundle source. No native producer.
+
+| Package with a test-only host
+| Build the host in a read-only job of `ci.yml`. It is never published.
+
+| Platform with a small host and no external inputs
+| Build the host in its own fingerprinted job, bundle once, test the bundle, then publish those bytes.
+
+| Platform with expensive external inputs
+| The same, with the linker inputs released independently and consumed through a reviewed lock.
+|===
+
+An existing binary is not a verified artifact until its build recipe, digest and
+target coverage are established. An explicit source build remains valid.
+
+== Separate the artifacts by what can invalidate them
+
+All of these files can eventually reach a linker, but they have different owners
+and rebuild triggers. Name the categories explicitly in scripts, locks and docs.
+
+[cols=",,",options="header",]
+|===
+|Artifact |What it contains |What requires a new build
+|Project host and engine outputs, such as `libhost.a`, `libengine.a` or a Wasm host library |Compiled project implementation for a target |Relevant source, generated inputs, dependency versions, toolchain, target ABI or build options change
+|External linker inputs, such as import libraries, runtime link files and macOS `.tbd` files |The external libraries or interfaces used by the final application link |Their upstream inputs, target contract, generation recipe or required interface catalog changes
+|Roc platform bundle |Platform API source plus the selected target outputs and linker inputs |Package source or selected input bytes change
+|Application root and companion modules |An application targeting a particular platform API and URL |Application source or selected package URL changes
+|===
+
+A host edit can require new host archives while reusing the existing external
+linker inputs. Rebuild an engine archive only when its own inputs change; if a
+producer groups multiple outputs, document that granularity. A new nightly
+invalidates host outputs only when the compiler contributes to their build
+identity; a change to the generated bindings is handled as described in
+xref:platforms.adoc#host-bindings[Host bindings].
+
+For platforms that package macOS interfaces, review the required catalog before
+generating and validating `.tbd` files. That generation belongs inside the external linker-input
+cycle. When released separately, publish the generated files as immutable inputs.
+For a static host archive, these files normally serve Roc's final link rather
+than host compilation. A producer that itself links executables or shared libraries
+may also consume linker interfaces. Record its actual SDK, headers, interfaces and
+native build tools in its identity; do not assume the host build and the linker inputs have no dependencies.
+
+For a platform with a separate host step and an independent linker-input
+release, the flow is:
+
+[mermaid]
+....
+flowchart TD
+    H[Host or engine build inputs change] --> HP[Build and validate affected project outputs]
+    HP --> HR[Host outputs, cached by fingerprint]
+
+    M[Review macOS interface catalog] --> E
+    X[External upstream inputs or generation recipe change] --> E
+    E[External linker-input cycle: generate and validate inputs, including macOS TBDs] --> ER[Immutable external linker-input dependency release]
+
+    HR --> B
+    ER --> V[Download or reuse cached archives; verify locked content hashes]
+    P[Current platform API source] --> B[Make platform bundles with roc bundle]
+    V --> B
+    B --> T[Serve exact bundles on localhost; Roc links apps and runs smoke tests]
+    T --> D{Missing macOS interfaces?}
+    D -->|Yes: diagnose required symbols| M
+    D -->|No, and all release checks pass| R[Publish the exact tested bundles and example headers]
+....
+
+An unresolved symbol during the application link is evidence to investigate.
+Confirm the library, symbol and supported target before changing the catalog;
+missing project symbols, mismatched archives and ABI errors can produce similar
+failures. Do not invent an export or expand the catalog automatically to make a
+test pass. Producer validation can catch mistakes earlier, but a successful host
+build alone does not establish that Roc can link the final application.
+
+== Make content identity the ordinary consumer contract
+
+Commit reviewed lock data with each dependency selection. Include the artifact
+name, target, exact release location, cryptographic digest such as SHA-256, byte
+size, and expected archive contents or extraction boundaries. Record available source
+revision and producer build-input fingerprint separately from the archive digest.
+The fingerprint answers whether a build can be reused; the digest identifies the
+exact bytes a consumer accepts. Neither a version label nor a fingerprint alone
+verifies a downloaded archive.
+
+Recompute freshness fingerprints where the repository owns or vendors the producer
+inputs, such as its own host source. For external binaries, consumers verify the
+reviewed selection, digest, target and inventory; they need not fetch upstream
+source or install its toolchain to recompute the producer's fingerprint. Recorded
+producer metadata remains a claim subject to the chosen provenance policy.
+
+Final Roc bundles have a compiler-defined content identity: preserve the filename
+emitted by `roc bundle` in both localhost and published URLs. Roc uses its
+base58-encoded BLAKE3 hash to verify the downloaded bundle. An additional SHA-256
+in release metadata is useful but cannot replace that URL hash. See the
+https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/src/bundle/bundle.zig#L266-L275[Roc bundle implementation]
+and https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/src/bundle/download.zig#L42-L63[download contract].
+Application users consuming that bundle need no separate native-input fetcher.
+
+Consumers should resolve the locked artifact from a local cache, a mirror or the
+recorded release URL, check size and digest before extraction, and reject a
+mismatch, including on cache hits. Extract into fresh staging with bounded member
+counts and expanded sizes. Accept only declared regular files and directories with
+unique, portable paths; reject escapes, path collisions, links and special files.
+Validate the complete inventory before making the staged result available, and do
+not trust an old extracted tree solely because its cached archive verified.
+Keep licenses and required runtime files in the declared inventory.
+Fail clearly when a required artifact is unavailable
+or stale; an ordinary consumer must not silently rebuild it or pick a newer
+release.
+
+The reviewed lock is the trust anchor. A checksum downloaded beside an archive
+from the same mutable location does not independently authorize its contents.
+A matching digest establishes equality with reviewed bytes, not their safety,
+source origin or correctness. Review the initial artifact selection and subsequent
+lock changes as dependency changes.
+
+Hash verification is local and should work without a GitHub API call, token,
+attestation service or network connection when the selected bytes are already
+available. Downloading a missing artifact still requires a source of those bytes.
+This reduces service dependencies; it does not make uncached downloads offline.
+Apply the same principle to other downloaded inputs, including build tools where
+practical, while keeping the required trust policy explicit.
+
+== Publish provenance without confusing it with integrity
+
+An attestation can bind an artifact digest to claims about its producer, workflow,
+source revision and build. Publish it for users who want to verify that provenance.
+Such verification must check the expected signer/workflow identity, source and
+subject digest under a stated policy, not merely that some signature exists.
+Keep ordinary locked consumption independent of that service check unless the
+consumer explicitly adopts a stricter provenance policy. Verification required by
+an adopted policy must fail visibly rather than silently downgrade to hashes.
+Provenance does not inherently require an online check on every run: GitHub supports
+https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/verify-attestations-offline[offline verification]
+using previously obtained attestation bundles and trusted roots. Define how that
+verification material is obtained and updated when adopting such a policy.
+
+Describe only the evidence that was actually produced. A packaging workflow that
+downloads and bundles an archive can attest to that assembly; its attestation
+does not establish how the downloaded archive was compiled. Preserve the original
+producer evidence and identify the selected dependencies in the package manifest.
+A source revision in a lock is a recorded claim until supported by the producer's
+evidence. Attestations do not by themselves prove reproducible builds, complete
+test coverage, or absence of defects.
+
+Publish each dependency release under a unique, immutable identity with the
+exact validated archives, lock data, licenses and available provenance. Do not
+replace assets or move tags. Where the hosting service supports enforced release
+immutability, enable it and verify the resulting state; a naming convention alone
+does not enforce immutability. Hash checks remain necessary even with immutable
+hosting. On GitHub, https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases[stage an immutable release as a draft],
+attach all assets, verify the complete inventory and tag commit, then publish.
+An interrupted draft may resume after existing assets match the recorded candidate.
+A complete published release needs only verification and any remaining follow-up;
+an incomplete published immutable release cannot accept missing assets and needs a
+new release identity. Changed candidate bytes also need a new identity. Preserve
+the original evidence and revalidate starters whenever their final URLs change.
+
+=== Publish a pull-request candidate without granting it release authority
+
+A repository may need a linker-input release before the source change that
+requires it can merge. An unprivileged workflow on the same-repository pull-request
+branch builds, tests, and attests the exact candidate. A trusted workflow dispatched
+from the default branch then verifies the producer run, source SHA and ref, workflow
+identity, attestations, manifest, and content hashes before publishing those bytes.
+It never executes scripts supplied by the candidate artifact.
+
+The trusted workflow may add the generated content lock to the producer branch as
+one lease-guarded, GitHub-signed commit. That commit changes only the configured
+lock path and remains subject to ordinary review and checks. After merge, the lock
+permanently selects the branch-built release; do not rebuild or relabel it on the
+default branch. A content-derived tag permits recovery only when the complete
+candidate is byte-identical.
+
+`actions/publish-build-inputs` implements this boundary for producers that emit
+`build-input-release.json` and its declared target archives. The consumer wrapper
+exposes only a pull-request number and pins the controller action to a reviewed
+full SHA. Fork changes must first move to a same-repository branch because the
+controller never writes to forks.
+
+The complete producer, publisher, generated-lock, recovery, review, and merge
+contract is in
+xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request].
+
+== Choose the correct maintainer path
+
+Use the smallest lifecycle that corresponds to the changed ownership boundary:
+
+[cols="1,2",options="header"]
+|===
+| Change | Required maintainer action
+
+| Roc source, examples, tests, docs, or an unrelated workflow
+| Ordinary pull-request validation using the committed host and linker-input locks. No native dependency release.
+
+| A new nightly breaks the released platform
+| `nightly.yml` reports it. Fix the source and release a new platform version. Native inputs are rebuilt only if the compiler contributes to their fingerprint.
+
+| A new nightly changes the generated host bindings
+| xref:platforms.adoc#upgrade-the-bindings[Upgrade the bindings], with any host change, in one pull request.
+
+| Host implementation, host dependency, host toolchain, host ABI, or exported project symbol
+| The host job rebuilds, because its fingerprint changed. The new host ships in the next platform release. Reuse the existing linker inputs unless their own inputs changed.
+
+| Linker-input source, upstream binary, interface catalog, resource source, generation recipe, target matrix, or toolchain
+| Build the complete linker-input candidate on a same-repository pull-request branch, then run the trusted publisher and review its signed lock commit.
+
+| `Blueprint.lock`, where it is part of a build-input fingerprint
+| The same producer and publisher cycle, in the pull request that changes the lock.
+
+| `platform/main.roc` linker entries
+| Check classification first. A new project implementation symbol normally changes the host; a new external library or interface normally changes linker inputs. Validate that every referenced released path exists for every advertised target.
+
+| Platform release
+| Require a current linker-input lock, build or restore the host, assemble once, exercise applications on every target, and publish the exact tested bundles.
+|===
+
+For a stale linker-input lock, stage the material change in a same-repository
+pull request first. An unprivileged producer run at that head can build, test
+and attest a candidate without publishing. Then dispatch the trusted publisher
+*from the default branch* with the pull-request number. It reruns the producer
+at the exact head, verifies the candidate, publishes the immutable linker-input
+release, and adds a signed lock-only commit to the pull request. Revalidate the
+updated pull request against the released lock before merging. A platform bundle
+is a separate, later release that uses the selected lock.
+xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request]
+defines the admission and review checks.
+
+An input fingerprint mismatch must be explicit. For a host, the read-only host
+job simply builds it, because host source commonly changes with the pull
+request. For a locked linker-input release, routine
+validation fails with instructions to run the producer and publisher cycle. It
+must not bootstrap a replacement as a side effect of a cache miss. An implicit
+rebuild would substitute unreviewed bytes for the dependency the lock selects,
+make results depend on whichever runner missed its cache, and hide that the
+declared dependency is stale.
+
+== Keep routine pull requests ignorant of production
+
+Routine consumers need only the lock schema, a downloader/cache, digest and archive
+validation, and the selected extracted files. They do not need a native SDK,
+linker-input generator, publication token, attestation lookup, or knowledge of how
+the archives were produced. Keep producer jobs in their own workflow and path
+scope; do not call them from general CI merely to populate a cache.
+
+Every cache read is untrusted until the archived bytes match the locked size and
+SHA-256. A cache miss downloads the exact locked release asset. A download failure
+fails the job. A digest mismatch removes or ignores the bad entry and fails closed;
+it never selects another release. Extraction and manifest checks happen after the
+archive hash succeeds and before files become visible to the build.
+
+Derive cache keys from the locked content identity rather than a branch, workflow
+run, or mutable release label. This prevents unrelated revisions from sharing a
+slot merely because their human-readable names match and makes identical reviewed
+bytes reusable across PRs. Still rehash a cache hit: cache keys select storage but
+do not authenticate its contents, and a poisoned, truncated, or incorrectly
+restored entry can otherwise bypass the download-time check.
+
+== Preserve reviewed history and authority
+
+Use merge commits for pull requests whose evidence names exact commits. A merge
+commit keeps the attested producer commit and the publisher's signed lock-only
+commit reachable under their original identities. Squashing manufactures a
+different commit and discards that correspondence. A maintainer may still tidy
+an ordinary development branch before review; the automation must not depend on
+history being rewritten after it has bound evidence to a SHA.
+
+Keep the authorities distinct:
+
+* producer and ordinary validation jobs may execute candidate code and are
+  read-only;
+* the trusted publisher job invokes only its full-SHA-pinned shared action,
+  with release and lock-write permission;
+* the platform release publisher consumes already selected dependencies and
+  publishes only explicitly dispatched, tested platform bundles.
+
+This split is what makes running candidate build code acceptable: a compromise
+of that job cannot write a release or a branch. The publisher has powerful
+credentials, so it accepts only inert declared files and never executes the pull
+request. Least-privilege permissions reduce what is possible if the pinned
+action or the hosting account is compromised; they do not make unreviewed code
+safe to run in that job.
+
+A shared action is tried from a reviewed roc-automation pull request by pinning
+the caller to that pull request's full commit SHA. A branch name or abbreviated
+SHA is never pinned. If review changes the shared implementation, pin the new
+commit and repeat the trial.
+
+== Keep rebuild selection narrow and complete
+
+Producers computing reuse identities must include every input that can affect an output:
+relevant source paths and contents, generated inputs, dependency locks, build
+recipes, tool versions, target configuration and build flags. Record file paths
+and modes as needed to distinguish renames, deletions and symlinks. Validate the
+permitted source-file kinds. Include relevant environment and SDK identities;
+an unpinned runner image or ambient library can change output without a source edit.
+Where the toolchain comes from Blueprint, `Blueprint.lock` is one of those inputs,
+so a lock update that changes the toolchain makes the selected outputs stale.
+Use a versioned fingerprint recipe and compare the same input definitions.
+A whole-commit identity, together with the non-source inputs above, is a conservative
+starting point, but causes needless rebuilds for unrelated edits. Narrow the source
+selection only after testing the input inventory.
+Include the source revision separately for traceability.
+
+Treat workflow triggers and fingerprints as different controls. Path filters
+decide when to run a producer audit; fingerprints decide whether the selected
+published outputs still correspond to current inputs. A test-harness edit may
+justify rerunning an audit without requiring a new dependency release. Trace shared
+scripts and generated inputs transitively so a narrow filter cannot hide a real
+build change. For repository-owned inputs, record the published fingerprint in lock
+data or a digest-bound manifest so a shallow checkout can compare current inputs
+without fetching an old producer commit. A stale host blocks reuse; PR validation
+may explicitly build a new candidate in a read-only job without publishing it.
+
+For a narrowed fingerprint, require meaningful checks for both directions: a relevant source, tool pin or
+build-option change invalidates reuse, while an unrelated example or documentation
+change preserves it. Check archive digest rejection and target/path confinement.
+Exercise final linking against reused artifacts; a selector test alone does not
+
+== Keep final release preparation small
+
+Once the linker inputs are locked and the host job has built or restored the
+host, the rest of the release needs only the latest nightly to bundle and link
+applications, the artifact verification step, and the runtime dependencies of
+its tests. It downloads and hash-verifies the locked linker inputs. SDK
+generators belong in the linker-input producer; a stale lock sends the
+maintainer back to that cycle.
+
+Bundle once, then pass those exact archives to the target runners. Each runner
+serves the applicable bundles on a loopback address and runs the archived
+examples against them, as in
+xref:examples.adoc#build-and-test-the-exact-archive[Build and test the exact archive].
+Validate every advertised target before publication. Check package size limits
+and target contents early, so that publication does not discover that a bundle
+cannot carry its advertised hosts.
+
+Keep preparation, validation and publication connected by recorded artifact
+digests and the exact source SHA. Record archive digests, selected dependency
+identities, the source revision and the compiler versions in the release notes.
+The remaining steps are those of every release; see
+xref:workflows.adoc#the-order-of-a-release[The order of a release].
