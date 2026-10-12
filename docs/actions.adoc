@@ -60,7 +60,7 @@ which no binary is released also fails.
 The action downloads the binary for the runner's system into a private
 temporary file, compares its SHA-256 with the reviewed value, and only then
 makes it executable and puts it on `PATH`. A mismatch fails the step and
-installs nothing. It needs no token and no cache account.
+installs nothing. It takes no token and needs no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
 what the checksum does and does not establish.
 
@@ -95,12 +95,50 @@ compiler:
   run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
 ----
 
+[#actions-that-run-a-roc-script]
+== Actions that run a Roc script
+
+`actions/nightly-report` is a Roc script in roc-automation,
+`scripts/nightly_report.roc`, written as
+xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+describes. It runs from source in the calling job, from the action's own copy
+of roc-automation at the referenced commit. The action:
+
+. installs Nix, with the install action `actions/setup-blueprint` uses, at the
+  same full commit SHA;
+. downloads the `blueprint` binary that roc-automation's `Blueprint.roc` names
+  and checks it against its recorded SHA-256, as
+  xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary]
+  describes; and
+. runs its task, `blueprint run nightly-report`, in that copy of
+  roc-automation.
+
+roc-automation's `Blueprint.lock` at the referenced commit pins what the task
+starts: `roc-stable`, which runs the script, the platform the script is built
+on, the `gh` CLI, which makes every request to GitHub, and coreutils. The full
+SHA in the `uses:` line therefore fixes the script and everything under it.
+Nothing comes from the calling repository: its `Blueprint.roc` is not read, and
+the binary is installed in a directory of the action's own and is not put on
+`PATH`, so a `blueprint` the job set up earlier is left as it was.
+
+The script is given the action's inputs and the token in its environment, never
+as arguments. `gh` reads the token from `GH_TOKEN` and sends requests to the
+GitHub host it is configured for, which is GitHub.com unless the job sets
+`GH_HOST`.
+
+The action needs a runner Blueprint supports, which is x86-64 or arm64 Linux
+or Apple Silicon macOS, and `python3` for the installer, which GitHub's hosted
+runners provide. On a runner with an empty Nix store, installing Nix and
+downloading the environment is most of the job's time: the environment is about
+a gigabyte once unpacked, so allow a minute or two. The script itself finishes
+in seconds.
+
 [#nightly-report]
 == `actions/nightly-report`
 
 Keeps the one tracking issue of a
 xref:workflows.adoc#nightly-compatibility[nightly compatibility] workflow. It
-checks out nothing and runs no repository code.
+checks out nothing from the calling repository and runs none of its code.
 
 [source,yaml]
 ----
@@ -157,14 +195,21 @@ as are a pull request and a closed issue.
 
 The issue body and every comment name the release and the nightly and link to
 the workflow run. Tags are limited to 100 letters, digits and `.`, `_`, `+`,
-`/`, `-` characters, and a title to 256 characters with no control characters.
-A malformed input fails the step before any request is made.
+`/`, `-` characters, and a title to 256 characters with no control, format or
+private-use characters. A malformed input, or an empty token, fails the step
+before any request is made.
+
+The action reads the open issues a page at a time. A listing it cannot read in
+full, or a record in it that is not an issue record, fails the step: it never
+opens an issue while it cannot tell whether one exists.
 
 The calling job needs `issues: write` and no other permission. It has no
 checkout step, and it passes the action only the step outcome and the two tags,
 never text produced by the examples.
 xref:workflows.adoc#reporting[Reporting] states what the calling workflow must
-provide.
+provide, and
+xref:actions.adoc#actions-that-run-a-roc-script[Actions that run a Roc script]
+what the action needs of the runner.
 
 [#build-docs]
 == `actions/build-docs`

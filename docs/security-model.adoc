@@ -40,7 +40,7 @@ Two rules carry most of the weight:
 
 | `nightly.yml` report
 | `issues: write`
-| No
+| No: it runs `actions/nightly-report`
 |===
 
 The publish job accepts only a manual dispatch on the default branch, uses the
@@ -61,6 +61,44 @@ opened the issue.
 No workflow in the model opens a pull request, approves one, or merges one.
 Every change to the repository is a maintainer's pull request under the
 repository's own rules.
+
+[#what-the-report-job-runs]
+=== What the report job runs
+
+The report job holds a token that can change a repository's issues. It runs one
+shared action, `actions/nightly-report`, which is a Roc script that runs from
+the action's own copy of roc-automation, at the full commit SHA the workflow
+names. What runs in that job is therefore:
+
+* Nix, installed by an install action that the shared action references by
+  full commit SHA; that action fixes the Nix version and downloads its
+  installer from the Nix project over HTTPS;
+* the `blueprint` binary, for the release that roc-automation's own
+  `Blueprint.roc` names, admitted by its reviewed SHA-256 as
+  xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary]
+  describes;
+* the environment that roc-automation's `Blueprint.lock` pins: `roc-stable`,
+  which runs the script, the basic-cli platform the script is built on, the
+  `gh` CLI, which makes every request, and coreutils, which provides
+  `sha256sum`; and
+* the script and its modules under `scripts/` in roc-automation.
+
+The one full SHA in the workflow's `uses:` line fixes all of these. The install
+action's SHA, the recorded hashes of the binary, the lock and the script are all
+files of that commit, and the lock pins each input by revision and content
+digest. Nix takes the compiler and the platform by the hashes those inputs
+record, and takes the tools from nixpkgs at the pinned revision, as built by
+its binary cache, whose signatures it checks.
+
+The job does not check out the calling repository, and the action runs none of
+its code. The calling repository's `Blueprint.roc`, lock and scripts play no
+part, and the action reads no file from the job's workspace.
+
+The token is in the environment of the one step that runs the script, where
+`gh` reads it. It is never a command-line argument and is never printed, and
+the script checks every input before the first request. Apart from that, the Nix
+installer writes the job's default token into Nix's configuration, and Nix
+presents it to GitHub when it fetches a pinned input from there.
 
 == Compilers
 
@@ -120,8 +158,10 @@ Otherwise it fetches that nightly through Nix from a roc-overlay revision pinned
 inside the binary, and Nix verifies the archive against the hash that revision
 records. The `ROC` environment variable overrides this selection.
 
-The action needs no token. A cache that requires `id-token: write` widens a test
-job's token and must be an explicit caller choice, never a default.
+The action takes no token as an input. The Nix installer it runs reads the
+job's default token and configures Nix to present it to GitHub when it fetches
+from there. A cache that requires `id-token: write` widens a test job's token
+and must be an explicit caller choice, never a default.
 
 == Documentation deployment
 

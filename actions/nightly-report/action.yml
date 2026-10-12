@@ -26,17 +26,47 @@ outputs:
     description: What was done, one of opened, commented, closed or none
     value: ${{ steps.report.outputs.action }}
 
+# The action is a Roc script in this repository, run from the action's own
+# checkout: scripts/nightly_report.roc behind the nightly-report task. The
+# first two steps are those of actions/setup-blueprint, repeated because a
+# composite action cannot name a sibling at its own commit. They install the
+# blueprint release that this repository's Blueprint.roc names, whatever the
+# calling repository contains.
 runs:
   using: composite
   steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+    # The installer reads Blueprint.roc from GITHUB_WORKSPACE, installs under
+    # RUNNER_TEMP and adds that directory to GITHUB_PATH. Here it is given this
+    # repository's checkout, a directory of its own, and no PATH file, so the
+    # calling job's PATH and any blueprint it installed are left alone.
+    - id: blueprint
+      name: Download and verify blueprint
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_VERSION: ''
+        INPUT_SHA256_X86_64_LINUX: ''
+        INPUT_SHA256_AARCH64_LINUX: ''
+        INPUT_SHA256_AARCH64_DARWIN: ''
+      run: |
+        root="$(cd "$ACTION_PATH/../.." && pwd)"
+        GITHUB_WORKSPACE="$root" RUNNER_TEMP="$RUNNER_TEMP/roc-automation-nightly-report" GITHUB_PATH=/dev/null \
+          python3 "$root/actions/setup-blueprint/setup_blueprint.py"
+
     - id: report
       name: Update the tracking issue
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
+        BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
         INPUT_OUTCOME: ${{ inputs.outcome }}
         INPUT_NIGHTLY_TAG: ${{ inputs.nightly-tag }}
         INPUT_RELEASE_TAG: ${{ inputs.release-tag }}
         INPUT_TITLE: ${{ inputs.title }}
-        INPUT_TOKEN: ${{ inputs.token }}
-        REPORTER: ${{ github.action_path }}/nightly_report.py
-      run: python3 "$REPORTER"
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        cd "$ACTION_PATH/../.."
+        "$BLUEPRINT" run nightly-report

@@ -71,6 +71,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The action runs its Roc script from source: it installs Nix and the
+      # verified blueprint, then runs the nightly-report task of this checkout.
       # A pass with no tracking issue only lists issues, so it needs no write access.
       - id: report
         uses: ./actions/nightly-report
