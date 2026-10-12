@@ -79,3 +79,5 @@ include::documentation.adoc[leveloffset=+1]
 include::project-practices.adoc[leveloffset=+1]
 
 include::contributing.adoc[leveloffset=+1]
+
+include::releases.adoc[leveloffset=+1]

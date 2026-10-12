@@ -135,6 +135,9 @@ Each release has its notes in `docs/releases/<version>.adoc`, for example
 `docs/releases/0.12.0.adoc`. They are committed in a pull request before the
 release is dispatched, and the workflow refuses to release a version whose
 notes file is missing.
+A top-level `docs/releases.adoc` chapter includes each file, so the notes of
+every release are part of the manual; see
+xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
 
 The notes are an authored narrative, written for a user deciding whether and
 how to upgrade. They are not a list of commits or merged pull requests.

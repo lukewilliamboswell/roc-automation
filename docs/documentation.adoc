@@ -120,8 +120,12 @@ with one entrypoint and one file per chapter. The renderer produces the whole
 book as `index.html`, a separate HTML page for every chapter, and a PDF. A few
 rules keep all three outputs correct.
 
-* Keep every source directly under `docs/`. Only top-level `.adoc` files are
-  rendered; a subdirectory is copied to the site unrendered.
+* Keep every chapter directly under `docs/`. Only top-level `.adoc` files are
+  rendered as pages; a subdirectory is copied to the site unrendered.
+* Keep release notes in `docs/releases/<version>.adoc`, and pull them into the
+  manual from a top-level `releases.adoc` chapter with one
+  `+include::releases/<version>.adoc[leveloffset=+1]+` line for each, newest
+  first. They are then rendered in the book, on their own page and in the PDF.
 * Make `index.adoc` a `:doctype: book` that pulls in each chapter with
   `+include::<chapter>.adoc[leveloffset=+1]+`.
 * Open every chapter with a single `= Title`. Prefer a title that names what the

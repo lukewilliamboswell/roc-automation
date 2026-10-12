@@ -27,5 +27,5 @@ for how to use them.
 See [Contribute to roc-automation](https://lukewilliamboswell.github.io/roc-automation/contributing.html)
 in the manual. Report vulnerabilities as [SECURITY.md](SECURITY.md) describes.
 
-[Release notes](CHANGELOG.md) · [UPL-1.0 license](LICENSE) ·
+[Release notes](https://lukewilliamboswell.github.io/roc-automation/releases.html) · [UPL-1.0 license](LICENSE) ·
 [Third-party assets](THIRD_PARTY_LICENSES.md)

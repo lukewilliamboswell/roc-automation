@@ -1,0 +1,8 @@
+= roc-automation 1
+
+Initial version of the roc-automation manual.
+
+It describes an opinionated approach for managing Roc packages and platforms:
+the tooling environment, repository layout, examples, testing, the pull-request,
+release and nightly workflows, platforms and their native build inputs, and the
+trust model behind the shared actions.

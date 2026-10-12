@@ -28,7 +28,8 @@ same build on every pull request and deploys from the default branch.
 
 The manual describes the model as it should be practised. A repository or tool
 that does not yet follow it is recorded in a GitHub issue, not in the manual.
-Record a change to the manual in `CHANGELOG.md`.
+Record a change in the release notes under `docs/releases/`, in the file for the
+version it will ship in. `docs/releases.adoc` includes each of those files.
 
 == Change a shared action
 
