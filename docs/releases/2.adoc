@@ -1,0 +1,26 @@
+= roc-automation 2
+
+This version adds the `actions/setup-blueprint` shared action and settles how
+the nightly compiler is installed.
+
+== `actions/setup-blueprint`
+
+The action the manual describes now exists. It installs Nix and the released
+`blueprint` binary for x86_64 Linux, arm64 Linux and Apple Silicon macOS
+runners, and admits the binary only when it matches a SHA-256 the caller
+supplies. See
+xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`] for its inputs.
+
+== The nightly compiler is `roc`, installed by `roc-lang/setup-roc`
+
+Version 1 described a planned `actions/setup-roc-nightly` that installed the
+compiler as `roc-nightly` and set `ROC_NIGHTLY`. That action is dropped.
+Workflows use the official `roc-lang/setup-roc` action, which installs the
+latest nightly as `roc`, and scripts run package work with `roc`. See
+xref:actions.adoc#install-the-nightly-compiler[Install the nightly compiler].
+
+If you followed version 1:
+
+* replace `roc-nightly` with `roc` in workflows and scripts;
+* remove any use of `ROC_NIGHTLY`; and
+* pass the resolved tag to `roc-lang/setup-roc` through its `nightly-tag` input.

@@ -20,7 +20,7 @@ Build the site and PDF locally with Docker:
 
 [source,sh]
 ----
-python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 1
+python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 2
 ----
 
 The output is written to `.docs-out/`. The `Documentation` workflow runs the

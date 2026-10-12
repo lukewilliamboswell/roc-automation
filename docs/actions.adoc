@@ -12,41 +12,76 @@ request. A shared change never reaches a repository silently.
 [#setup-blueprint]
 == `actions/setup-blueprint`
 
-Installs Nix and the `blueprint` binary, so that `blueprint run <task>` works in
-the next step. It builds nothing.
+Installs Nix and the released `blueprint` binary, so that `blueprint run <task>`
+works in the next step. It builds nothing.
 
-The caller supplies the roc-blueprint version and the reviewed SHA-256 of that
-release's binary for each runner it uses. The action downloads the binary for
-the runner's system, checks it against the supplied value, fails on a mismatch,
-and puts it on `PATH`. The version and checksums must come from the same
-roc-blueprint release as the platform URL in `Blueprint.roc`.
+[source,yaml]
+----
+- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
+  with:
+    version: 0.4.0
+    sha256-x86_64-linux: <SHA-256 of blueprint-x86_64-linux>
+    sha256-aarch64-linux: <SHA-256 of blueprint-aarch64-linux>
+    sha256-aarch64-darwin: <SHA-256 of blueprint-aarch64-darwin>
+- run: blueprint run check
+----
 
-It needs no token and no cache account.
+[cols="2,4",options="header"]
+|===
+| Input | Meaning
+
+| `version` | The roc-blueprint release to install. Required.
+| `sha256-x86_64-linux` | Reviewed SHA-256 of that release's binary for x86_64 Linux runners
+| `sha256-aarch64-linux` | Reviewed SHA-256 of that release's binary for arm64 Linux runners
+| `sha256-aarch64-darwin` | Reviewed SHA-256 of that release's binary for Apple Silicon macOS runners
+|===
+
+Outputs are `blueprint-path`, the absolute path of the installed binary, and
+`system`, the release system name chosen for the runner.
+
+Take the version and the checksums from the same roc-blueprint release as the
+platform URL in `Blueprint.roc`; each release publishes them in its
+`blueprint.sha256` file. Supply a checksum for every runner the workflow uses.
+A job on a runner with no checksum fails, as does a job on a system for which
+no binary is released.
+
+The action downloads the binary for the runner's system into a private
+temporary file, compares its SHA-256 with the supplied value, and only then
+makes it executable and puts it on `PATH`. A mismatch fails the step and
+installs nothing. It needs no token and no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
 what the checksum does and does not establish.
 
-[#setup-roc-nightly]
-== `actions/setup-roc-nightly`
+[#install-the-nightly-compiler]
+== Install the nightly compiler
 
-Installs the latest published Roc nightly for package work in CI.
+The package compiler is installed by the official
+https://github.com/roc-lang/setup-roc[`roc-lang/setup-roc`] action, not by an
+action in this repository. Reference it by full commit SHA like any other.
 
-* Resolves the most recent release of `roc-lang/nightlies`, or installs the
-  release named by the optional `tag` input.
-* Verifies the download against the digest GitHub reports for the release asset,
-  and fails on a mismatch.
-* Puts the compiler on `PATH` as `roc-nightly` only. It provides no bare `roc`,
-  so a CI job cannot run package work on some other compiler by accident.
-* Sets `ROC_NIGHTLY` to that command, which is what the repository's scripts
-  read.
-* Reports the resolved release as the `tag` output and the compiler's version
-  string as the `version` output.
+[source,yaml]
+----
+- uses: roc-lang/setup-roc@REVIEWED_FULL_SHA
+  with:
+    version: nightly-new-compiler
+    nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+----
 
-The first job of a workflow calls it with no `tag` and passes its `tag` output
-to every later job, so one run uses one compiler. It needs no token beyond the
-default read access.
+It installs the compiler on `PATH` as `roc`. With `nightly-tag` empty it
+installs the latest release of `roc-lang/nightlies`; with a tag it installs that
+release.
 
-Contributors do not use this action or the `roc-nightly` name. Locally the
-scripts fall back to the contributor's own `roc`.
+A workflow with more than one job resolves the latest tag once, in its first
+job, and passes it to every job through `nightly-tag`, so that one run uses one
+compiler:
+
+[source,yaml]
+----
+- id: nightly
+  env:
+    GH_TOKEN: ${{ github.token }}
+  run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+----
 
 [#build-docs]
 == `actions/build-docs`

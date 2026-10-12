@@ -72,9 +72,14 @@ Bundles listed under `RocPackages` are locked the same way. A bundle a script
 names and the environment does not list is downloaded by Roc, which checks it
 against the content hash in its URL.
 
-The package compiler is the latest published nightly and is not pinned. `actions/setup-roc-nightly` verifies the download against the digest GitHub
-reports for the release asset, and installs it only as `roc-nightly`. A workflow resolves that moving release
-once and passes the tag to every job. Release notes record the version used.
+The package compiler is the latest published nightly and is not pinned. It is
+installed by the official `roc-lang/setup-roc` action, referenced by full
+commit SHA, from a `roc-lang/nightlies` release over HTTPS. That action does not
+check a nightly download against a digest, so the compiler's integrity rests on
+GitHub's release hosting and the action's pinned revision. This is accepted
+because the nightly only ever runs in jobs that hold no write access. A workflow
+resolves the moving release once and passes the tag to every job. Release notes
+record the version used.
 
 [#the-blueprint-binary]
 == The `blueprint` binary
@@ -87,6 +92,13 @@ verifies that reviewed hash locally and does not call an attestation service.
 The hash establishes which bytes run; it is not provenance for the roc-blueprint
 build. A release's binary must be used with that release's platform URL in
 `Blueprint.roc`, so a reviewed change moves both together.
+
+The action accepts only a release version in its `version` input and builds the
+download URL itself, under the roc-blueprint releases of this project, so an
+input cannot redirect the download. The binary is written to a private
+temporary file and becomes executable and visible on `PATH` only after its hash
+matches. A mismatch, a missing checksum for the runner, or a system with no
+released binary fails the step and installs nothing.
 
 The binary evaluates `Blueprint.roc` with a Roc compiler of its own. It uses a
 `roc` on `PATH` only when that is exactly the nightly the binary was built with.

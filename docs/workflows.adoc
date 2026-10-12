@@ -31,8 +31,9 @@ Rules that hold in all three:
 * A job that runs repository code has no write access. A job with write access
   runs no repository code.
 * The nightly tag is resolved once, in the first job, and passed to every other
-  job as the `tag` input of `actions/setup-roc-nightly`. Matrix jobs never each resolve "latest" for themselves, or one run could
-  test several compilers.
+  job as the `nightly-tag` input of `roc-lang/setup-roc`. Matrix jobs never
+  each resolve "latest" for themselves, or one run could test several
+  compilers.
 * Each job calls a `blueprint run <task>` and holds no logic of its own.
 
 Workflows beyond these three, such as a documentation site or scheduled fuzzing,
@@ -110,10 +111,10 @@ patch, minor or major.
 [source,sh]
 ----
 # what bump does this change need, and what is the next version?
-roc-nightly bump --old <previous release bundle URL> package/main.roc
+roc bump --old <previous release bundle URL> package/main.roc
 
 # in release.yml: fail unless the chosen version bumps far enough
-roc-nightly bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
+roc bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
 ----
 
 * Run it before choosing a version, so the number follows from the change and
@@ -182,7 +183,7 @@ therefore use a placeholder, and the workflow fills it in:
   placeholder set to the real URL, tag and hash. A placeholder that is left
   unresolved, or one the notes never use, fails the release.
 * The rendered notes become the body of the GitHub release, followed by the
-  output of `roc-nightly version` and `roc-stable version`. That record is the
+  output of `roc version` and `roc-stable version`. That record is the
   statement of what the release was built and tested with; no header pin makes
   it.
 * A dry run renders the notes too, so a mistake in them fails on the pull
