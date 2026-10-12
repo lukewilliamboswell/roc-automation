@@ -33,8 +33,8 @@ one change.
 . *Workflows.* Replace the repository's workflows with `ci.yml`, `release.yml`
   and `nightly.yml`, plus any
   xref:optional-workflows.adoc#optional-workflows[optional workflows] it needs.
-  Take the `blueprint` version and checksums from the same roc-blueprint release
-  as the platform URL in `Blueprint.roc`.
+  Call `actions/setup-blueprint` with no inputs, after the checkout; it
+  installs the release that `Blueprint.roc` names.
 . *Repository settings.* Apply
   xref:settings.adoc#repository-settings[Repository settings], update the
   required check names, and delete branches that earlier automation owned.

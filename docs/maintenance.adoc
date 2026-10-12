@@ -70,14 +70,19 @@ agree.
 == Upgrade Blueprint
 
 A release's `blueprint` binary must be used with that release's platform URL.
-Change both in one pull request:
+`actions/setup-blueprint` reads the release from that URL, so the URL is the
+only place to change:
 
 . Choose a roc-blueprint release.
+. Move the workflows' reference to `actions/setup-blueprint` to a revision that
+  records that release, if the current one does not. Dependabot proposes this
+  change; xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`] explains
+  where the checksums are reviewed.
 . Change the platform URL in the `Blueprint.roc` header.
-. Change the `blueprint` version and SHA-256 values the workflows pass to
-  `actions/setup-blueprint`, taken from that release's `blueprint.sha256`.
 . Run `blueprint update` if the new release refuses the existing lock.
 . Merge after `ci.yml` passes.
+
+No workflow file names the Blueprint version or a checksum.
 
 Contributors then download the binary from the same release.
 

@@ -12,41 +12,53 @@ request. A shared change never reaches a repository silently.
 [#setup-blueprint]
 == `actions/setup-blueprint`
 
-Installs Nix and the released `blueprint` binary, so that `blueprint run <task>`
-works in the next step. It builds nothing.
+Installs Nix and the `blueprint` binary that `Blueprint.roc` names, so that
+`blueprint run <task>` works in the next step. It builds nothing.
 
 [source,yaml]
 ----
-- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
+- uses: actions/checkout@REVIEWED_FULL_SHA
   with:
-    version: 0.4.0
-    sha256-x86_64-linux: <SHA-256 of blueprint-x86_64-linux>
-    sha256-aarch64-linux: <SHA-256 of blueprint-aarch64-linux>
-    sha256-aarch64-darwin: <SHA-256 of blueprint-aarch64-darwin>
+    persist-credentials: false
+- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
 - run: blueprint run check
 ----
+
+The call takes no inputs. The action reads the roc-blueprint release from the
+platform URL in the checked-out `Blueprint.roc`, and it records the reviewed
+SHA-256 of every binary of each release it installs. `Blueprint.roc` is
+therefore the one place a repository names its Blueprint release, and a
+workflow cannot disagree with it.
 
 [cols="2,4",options="header"]
 |===
 | Input | Meaning
 
-| `version` | The roc-blueprint release to install. Required.
-| `sha256-x86_64-linux` | Reviewed SHA-256 of that release's binary for x86_64 Linux runners
-| `sha256-aarch64-linux` | Reviewed SHA-256 of that release's binary for arm64 Linux runners
-| `sha256-aarch64-darwin` | Reviewed SHA-256 of that release's binary for Apple Silicon macOS runners
+| `version` | The roc-blueprint release to install. Defaults to the release named by the platform URL in `Blueprint.roc` at the root of the workspace. Set it only in a job that has no checkout.
+| `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
+| `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
+| `sha256-aarch64-darwin` | Reviewed SHA-256 of the binary for Apple Silicon macOS runners. Overrides the recorded value.
 |===
 
-Outputs are `blueprint-path`, the absolute path of the installed binary, and
-`system`, the release system name chosen for the runner.
+Outputs are `blueprint-path`, the absolute path of the installed binary,
+`system`, the release system name chosen for the runner, and `version`, the
+release that was installed.
 
-Take the version and the checksums from the same roc-blueprint release as the
-platform URL in `Blueprint.roc`; each release publishes them in its
-`blueprint.sha256` file. Supply a checksum for every runner the workflow uses.
-A job on a runner with no checksum fails, as does a job on a system for which
-no binary is released.
+The recorded checksums live in `actions/setup-blueprint/releases.json`, one
+entry for each roc-blueprint release, copied from that release's
+`blueprint.sha256` file. A new roc-blueprint release is reviewed once, in the
+pull request that adds its entry there, and reaches a repository when that
+repository moves its reference to the action. The reference is a full commit
+SHA, so the recorded checksums are pinned by the same review as the action's
+code.
+
+A release the referenced revision does not record fails the step, unless the
+caller supplies a `sha256-<system>` input for the runner. Use those inputs to
+install a release ahead of the action, such as a release candidate. A system for
+which no binary is released also fails.
 
 The action downloads the binary for the runner's system into a private
-temporary file, compares its SHA-256 with the supplied value, and only then
+temporary file, compares its SHA-256 with the reviewed value, and only then
 makes it executable and puts it on `PATH`. A mismatch fails the step and
 installs nothing. It needs no token and no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states

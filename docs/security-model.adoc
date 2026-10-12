@@ -87,18 +87,28 @@ record the version used.
 `actions/setup-blueprint` installs Nix, through an action referenced by full
 commit SHA, and downloads the prebuilt `blueprint` binary from a roc-blueprint
 release. It builds nothing. Before the binary runs, the action checks it against
-a SHA-256 that the caller has reviewed, and fails on a mismatch. Routine CI
-verifies that reviewed hash locally and does not call an attestation service.
-The hash establishes which bytes run; it is not provenance for the roc-blueprint
-build. A release's binary must be used with that release's platform URL in
-`Blueprint.roc`, so a reviewed change moves both together.
+a reviewed SHA-256 and fails on a mismatch. Routine CI verifies that reviewed
+hash locally and does not call an attestation service. The hash establishes
+which bytes run; it is not provenance for the roc-blueprint build.
 
-The action accepts only a release version in its `version` input and builds the
-download URL itself, under the roc-blueprint releases of this project, so an
-input cannot redirect the download. The binary is written to a private
-temporary file and becomes executable and visible on `PATH` only after its hash
-matches. A mismatch, a missing checksum for the runner, or a system with no
-released binary fails the step and installs nothing.
+The reviewed hashes are recorded in the action, one set for each roc-blueprint
+release, and are reviewed in the pull request that adds them. A caller
+references the action by full commit SHA, so the hashes it trusts are fixed by
+the same reference as the code that checks them. A caller may supply a hash of
+its own for its runner, which then takes the place of the recorded one.
+
+A release's binary must be used with that release's platform URL in
+`Blueprint.roc`, so the action takes the release from that URL. The file is
+candidate content in a pull request, and that is safe: the version it names can
+only choose among releases whose hashes are already reviewed. A version the
+action does not record, with no hash from the caller, fails the step.
+
+The action accepts only a release version, from its `version` input or from
+`Blueprint.roc`, and builds the download URL itself, under the roc-blueprint
+releases of this project, so neither can redirect the download. The binary is
+written to a private temporary file and becomes executable and visible on `PATH`
+only after its hash matches. A mismatch, a release with no reviewed hash for the
+runner, or a system with no released binary fails the step and installs nothing.
 
 The binary evaluates `Blueprint.roc` with a Roc compiler of its own. It uses a
 `roc` on `PATH` only when that is exactly the nightly the binary was built with.
