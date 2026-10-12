@@ -1,0 +1,41 @@
+name: Set up Blueprint
+description: Install Nix and the released blueprint binary, admitted only by a reviewed SHA-256.
+
+inputs:
+  version:
+    description: roc-blueprint release to install; use the release named by the platform URL in Blueprint.roc
+    required: true
+  sha256-x86_64-linux:
+    description: Reviewed SHA-256 of that release's blueprint-x86_64-linux binary
+    default: ''
+  sha256-aarch64-linux:
+    description: Reviewed SHA-256 of that release's blueprint-aarch64-linux binary
+    default: ''
+  sha256-aarch64-darwin:
+    description: Reviewed SHA-256 of that release's blueprint-aarch64-darwin binary
+    default: ''
+
+outputs:
+  blueprint-path:
+    description: Absolute path of the installed blueprint binary
+    value: ${{ steps.install.outputs.blueprint-path }}
+  system:
+    description: Release system name selected for this runner
+    value: ${{ steps.install.outputs.system }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+    - id: install
+      name: Download and verify blueprint
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_SHA256_X86_64_LINUX: ${{ inputs.sha256-x86_64-linux }}
+        INPUT_SHA256_AARCH64_LINUX: ${{ inputs.sha256-aarch64-linux }}
+        INPUT_SHA256_AARCH64_DARWIN: ${{ inputs.sha256-aarch64-darwin }}
+        INSTALLER: ${{ github.action_path }}/setup_blueprint.py
+      run: python3 "$INSTALLER"

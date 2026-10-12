@@ -107,10 +107,8 @@ app [main!] {
   `roc-stable`.
 * Reference every dependency by immutable release URL with its content hash,
   and list the same URLs under `RocPackages` in `Blueprint.roc`.
-* Run package work with the compiler named by the `ROC_NIGHTLY` environment
-  variable, falling back to `roc`. CI sets the variable to `roc-nightly`, so a
-  CI job can never pick up some other `roc`; a contributor leaves it unset and
-  uses their own `roc`. Never use `roc-stable` to check, test or bundle the
+* Run package work with `roc`, which is the latest nightly in CI and on a
+  contributor's machine. Never use `roc-stable` to check, test or bundle the
   package.
 * Put pure logic in `scripts/src/` modules with `expect` tests, and run those
   tests from the check script.

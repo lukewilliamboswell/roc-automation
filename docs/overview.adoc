@@ -77,7 +77,7 @@ interchangeable.
 | The release tag named in `Blueprint.roc`
 | Running the repository's automation scripts
 
-| The latest nightly: `roc-nightly` in CI, a contributor's own `roc` locally
+| `roc`, the latest nightly
 | Nothing: it is whatever https://github.com/roc-lang/nightlies[`roc-lang/nightlies`] published most recently
 | Checking, testing, bundling and running the package, the platform and their examples
 |===
@@ -109,9 +109,10 @@ repositories need not agree.
 This model treats that as the last good build and does not check upstream CI
 separately.
 
-CI installs that compiler under the name `roc-nightly` and nothing else, so a
-job cannot confuse it with another `roc`. A contributor needs no such name: the
-scripts use the contributor's own `roc`.
+CI installs that compiler as `roc` with the official
+https://github.com/roc-lang/setup-roc[`roc-lang/setup-roc`] action, which is
+also how it is named on a contributor's machine. The Blueprint environment
+provides `roc-stable` and no `roc`, so the two names never collide.
 
 == What each workflow answers
 
@@ -145,9 +146,6 @@ by full commit SHA. A repository keeps only what knows its own package.
 
 | `actions/setup-blueprint`: install Nix and the verified `blueprint` binary
 | `Blueprint.roc` and `Blueprint.lock`
-
-| `actions/setup-roc-nightly`: install the latest nightly as `roc-nightly`
-| The package, its examples and tests
 
 | `actions/build-docs`: render an AsciiDoc manual as a site and PDF
 | `docs/*.adoc`
