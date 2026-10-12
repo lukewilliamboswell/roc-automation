@@ -39,6 +39,30 @@ jobs:
           test -s "$PDF"
           grep -q 'data-lang="roc"' "$SITE/usage.html"
           grep -q 'diag-mermaid-' "$SITE/index.html"
+  setup-blueprint-action:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: blueprint
+        uses: ./actions/setup-blueprint
+        with:
+          version: 0.4.0
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Check the installed command
+        env:
+          BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+        run: |
+          test "$(command -v blueprint)" = "$BLUEPRINT"
+          nix --version
+          blueprint --help
   workflow-lint:
     runs-on: ubuntu-24.04
     steps:
