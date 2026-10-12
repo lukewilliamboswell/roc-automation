@@ -1,0 +1,96 @@
+= roc-automation 3
+
+This version applies what the first repository to adopt the model found. It
+removes repeated values from every workflow, adds two shared actions for steps
+that each repository had written differently, and says what the model asks of
+the simplest kind of repository.
+
+== `actions/setup-blueprint` needs no inputs
+
+The action reads the roc-blueprint release from the platform URL in the
+checked-out `Blueprint.roc`, and records the reviewed SHA-256 of each release's
+binaries itself. See
+xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`].
+
+If you followed version 2:
+
+* move the reference to a revision of the action that records your Blueprint
+  release;
+* delete the `version` and `sha256-*` lines from every call; and
+* make sure the checkout step comes before the action.
+
+[source,yaml]
+----
+- uses: actions/checkout@REVIEWED_FULL_SHA
+  with:
+    persist-credentials: false
+- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
+----
+
+The inputs still work, so an existing call keeps running unchanged. Keep
+`version` only in a job that has no checkout, and a `sha256-*` input only to
+install a release the action does not record.
+xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint] is now a change to
+`Blueprint.roc` alone.
+
+== `actions/publish-release`
+
+The publish job of `release.yml` calls
+xref:actions.adoc#publish-release[`actions/publish-release`] in place of
+hand-written steps. It stages a draft at the tested commit, uploads the assets,
+downloads each one back and compares it with the tested file, and only then
+publishes. It refuses a version that already has a tag, a release or a draft,
+and it never asks GitHub to generate notes.
+
+xref:workflows.adoc#recover-an-interrupted-publication[Recover an interrupted publication]
+is rewritten to match: a draft left by a failed run is deleted, and the publish
+job of the same run is run again.
+
+== `actions/nightly-report`
+
+The report job of `nightly.yml` calls
+xref:actions.adoc#nightly-report[`actions/nightly-report`] in place of inline
+steps. It keeps the one tracking issue, which is the open issue with the exact
+title whose author is a bot account, and it treats any outcome other than
+`success` or `failure` as a setup failure that leaves the issue alone.
+
+Pass it the outcome of the step that ran the examples, not the result of the
+test job; xref:workflows.adoc#reporting[Reporting] explains the difference.
+
+== Repository settings are checked by a task
+
+`blueprint run check-settings \-- <owner>/<name>`, run from a checkout of
+roc-automation, reads a repository's settings from GitHub and reports each line
+of xref:settings.adoc#repository-settings[Repository settings] as passing or
+failing, with the fix for each failure. It only reads, and it runs on a
+maintainer's machine. xref:settings.adoc#confirm-the-settings[Confirm the settings]
+describes it.
+
+The chapter is more exact in three places so that the task can check them:
+
+* neither an app nor a deploy key is on a ruleset's bypass list;
+* the `release` and `github-pages` environments name the default branch, and do
+  not use "Protected branches only"; and
+* the tag ruleset targets all tags and restricts both updates and deletions.
+
+This repository now has a `Blueprint.roc` and Roc scripts of its own, checked
+by `blueprint run check`.
+
+== A pure Roc package tests on one runner
+
+xref:overview.adoc#a-pure-roc-package[A pure Roc package] names the profile
+most repositories follow: no host code, no native inputs, nothing that differs
+by target. Such a package runs each workflow on `ubuntu-latest` only, has no
+matrix and no aggregate job, and skips the platform chapters.
+
+== Three release rules are settled
+
+* A dry run renders the release notes for the highest version under
+  `docs/releases/`.
+* The compiler versions follow the rendered notes under the heading
+  "Compilers".
+* Several bundles in one release keep their content-hash filenames and are
+  never given a prefix.
+
+See xref:workflows.adoc#write-the-release-notes[Write the release notes] and
+xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release].
