@@ -194,6 +194,9 @@ by full commit SHA. A repository keeps only what knows its own package.
 | `actions/build-docs`: render an AsciiDoc manual as a site and PDF
 | `docs/*.adoc`
 
+| `actions/publish-release`: stage a draft release, verify every asset, then publish
+| What a release contains, and the jobs that build and test it
+
 | `actions/publish-build-inputs`: publish linker inputs from a pull request
 | The producer workflow and its build recipe
 

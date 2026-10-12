@@ -226,9 +226,11 @@ flowchart TD
   xref:examples.adoc#build-and-test-the-exact-archive[Build and test the exact archive].
 . *Publish.* A separate job, with `contents: write` and a protected
   environment, downloads the tested artifacts. It checks out nothing and runs no
-  repository script. It creates a draft release at the tested commit, uploads
-  every asset, downloads each one back and verifies it against the tested
-  artifact, then publishes.
+  repository script. It hands the version, the rendered notes and the asset
+  files to
+  xref:actions.adoc#publish-release[`actions/publish-release`], which stages a
+  draft at the tested commit, verifies every uploaded asset against the tested
+  file, and then publishes.
 . *Update the site.* For a final release, rebuild the documentation site so
   that it points at the new release, and deploy it; see
   xref:optional-workflows.adoc#what-the-site-points-at[What the site points at].
@@ -283,16 +285,25 @@ announcement.
 
 === Recover an interrupted publication
 
-If publication stops, inspect exactly what exists before retrying.
+If publication stops, inspect exactly what exists before retrying. The publish
+job's error says which of these states it left.
 
-* An unfinished draft can be resumed: upload the missing assets from the same
-  run's artifacts, verify the complete inventory, then publish.
-* A published release that is incomplete cannot be repaired, because it is
-  immutable. Publish a new version.
-* Changed bytes are always a new version.
+* *A draft and no tag.* Nothing is public. The error names the draft, which
+  holds whatever was uploaded before the failure. Look at it to see how far the
+  job got, delete it, and re-run the failed publish job of the same workflow
+  run. That job publishes the files the run already tested. The publish action
+  never adopts a draft it finds, so the draft is deleted first.
+* *A published release.* It is immutable and is never repaired. If it is
+  complete, the version is released and nothing is re-run. If it is not, publish
+  a new version.
+* *Unknown.* When the answer to the publish request was lost, look at the
+  releases page and treat what is there as one of the two states above.
 
-Do not rebuild from a moving branch, replace an asset, or rerun a job that
-expects no release to exist.
+Changed bytes are always a new version. Do not publish a draft by hand, replace
+an asset, or rebuild from a moving branch. If the run's artifacts have expired,
+delete the draft and dispatch the release again from the default branch. The
+version was never published, so it is still free, and the new run builds and
+tests its own files.
 
 == Nightly compatibility
 

@@ -1,0 +1,50 @@
+name: Publish a release
+description: Stage a draft release, verify every uploaded asset against the tested file, then publish it once.
+
+inputs:
+  version:
+    description: Release version such as 0.12.0 or 0.12.0-rc1
+    required: true
+  prerelease:
+    description: Exactly true or false; it must agree with whether the version has a prerelease suffix
+    required: true
+  notes-file:
+    description: Path of the rendered, authored release notes
+    required: true
+  assets:
+    description: Globs of the tested files to publish, one per line; each must match at least one regular file
+    required: true
+  tag:
+    description: Tag to create, either the version or <name>-<version>; empty uses the version
+    default: ''
+  target:
+    description: Full SHA of the tested commit the tag points at
+    default: ${{ github.sha }}
+  token:
+    description: Token with contents write access to this repository
+    default: ${{ github.token }}
+
+outputs:
+  release-url:
+    description: URL of the published release
+    value: ${{ steps.publish.outputs.release-url }}
+  digests:
+    description: Path of a sha256sum-format listing of the published assets
+    value: ${{ steps.publish.outputs.digests }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      name: Stage, verify and publish the release
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        INPUT_NOTES_FILE: ${{ inputs.notes-file }}
+        INPUT_ASSETS: ${{ inputs.assets }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        PUBLISHER: ${{ github.action_path }}/publish_release.py
+      run: python3 "$PUBLISHER"

@@ -137,6 +137,103 @@ provide. A replacement theme directory must contain `docs.css`,
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
 lists what the renderer expects of the sources.
 
+[#publish-release]
+== `actions/publish-release`
+
+Publishes one release from files an earlier job built and tested. It stages
+them in a draft, reads every asset back and compares it with the tested file,
+and only then publishes. It checks out nothing and runs no repository code.
+
+[source,yaml]
+----
+publish:
+  needs: [build, test]
+  if: github.event_name == 'workflow_dispatch'
+  runs-on: ubuntu-24.04
+  environment: release
+  permissions:
+    contents: write
+  steps:
+    - uses: actions/download-artifact@REVIEWED_FULL_SHA
+      with:
+        name: release-candidate
+        path: candidate
+    - uses: lukewilliamboswell/roc-automation/actions/publish-release@REVIEWED_FULL_SHA
+      with:
+        version: ${{ needs.build.outputs.release-version }}
+        prerelease: ${{ needs.build.outputs.is-prerelease }}
+        notes-file: candidate/release-notes.md
+        assets: |
+          candidate/dist/*
+          candidate/docs/*.pdf
+----
+
+The job names the `release` environment, holds `contents: write` and nothing
+else, and has no checkout step. Its only inputs are the artifact the build job
+uploaded and the test jobs verified. What the assets are, how they are built and
+tested, and any attestation of them stay in the repository's earlier jobs.
+
+[cols="2,2,4",options="header"]
+|===
+| Input | Default | Meaning
+
+| `version` | required | The release version, such as `0.12.0` or `0.12.0-rc1`
+| `prerelease` | required | Exactly `true` or `false`. It must agree with whether `version` has a prerelease suffix.
+| `notes-file` | required | Path of the rendered release notes, which become the body of the release
+| `assets` | required | Globs of the tested files, one per line, relative to the workspace
+| `tag` | `version` | The tag to create: the version, or `<name>-<version>` in a repository that releases more than one thing
+| `target` | `${{ github.sha }}` | Full SHA of the tested commit the tag points at
+| `token` | `${{ github.token }}` | A token with `contents: write` on the repository
+|===
+
+Outputs are `release-url`, the URL of the published release, and `digests`, the
+path of a listing of the published assets in the format `sha256sum` writes and
+`sha256sum --check` reads.
+
+The tag is the bare version, without a `v`. A repository that publishes a
+second, independently versioned package gives that package's releases a name
+with the `tag` input, such as `kit-0.1.0`. The tag must end with the version,
+so the two cannot disagree.
+
+The action does the following, in this order, and stops at the first failure.
+
+. *Check the inputs.* The version, tag, target and `prerelease` value must be
+  well formed and agree with each other. The notes file must be a non-empty
+  regular file.
+. *Collect the assets.* Every glob must match at least one file. Every match
+  must be a regular, non-empty file and not a symbolic link, and no two may
+  share a filename. Filenames are limited to letters, digits, `.`, `_` and `-`,
+  because GitHub rewrites other characters and the published name would then
+  differ from the tested one. The SHA-256 of each file is recorded now.
+. *Require a new version.* The target must be a commit of the repository. The
+  tag must not exist, and no release for it may exist, published or draft.
+. *Create a draft* at the target commit, with the notes file as its body.
+. *Upload* every asset to the draft.
+. *Verify the draft.* It must hold exactly the collected filenames. Each asset
+  is downloaded into a new, empty directory and must equal the tested file in
+  size and SHA-256.
+. *Publish.* A prerelease version is published as a prerelease and is not made
+  the latest release. Any other version is published as the latest release.
+. *Confirm.* The published release must carry the requested tag and be
+  immutable. The digest listing is written to the job summary.
+
+Nothing is public before the publish step. With immutable releases enabled,
+publishing a draft is the moment its tag and assets become permanent, which is
+why every check comes before it. A failure after the draft exists leaves the
+draft unpublished and the tag uncreated; the error names the draft.
+xref:workflows.adoc#recover-an-interrupted-publication[Recover an interrupted publication]
+says what to do with it.
+
+The action does not adopt an existing draft, replace an asset, or add to a
+published release. It publishes the notes file as written and does not ask
+GitHub to generate notes: release notes are authored, as
+xref:workflows.adoc#write-the-release-notes[Write the release notes] describes.
+
+It needs Python on the runner and nothing else. The token goes only to the
+GitHub API, and is not sent to the storage host that serves an asset download.
+A repository without immutable releases fails the last step, after the release
+is published; xref:settings.adoc#releases[Releases] lists the setting.
+
 [#publish-build-inputs]
 == `actions/publish-build-inputs`
 
