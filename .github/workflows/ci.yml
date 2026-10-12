@@ -86,6 +86,17 @@ jobs:
         run: |
           test "$ACTION" = none
           test -z "$ISSUE"
+  # The repository's own Roc scripts, on the pinned tooling compiler. This does
+  # not ask GitHub about any repository's settings: that needs administration
+  # access, which no workflow token has, so a maintainer runs check-settings.
+  roc-scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/setup-blueprint
+      - run: blueprint run check
   workflow-lint:
     runs-on: ubuntu-24.04
     steps:
