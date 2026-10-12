@@ -51,10 +51,13 @@ xref:optional-workflows.adoc#optional-workflows[Optional workflows].
 xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
 lists what the `check` task covers.
 
-A repository that supports several targets runs this as a matrix, one job per
-runner, and ends with a single aggregate job that requires every matrix job to
-have succeeded. The aggregate job's name is the required status check, so the
-ruleset does not need editing when the matrix changes.
+A xref:overview.adoc#a-pure-roc-package[pure Roc package] runs this as one job
+on `ubuntu-latest`, and that job's name is the required status check.
+
+A repository whose code can behave differently by target runs it as a matrix,
+one job per runner, and ends with a single aggregate job that requires every
+matrix job to have succeeded. The aggregate job's name is the required status
+check, so the ruleset does not need editing when the matrix changes.
 
 A platform adds the host-bindings check described in
 xref:platforms.adoc#host-bindings[Host bindings]. It runs here and nowhere else.
@@ -308,7 +311,9 @@ flowchart LR
   and do not test the default branch's examples here: new APIs on the default
   branch are not evidence about a release.
 * Use the default branch's scripts, on `roc-stable`, to drive the test.
-* Run on every target the release supports.
+* Run on every target the release is tested on: the one runner of a
+  xref:overview.adoc#a-pure-roc-package[pure Roc package], or the same matrix
+  as `ci.yml`.
 * A platform's host bindings are not checked here. A released host is fixed;
   what matters is whether its applications still build and run.
 

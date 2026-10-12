@@ -5,6 +5,10 @@ It assumes the earlier chapters. Work from a fresh branch of the remote default
 branch, and open one pull request per numbered step so that a failure points at
 one change.
 
+A xref:overview.adoc#a-pure-roc-package[pure Roc package] follows every step,
+with one runner in each workflow. The sentences below that begin "A platform"
+and the acceptance item that begins "For a platform" do not apply to it.
+
 == Steps
 
 . *Environment.* Add `Blueprint.roc` and `Blueprint.lock` with `roc-stable`,
