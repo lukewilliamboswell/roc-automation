@@ -51,17 +51,71 @@ needs host code to change with it.
 . If the released platform no longer works with the new nightly,
   `nightly.yml` has already reported it. Release a new platform version.
 
-== Build and test on every target
+== Cross-compile once, run on every target
 
-A platform advertises a set of targets, and each workflow tests all of them.
+A platform advertises a set of targets, and each workflow validates all of
+them. The usual shape is one builder job that cross-compiles for every target,
+followed by a matrix of runner jobs that execute the result on each one.
 
-* `ci.yml`, `release.yml` and `nightly.yml` each run a matrix with one job per
-  supported runner, and one aggregate job that requires them all.
-* Build each host on a runner that can build it. Cross-compile from one runner
-  where the toolchain allows; otherwise build per runner and collect the
-  outputs as workflow artifacts.
-* Assemble every host and linker input, then bundle once. The same bundle goes
-  to every test job. A test job never rebuilds the bundle.
+.One builder, a matrix of runners
+[mermaid]
+....
+flowchart LR
+    S[Host source and linker inputs] --> B[Builder job: cross-compile every target]
+    B --> P[One platform bundle]
+    P --> L[Linux x64 runner]
+    P --> A[Linux arm64 runner]
+    P --> M[macOS runner]
+    P --> W[Windows runner]
+    L --> G[Aggregate check]
+    A --> G
+    M --> G
+    W --> G
+....
+
+=== The builder job
+
+* One job, on one runner, cross-compiles the host for every supported target.
+  A single toolchain version then produces every host, and the expensive work
+  happens in one place where its cache is easy to manage.
+* It assembles the hosts with the locked linker inputs and bundles once. The
+  bundle is uploaded as a workflow artifact.
+* Where a target cannot be cross-compiled, because it needs an SDK or a
+  toolchain that exists on one operating system only, that host is built by a
+  job on that system and handed to the builder as an artifact. This is the
+  exception to plan around, not the default.
+
+=== The runner jobs
+
+* One job per supported target downloads the bundle and runs applications
+  against it. A runner job never rebuilds the host or the bundle, so every
+  target tests the same bytes, and those are the bytes a release publishes.
+* One aggregate job requires every runner job to have passed. Its name is the
+  required status check.
+
+The purpose of the matrix is narrow: to show that the host and the linker
+inputs for each target link and run correctly there. Cross-compilation proves a
+host compiles for a target; only running on that target proves that it links,
+starts, and talks to the operating system as expected.
+
+=== What the runners run
+
+Run the examples. They exercise the platform through its public API the way an
+application does, and between them they usually reach enough of the host to
+show that a target works. They are already written, already have recorded
+expected output, and are what a user will try first.
+
+Add dedicated tests where the examples leave a gap: a host service no example
+uses, a code path that differs per operating system, a failure that should be
+reported in a particular way. Keep them few and aimed at the host, because
+everything in the matrix runs once per target.
+
+What does not belong in the matrix is anything that does not depend on the
+target. Unit tests of pure Roc code, formatting and the static checks run once,
+on one runner.
+
+=== Runner environments
+
 * State each runner's runtime needs in the workflow: a display server, a
   software GPU, an audio sink, a browser. A simulated environment is reported as
   simulated; it is not evidence about the real one.
