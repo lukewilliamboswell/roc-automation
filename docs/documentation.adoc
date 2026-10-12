@@ -146,6 +146,55 @@ rules keep all three outputs correct.
 Build the manual in a pull request, and deploy it from the default branch, as
 described in xref:optional-workflows.adoc#documentation-site[Documentation site].
 
+== One manual, several audiences
+
+A project has more than one kind of reader: someone deciding whether to use the
+package, someone using it for the first time, an experienced user looking up a
+detail, a contributor, a maintainer cutting a release, a person verifying a
+download. Their needs differ, and they should all be served by one unified
+document, the manual, and not by notes scattered across the repository.
+
+* Put contributor notes, maintainer procedures, architecture and release
+  history in the manual, as chapters beside the user documentation. A reader
+  then has one place to look and one table of contents to scan, and a single
+  build keeps every part current.
+* Decide what each section is for before writing it. Name the reader it serves
+  and what that reader should be able to do afterwards. A section that cannot
+  answer both is not ready to be written.
+* Introduce information gradually. Order the manual from the reader who knows
+  least to the reader who knows most: what the project is, a first success,
+  everyday tasks, reference, then contributing and maintenance. No chapter
+  should require something a later chapter explains.
+* Keep audiences apart. A getting-started chapter does not stop to explain the
+  release process, and a maintainer chapter does not re-teach the basics. Link
+  across instead.
+* Tell each reader where to start. Open the manual with a short guide that
+  sends each kind of reader to their chapter.
+
+[#keep-the-readme-short]
+== Keep the README short
+
+A README is the front door, and it faces users. It answers three questions and
+then hands over to the manual: what is this, what does it look like, and where
+do I go next.
+
+* One or two sentences saying what the project is and who it is for.
+* A prominent link to the documentation site, and to the latest release.
+* A grid of screenshots or short examples. A picture of the output, or a few
+  lines of code beside what they produce, tells a visitor more in five seconds
+  than a page of prose. Choose a handful that show the range of the project.
+* A minimal install or usage snippet, when one fits in a few lines.
+
+A README must never become a dumping ground. Build instructions, contributor
+setup, design notes, troubleshooting and release procedure all belong in the
+manual. When something seems to need adding to the README, add it to the
+manual and link to it. A README that has grown past a screen or two has usually
+started doing the manual's job, and the two then drift apart.
+
+The same holds for the other root files. `CONTRIBUTING.md` is a short pointer
+to the contributing chapter. `SECURITY.md` states how to report a
+vulnerability. Neither carries guidance that is not also in the manual.
+
 == Cover the public project experience
 
 Review the documentation as a connected entry path, not only as individual
@@ -164,10 +213,10 @@ report vulnerabilities;
 * human-readable release notes and upgrade impact; and
 * license, third-party notices, provenance, and acknowledgments where applicable.
 
-These subjects need not all live in the manual. Keep short repository entry
-points such as `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE` where
-hosting services and automated tools expect them, and link them to the detailed
-manual where useful.
+All of these live in the manual, as one document. The files that hosting
+services and tools expect at the repository root, such as `README.md`,
+`CONTRIBUTING.md`, `SECURITY.md` and `LICENSE`, stay there and stay short; see
+xref:documentation.adoc#keep-the-readme-short[Keep the README short].
 
 == Keep claims testable
 

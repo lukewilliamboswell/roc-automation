@@ -1,0 +1,68 @@
+= Contribute to roc-automation
+
+This chapter is for someone changing roc-automation itself: its manual or its
+shared actions. It assumes the rest of the manual.
+
+== Propose a change
+
+Use issues for bug reports and design discussion, and pull requests for
+changes. Explain the affected behavior, the change, and how it was validated.
+Report vulnerabilities privately, as `SECURITY.md` describes. Commits are
+signed, and changes reach the default branch through pull requests.
+
+== Change the manual
+
+The sources are the AsciiDoc files under `docs/`.
+xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
+lists the conventions they follow.
+
+Build the site and PDF locally with Docker:
+
+[source,sh]
+----
+python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 1
+----
+
+The output is written to `.docs-out/`. The `Documentation` workflow runs the
+same build on every pull request and deploys from the default branch.
+
+The manual describes the model as it should be practised. A repository or tool
+that does not yet follow it is recorded in a GitHub issue, not in the manual.
+Record a change to the manual in `CHANGELOG.md`.
+
+== Change a shared action
+
+Read xref:security-model.adoc#the-three-workflows[the trust model] first. It is
+normative: a change to an action's behavior or permissions keeps those
+boundaries and arrives with regression tests for them.
+
+Python 3.10 or later and the standard library are sufficient for the action
+tests:
+
+[source,sh]
+----
+python3 -m unittest discover -s tests -v
+----
+
+* Add regression tests for fixes and tests for new behavior, especially for
+  stale commit or run evidence, branch ownership, permissions and malformed
+  input.
+* Keep each token permission on the job that needs it.
+* Never execute candidate code in a job that can write.
+* Pin remote actions and workflows to full commit SHAs.
+* Use the standard library unless an additional runtime dependency has an
+  explicit justification.
+* Review dependency changes and address actionable static-analysis findings.
+
+== Release a shared action
+
+Repositories reference an action by full commit SHA and adopt a new one through
+a Dependabot or maintainer pull request. Nothing updates them automatically.
+
+For a change to an action that a reusable workflow in this repository calls,
+commit the action and its tests first, then update the workflow to that exact
+commit. This gives the nested action an immutable revision without a
+self-referential commit hash.
+
+Use a unique version tag for a published release, record any assigned
+vulnerability identifiers for fixes, and never move an existing tag.
