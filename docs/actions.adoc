@@ -98,10 +98,11 @@ compiler:
 [#actions-that-run-a-roc-script]
 == Actions that run a Roc script
 
-`actions/nightly-report` is a Roc script in roc-automation,
-`scripts/nightly_report.roc`, written as
+`actions/nightly-report` and `actions/publish-release` are Roc scripts in
+roc-automation, `scripts/nightly_report.roc` and `scripts/publish_release.roc`,
+written as
 xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
-describes. It runs from source in the calling job, from the action's own copy
+describes. Each runs from source in the calling job, from the action's own copy
 of roc-automation at the referenced commit. The action:
 
 . installs Nix, with the install action `actions/setup-blueprint` uses, at the
@@ -110,8 +111,8 @@ of roc-automation at the referenced commit. The action:
   and checks it against its recorded SHA-256, as
   xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary]
   describes; and
-. runs its task, `blueprint run nightly-report`, in that copy of
-  roc-automation.
+. runs its task, `blueprint run nightly-report` or
+  `blueprint run publish-release`, in that copy of roc-automation.
 
 roc-automation's `Blueprint.lock` at the referenced commit pins what the task
 starts: `roc-stable`, which runs the script, the platform the script is built
@@ -126,7 +127,7 @@ as arguments. `gh` reads the token from `GH_TOKEN` and sends requests to the
 GitHub host it is configured for, which is GitHub.com unless the job sets
 `GH_HOST`.
 
-The action needs a runner Blueprint supports, which is x86-64 or arm64 Linux
+These actions need a runner Blueprint supports, which is x86-64 or arm64 Linux
 or Apple Silicon macOS, and `python3` for the installer, which GitHub's hosted
 runners provide. On a runner with an empty Nix store, installing Nix and
 downloading the environment is most of the job's time: the environment is about
@@ -258,7 +259,8 @@ lists what the renderer expects of the sources.
 
 Publishes one release from files an earlier job built and tested. It stages
 them in a draft, reads every asset back and compares it with the tested file,
-and only then publishes. It checks out nothing and runs no repository code.
+and only then publishes. It checks out nothing from the calling repository and
+runs none of its code.
 
 [source,yaml]
 ----
@@ -315,19 +317,21 @@ The action does the following, in this order, and stops at the first failure.
 
 . *Check the inputs.* The version, tag, target and `prerelease` value must be
   well formed and agree with each other. The notes file must be a non-empty
-  regular file.
+  regular file of UTF-8 text.
 . *Collect the assets.* Every glob must match at least one file. Every match
   must be a regular, non-empty file and not a symbolic link, and no two may
   share a filename. Filenames are limited to letters, digits, `.`, `_` and `-`,
   because GitHub rewrites other characters and the published name would then
-  differ from the tested one. The SHA-256 of each file is recorded now.
+  differ from the tested one. The SHA-256 of each file is recorded now. The
+  token and the repository name are checked last, so every check that needs no
+  request has passed before the first request is made.
 . *Require a new version.* The target must be a commit of the repository. The
   tag must not exist, and no release for it may exist, published or draft.
 . *Create a draft* at the target commit, with the notes file as its body.
 . *Upload* every asset to the draft.
 . *Verify the draft.* It must hold exactly the collected filenames. Each asset
   is downloaded into a new, empty directory and must equal the tested file in
-  size and SHA-256.
+  size and SHA-256. A download is cut off one byte past the tested size.
 . *Publish.* A prerelease version is published as a prerelease and is not made
   the latest release. Any other version is published as the latest release.
 . *Confirm.* The published release must carry the requested tag and be
@@ -341,14 +345,25 @@ xref:workflows.adoc#recover-an-interrupted-publication[Recover an interrupted pu
 says what to do with it.
 
 The action does not adopt an existing draft, replace an asset, or add to a
-published release. It publishes the notes file as written and does not ask
-GitHub to generate notes: release notes are authored, as
-xref:workflows.adoc#write-the-release-notes[Write the release notes] describes.
+published release. Once it has created the draft, every request names that
+draft by its numeric identifier, never by tag. It publishes the notes file as
+written and does not ask GitHub to generate notes: release notes are authored,
+as xref:workflows.adoc#write-the-release-notes[Write the release notes]
+describes.
 
-It needs Python on the runner and nothing else. The token goes only to the
-GitHub API, and is not sent to the storage host that serves an asset download.
-A repository without immutable releases fails the last step, after the release
-is published; xref:settings.adoc#releases[Releases] lists the setting.
+A glob in `assets` is a path relative to the workspace. Within one path segment
+`*` matches any run of characters and `?` any one character, and neither
+matches the dot at the start of a name. `.` segments are ignored. Nothing else
+is a pattern: `**`, `[`, a backslash, a `..` segment and an absolute path are
+each an error, so a glob names only paths under the workspace.
+
+Every request is a `gh api` call. `gh` adds the token to requests for the
+GitHub host and does not repeat it when GitHub redirects an asset download to
+the storage host that serves the bytes. A repository without immutable releases
+fails the last step, after the release is published;
+xref:settings.adoc#releases[Releases] lists the setting.
+xref:actions.adoc#actions-that-run-a-roc-script[Actions that run a Roc script]
+states what the action needs of the runner.
 
 [#publish-build-inputs]
 == `actions/publish-build-inputs`

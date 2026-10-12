@@ -32,19 +32,50 @@ outputs:
     description: Path of a sha256sum-format listing of the published assets
     value: ${{ steps.publish.outputs.digests }}
 
+# The action is a Roc script in this repository, run from the action's own
+# checkout: scripts/publish_release.roc behind the publish-release task. The
+# first two steps are those of actions/setup-blueprint, repeated because a
+# composite action cannot name a sibling at its own commit. They install the
+# blueprint release that this repository's Blueprint.roc names, whatever the
+# calling repository contains. The script resolves the asset globs and the
+# notes file against GITHUB_WORKSPACE, the caller's workspace.
 runs:
   using: composite
   steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+    # The installer reads Blueprint.roc from GITHUB_WORKSPACE, installs under
+    # RUNNER_TEMP and adds that directory to GITHUB_PATH. Here it is given this
+    # repository's checkout, a directory of its own, and no PATH file, so the
+    # calling job's PATH and any blueprint it installed are left alone.
+    - id: blueprint
+      name: Download and verify blueprint
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_VERSION: ''
+        INPUT_SHA256_X86_64_LINUX: ''
+        INPUT_SHA256_AARCH64_LINUX: ''
+        INPUT_SHA256_AARCH64_DARWIN: ''
+      run: |
+        root="$(cd "$ACTION_PATH/../.." && pwd)"
+        GITHUB_WORKSPACE="$root" RUNNER_TEMP="$RUNNER_TEMP/roc-automation-publish-release" GITHUB_PATH=/dev/null \
+          python3 "$root/actions/setup-blueprint/setup_blueprint.py"
+
     - id: publish
       name: Stage, verify and publish the release
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
+        BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_PRERELEASE: ${{ inputs.prerelease }}
         INPUT_NOTES_FILE: ${{ inputs.notes-file }}
         INPUT_ASSETS: ${{ inputs.assets }}
         INPUT_TAG: ${{ inputs.tag }}
         INPUT_TARGET: ${{ inputs.target }}
-        INPUT_TOKEN: ${{ inputs.token }}
-        PUBLISHER: ${{ github.action_path }}/publish_release.py
-      run: python3 "$PUBLISHER"
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        cd "$ACTION_PATH/../.."
+        "$BLUEPRINT" run publish-release

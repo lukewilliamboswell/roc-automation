@@ -28,7 +28,7 @@ Two rules carry most of the weight:
 
 | `release.yml` publish
 | `contents: write`, behind a protected environment
-| No: it uploads artifacts produced by earlier jobs
+| No: it runs `actions/publish-release` on artifacts produced by earlier jobs
 
 | `release.yml` site deploy
 | `pages: write`, `id-token: write`
@@ -62,13 +62,14 @@ No workflow in the model opens a pull request, approves one, or merges one.
 Every change to the repository is a maintainer's pull request under the
 repository's own rules.
 
-[#what-the-report-job-runs]
-=== What the report job runs
+[#what-the-jobs-with-write-access-run]
+=== What the jobs with write access run
 
-The report job holds a token that can change a repository's issues. It runs one
-shared action, `actions/nightly-report`, which is a Roc script that runs from
-the action's own copy of roc-automation, at the full commit SHA the workflow
-names. What runs in that job is therefore:
+The publish job and the report job hold the tokens that can change a
+repository's releases and issues. Each runs one shared action,
+`actions/publish-release` or `actions/nightly-report`, and each action is a Roc
+script that runs from the action's own copy of roc-automation, at the full
+commit SHA the workflow names. What runs in those two jobs is therefore:
 
 * Nix, installed by an install action that the shared action references by
   full commit SHA; that action fixes the Nix version and downloads its
@@ -90,13 +91,16 @@ digest. Nix takes the compiler and the platform by the hashes those inputs
 record, and takes the tools from nixpkgs at the pinned revision, as built by
 its binary cache, whose signatures it checks.
 
-The job does not check out the calling repository, and the action runs none of
+Neither job checks out the calling repository, and neither action runs any of
 its code. The calling repository's `Blueprint.roc`, lock and scripts play no
-part, and the action reads no file from the job's workspace.
+part. The report action reads no file from the job's workspace. The publish
+action reads the notes file and the asset files it is given, which an earlier
+job built: it sends the notes as text, and it hashes, uploads and compares the
+assets as bytes, and executes none of them.
 
 The token is in the environment of the one step that runs the script, where
 `gh` reads it. It is never a command-line argument and is never printed, and
-the script checks every input before the first request. Apart from that, the Nix
+the scripts check every input before the first request. Apart from that, the Nix
 installer writes the job's default token into Nix's configuration, and Nix
 presents it to GitHub when it fetches a pinned input from there.
 

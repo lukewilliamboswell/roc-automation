@@ -3,6 +3,7 @@
 #     blueprint run check                           # what CI checks of the Roc scripts
 #     blueprint run check-settings -- owner/name    # compare a repository's settings with the manual
 #     blueprint run nightly-report                  # what actions/nightly-report runs
+#     blueprint run publish-release                 # what actions/publish-release runs
 #     blueprint shell                               # the environment, to run scripts/*.roc directly
 #     blueprint update                              # refresh Blueprint.lock
 #
@@ -34,8 +35,9 @@ config = [
 	# Compare a repository's GitHub settings with the "Repository settings"
 	# chapter. Read-only; needs a `gh` login with administration access.
 	Task("check-settings", [Use("dev"), Run(["scripts/check_settings.roc", "--"])]),
-	# The shared action that is a Roc script. The action runs its task from
-	# its own checkout of this repository, with its inputs in the
+	# The two shared actions that are Roc scripts. Each action runs its task
+	# from its own checkout of this repository, with its inputs in the
 	# environment, and Blueprint.lock fixes everything the task starts.
 	Task("nightly-report", [Use("dev"), Run(["scripts/nightly_report.roc"])]),
+	Task("publish-release", [Use("dev"), Run(["scripts/publish_release.roc"])]),
 ]
