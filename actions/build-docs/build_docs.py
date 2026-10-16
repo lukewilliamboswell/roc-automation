@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Build a project manual with the shared Roc AsciiDoc toolchain."""
+"""Stage a manual with a precompiled Roc renderer or explicit legacy backend."""
 
 from __future__ import annotations
 
 import argparse
+import copy
+import json
+import tempfile
 import os
 import shutil
 import subprocess
@@ -22,7 +25,16 @@ def run(*command: str, cwd: Path) -> None:
 def contained_path(root: Path, value: str, label: str, *, must_exist: bool = False) -> Path:
     if not value or Path(value).is_absolute():
         raise SystemExit(f"{label} must be a non-empty relative path")
-    result = (root / value).resolve()
+    relative = Path(value)
+    if any(part in ("..", ".git") for part in relative.parts) or any(c in value for c in "\r\n\0"):
+        raise SystemExit(f"{label} contains an unsafe path component")
+    result = root / relative
+    cursor = root
+    for part in relative.parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise SystemExit(f"{label} must not traverse a symlink")
+    result = result.resolve()
     if not result.is_relative_to(root):
         raise SystemExit(f"{label} must stay inside the repository")
     if must_exist and not result.exists():
@@ -133,6 +145,210 @@ def write_outputs(site: Path, pdf: Path) -> None:
     print(f"Manual: {pdf}")
 
 
+def reject_symlinks(root: Path) -> None:
+    for item in root.rglob("*"):
+        if item.is_symlink():
+            raise SystemExit(f"documentation tree contains a symlink: {item}")
+        if not item.is_file() and not item.is_dir():
+            raise SystemExit(f"documentation tree contains a special file: {item}")
+
+
+def validate(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
+    docs = contained_path(workspace, args.docs_directory, "docs-directory", must_exist=True)
+    if not docs.is_dir():
+        raise SystemExit("docs-directory must name a directory")
+    reject_symlinks(docs)
+    entrypoint = contained_path(docs, args.entrypoint, "entrypoint", must_exist=True)
+    if not entrypoint.is_file() or entrypoint.parent != docs:
+        raise SystemExit("entrypoint must be a top-level documentation file")
+    output = contained_path(workspace, args.output_directory, "output-directory")
+    if output == workspace or output.is_relative_to(docs) or docs.is_relative_to(output):
+        raise SystemExit("output-directory must not overlap documentation sources or workspace root")
+    if output.exists() and not output.is_dir():
+        raise SystemExit("output-directory must name a directory")
+    for name in ("api_entrypoint", "theme_directory"):
+        value = getattr(args, name, "")
+        if value:
+            source = contained_path(workspace, value, name.replace("_", "-"), must_exist=True)
+            if source == output or source.is_relative_to(output) or output.is_relative_to(source):
+                raise SystemExit("output-directory must not overlap API or theme sources")
+    if (Path(args.pdf_filename).name != args.pdf_filename or not args.pdf_filename.endswith(".pdf")
+            or any(c in args.pdf_filename for c in "\r\n\0")):
+        raise SystemExit("pdf-filename must be a plain .pdf filename")
+    for name in ("docs_version", "title", "author", "language"):
+        if any(c in getattr(args, name, "") for c in "\r\n\0"):
+            raise SystemExit(f"{name.replace('_', '-')} must be a single line")
+    return docs, output
+
+
+def renderer_executable(value: str) -> str:
+    command = value or os.environ.get("ROC_DOCS_BINARY", "") or "roc-docs"
+    executable = shutil.which(command)
+    if executable is None:
+        raise SystemExit("precompiled roc-docs not found; provide --renderer-binary or ROC_DOCS_BINARY")
+    return executable
+
+
+def manifest_path(prepared: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str):
+        raise SystemExit(f"invalid prepared {label}")
+    path = contained_path(prepared, value, f"prepared {label}", must_exist=True)
+    if not path.is_file():
+        raise SystemExit(f"prepared {label} must be a file")
+    return path
+
+
+def build_roc(args: argparse.Namespace, workspace: Path, stage: Path) -> None:
+    if args.theme_directory:
+        raise SystemExit("theme-directory uses Asciidoctor themes; choose --backend legacy or the built-in Roc theme")
+    executable = renderer_executable(args.renderer_binary)
+    prepared = stage / "prepared"
+    helper = ACTION_ROOT.parents[1] / "tools" / "roc-docs" / "prepare_docs.py"
+    if not helper.is_file():
+        raise SystemExit("Roc documentation preparation helper is missing from this action revision")
+    command = ["python3", str(helper), "--workspace", str(workspace), "--docs-directory", args.docs_directory,
+               "--entrypoint", args.entrypoint, "--output-directory", str(prepared.relative_to(workspace)),
+               "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version]
+    run(*command, cwd=workspace)
+    try:
+        manifest = json.loads((prepared / "manifest.json").read_text(encoding="utf-8"))
+        if type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
+            raise ValueError("unsupported schema")
+        metadata = manifest["metadata"]
+        for name in ("title", "author", "language"):
+            if getattr(args, name):
+                metadata[name] = getattr(args, name)
+        base = ["--title", metadata["title"], "--author", metadata["author"],
+                "--version", metadata["version"], "--language", metadata["language"],
+                "--pdf-filename", args.pdf_filename]
+        if not all(isinstance(value, str) and not any(c in value for c in "\r\n\0") for value in base):
+            raise ValueError("metadata must contain strings")
+        assets = []
+        for asset in manifest["assets"]:
+            href = asset["href"]
+            if (not isinstance(href, str) or not href or Path(href).is_absolute()
+                    or ".." in Path(href).parts or any(c in href for c in "\r\n\0")):
+                raise ValueError("unsafe asset href")
+            width, height = asset["width"], asset["height"]
+            if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
+                raise ValueError("invalid asset dimensions")
+            assets.extend(["--asset", href, str(manifest_path(prepared, asset["png"], "PNG")),
+                           str(manifest_path(prepared, asset["rgb"], "RGB")), str(width), str(height)])
+        pages = manifest["pages"]
+        if not isinstance(pages, list) or not pages:
+            raise ValueError("no HTML pages")
+        site = stage / "site"
+        site.mkdir()
+        destinations = set()
+        for number, page in enumerate(pages):
+            destination = page["output"]
+            if (not isinstance(destination, str) or Path(destination).name != destination
+                    or not destination.endswith(".html") or destination in destinations):
+                raise ValueError("invalid or duplicate HTML route")
+            destinations.add(destination)
+            source = manifest_path(prepared, page["input"], "page")
+            rendered = stage / f"render-page-{number}"
+            run(executable, "render", str(source), str(rendered), *base, *assets,
+                "--html-only", cwd=workspace)
+            reject_symlinks(rendered)
+            if not (rendered / "index.html").is_file():
+                raise SystemExit("Roc renderer did not produce index.html")
+            shutil.copy2(rendered / "index.html", site / destination)
+            # Renderer-owned CSS and assets have stable names shared by all pages.
+            for item in rendered.iterdir():
+                if item.name != "index.html":
+                    if item.is_dir():
+                        shutil.copytree(item, site / item.name, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(item, site / item.name)
+        if "index.html" not in destinations:
+            raise ValueError("site must contain index.html")
+        manual = manifest_path(prepared, manifest["manual"]["input"], "manual")
+        rendered = stage / "render-manual"
+        run(executable, "render", str(manual), str(rendered), *base, *assets, "--pdf-only", cwd=workspace)
+        reject_symlinks(rendered)
+        pdf = rendered / args.pdf_filename
+        if not pdf.is_file() or not pdf.stat().st_size:
+            raise SystemExit("Roc renderer did not produce the PDF")
+        shutil.copy2(pdf, stage / args.pdf_filename)
+        shutil.copy2(pdf, site / args.pdf_filename)
+        copy_roc_static(workspace / args.docs_directory, site)
+    except (KeyError, TypeError, ValueError, OSError) as error:
+        raise SystemExit(f"invalid prepared documentation: {error}") from error
+
+
+def copy_roc_static(docs: Path, site: Path) -> None:
+    for source in sorted(docs.rglob("*")):
+        if source.is_dir() or source.suffix.lower() in (".adoc", ".md", ".markdown"):
+            continue
+        relative = source.relative_to(docs)
+        # Themes contain backend-specific source resources, not website assets.
+        if relative.parts[0] == "theme":
+            continue
+        destination = site / relative
+        if destination.exists():
+            if not destination.is_file() or destination.read_bytes() != source.read_bytes():
+                raise ValueError(f"static file collides with rendered output: {relative}")
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def publish(stage: Path, output: Path) -> None:
+    # Keep existing output untouched until conversion, rendering and API all succeed.
+    backup = stage.parent / "previous-output"
+    if output.exists():
+        output.rename(backup)
+    try:
+        stage.rename(output)
+    except BaseException:
+        if backup.exists():
+            backup.rename(output)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
+def build(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
+    _, output = validate(args, workspace)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".roc-docs-", dir=output.parent) as temporary:
+        temporary_path = Path(temporary)
+        stage = temporary_path / "output"
+        stage.mkdir()
+        if args.backend == "roc":
+            build_roc(args, workspace, stage)
+        else:
+            if shutil.which("docker") is None:
+                raise SystemExit("Docker is required for the explicit legacy documentation backend")
+            run("docker", "build", "--tag", IMAGE, "--file", str(ACTION_ROOT / "Dockerfile"),
+                str(ACTION_ROOT), cwd=workspace)
+            staged_args = copy.copy(args)
+            staged_args.output_directory = str(stage.relative_to(workspace))
+            command = [
+                "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+                "--env", "XDG_CACHE_HOME=/tmp", "--env", "XDG_CONFIG_HOME=/tmp",
+                "--volume", f"{workspace}:/workspace", "--workdir", "/workspace", IMAGE,
+                "python3", "/opt/roc-docs/build_docs.py", "--inside-container",
+                "--workspace", "/workspace", "--docs-directory", args.docs_directory,
+                "--entrypoint", args.entrypoint, "--output-directory", staged_args.output_directory,
+                "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version,
+                "--theme-directory", args.theme_directory,
+            ]
+            run(*command, cwd=workspace)
+        build_api(args, workspace, stage / "site")
+        reject_symlinks(stage / "site")
+        # Working inputs and per-page render directories are never published.
+        for item in stage.iterdir():
+            if item.name not in ("site", args.pdf_filename):
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+        publish(stage, output)
+    return output / "site", output / args.pdf_filename
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", required=True)
@@ -144,6 +360,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-entrypoint", default="")
     parser.add_argument("--roc-command", default="roc")
     parser.add_argument("--theme-directory", default="")
+    parser.add_argument("--backend", choices=("roc", "legacy"), default="roc")
+    parser.add_argument("--renderer-binary", default="")
+    parser.add_argument("--title", default="")
+    parser.add_argument("--author", default="")
+    parser.add_argument("--language", default="")
     parser.add_argument("--inside-container", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args()
 
@@ -154,28 +375,10 @@ def main() -> None:
     if not workspace.is_dir():
         raise SystemExit("workspace must be an existing directory")
     if args.inside_container:
+        validate(args, workspace)
         site, pdf = build_inside_container(args, workspace)
-        write_outputs(site, pdf)
-        return
-
-    if shutil.which("docker") is None:
-        raise SystemExit("Docker is required to build the documentation")
-    run("docker", "build", "--tag", IMAGE, "--file", str(ACTION_ROOT / "Dockerfile"),
-        str(ACTION_ROOT), cwd=workspace)
-    command = [
-        "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
-        "--env", "XDG_CACHE_HOME=/tmp", "--env", "XDG_CONFIG_HOME=/tmp",
-        "--volume", f"{workspace}:/workspace", "--workdir", "/workspace", IMAGE,
-        "python3", "/opt/roc-docs/build_docs.py", "--inside-container",
-        "--workspace", "/workspace", "--docs-directory", args.docs_directory,
-        "--entrypoint", args.entrypoint, "--output-directory", args.output_directory,
-        "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version,
-        "--theme-directory", args.theme_directory,
-    ]
-    run(*command, cwd=workspace)
-    output = contained_path(workspace, args.output_directory, "output-directory", must_exist=True)
-    site, pdf = output / "site", output / args.pdf_filename
-    build_api(args, workspace, site)
+    else:
+        site, pdf = build(args, workspace)
     write_outputs(site, pdf)
 
 

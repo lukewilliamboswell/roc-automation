@@ -1,5 +1,5 @@
-name: Build AsciiDoc manual
-description: Build an AsciiDoc HTML site, PDF manual, and optional Roc API reference.
+name: Build documentation
+description: Build an HTML site and PDF with a precompiled Roc renderer, plus optional Roc API reference.
 
 inputs:
   docs-directory:
@@ -15,7 +15,7 @@ inputs:
     description: Filename for the generated PDF
     default: manual.pdf
   docs-version:
-    description: Version label passed to the AsciiDoc sources as docs-version
+    description: Version label used in source attributes and renderer metadata
     default: unreleased
   api-entrypoint:
     description: Optional Roc platform or package root used to generate site/api
@@ -24,7 +24,22 @@ inputs:
     description: Roc executable used when api-entrypoint is set
     default: roc
   theme-directory:
-    description: Optional theme directory relative to the repository root
+    description: "Legacy backend only: Asciidoctor theme directory relative to repository root"
+    default: ""
+  backend:
+    description: Renderer backend, roc (precompiled binary) or legacy (Docker and Asciidoctor)
+    default: roc
+  renderer-binary:
+    description: Path or executable name for a precompiled roc-docs binary; otherwise ROC_DOCS_BINARY or PATH is used
+    default: ""
+  title:
+    description: Optional document title override
+    default: ""
+  author:
+    description: Optional author override
+    default: ""
+  language:
+    description: Optional document language override
     default: ""
 
 outputs:
@@ -52,6 +67,11 @@ runs:
         DOCS_API_ENTRYPOINT: ${{ inputs.api-entrypoint }}
         DOCS_ROC_COMMAND: ${{ inputs.roc-command }}
         DOCS_THEME_DIRECTORY: ${{ inputs.theme-directory }}
+        DOCS_BACKEND: ${{ inputs.backend }}
+        DOCS_RENDERER_BINARY: ${{ inputs.renderer-binary }}
+        DOCS_TITLE: ${{ inputs.title }}
+        DOCS_AUTHOR: ${{ inputs.author }}
+        DOCS_LANGUAGE: ${{ inputs.language }}
       run: >-
         python3 "$DOCS_ACTION_PATH/build_docs.py"
         --workspace "$DOCS_WORKSPACE"
@@ -63,3 +83,8 @@ runs:
         --api-entrypoint "$DOCS_API_ENTRYPOINT"
         --roc-command "$DOCS_ROC_COMMAND"
         --theme-directory "$DOCS_THEME_DIRECTORY"
+        --backend "$DOCS_BACKEND"
+        --renderer-binary "$DOCS_RENDERER_BINARY"
+        --title "$DOCS_TITLE"
+        --author "$DOCS_AUTHOR"
+        --language "$DOCS_LANGUAGE"
