@@ -3,79 +3,219 @@ app [main!] {
 	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.1/6dvNG3Q2mx53i4YPJN2ZGK98WdXnBMMuceAmDsCq7BEd.tar.zst",
 }
 
+import cli.Cmd
 import cli.OsStr
 import cli.Path
 import cli.Stdout
 import cli.Stderr
 import src/Lint
+import src/PolicyConfig
+import src/Options
+import src/TestAccounting
 
 main! = |args| {
-	words = args.map(OsStr.display)
-	if words == ["--help"] {
-		return Stdout.line!("roc-policy <root> <config-relative-to-root>\nRead-only source policies; config is literal Roc data. Exit: 0 pass, 1 findings, 2 config/path-policy error; I/O failures also fail.")
+	match execute!(args.map(OsStr.display)) {
+		Ok({}) => Ok({})
+		Err(Exit(code)) => Err(Exit(code))
+		Err(problem) => {
+			Stderr.line!("error: ${Str.inspect(problem)}")?
+			Err(Exit(2))
+		}
 	}
-	(root_arg, config_arg) = match words {
-		[root, config] => (root, config)
-		_ => return fail!("usage: roc-policy <root> <config-relative-to-root>")
+}
+
+execute! = |args| {
+	if args == ["--help"] {
+		return Stdout.line!(Options.usage)
 	}
-	if !Lint.safe_path(config_arg) {
-		return fail!("config must be a relative path without dot segments")
+	options = match Options.parse(args) {
+		Ok(found) => found
+		Err(message) => return fail!("${message}\n${Options.usage}")
 	}
-	root = Path.canonicalize!(Path.utf8(root_arg))?
-	root_text = Path.display(root)
-	config_path = Path.canonicalize!(Path.join(root, config_arg))?
-	if Path.display(config_path) != "${root_text}/${config_arg}" {
-		return fail!("config escapes root or traverses a symlink")
+	root = Path.canonicalize!(Path.utf8(options.root))?
+	config_source = read_file!(root, options.config)?
+	config_text = match Str.from_utf8(config_source) {
+		Ok(text) => text
+		Err(_) => return fail!("config is not UTF-8")
 	}
-	if !Path.is_file!(config_path)? {
-		return fail!("config must be a regular file")
-	}
-	config = match Lint.config(Path.read_utf8!(config_path)?) {
-		Ok(value) => value
+	config = match PolicyConfig.decode(config_text, options.definition) {
+		Ok(found) => found
 		Err(message) => return fail!(message)
 	}
-	var $queue = config.roots
+	if options.command == "check" {
+		if config.rules.is_empty() {
+			return fail!("check requires at least one rule")
+		}
+		files = collect!(root, config.roots, False)?
+		for rule in config.rules {
+			if !files.any(|file| Lint.eligible(file.path, file.source, rule)) {
+				return fail!("rule ${Str.inspect(rule.kind)} has no applicable source files in ${rule.scope}")
+			}
+		}
+		var $issues = []
+		var $checked = 0.U64
+		for file in files {
+			if config.rules.any(|rule| Lint.eligible(file.path, file.source, rule)) {
+				$checked = $checked + 1
+			}
+			for issue in Lint.check(file.path, file.source, config.rules) {
+				$issues = $issues.append(located(file, issue))
+			}
+		}
+		if $checked == 0 {
+			return fail!("no selected files match the configured rules")
+		}
+		incomplete = $issues.any(|issue| issue.rule.ends_with("/incomplete"))
+		report!($issues, $checked, options.format, "source-policy")?
+		if incomplete Err(Exit(2)) else if $issues.is_empty() Ok({}) else Err(Exit(1))
+	} else {
+		files = collect!(root, config.test_roots, True)?
+		var $inventories = []
+		for file in files {
+			inventory = match TestAccounting.inventory(file.path, file.source) {
+				Ok(found) => found
+				Err(message) => return fail!("${file.path}: ${message}")
+			}
+			if !inventory.tests.is_empty() {
+				$inventories = $inventories.append(inventory)
+			}
+		}
+		if $inventories.is_empty() {
+			return fail!("no static tests selected")
+		}
+		if options.command == "manifest" {
+			Stdout.line!(Json.to_str({ schema_version: 1.U64, files: $inventories }))
+		} else if options.command == "verify-tests" {
+			receipt = Str.from_utf8(read_file!(root, options.report)?)?
+			findings = match TestAccounting.verify($inventories, receipt) {
+				Ok(found) => found
+				Err(message) => return fail!(message)
+			}
+			var $issues = []
+			for issue in findings {
+				file = files.find_first(|candidate| candidate.path == issue.path) ?? { path: issue.path, source: [] }
+				$issues = $issues.append(located(file, { rule: issue.rule, message: issue.message, start: issue.start, end: issue.end }))
+			}
+			report!($issues, $inventories.len(), options.format, "test-identity-receipts")?
+			if $issues.is_empty() Ok({}) else Err(Exit(1))
+		} else {
+			# Explicit execution is a separate command. The source-checking and
+			# receipt-verification paths above never execute candidate code.
+			compiler = Path.canonicalize!(Path.utf8(options.compiler))?
+			if !Path.is_file!(compiler)? {
+				return fail!("compiler must be a regular file")
+			}
+			if config.test_main != "" {
+				_ = read_file!(root, config.test_main)?
+			}
+			var $issues = []
+			for inventory in $inventories {
+				argv = ["test", inventory.path, "--no-cache"].concat(if config.test_main == "" [] else ["--main", config.test_main])
+				output = Cmd.new(Path.to_os_str(compiler)).args(argv.map(OsStr.from_str)).cwd(root).timeout_ms(60000).manage_tree(True).run!()?
+				file = { path: inventory.path, source: inventory.source.to_utf8() }
+				if output.status != Exited(0) {
+					$issues = $issues.append(located(file, { rule: "tests/count", start: 0, end: 0, message: "compiler test command failed; ${Str.from_utf8_lossy(output.stderr_bytes)}" }))
+				} else {
+					count = match TestAccounting.summary_count(Str.from_utf8_lossy(output.stdout_bytes)) {
+						Ok(found) => found
+						Err(message) => return fail!("${inventory.path}: ${message}")
+					}
+					# Re-read after execution: a runner cannot accidentally
+					# validate the count of source it changed while testing.
+					if read_file!(root, inventory.path)? != inventory.source.to_utf8() {
+						return fail!("${inventory.path}: source changed during test execution")
+					}
+					if count != inventory.tests.len() {
+						$issues = $issues.append(located(file, { rule: "tests/count", start: 0, end: 0, message: "declared ${inventory.tests.len().to_str()} static tests but runner reports ${count.to_str()}" }))
+					}
+				}
+			}
+			report!($issues, $inventories.len(), options.format, "fresh-per-file-counts")?
+			if options.format == "text" {
+				Stdout.line!("Evidence: fresh per-file counts; this does not prove individual test identities.")?
+			}
+			if $issues.is_empty() Ok({}) else Err(Exit(1))
+		}
+	}
+}
+
+checked_path! = |root, relative| {
+	if !PolicyConfig.safe_path(relative) {
+		return Err(InvalidInput("unsafe relative path ${relative}"))
+	}
+	path = Path.canonicalize!(Path.join(root, relative))?
+	if Path.display(path) != "${Path.display(root)}/${relative}" {
+		return Err(InvalidInput("${relative}: path escapes root or traverses a symlink"))
+	}
+	Ok(path)
+}
+
+read_file! = |root, relative| {
+	path = checked_path!(root, relative)?
+	if !Path.is_file!(path)? {
+		return Err(InvalidInput("${relative}: expected a regular file"))
+	}
+	bytes = Path.read_bytes!(path)?
+	if bytes.len() > 8 * 1024 * 1024 {
+		return Err(InvalidInput("${relative}: file exceeds 8 MiB input limit"))
+	}
+	Ok(bytes)
+}
+
+collect! = |root, roots, roc_only| {
+	var $queue = roots
 	var $seen = []
-	var $count = 0.U64
-	var $findings = 0.U64
+	var $files = []
 	while !$queue.is_empty() {
+		if $seen.len() > 100000 {
+			return Err(InvalidInput("source inventory exceeds 100000 paths"))
+		}
 		relative = $queue.first() ?? ""
 		$queue = $queue.drop_first(1)
-		path = Path.canonicalize!(Path.join(root, relative))?
-		absolute = Path.display(path)
-		if absolute != "${root_text}/${relative}" {
-			return fail!("${relative}: path escapes root or traverses a symlink")
-		}
-		if !$seen.contains(absolute) {
-			$seen = $seen.append(absolute)
+		path = checked_path!(root, relative)?
+		if !$seen.contains(relative) {
+			$seen = $seen.append(relative)
 			if Path.is_dir!(path)? {
-				entries = Path.list!(path)?.map(|entry| Path.display(entry)).sort_with(|a, b| compare(a, b))
+				entries = Path.list!(path)?.map(Path.display).sort_with(compare)
 				for entry in entries {
 					name = entry.split_on("/").last() ?? ""
 					$queue = $queue.append("${relative}/${name}")
 				}
-			} else if relative.ends_with(".roc") {
-				if !Path.is_file!(path)? {
-					return fail!("${relative}: source must be a regular file")
-				}
-				$count = $count + 1
-				issues = Lint.check(relative, Path.read_bytes!(path)?, config.rules)
-				for issue in issues {
-					Stdout.line!("${relative}:${issue.line.to_str()}:${issue.column.to_str()}: ${issue.rule}: ${issue.message}")?
-				}
-				$findings = $findings + issues.len()
+			} else if relative.ends_with(".roc") or (!roc_only and [".md", ".markdown", ".adoc", ".txt", ".rst"].any(|suffix| relative.ends_with(suffix))) {
+				$files = $files.append({ path: relative, source: read_file!(root, relative)? })
 			}
 		}
 	}
-	if $count == 0 {
-		return fail!("no Roc files selected")
+	if $files.is_empty() {
+		return Err(InvalidInput("no supported source files selected"))
 	}
-	Stdout.line!("${$count.to_str()} files, ${$findings.to_str()} findings")?
-	if $findings == 0 Ok({}) else Err(Exit(1))
+	Ok($files)
+}
+
+Diagnostic : { path : Str, rule : Str, message : Str, start : U64, end : U64, line : U64, column : U64 }
+
+located : { path : Str, source : List(U8) }, Lint.Issue -> Diagnostic
+located = |file, issue| {
+	prefix = file.source.sublist({ start: 0, len: issue.start })
+	lines = Str.from_utf8_lossy(prefix).split_on("\n")
+	column = (lines.last() ?? "").to_utf8().keep_if(|b| b < 128 or b >= 192).len() + 1
+	{ path: file.path, rule: issue.rule, message: issue.message, start: issue.start, end: issue.end, line: lines.len(), column }
+}
+
+report! : List(Diagnostic), U64, Str, Str => Try({}, _)
+report! = |issues, count, format, evidence| {
+	if format == "json" {
+		Stdout.line!(Json.to_str({ schema_version: 1.U64, evidence, complete: !issues.any(|issue| issue.rule.ends_with("/incomplete")), files: count, issues }))
+	} else {
+		for issue in issues {
+			Stdout.line!("${issue.path}:${issue.line.to_str()}:${issue.column.to_str()}: ${issue.rule}: ${issue.message}")?
+		}
+		Stdout.line!("${count.to_str()} files, ${issues.len().to_str()} findings")
+	}
 }
 
 fail! = |message| {
-	Stderr.line!(message)?
+	Stderr.line!("error: ${message}")?
 	Err(Exit(2))
 }
 

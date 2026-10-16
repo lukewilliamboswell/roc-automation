@@ -1,105 +1,11 @@
-= Roc policy utility spike
+= Archived Roc policy spike
 
-This prototype explores a small, reusable, precompiled CI utility for Roc
-codebases. Its purpose is to replace bespoke source scanners and runtime
-dependencies with configurable syntax-aware checks. Compiler diagnostics,
-formatting and tests remain the compiler's responsibility. Performance and
-memory optimization are outside this spike's acceptance criteria.
+The feasibility implementation has been promoted to `tools/roc-policy/`.
+See `tools/roc-policy/README.adoc` for development commands and
+`docs/policy.adoc` for the implemented configuration and runtime contracts.
 
-== Capability
-
-`roc-lint <root> <config-relative-to-root>` recursively discovers `.roc` files
-under the configured roots and parses each once with the released
-`roc-parser` 2.1.0-rc.1 bundle. The binary reads source/configuration and prints
-findings; it starts no subprocesses, evaluates no source, fetches nothing and
-writes no files.
-
-* `Dependency`: each file with a header in the scope must declare exactly one
-  dependency with the configured name and literal value. Platform references
-  are supported too. This catches examples pointing at a published package
-  instead of the working tree, even when the compiler accepts both.
-* `CompilerPin`: the equivalent requirement for the `roc` header field.
-* `NoCompilerPin`: prohibit a `roc` field in the scope.
-* `ForbiddenImport`: prohibit an import path equal to `name`, or beginning with
-  `name` followed by a dot or slash. Trivia between path components is ignored.
-  Aliases do not hide the original import path.
-  This is a spelled import policy, not binding analysis or call resolution.
-
-The header rules skip headerless files. A required dependency on a header with
-no dependency record is a finding. Scopes match an exact repository-relative
-file or directory prefix on a path boundary. No glob syntax is implemented.
-Root order and lexical directory ordering make traversal deterministic.
-Overlapping roots are deduplicated. Symbolic links and special source files
-are rejected; scans do not follow aliases or leave the root.
-
-Recovered, unsupported, limited and invalid-UTF-8 parses produce
-`syntax/incomplete` findings and skip structural rules for that file. This
-does not replace compiler checks or claim support for every compiler grammar.
-
-== Configuration
-
-`example-config.roc` illustrates the schema. Copy it into a target repository
-and adapt roots/rules; it is tailored to the roc-ansi layout, not to this repo.
-
-Configuration is data: exactly one `lint = { ... }` definition, schema version
-1, explicit records, lists, strings and approved rule-kind identifiers. Comments
-and trailing commas work. Unknown/duplicate fields, unknown rules, irrelevant
-options, imports, calls, record puns and string interpolation are errors.
-The string decoder supports literal UTF-8 and escapes for newline, carriage
-return, tab, backslash, quotes and dollar; Unicode escape syntax is deliberately
-unsupported in this prototype. No compiler evaluates configuration.
-
-All rules are errors. Output is `file:line:column: rule: message`, with
-one-based Unicode scalar columns. Exit 0 means a nonempty selection passed;
-exit 1 means findings; configuration/path-policy errors return 2. Filesystem
-I/O failures also fail the process using basic-cli's error reporting.
-
-== Build and exercise
-
-Use Roc nightly `nightly-2026-10-15-38e6c42`, the parser release's implementation
-compiler. From this repository root:
-
-[source,sh]
-----
-export ROC=/path/to/nightly-2026-10-15-38e6c42/roc
-export ROC_CACHE_DIR=/tmp/roc-lint-compiler-cache
-"$ROC" check spikes/roc-lint/main.roc
-"$ROC" spikes/roc-lint/build.roc
-ROC_LINT_BINARY="$PWD/dist/roc-lint-aarch64-darwin" python3 spikes/roc-lint/test_cli.py -v
-ROC_LINT_BINARY="$PWD/dist/roc-lint-aarch64-darwin" python3 spikes/roc-lint/probe_siblings.py
-----
-
-The build writes `dist/roc-lint-{x86_64-linux,aarch64-linux,aarch64-darwin}`.
-Linux binaries are statically linked with musl. Python is used only by the
-development test harness. Tests invoke the binary with a nonexistent `PATH`,
-so runtime compiler/Python/Git/Nix dependencies cannot silently creep in.
-The sibling probe snapshots existing roc-ansi examples, roc-parser examples,
-and roc-blueprint CLI sources into temporary directories. It verifies their
-policies, then deliberately changes a dependency and verifies rejection.
-It neither edits sibling repositories nor relies on uncommitted worktrees.
-
-== Distribution fit and remaining work
-
-These artifacts follow the existing tools release naming convention. After
-admission to a tools release, a consumer on the newer Blueprint API could use:
-
-[source,roc]
-----
-Programs([
-    Fetch("roc-lint", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-<version>/roc-lint-{system}")),
-])
-----
-
-`Blueprint.lock` would pin the downloaded bytes. This is illustrative: no
-release has been published and the production release workflow has not been
-changed. Declare only systems for which assets are published, or use a recipe
-that returns `Unavailable`. Blueprint's own compiler used to load its config
-is separate from this utility's zero-toolchain runtime.
-
-The next useful capability is public-API documentation policy. Other followups
-are JSON output, diagnostic spans for invalid configuration, selectable
-severities, path exceptions, and a dependency-edit command preserving untouched
-source bytes. Arbitrary Blueprint expressions cannot be evaluated by this
-literal decoder: compiler authority is explicit in configuration for now.
-Normal `roc fmt` compatibility for the headerless config subset is not promised.
-No production checks, controllers or permissions were changed.
+`ideal-design.adoc` retains the initial design exploration. It includes proposed
+profiles, evaluated Blueprint agreement and bootstrap installation that are not
+implemented in this change. The production reference takes precedence over
+these historical proposals. The generic constant-data resolver is maintained
+separately for a possible future roc-parser upstream proposal.

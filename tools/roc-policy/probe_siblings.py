@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 
-binary = Path(os.environ.get("ROC_LINT_BINARY", "/tmp/roc-lint")).resolve()
+binary = Path(os.environ.get("ROC_POLICY_BINARY", "/tmp/roc-policy-dev")).resolve()
 siblings = Path(__file__).resolve().parents[3]
 cases = [
     ("roc-ansi", "examples", "ansi"),
@@ -14,7 +14,7 @@ cases = [
     ("roc-blueprint", "blueprint-cli", None),
 ]
 for repository, directory, alias in cases:
-    with tempfile.TemporaryDirectory(prefix="roc-lint-probe-") as temp:
+    with tempfile.TemporaryDirectory(prefix="roc-policy-probe-") as temp:
         root = Path(temp)
         sources = sorted((siblings / repository / directory).rglob("*.roc"))
         if not sources:
@@ -32,11 +32,11 @@ for repository, directory, alias in cases:
             rules.append(f'{{kind: Dependency, scope: "{directory}", name: "{alias}", value: "../package/main.roc"}}')
         else:
             rules.append('{kind: ForbiddenImport, scope: "blueprint-cli/main.roc", name: "nix.Locks"}')
-        (root / "lint.roc").write_text(
-            f'lint = {{schema_version: 1, roots: ["{directory}"], rules: ['
+        (root / "Blueprint.roc").write_text(
+            f'repository_policy = {{schema_version: 1, roots: ["{directory}"], rules: ['
             + ",".join(rules) + "]}\n"
         )
-        result = subprocess.run([str(binary), str(root), "lint.roc"],
+        result = subprocess.run([str(binary), "check", "--root", str(root)],
                                 capture_output=True, text=True,
                                 env={"PATH": "/nonexistent"}, timeout=60)
         print(f"{repository}/{directory}: source-sha256={digest.hexdigest()}")
@@ -52,7 +52,7 @@ for repository, directory, alias in cases:
             if changed == original:
                 raise SystemExit(f"probe did not find the expected dependency in {target.name}")
             target.write_text(changed)
-            failed = subprocess.run([str(binary), str(root), "lint.roc"],
+            failed = subprocess.run([str(binary), "check", "--root", str(root)],
                                     capture_output=True, text=True,
                                     env={"PATH": "/nonexistent"}, timeout=60)
             if failed.returncode != 1 or "project/dependency" not in failed.stdout:

@@ -55,7 +55,7 @@ repository_policy = {
     profile: "roc-package/1",
     tools_release: "tools-<version>",
     tooling_compiler: "nightly-2026-10-09-258ab27",
-    package: {
+    package_info: {
         dependency_name: "ansi",
         entry: "package/main.roc",
     },
