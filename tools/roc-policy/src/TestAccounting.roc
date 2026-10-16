@@ -12,7 +12,8 @@ TestAccounting :: [].{
 	## A source-linked accounting discrepancy.
 	Issue : { path : Str, start : U64, end : U64, rule : Str, message : Str }
 
-	## Discover file and associated-block expects; local runtime expects are unsupported.
+	## Discover static file and associated-block expects. Local inline assertions
+	## are valid but are not separate required test entries.
 	inventory : Str, List(U8) -> Try(FileInventory, Str)
 	inventory = |path, bytes| {
 		parsed = RocSyntax.parse_bytes(bytes)
@@ -20,8 +21,12 @@ TestAccounting :: [].{
 			return Err("${path}: test inventory requires a complete parse")
 		}
 		tests = discover(parsed, node(parsed, parsed.root))
-		if tests.len() != parsed.nodes.keep_if(|item| item.kind == Expect).len() {
-			return Err("${path}: local or nested runtime expect cannot be accounted as a static test")
+		all_expects = parsed.nodes.keep_if(|item| item.kind == Expect)
+		for test in tests {
+			line = line_at(bytes, test.start)
+			if all_expects.keep_if(|item| line_at(bytes, item.start) == line).len() != 1 {
+				return Err("${path}:${line.to_str()}: multiple expect sites start on one static-test line; location evidence is ambiguous")
+			}
 		}
 		Ok({ path, source: Str.from_utf8_lossy(bytes), tests, completed: False })
 	}
@@ -98,12 +103,58 @@ TestAccounting :: [].{
 		Ok($issues)
 	}
 
-	## Parse one fresh, uncolored Roc success summary. Counts are weaker evidence
-	## than identities; callers must also enforce runner exit status and --no-cache.
+	## Match selected static sites against compiler --verbose PASS locations.
+	## Caller must enforce successful compiler exit and source stability. This is
+	## line evidence from human output, not span receipts or compiler provenance.
+	verify_locations : FileInventory, Str, Str -> Try(List(Issue), Str)
+	verify_locations = |expected, absolute_path, output| {
+		if !absolute_path.starts_with("/") or absolute_path.contains("\n") or absolute_path.contains("\r") {
+			return Err("location matching requires a single-line absolute source path")
+		}
+		checked = inventory(expected.path, expected.source.to_utf8())?
+		if checked.tests.is_empty() {
+			return Err("location accounting requires a nonempty static test inventory")
+		}
+		if checked.tests != expected.tests {
+			return Err("expected inventory does not match its source")
+		}
+		_ = summary_count(output)?
+		var $locations = []
+		for line in output.split_on("\n") {
+			if line.starts_with("PASS: ") {
+				location = line.drop_prefix("PASS: ")
+				parts = location.split_on(":")
+				line_text = parts.last() ?? ""
+				number = decimal(line_text)?
+				if number == 0 {
+					return Err("compiler PASS location must have a positive line")
+				}
+				path = Str.join_with(parts.drop_last(1), ":")
+				if !path.starts_with("/") {
+					return Err("compiler PASS location must use an absolute path")
+				}
+				if path == absolute_path {
+					$locations = $locations.append(number)
+				}
+			}
+		}
+		var $issues = []
+		for test in checked.tests {
+			line = line_at(expected.source.to_utf8(), test.start)
+			count = $locations.keep_if(|found| found == line).len()
+			if count != 1 {
+				$issues = $issues.append(issue(expected.path, test.start, test.end, "expected exactly one compiler PASS at line ${line.to_str()}, found ${count.to_str()}"))
+			}
+		}
+		Ok($issues)
+	}
+
+	## Parse one uncolored Roc success summary, including ordinary cached results.
+	## Callers must independently enforce the compiler process exit status.
 	summary_count : Str -> Try(U64, Str)
 	summary_count = |output| {
-		if output.contains("\u(001b)") or output.contains("cached") or output.contains("failed") or output.contains("error") {
-			return Err("test summary must be fresh, uncolored and successful")
+		if output.contains("\u(001b)") or output.split_on("\n").any(|line| line.starts_with("FAIL: ") or line.ends_with(" failed")) {
+			return Err("test summary must be uncolored and successful")
 		}
 		lines = output.split_on("\n").keep_if(|line| !line.trim().is_empty())
 		summaries = lines.keep_if(|line| line.starts_with("All ("))
@@ -111,7 +162,8 @@ TestAccounting :: [].{
 			[one] => one
 			_ => return Err("expected exactly one Roc success summary")
 		}
-		parts = line.drop_prefix("All (").split_on(") tests passed in ")
+		uncached_line = if line.ends_with(" (cached)") line.drop_suffix(" (cached)") else line
+		parts = uncached_line.drop_prefix("All (").split_on(") tests passed in ")
 		(count_text, duration) = match parts {
 			[count, elapsed] => (count, elapsed)
 			_ => return Err("invalid Roc success summary")
@@ -221,3 +273,5 @@ unique_json_keys = |source| {
 	}
 	Ok({})
 }
+
+line_at = |bytes, offset| bytes.sublist({ start: 0, len: offset }).keep_if(|byte| byte == 10).len() + 1
