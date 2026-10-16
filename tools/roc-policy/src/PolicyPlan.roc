@@ -36,7 +36,11 @@ PolicyPlan :: [].{
 		max_warnings = if contains_key(fields, "max_warnings") integer(required(fields, "max_warnings")?)? else 18446744073709551615
 		var $profiles = []
 		if contains_key(fields, "profiles") {
-			for entry in items(required(fields, "profiles")?)? {
+			profile_entries = items(required(fields, "profiles")?)?
+			if profile_entries.len() > 32 {
+				return Err("at most 32 profiles are supported")
+			}
+			for entry in profile_entries {
 				f = object(entry, ["name", "builtin", "version", "path", "definition", "sha256"])?
 				name = string(required(f, "name")?)?
 				if !valid_id(name) or name.contains("/") or $profiles.any(|p| p.name == name) {
@@ -62,7 +66,11 @@ PolicyPlan :: [].{
 		rules = if contains_key(fields, "rules") decode_rules(required(fields, "rules")?, "local:${definition}")? else []
 		var $overrides = []
 		if contains_key(fields, "overrides") {
-			for entry in items(required(fields, "overrides")?)? {
+			override_entries = items(required(fields, "overrides")?)?
+			if override_entries.len() > 10000 {
+				return Err("at most 10000 overrides are supported")
+			}
+			for entry in override_entries {
 				f = object(entry, ["rule", "include", "exclude", "reason", "require_match", "changes"])?
 				rule = string(required(f, "rule")?)?
 				reason = string(required(f, "reason")?)?
@@ -88,6 +96,9 @@ PolicyPlan :: [].{
 	## Loads supplied profile bytes in descriptor order, then validates composition.
 	finalize : Plan, List({ profile : Profile, source : Str }) -> Try(Plan, Str)
 	finalize = |plan, loaded| {
+		if plan.rules.len() > 10000 or plan.overrides.len() > 10000 or plan.profiles.len() > 32 {
+			return Err("policy composition limit exceeded")
+		}
 		if loaded.len() != plan.profiles.len() {
 			return Err("profile source count does not match descriptors")
 		}
@@ -108,7 +119,11 @@ PolicyPlan :: [].{
 				return Err("profiles require schema_version 2")
 			}
 			origin = if descriptor.builtin != "" "builtin:${descriptor.builtin}@${descriptor.version.to_str()}#${entry.profile.sha256}" else "${descriptor.path}@${descriptor.sha256}"
-			for rule in decode_rules(required(f, "rules")?, origin)? {
+			profile_rules = required(f, "rules")?
+			if items(profile_rules)?.len() + $rules.len() + plan.rules.len() > 10000 {
+				return Err("at most 10000 final rules are supported")
+			}
+			for rule in decode_rules(profile_rules, origin)? {
 				$rules = $rules.append({ ..rule, id: "${descriptor.name}/${rule.id}" })
 			}
 		}
@@ -161,7 +176,8 @@ PolicyPlan :: [].{
 				}
 			}
 			$rule = validate_rule($rule)?
-			if PathGlob.any_match($rule.include, path) and !PathGlob.any_match($rule.exclude, path) {
+			selected = if plan.schema_version == 1 path == $rule.legacy.scope or path.starts_with("${$rule.legacy.scope}/") else PathGlob.any_match($rule.include, path) and !PathGlob.any_match($rule.exclude, path)
+			if selected {
 				$out = $out.append($rule)
 			}
 		}
@@ -317,7 +333,11 @@ corrections = |v| {
 decode_rules : ConstantData.Value, Str -> Try(List(PolicyPlan.Rule), Str)
 decode_rules = |v, origin| {
 	var $out = []
-	for entry in items(v)? {
+	entries = items(v)?
+	if entries.len() > 10000 {
+		return Err("at most 10000 rules are supported")
+	}
+	for entry in entries {
 		f = object(entry, ["id", "kind", "include", "exclude", "level", "require_match", "name", "value", "phrase", "replacement", "channels", "accepted_words", "accepted_identifiers", "corrections"])?
 		id = string(required(f, "id")?)?
 		if !valid_id(id) or $out.any(|r| r.id == id) {
@@ -365,7 +385,7 @@ apply_fields = |rule, changes, operations| {
 		ForbiddenImport => ["name"]
 		NoCompilerPin | PublicDocs => []
 		Spelling => ["channels", "accepted_words", "accepted_identifiers", "corrections"]
-		Phrase => ["channels", "accepted_words", "accepted_identifiers", "phrase", "replacement"]
+		Phrase => ["channels", "phrase", "replacement"]
 	}
 	if changes.any(|(k, _)| !["level", "include", "exclude", "require_match"].contains(k) and !allowed.contains(k)) {
 		return Err("irrelevant field for rule kind")
@@ -393,7 +413,11 @@ apply_fields = |rule, changes, operations| {
 				$leaf = { ..$leaf, value: string(value)? }
 			}
 			"accepted_words" => {
-				$leaf = { ..$leaf, allow: if operations update_strings($leaf.allow, value, True, False)? else words(value)? }
+				accepted = if operations update_strings($leaf.allow, value, True, False)? else words(value)?
+				if !accepted.all(|word| word.to_utf8().all(word_byte)) {
+					return Err("accepted_words entries must be single word components; use accepted_identifiers for whole identifiers")
+				}
+				$leaf = { ..$leaf, allow: accepted }
 			}
 			"accepted_identifiers" => {
 				$leaf = { ..$leaf, accepted_identifiers: if operations update_strings($leaf.accepted_identifiers, value, True, False)? else words(value)? }
@@ -509,3 +533,6 @@ validate_rule = |rule| {
 	}
 	Ok(rule)
 }
+
+word_byte : U8 -> Bool
+word_byte = |b| (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or b >= 128

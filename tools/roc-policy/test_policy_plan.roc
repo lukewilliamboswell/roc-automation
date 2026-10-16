@@ -91,3 +91,39 @@ expect {
 	d = p.profiles.first()?
 	PolicyPlan.finalize(p, [{ profile: { ..d, sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }, source: "profile = {schema_version: 2, rules: []}" }]).is_err()
 }
+expect plan("rules: [{id: \"phrase\", kind: Phrase, phrase: \"obviously\", accepted_words: [\"obviously\"]}]").is_err()
+expect plan("rules: [{id: \"phrase\", kind: Phrase, phrase: \"obviously\"}], overrides: [{rule: \"phrase\", reason: \"wrong vocabulary mechanism\", changes: {accepted_identifiers: {add: [\"obviously\"]}}}]").is_err()
+expect plan("rules: [{id: \"spell\", kind: Spelling, accepted_words: [\"two words\"]}]").is_err()
+expect plan("rules: [{id: \"spell\", kind: Spelling, accepted_words: [\"thing_name\"]}]").is_err()
+expect plan("${spelling}, overrides: [{rule: \"spell\", reason: \"bad words\", changes: {accepted_words: {add: [\"thing-name\"]}}}]").is_err()
+expect plan("${spelling}, overrides: [{rule: \"spell\", reason: \"bad words\", changes: {accepted_words: {replace: [\"123\"]}}}]").is_err()
+expect plan("rules: [{id: \"spell\", kind: Spelling, accepted_identifiers: [\"thing_name2\"]}]").is_ok()
+expect {
+	p = PolicyPlan.decode("config = {schema_version: 1, roots: [\"src\"], rules: [{kind: PublicDocs, scope: \"src/*\"}]}", "config")?
+	PolicyPlan.for_file(p, "src/ordinary/File.roc").map_ok(List.len) == Ok(0) and PolicyPlan.for_file(p, "src/*/File.roc").map_ok(List.len) == Ok(1)
+}
+expect {
+	p = plan(spelling)?
+	r = p.rules.first()?
+	var $many = []
+	while $many.len() < 10001 {
+		$many = $many.append(r)
+	}
+	PolicyPlan.finalize({ ..p, rules: $many }, []).is_err()
+}
+expect {
+	p = plan("${spelling}, overrides: [{rule: \"spell\", reason: \"test\", changes: {level: Off}}]")?
+	o = p.overrides.first()?
+	var $many = []
+	while $many.len() < 10001 {
+		$many = $many.append(o)
+	}
+	PolicyPlan.finalize({ ..p, overrides: $many }, []).is_err()
+}
+expect {
+	var $entries = []
+	while $entries.len() < 33 {
+		$entries = $entries.append("{name: \"p${$entries.len().to_str()}\", builtin: \"roc\", version: 1}")
+	}
+	PolicyPlan.decode("config = {schema_version: 2, roots: [\"src\"], profiles: [${Str.join_with($entries, ",")}]}", "config").is_err()
+}
