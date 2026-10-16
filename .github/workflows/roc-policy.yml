@@ -1,0 +1,38 @@
+name: Roc policy utility
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    name: Native macOS policy checks
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-15-38e6c42
+      - name: Check source and unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          roc check tools/roc-policy/main.roc
+          roc fmt --check tools/roc-policy
+          for suite in constants public_docs text_policy test_accounting; do
+            roc test "tools/roc-policy/test_$suite.roc"
+          done
+      - name: Build the native release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROC="$(command -v roc)" roc tools/roc-policy/build.roc -- aarch64-darwin
+      - name: Check binary behavior
+        env:
+          ROC_POLICY_BINARY: ${{ github.workspace }}/dist/roc-policy-aarch64-darwin
+        run: ROC_POLICY_TEST_COMPILER="$(command -v roc)" python3 tools/roc-policy/tests/test_cli.py -v

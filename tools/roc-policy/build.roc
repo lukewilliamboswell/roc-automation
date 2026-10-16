@@ -8,17 +8,30 @@ import cli.Env
 import cli.OsStr
 import cli.Path
 import cli.Stdout
+import cli.Stderr
 
 # Run from the repository root with ROC naming the pinned compiler. This
-# separate build keeps the experiment out of the controller tools' toolchain.
-main! = |_args| {
+# separate build keeps policy utilities independent of the controller toolchain.
+# Optional argument selects one release system; no arguments build all systems.
+main! = |args| {
+	requested = args.map(OsStr.display)
 	compiler = Env.var_str!("ROC")?
 	Path.create_all!("dist")?
-	for target in [
+	release_targets = [
 		{ roc: "x64musl", system: "x86_64-linux" },
 		{ roc: "arm64musl", system: "aarch64-linux" },
 		{ roc: "arm64mac", system: "aarch64-darwin" },
-	] {
+	]
+	selected = match requested {
+		[] => release_targets
+		[system] => release_targets.keep_if(|target| target.system == system)
+		_ => []
+	}
+	if selected.is_empty() {
+		Stderr.line!("usage: roc tools/roc-policy/build.roc [x86_64-linux|aarch64-linux|aarch64-darwin]")?
+		return Err(Exit(2))
+	}
+	for target in selected {
 		output = "dist/roc-policy-${target.system}"
 		Stdout.line!("Building ${output}")?
 		Cmd.new(OsStr.from_str(compiler)).args(
