@@ -1,0 +1,163 @@
+[#check-repository-source-policy]
+= Check repository source policy
+
+`roc-policy` is a precompiled, read-only source-policy utility. It checks
+repository conventions that compiler diagnostics, formatting and behavioral
+tests do not establish. The tools release builds binaries for x86_64 Linux,
+ARM64 Linux and Apple Silicon macOS. The Linux binaries are static musl
+executables. Building and testing the implementation happens upstream; source
+checking downstream requires no Roc compiler, Python, Git or Nix.
+
+== Declare policy in Blueprint
+
+The default authority is `repository_policy` in `Blueprint.roc`. The surrounding
+file remains normal Roc configuration. This example is a binding to add beside
+its existing `config`, not a replacement Blueprint platform declaration:
+
+[source,roc]
+----
+tooling = { compiler: "nightly-2026-10-09-258ab27" }
+
+repository_policy = {
+    schema_version: 1,
+    roots: ["package", "examples", "scripts", "docs"],
+    test_roots: ["package"],
+    rules: [
+        { kind: CompilerPin, scope: "scripts", value: tooling.compiler },
+        { kind: NoCompilerPin, scope: "package" },
+        { kind: Dependency, scope: "examples/main.roc", name: "mypkg", value: "../package/main.roc" },
+        { kind: ForbiddenImport, scope: "package", name: "support/Internal" },
+        { kind: PublicDocs, scope: "package" },
+        { kind: Spelling, scope: "docs", channels: [Prose], allow: ["rocpkgs"] },
+        { kind: Phrase, scope: "docs", channels: [Prose], phrase: "it is worth noting", replacement: "state the fact directly" },
+    ],
+}
+----
+
+An environment may reference the same `tooling.compiler` when declaring its
+compiler. The utility resolves local constants, forward references, record puns
+and field access without evaluating Blueprint. It does not prove that arbitrary
+Blueprint expressions actually use those facts; evaluated-Spec agreement and
+centrally versioned policy profiles are not implemented here.
+
+Supported data are literal records, lists, strings, booleans, plain decimal
+integers and bare tags, plus references, field access and parentheses. Strings
+support Roc escapes including Unicode scalars. Calls, arithmetic, functions,
+record updates, interpolation and imported values in the selected dependency
+graph are rejected. Unrelated functions and imports may remain in the file.
+The complete file must parse without diagnostics. Duplicate definitions/fields,
+cycles, unknown fields, irrelevant options and resource-limit violations fail.
+
+The generic constant-data module is deliberately separate from policy schema
+validation. This is a bounded data subset, not Roc typechecking or a second
+Blueprint evaluator. It limits source to 1 MiB, declarations/work to 10,000,
+depth to 64 and expanded-value accounting to 1 MiB.
+
+== Commands and paths
+
+[source,sh]
+----
+roc-policy check --root .
+roc-policy check --root . --format json
+roc-policy manifest --root . > expected-tests.json
+roc-policy verify-tests --root . --report completed-tests.json
+roc-policy run-tests --root . --compiler /absolute/path/to/roc
+----
+
+`--config` selects a file relative to the root and `--definition` selects a
+binding; defaults are `Blueprint.roc` and `repository_policy`. All commands use
+this same authority. `manifest` always emits JSON; other commands support text
+and schema-versioned JSON diagnostics.
+
+Roots and scopes are exact relative files or directories. No globs, implicit Git
+ignore rules or parent-configuration merging are used. Directory scopes match on
+path-component boundaries. Discovery is deterministic and overlapping roots are
+deduplicated. Sources are `.roc`, `.md`, `.markdown`, `.adoc`, `.txt` and `.rst`;
+accounting uses only `.roc`. Symlinks and special source files are rejected.
+Input files are limited to 8 MiB and inventory traversal to 100,000 paths.
+Every configured source rule must have applicable selected files.
+
+Exit 0 means completed passing checks, 1 means policy violations, and 2 means
+invalid configuration, I/O failure or incomplete analysis. Recovered, unsupported,
+limited or invalid-UTF-8 sources cannot produce a clean result. Text locations
+use one-based Unicode scalar columns; JSON also retains half-open UTF-8 byte spans.
+
+== Rules
+
+`CompilerPin`, `NoCompilerPin` and `Dependency` inspect app/package/platform
+headers, not lookalike fields in bodies, comments or strings. A required
+compiler/dependency rule aimed at an exact entrypoint reports a missing header.
+Directory-wide required rules apply only to header-bearing entrypoints, allowing
+ordinary helper modules. They fail configuration if no entrypoint is applicable.
+A dependency value is an exact decoded string in this version; resolving multiple
+relative spellings to one package identity is a future extension.
+
+`ForbiddenImport` matches the written path or its dot/slash descendants, ignoring
+trivia and preserving aliases' original paths. It does not resolve bindings,
+reexports, indirect calls or a complete project dependency graph.
+
+`PublicDocs` identifies explicit module exposures and filename-based nominal
+modules, including nested public associated definitions. It requires nonempty
+attached `##` documentation, supporting documentation before an annotation or
+its definition. Private helpers and local declarations are excluded. Package
+uppercase exposure inventories refer to other module files; select those source
+files for checking. Unresolved imported/qualified/wildcard public surfaces return
+`documentation/incomplete`, never an assertion that they are documented.
+
+`Spelling` uses a bundled project-authored correction map, not an exhaustive
+English dictionary or unknown-word detector. `channels` selects `Comments`,
+`Identifiers`, `Strings` and `Prose`; defaults are comments, identifiers and prose.
+Identifiers split snake case, camel case, acronym transitions and digits.
+`allow` exempts whole words or full identifiers. Add repository corrections with
+`words: [{ word: "mispeling", replacement: "misspelling" }]`; custom entries
+replace the same bundled key. Keys must be single words. Case folding is ASCII;
+Unicode bytes and source offsets are preserved. String channels inspect raw
+string parts rather than evaluating escape sequences.
+
+`Phrase` requires `phrase`, optionally `replacement`, and uses the same channels
+and `allow` options. Whole-word matching folds ASCII case and normalizes whitespace
+across consecutive comment/documentation lines; internal and surrounding
+punctuation must match. Patterns must contain a matchable word. There are no
+implicit banned phrases. A policy enforces chosen language conventions, not
+inference about authorship or prose quality.
+
+== Test accounting
+
+`manifest` inventories static file-level and associated-block `expect` declarations
+under `test_roots`, defaulting to `roots`. It rejects inline/local expectations
+whose runtime multiplicity cannot be inferred. It emits schema 1 JSON with
+`files`, each containing `path`, exact `source`, `completed: false`, and `tests`
+with byte `start`, `end` and `status: "declared"`. No expectations run.
+
+A runner adapter supplies the same schema after execution, with `completed: true`
+and a result status per source/span identity. `verify-tests` requires exactly the
+current files, source bytes and test identities, with every result `passed`.
+Missing, unexpected, duplicated, stale, incomplete, failed, skipped and pending
+evidence fails. Duplicate JSON keys are rejected, including escaped spellings;
+unknown JSON fields are extensible under the versioned report contract.
+An inventory template is not a completed report. Empty selected test inventories
+fail rather than passing vacuously.
+
+Current Roc CLI summaries do not supply this identity report. `run-tests` offers
+an explicitly weaker count gate: it invokes the supplied compiler separately for
+each inventoried file with `--no-cache`, requires successful termination and one
+fresh success summary, and compares its total with that file's static test count.
+Optional `test_main` names a relative application file passed as `--main` for
+package aliases. Timeouts, malformed/ambiguous/cached summaries, source changes
+and count mismatches fail. Each child has a 60-second deadline and a bounded
+capture budget. No shell command is constructed.
+
+Counts cannot prove individual identities: one omitted and one duplicated test
+can cancel. Reports are runner assertions, not authenticated execution attestations.
+Use candidate runners only in unprivileged jobs. The explicit execution command
+can execute project code and invoke the compiler's normal dependency behavior;
+the three read-only commands do neither.
+
+== Distribution boundary
+
+Use a reviewed tools release and locally verified content digest to install a
+binary before invoking it. On newer Blueprint versions, `Programs`/`Fetch` can
+manage released binaries and `Blueprint.lock` pins their bytes. Blueprint still
+needs its own compiler to evaluate configuration before those programs are made
+available. A dedicated compiler-free bootstrap installer is not part of this
+change. Content hashes establish expected bytes, not build provenance.

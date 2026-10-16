@@ -1,0 +1,40 @@
+= Roc policy utility
+
+`roc-policy` checks repository-specific source policies without installing a Roc
+compiler, Git, Python or Nix at runtime. Configuration lives in `Blueprint.roc`;
+local constant references and record field access keep facts in one place.
+The separate `run-tests` command explicitly requires and invokes a supplied Roc
+compiler. Source checks and receipt verification never execute project code.
+
+See `docs/policy.adoc` for the configuration, commands, supported analysis and
+execution-evidence contracts. `src/ConstantData.roc` has no policy, CLI or I/O
+dependencies; `src/ConstantData.adoc` documents its supported subset for a future
+roc-parser upstream proposal. No upstream proposal is included in this change.
+
+== Develop
+
+Use nightly `nightly-2026-10-15-38e6c42`, independently of this repository's
+controller-tooling compiler. From the repository root:
+
+[source,sh]
+----
+export ROC=/path/to/nightly-2026-10-15-38e6c42/roc
+export ROC_CACHE_DIR=/tmp/roc-policy-cache
+"$ROC" check tools/roc-policy/main.roc
+for suite in constants public_docs text_policy test_accounting; do
+    "$ROC" test "tools/roc-policy/test_$suite.roc"
+done
+"$ROC" tools/roc-policy/build.roc -- aarch64-darwin
+ROC_POLICY_BINARY="$PWD/dist/roc-policy-aarch64-darwin" \
+ROC_POLICY_TEST_COMPILER="$ROC" python3 tools/roc-policy/tests/test_cli.py -v
+----
+
+The optional build argument chooses `x86_64-linux`, `aarch64-linux` or
+`aarch64-darwin`; without it all targets are built. Linux targets link statically
+with musl. The build script does not publish. The source-free Python test harness
+uses the standard library and passes a nonexistent PATH to utility invocations.
+Only its optional real-compiler test requires `ROC_POLICY_TEST_COMPILER`.
+
+The tools release workflow builds on native target runners, runs module tests,
+and tests each exact final artifact in a separate job without checkout, compiler
+or Nix installation. The existing privileged publisher consumes only artifacts.
