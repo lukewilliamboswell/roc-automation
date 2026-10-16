@@ -190,6 +190,13 @@ class CliTests(unittest.TestCase):
         self.configure('{kind: Spelling, scope: "examples", words: [{word: "two words", replacement: "word"}]}')
         self.invoke(expected=2)
 
+    def test_unresolved_public_surface_is_incomplete_not_clean(self):
+        self.configure('{kind: PublicDocs, scope: "examples"}')
+        (self.root / "examples/main.roc").write_text("module [Thing.*]\nimport Thing\n")
+        report = json.loads(self.invoke(expected=2, extra=("--format", "json")).stdout)
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["issues"][0]["rule"], "documentation/incomplete")
+
     def prepare_tests(self):
         (self.root / "examples/main.roc").write_text('add = |a, b| a + b\nexpect add(1, 2) == 3\nexpect add(2, 2) == 4\n')
         self.configure('')
@@ -228,6 +235,13 @@ class CliTests(unittest.TestCase):
             mutation(report)
             self.invoke("verify-tests", expected=expected, extra=self.receipt(report))
 
+    def test_equal_counts_do_not_replace_identity_matching(self):
+        report = self.completed_report()
+        report["files"][0]["tests"][0]["start"] += 1
+        output = self.invoke("verify-tests", expected=1, extra=self.receipt(report)).stdout
+        self.assertIn("unexpected test identity", output)
+        self.assertIn("expected test missing", output)
+
     def test_receipt_duplicate_json_keys_rejected(self):
         report = self.completed_report()
         p = self.root / "receipt.json"
@@ -254,6 +268,11 @@ class CliTests(unittest.TestCase):
         self.invoke("run-tests", expected=2, extra=runner)
         runner = self.fake_compiler("exit 1")
         self.invoke("run-tests", expected=1, extra=runner)
+
+    def test_runner_source_mutation_is_not_a_pass(self):
+        self.prepare_tests()
+        runner = self.fake_compiler("printf '# changed\\n' >> examples/main.roc\nprintf 'All (2) tests passed in 0.1 ms.\\n'")
+        self.assertIn("source changed", self.invoke("run-tests", expected=2, extra=runner).stderr)
 
     @unittest.skipUnless(COMPILER, "set ROC_POLICY_TEST_COMPILER for actual Roc execution")
     def test_real_roc_count_gate(self):
