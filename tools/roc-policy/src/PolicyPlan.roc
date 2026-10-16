@@ -98,7 +98,8 @@ PolicyPlan :: [].{
 				Ok(found) => found
 				Err(_) => return Err("missing profile source ${descriptor.name}")
 			}
-			if { ..entry.profile, sha256: descriptor.sha256 } != descriptor {
+			normalized = if descriptor.builtin != "" { ..entry.profile, sha256: descriptor.sha256 } else entry.profile
+			if normalized != descriptor {
 				return Err("loaded profile descriptor does not match")
 			}
 			$profiles = $profiles.append(entry.profile)
