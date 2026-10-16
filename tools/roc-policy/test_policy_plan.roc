@@ -127,3 +127,5 @@ expect {
 	}
 	PolicyPlan.decode("config = {schema_version: 2, roots: [\"src\"], profiles: [${Str.join_with($entries, ",")}]}", "config").is_err()
 }
+
+expect plan("${spelling}, overrides: [{rule: \"spell\", include: [\"src/**\"], reason: \"invalid aggregate setting\", changes: {require_match: False}}]").is_err()

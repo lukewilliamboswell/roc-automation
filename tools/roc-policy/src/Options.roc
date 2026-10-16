@@ -1,14 +1,14 @@
 ## Explicit commands keep source checking independent of compiler execution.
 Options :: [].{
-	Value : { command : Str, root : Str, config : Str, definition : Str, format : Str, compiler : Str }
-	usage = "roc-policy <check|manifest|run-tests> [--root PATH] [--config PATH] [--definition NAME] [--format text|json] [--compiler ABSOLUTE_PATH]\nroc-policy --help | --licenses\nDefaults: root '.', config 'Blueprint.roc', definition 'repository_policy'.\ncheck/manifest never execute source or external tools.\nrun-tests explicitly invokes the supplied Roc compiler and checks static test PASS locations (cached results accepted).\nExit: 0 completed/pass; 1 policy violations; 2 invalid input or incomplete analysis."
+	Value : { command : Str, root : Str, config : Str, definition : Str, format : Str, compiler : Str, path : Str }
+	usage = "roc-policy <check|manifest|run-tests|explain-config> [--root PATH] [--config PATH] [--definition NAME] [--format text|json] [--compiler ABSOLUTE_PATH] [--path RELATIVE_PATH]\nroc-policy --help | --licenses | list-profiles\nDefaults: root '.', config 'Blueprint.roc', definition 'repository_policy'.\ncheck/manifest never execute source or external tools.\nrun-tests explicitly invokes the supplied Roc compiler and checks static test PASS locations (cached results accepted).\nExit: 0 completed/pass; 1 policy violations; 2 invalid input or incomplete analysis."
 	parse : List(Str) -> Try(Value, Str)
 	parse = |args| {
 		command = args.first() ?? ""
-		if !["check", "manifest", "run-tests"].contains(command) {
+		if !["check", "manifest", "run-tests", "explain-config"].contains(command) {
 			return Err("unknown or missing command")
 		}
-		var $value = { command, root: ".", config: "Blueprint.roc", definition: "repository_policy", format: "text", compiler: "" }
+		var $value = { command, root: ".", config: "Blueprint.roc", definition: "repository_policy", format: "text", compiler: "", path: "" }
 		var $remaining = args.drop_first(1)
 		var $seen = []
 		while !$remaining.is_empty() {
@@ -26,6 +26,7 @@ Options :: [].{
 				"--definition" => { ..$value, definition: argument }
 				"--format" => { ..$value, format: argument }
 				"--compiler" => { ..$value, compiler: argument }
+				"--path" => { ..$value, path: argument }
 				_ => return Err("unknown option ${flag}")
 			}
 			$remaining = rest
@@ -38,6 +39,9 @@ Options :: [].{
 		}
 		if command != "run-tests" and $value.compiler != "" {
 			return Err("--compiler is only valid for run-tests")
+		}
+		if $value.path != "" and command != "explain-config" {
+			return Err("--path is only valid for explain-config")
 		}
 		Ok($value)
 	}

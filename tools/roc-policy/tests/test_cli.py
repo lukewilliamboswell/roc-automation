@@ -1,5 +1,6 @@
 """Exercise exact compiled artifacts; stdlib harness, no source/toolchain required."""
 import json
+import hashlib
 import os
 import shlex
 from pathlib import Path
@@ -210,6 +211,161 @@ class CliTests(unittest.TestCase):
         report = json.loads(self.invoke(expected=2, extra=("--format", "json")).stdout)
         self.assertFalse(report["complete"])
         self.assertEqual(report["issues"][0]["rule"], "documentation/incomplete")
+
+    def configure_v2(self, rules="", profiles="", overrides="", extra="", prefix=""):
+        (self.root / "Blueprint.roc").write_text(prefix +
+            'repository_policy = {schema_version: 2, roots: ["examples"], rules: [' + rules +
+            '], profiles: [' + profiles + '], overrides: [' + overrides + ']' + extra + '}\n')
+
+    def test_schema2_named_rules_and_warning_threshold(self):
+        (self.root / "examples/main.roc").write_text(SOURCE + '# teh\n')
+        rule = '{id: "project/spelling", kind: Spelling, channels: [Comments], level: Warning}'
+        self.configure_v2(rule)
+        report = json.loads(self.invoke(extra=("--format", "json")).stdout)
+        self.assertEqual(report["schema_version"], 2)
+        self.assertEqual(report["issues"][0]["rule_id"], "project/spelling")
+        self.assertEqual(report["issues"][0]["level"], "warning")
+        self.configure_v2(rule, extra=', max_warnings: 0')
+        self.invoke(expected=1)
+
+    def test_schema2_warning_never_masks_incomplete_source(self):
+        (self.root / "examples/main.roc").write_text('value = [\n')
+        self.configure_v2('{id: "spelling", kind: Spelling, level: Warning}')
+        report = json.loads(self.invoke(expected=2, extra=("--format", "json")).stdout)
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["issues"][0]["level"], "error")
+
+    def test_schema2_scoped_vocabulary_override_does_not_suppress_elsewhere(self):
+        (self.root / "examples/main.roc").write_text(SOURCE + '# teh\n')
+        (self.root / "examples/fixtures").mkdir()
+        (self.root / "examples/fixtures/Sample.roc").write_text('# teh\nx = 1\n')
+        self.configure_v2('{id: "spelling", kind: Spelling, channels: [Comments]}', overrides='''{rule: "spelling", include: ["examples/fixtures/**"], reason: "Preserve upstream vocabulary", changes: {accepted_words: {add: ["teh"]}}}''')
+        report = json.loads(self.invoke(expected=1, extra=("--format", "json")).stdout)
+        self.assertEqual([i["path"] for i in report["issues"]], ["examples/main.roc"])
+
+    def test_schema2_phrase_instances_override_independently_and_order_wins(self):
+        (self.root / "examples/main.roc").write_text('# worth noting; obviously\nx = 1\n')
+        rules = '{id: "phrases/one", kind: Phrase, phrase: "worth noting"}, {id: "phrases/two", kind: Phrase, phrase: "obviously"}'
+        overrides = '{rule: "phrases/one", include: ["examples/**"], reason: "Quotation", changes: {level: Off}}, {rule: "phrases/one", reason: "Later global decision", changes: {level: Warning}}'
+        self.configure_v2(rules, overrides=overrides)
+        report = json.loads(self.invoke(expected=1, extra=("--format", "json")).stdout)
+        self.assertEqual([(i["rule_id"], i["level"]) for i in report["issues"]], [("phrases/one", "warning"), ("phrases/two", "error")])
+
+    def test_schema2_word_components_and_full_identifiers_are_separate(self):
+        (self.root / "examples/main.roc").write_text('tehThing = 1\notherTehThing = 2\n')
+        base = '{id: "spelling", kind: Spelling, channels: [Identifiers], %s}'
+        self.configure_v2(base % 'accepted_identifiers: ["tehThing"]')
+        report = json.loads(self.invoke(expected=1, extra=("--format", "json")).stdout)
+        self.assertEqual([i["line"] for i in report["issues"]], [2])
+        self.configure_v2(base % 'accepted_words: ["teh"]')
+        self.invoke()
+        self.configure_v2(base % 'accepted_words: ["tehThing"]')
+        self.assertEqual(len(json.loads(self.invoke(expected=1, extra=("--format", "json")).stdout)["issues"]), 2)
+
+    def test_schema2_exclusions_prune_unreadable_or_invalid_generated_sources(self):
+        (self.root / "examples/generated").mkdir()
+        (self.root / "examples/generated/broken.roc").write_bytes(b'\xff [')
+        (self.root / "examples/generated/loop").symlink_to(self.root / "examples", target_is_directory=True)
+        self.configure_v2('{id: "imports", kind: ForbiddenImport, name: "Internal"}', extra=', exclude: ["**/generated/**"]')
+        self.invoke()
+        explained = json.loads(self.invoke("explain-config", extra=("--path", "examples/generated/broken.roc")).stdout)
+        self.assertTrue(explained["excluded"])
+
+    def test_schema2_rule_exclusion_preserves_other_checks(self):
+        (self.root / "examples/main.roc").unlink()
+        (self.root / "examples/Thing.roc").write_text('## A thing.\nThing := [].{\n## Its value.\nvalue = 1\n}\n')
+        (self.root / "examples/fixtures").mkdir()
+        (self.root / "examples/fixtures/Sample.roc").write_text('# teh\nSample := [].{ value = 1 }\n')
+        self.configure_v2('{id: "docs", kind: PublicDocs, exclude: ["**/fixtures/**"]}, {id: "spelling", kind: Spelling, channels: [Comments]}')
+        report = json.loads(self.invoke(expected=1, extra=("--format", "json")).stdout)
+        self.assertEqual([(i["path"], i["rule_id"]) for i in report["issues"]], [("examples/fixtures/Sample.roc", "spelling")])
+
+    def test_schema2_embedded_profile_needs_no_sidecars_and_explains_digest(self):
+        self.configure_v2(profiles='{name: "base", builtin: "roc-package", version: 1}')
+        self.invoke()
+        data = json.loads(self.invoke("explain-config", extra=("--path", "examples/main.roc")).stdout)
+        self.assertEqual([rule["id"] for rule in data["rules"] if rule["selected"]], ["base/spelling"])
+        self.assertEqual(len(data["profiles"][0]["sha256"]), 64)
+        self.assertIn(data["profiles"][0]["sha256"], data["rules"][0]["origin"])
+        self.assertEqual(data["rules"][0]["selection"], "outside rule selectors")
+        result = subprocess.run([str(BINARY), "list-profiles"], cwd=self.root, env={"PATH": "/nonexistent"}, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)[0]["name"], "roc-package")
+
+    def vendored_profile(self, source):
+        (self.root / ".policy").mkdir(exist_ok=True)
+        path = self.root / ".policy/common.roc"
+        path.write_text(source)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return '{name: "org", path: ".policy/common.roc", definition: "profile", sha256: "' + digest + '"}', digest
+
+    def test_schema2_pinned_vendored_profile_and_local_override(self):
+        profile, digest = self.vendored_profile('profile = {schema_version: 2, rules: [{id: "spelling", kind: Spelling, channels: [Comments]}]}\n')
+        (self.root / "examples/main.roc").write_text(SOURCE + '# teh\n')
+        self.configure_v2(profiles=profile, overrides='{rule: "org/spelling", reason: "Domain term", changes: {accepted_words: {add: ["teh"]}}}')
+        self.invoke()
+        data = json.loads(self.invoke("explain-config", extra=("--path", "examples/main.roc")).stdout)
+        self.assertEqual(data["rules"][0]["options"]["accepted_words"], ["teh"])
+        self.assertIn(digest, data["rules"][0]["origin"])
+        self.assertIn("accepted_words", data["rules"][0]["trace"][-1])
+        (self.root / ".policy/common.roc").write_text('# changed\n' + (self.root / ".policy/common.roc").read_text())
+        self.assertIn("SHA-256 mismatch", self.invoke(expected=2).stderr)
+
+    def test_schema2_profile_loader_rejects_symlinks_without_external_tools(self):
+        profile, _ = self.vendored_profile('profile = {schema_version: 2, rules: []}\n')
+        path = self.root / ".policy/common.roc"
+        saved = self.root / ".policy/real.roc"
+        path.rename(saved)
+        path.symlink_to(saved)
+        self.configure_v2(profiles=profile)
+        self.assertIn("symlink", self.invoke(expected=2).stderr)
+
+    def test_schema2_profile_upgrade_catches_stale_rule_ids(self):
+        profile, _ = self.vendored_profile('profile = {schema_version: 2, rules: [{id: "renamed", kind: Spelling}]}\n')
+        self.configure_v2(profiles=profile, overrides='{rule: "org/old-name", reason: "Old exception", changes: {level: Off}}')
+        self.assertIn("unknown rule", self.invoke(expected=2).stderr)
+
+    def test_schema2_required_and_optional_selectors_and_stale_overrides(self):
+        rule = '{id: "imports", kind: ForbiddenImport, name: "Internal", include: ["missing/**"], require_match: %s}'
+        self.configure_v2(rule % 'True')
+        self.invoke(expected=2)
+        self.configure_v2(rule % 'False')
+        self.invoke()
+        self.configure_v2('{id: "imports", kind: ForbiddenImport, name: "Internal"}', overrides='{rule: "imports", include: ["missing/**"], reason: "Stale exception", changes: {level: Off}}')
+        self.assertIn("matches no selected", self.invoke(expected=2).stderr)
+
+    def test_schema2_glob_and_unknown_option_errors_are_strict(self):
+        for rule in ['{id: "docs", kind: PublicDocs, include: ["../outside/**"]}', '{id: "docs", kind: PublicDocs, include: ["[bad]"]}', '{id: "docs", kind: PublicDocs, severity: Warning}', '{id: "docs", kind: PublicDocs, accepted_words: ["term"]}']:
+            with self.subTest(rule=rule):
+                self.configure_v2(rule)
+                self.invoke(expected=2)
+
+    def test_schema2_local_constants_and_field_access_survive_composition(self):
+        prefix = 'facts = {compiler: "' + PIN + '", accepted: ["teh"]}\n'
+        (self.root / "examples/main.roc").write_text(SOURCE + '# teh\n')
+        self.configure_v2('{id: "spelling", kind: Spelling, channels: [Comments], accepted_words: facts.accepted}', prefix=prefix)
+        self.invoke()
+
+    def test_schema2_exact_header_requirement_and_broad_helper_selection(self):
+        (self.root / "examples/main.roc").write_text('value = 1\n')
+        self.configure_v2('{id: "pin", kind: CompilerPin, include: ["examples/main.roc"], value: "' + PIN + '"}')
+        self.assertIn("project/header", self.invoke(expected=1).stdout)
+        self.configure_v2('{id: "pin", kind: CompilerPin, include: ["examples/**/*.roc"], value: "' + PIN + '", require_match: False}')
+        self.invoke()
+
+    def test_schema2_explanation_respects_roots_and_excluded_ancestors(self):
+        self.configure_v2('{id: "imports", kind: ForbiddenImport, name: "Internal"}', extra=', exclude: ["examples/generated"]')
+        excluded = json.loads(self.invoke("explain-config", extra=("--path", "examples/generated/Thing.roc")).stdout)
+        self.assertTrue(excluded["excluded"])
+        self.assertEqual(excluded["discovery_exclusions"], ["examples/generated"])
+        self.assertFalse(excluded["rules"][0]["selected"])
+        outside = json.loads(self.invoke("explain-config", extra=("--path", "elsewhere/Thing.roc")).stdout)
+        self.assertFalse(outside["within_roots"])
+        self.assertEqual(outside["rules"][0]["selection"], "outside discovery roots")
+
+    def test_schema2_scoped_override_cannot_change_aggregate_require_match(self):
+        self.configure_v2('{id: "docs", kind: PublicDocs}', overrides='{rule: "docs", include: ["examples/**"], reason: "Not a per-file option", changes: {require_match: False}}')
+        self.assertIn("aggregate require_match", self.invoke(expected=2).stderr)
 
     def prepare_tests(self):
         (self.root / "examples/main.roc").write_text('add = |a, b| a + b\nexpect add(1, 2) == 3\nexpect add(2, 2) == 4\n')

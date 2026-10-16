@@ -14,6 +14,12 @@ Lint :: [].{
 		if path != rule.scope and !path.starts_with("${rule.scope}/") {
 			return False
 		}
+		eligible_selected(path, source, rule, path == rule.scope)
+	}
+
+	## Applicability after the policy resolver has selected a file. Exact required
+	## entrypoints require headers; broad directory/glob selections permit helpers.
+	eligible_selected = |path, source, rule, require_header| {
 		if !path.ends_with(".roc") {
 			return (rule.kind == Spelling or rule.kind == Phrase) and rule.channels.contains(Prose)
 		}
@@ -23,7 +29,7 @@ Lint :: [].{
 		if rule.kind != Dependency and rule.kind != CompilerPin {
 			return True
 		}
-		if path == rule.scope {
+		if require_header {
 			return True
 		}
 		p = RocSyntax.parse_bytes(source)
@@ -32,6 +38,16 @@ Lint :: [].{
 		}
 		p.nodes.any(|n| dependency_header(p, n))
 	}
+
+	## Run one resolved rule while preserving existing syntax-aware checks.
+	check_selected = |path, source, rule, require_header| {
+		if eligible_selected(path, source, rule, require_header) {
+			check(path, source, [{ ..rule, scope: path }])
+		} else {
+			[]
+		}
+	}
+
 	check : Str, List(U8), List(PolicyConfig.Rule) -> List(Issue)
 	check = |path, source, rules| {
 		applicable = rules.keep_if(|rule| path == rule.scope or path.starts_with("${rule.scope}/"))
@@ -102,7 +118,7 @@ Lint :: [].{
 	}
 }
 
-text_rule = |rule| { kind: if rule.kind == Spelling Spelling else Phrase, channels: rule.channels, forbidden: if rule.kind == Phrase rule.name else "", replacement: rule.value, allow: rule.allow, words: rule.words }
+text_rule = |rule| { kind: if rule.kind == Spelling Spelling else Phrase, channels: rule.channels, forbidden: if rule.kind == Phrase rule.name else "", replacement: rule.value, allow: rule.allow, accepted_identifiers: rule.accepted_identifiers, words: rule.words }
 
 complete = |p| p.status == Complete and p.consumed and p.diagnostics.is_empty()
 

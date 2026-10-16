@@ -45,7 +45,7 @@ jobs:
           python3 tools/roc-policy/vendor/typos/verify.py
           roc check tools/roc-policy/main.roc
           roc fmt --check tools/roc-policy
-          for suite in constants public_docs text_policy typo_data test_accounting; do
+          for suite in constants public_docs text_policy typo_data test_accounting path_glob sha256 embedded_profiles policy_plan; do
             roc test "tools/roc-policy/test_$suite.roc"
           done
       - name: Build the native release artifact

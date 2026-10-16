@@ -3,6 +3,10 @@
 `roc-policy` checks repository-specific source policies without installing a Roc
 compiler, Git, Python or Nix at runtime. Configuration lives in `Blueprint.roc`;
 local constant references and record field access keep facts in one place.
+Schema 2 composes embedded or digest-pinned offline profiles with named rules,
+ordered overrides, exclusions and severity. `explain-config --path` shows effective
+settings and provenance; `list-profiles` lists embedded defaults. Schema 1 remains
+supported with its original literal scopes.
 The separate `run-tests` command explicitly requires and invokes a supplied Roc
 compiler. Source checks and inventory discovery never execute project code.
 Test accounting uses native verbose PASS locations and accepts normal cached
@@ -24,7 +28,7 @@ export ROC=/path/to/nightly-2026-10-15-38e6c42/roc
 export ROC_CACHE_DIR=/tmp/roc-policy-cache
 "$ROC" check tools/roc-policy/main.roc
 python3 tools/roc-policy/vendor/typos/verify.py
-for suite in constants public_docs text_policy typo_data test_accounting; do
+for suite in constants public_docs text_policy typo_data test_accounting path_glob sha256 embedded_profiles policy_plan; do
     "$ROC" test "tools/roc-policy/test_$suite.roc"
 done
 "$ROC" tools/roc-policy/build.roc -- aarch64-darwin

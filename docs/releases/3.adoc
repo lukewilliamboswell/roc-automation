@@ -105,3 +105,9 @@ field access, without evaluating the application. Source checking and test
 discovery require no compiler. The optional test runner requires a supplied Roc
 compiler and checks verbose PASS locations with normal caching enabled.
 See xref:policy.adoc#check-repository-source-policy[Check repository source policy].
+
+Schema 2 adds named rules, embedded or SHA-256-pinned offline policy profiles,
+ordered repository/file overrides, explicit collection changes, exclusions,
+warning levels and effective-configuration explanations. Repository choices
+remain in `Blueprint.roc`; no extra evaluator or runtime network is required.
+Schema 1 remains supported.

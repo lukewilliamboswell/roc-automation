@@ -83,8 +83,8 @@ PolicyPlan :: [].{
 				if changes.is_empty() {
 					return Err("override changes must not be empty")
 				}
-				if (!include.is_empty() or !override_exclude.is_empty()) and (contains_key(changes, "include") or contains_key(changes, "exclude")) {
-					return Err("file-scoped overrides cannot modify selectors")
+				if (!include.is_empty() or !override_exclude.is_empty()) and (contains_key(changes, "include") or contains_key(changes, "exclude") or contains_key(changes, "require_match")) {
+					return Err("file-scoped overrides cannot modify selectors or aggregate require_match")
 				}
 				require_match = optional_bool(f, "require_match", True)?
 				$overrides = $overrides.append({ rule, include, exclude: override_exclude, reason, require_match, changes })
@@ -165,8 +165,9 @@ PolicyPlan :: [].{
 	override_matches : Override, Str -> Bool
 	override_matches = |override, path| (override.include.is_empty() or PathGlob.any_match(override.include, path)) and !PathGlob.any_match(override.exclude, path)
 
-	for_file : Plan, Str -> Try(List(Rule), Str)
-	for_file = |plan, path| {
+	## Effective settings before selection, also used to explain excluded rules.
+	effective_rules : Plan, Str -> Try(List(Rule), Str)
+	effective_rules = |plan, path| {
 		var $out = []
 		for original in plan.rules {
 			var $rule = original
@@ -175,13 +176,24 @@ PolicyPlan :: [].{
 					$rule = apply($rule, override)?
 				}
 			}
-			$rule = validate_rule($rule)?
-			selected = if plan.schema_version == 1 path == $rule.legacy.scope or path.starts_with("${$rule.legacy.scope}/") else PathGlob.any_match($rule.include, path) and !PathGlob.any_match($rule.exclude, path)
-			if selected {
-				$out = $out.append($rule)
-			}
+			$out = $out.append(validate_rule($rule)?)
 		}
 		Ok($out)
+	}
+
+	selected : Plan, Rule, Str -> Bool
+	selected = |plan, rule, path| {
+		if plan.schema_version == 1 {
+			path == rule.legacy.scope or path.starts_with("${rule.legacy.scope}/")
+		} else {
+			PathGlob.any_match(rule.include, path) and !PathGlob.any_match(rule.exclude, path)
+		}
+	}
+
+	for_file : Plan, Str -> Try(List(Rule), Str)
+	for_file = |plan, path| {
+		rules = effective_rules(plan, path)?
+		Ok(rules.keep_if(|rule| selected(plan, rule, path)))
 	}
 }
 
