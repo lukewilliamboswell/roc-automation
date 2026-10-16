@@ -86,3 +86,8 @@ expect {
 	result.profiles == [loaded] and result.rules.map(|r| r.origin) == ["builtin:roc@1#abcdef", "local:config"]
 }
 expect PolicyPlan.decode("config = {schema_version: 2, roots: [\"src\"], profiles: [{name: \"shared\", builtin: \"future-profile\", version: 42}]}", "config").is_ok()
+expect {
+	p = PolicyPlan.decode("config = {schema_version: 2, roots: [\"src\"], profiles: [{name: \"shared\", path: \"policy.roc\", definition: \"profile\", sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}", "config")?
+	d = p.profiles.first()?
+	PolicyPlan.finalize(p, [{ profile: { ..d, sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }, source: "profile = {schema_version: 2, rules: []}" }]).is_err()
+}
