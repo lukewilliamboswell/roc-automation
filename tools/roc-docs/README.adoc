@@ -79,7 +79,7 @@ cost even though rendering is small and fast.
 
 [source,sh]
 ----
-ROC=/absolute/path/to/roc roc tools/roc-docs/build.roc aarch64-darwin
+ROC=/absolute/path/to/roc roc tools/roc-docs/build.roc -- aarch64-darwin
 ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
   python3 tools/roc-docs/tests/test_cli.py
 roc test tools/roc-docs/test_highlight.roc
