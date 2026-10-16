@@ -1,0 +1,10 @@
+flowchart LR
+    S[Application source] --> B[Build once]
+    C[List of cases] --> D[Test driver]
+    B --> D
+    D --> R1[Run: case 1]
+    D --> R2[Run: case 2]
+    D --> R3[Run: case n]
+    R1 --> V[Compare with expected result]
+    R2 --> V
+    R3 --> V

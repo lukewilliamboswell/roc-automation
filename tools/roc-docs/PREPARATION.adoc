@@ -1,0 +1,69 @@
+= Documentation preparation contract
+
+`prepare_docs.py` is an offline Python standard-library adapter. It prepares
+native Markdown input and an explicitly bounded AsciiDoc subset for the reusable
+Roc renderer. It does not execute author input or claim general AsciiDoc
+compatibility. HTML and PDF rendering belong to the compiled Roc executable.
+
+[source,sh]
+----
+python3 tools/roc-docs/prepare_docs.py --workspace . --docs-directory docs --entrypoint index.adoc --output-directory .docs-prepared --docs-version 3 --pdf-filename manual.pdf
+----
+
+Output must be a new directory. Inputs are bounded regular files; includes and
+asset paths stay within the documentation directory and cannot traverse symlinks.
+Includes have a depth limit, a 32 MiB cumulative source limit and reject cycles.
+Prepared output and image assets have aggregate bounds. Unsupported structural directives,
+unknown references, unprepared Mermaid blocks, malformed tables and unsupported
+PNG encodings fail before the preparation directory is created.
+
+== Supported authoring
+
+Native `.md` input is preserved. Each top-level Markdown file becomes one page;
+the selected entrypoint alone supplies the combined PDF document. Markdown
+include directives are not implemented. Image references use local PNG files.
+
+The AsciiDoc adapter supports local includes with integer level offsets, headings
+with generated or explicit IDs, LF source blocks (including nested delimiter
+examples), header tables with continued cells, ordinary lists, description lists,
+sidebar text, captions, links and cross references, local PNG images, and
+`backend-html5`/`backend-pdf` conditionals. Every top-level `.adoc` file retains its
+`.html` route. The entrypoint's complete include tree supplies the PDF. Original
+source-block whitespace is retained. CRLF AsciiDoc input rejects explicitly.
+
+Description lists become bold-label Markdown lists. Sidebars become ordinary
+content; captions become bold paragraphs. Table column weights are recorded in
+the coverage manifest, while the renderer selects Markdown table widths. This
+adapter does not preserve every Asciidoctor presentation convention.
+
+== Prepared diagrams
+
+The seven repository diagrams are checked-in PNG assets with exact source-block
+SHA-256 keys, source snapshots, output hashes and the one-time renderer recipe in
+`prepared-diagrams/manifest.json`. Six are the actual manual diagrams; one is the
+documentation action's fixture. These replace runtime Mermaid execution. A source
+change rejects until its prepared image and provenance are deliberately updated.
+
+Downstream projects can provide `docs/prepared-diagrams.json` with schema version
+1 and `diagrams` entries containing `source_sha256`, `href`, `png` and
+`png_sha256`. `png` is relative to their documentation directory. `href` is the
+stable site image path. The source hash covers the exact Mermaid block body,
+including its terminal LF. The image hash covers the prepared PNG bytes. Local
+entries take precedence over the bundled corpus. Diagram preparation tools are a
+authoring-time choice, separate from the native documentation build.
+
+PNG preparation validates chunk CRCs, dimensions and decompressed lengths. It
+supports non-interlaced eight-bit RGB and RGBA PNG. Alpha is composited on white
+for the PDF RGB asset; HTML retains the original PNG. There is no runtime image
+download. Other formats and encodings reject explicitly.
+
+== Prepared manifest
+
+`manifest.json` has `schema_version: 1`, metadata (`title`, `author`, `version`,
+`language`), `pages` entries with relative `input` Markdown and `output` HTML paths,
+a `manual` entry with relative PDF input/output, and `assets` entries with `href`,
+relative `png`/`rgb` paths, dimensions and hashes. All preparation paths are relative
+to its output directory. `coverage` records source hashes, heading identities,
+source-block hashes, table inventories and documented adaptations. The action
+stages rendered outputs separately and publishes them only after every render
+succeeds.

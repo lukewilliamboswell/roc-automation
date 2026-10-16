@@ -1,0 +1,15 @@
+{
+  "source_repository": "https://github.com/lukewilliamboswell/roc-ansi",
+  "source_commit": "75df8efb085fb5f5fd90f5909a49dd7f5e364dcc",
+  "source_directory": "spikes/docs-roc/fonts",
+  "license": "SIL Open Font License 1.1; notices alongside each font",
+  "sha256": {
+    "fonts/NotoSans-Italic-OFL.txt": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+    "fonts/NotoSans-Regular.ttf": "478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823",
+    "fonts/SourceCodePro-OFL.md": "7c940e28a5388e9bba866cf0e408edda45fe0899ba98665b8f6ab31dc5e4b8ff",
+    "fonts/NotoSans-Bold.ttf": "1df075a380fc7cb898acf64c1f7b3b4dd780de3caa860178bf929de35817a913",
+    "fonts/NotoSans-OFL.txt": "cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a",
+    "fonts/SourceCodePro-Regular.ttf": "74bd80d3e42a08517cd7e1108ba3d86f2da29ac0f3065be95e0357956ab9db37",
+    "fonts/NotoSans-Italic.ttf": "36cff144df01309dab648bea71baff9bb074026914afe63aeacc8bc90b67a28b"
+  }
+}
