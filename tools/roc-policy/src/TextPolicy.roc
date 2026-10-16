@@ -109,13 +109,18 @@ scan = |source, offset, identifier, rule| {
 			return []
 		}
 		custom = rule.words.map(|(bad, replacement)| (fold(bad), replacement))
-		pairs = if rule.forbidden.is_empty() TypoData.corrections.keep_if(|(bad, _)| !custom.any(|(key, _)| key == bad)).concat(custom) else [(fold(rule.forbidden), rule.replacement)]
 		for item in items {
 			if !allowed.contains(item.text) {
-				for (bad, replacement) in pairs {
-					if item.text == bad {
-						$out = $out.append({ rule: "text/spelling", message: "possible misspelling '${item.text}'; use '${replacement}'", start: offset + item.start, end: offset + item.end })
-					}
+				# Explicit single-word rules and repository overrides take precedence.
+				suggestions = if !rule.forbidden.is_empty() {
+					if item.text == fold(rule.forbidden) [rule.replacement] else []
+				} else {
+					overrides = custom.keep_if(|(key, _)| key == item.text).map(|(_, value)| value)
+					if overrides.is_empty() TypoData.suggestions(item.text) else overrides
+				}
+				if !suggestions.is_empty() {
+					replacement = Str.join_with(suggestions, "' or '")
+					$out = $out.append({ rule: "text/spelling", message: "possible misspelling '${item.text}'; use '${replacement}'", start: offset + item.start, end: offset + item.end })
 				}
 			}
 		}

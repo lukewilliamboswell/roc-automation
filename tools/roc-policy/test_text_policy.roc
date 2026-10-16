@@ -72,3 +72,11 @@ expect {
 
 expect TextPolicy.check_text("word word!".to_utf8(), { ..phrase, forbidden: "word!" }).map(|i| (i.start, i.end)) == [(5, 10)]
 expect TextPolicy.check_text("'word' word".to_utf8(), { ..phrase, forbidden: "'word'" }).map(|i| (i.start, i.end)) == [(0, 6)]
+
+# Bundled upstream entries beyond the original project-authored shortlist.
+expect TextPolicy.check_text("abandonded aache".to_utf8(), spelling).len() == 2
+expect TextPolicy.check_text("aache".to_utf8(), spelling).map(|i| i.message) == ["possible misspelling 'aache'; use 'ache' or 'cache'"]
+expect TextPolicy.check_text("aache".to_utf8(), { ..spelling, words: [("aache", "projectword")] }).map(|i| i.message) == ["possible misspelling 'aache'; use 'projectword'"]
+expect TextPolicy.check_text("aache".to_utf8(), { ..spelling, allow: ["aache"] }).is_empty()
+expect TextPolicy.check_text("abacus frobnicate".to_utf8(), spelling).is_empty()
+expect TextPolicy.check_text("сontains".to_utf8(), spelling).len() == 1

@@ -1,106 +1,67 @@
-## Reviewed, project-authored common typo corrections, not a general dictionary.
-## Original data maintained with roc-automation under this repository's license.
+import "../vendor/typos/words.csv" as dictionary : Str
+import "../vendor/typos/LICENSE-MIT" as mit_notice : Str
+
+## Pinned typos correction map. See vendor/typos/PROVENANCE.adoc and LICENSE-MIT.
+## Lookup searches embedded UTF-8 bytes; it does not load files or split the
+## entire dictionary for each word. Keys are folded by the calling text policy.
 TypoData :: [].{
-	corrections : List((Str, Str))
-	corrections = [
-		("abandonned", "abandoned"),
-		("abritrary", "arbitrary"),
-		("accidentaly", "accidentally"),
-		("accomodate", "accommodate"),
-		("acheive", "achieve"),
-		("acheived", "achieved"),
-		("acknowlegde", "acknowledge"),
-		("adress", "address"),
-		("agument", "argument"),
-		("algoritm", "algorithm"),
-		("allready", "already"),
-		("alot", "a lot"),
-		("ammount", "amount"),
-		("annnotation", "annotation"),
-		("aparent", "apparent"),
-		("arguement", "argument"),
-		("arguements", "arguments"),
-		("arithemetic", "arithmetic"),
-		("assigment", "assignment"),
-		("asyncronous", "asynchronous"),
-		("atribute", "attribute"),
-		("availabe", "available"),
-		("availble", "available"),
-		("becuase", "because"),
-		("beween", "between"),
-		("boundry", "boundary"),
-		("calback", "callback"),
-		("catagory", "category"),
-		("commment", "comment"),
-		("compatability", "compatibility"),
-		("completly", "completely"),
-		("complier", "compiler"),
-		("concatanate", "concatenate"),
-		("concurency", "concurrency"),
-		("configration", "configuration"),
-		("contians", "contains"),
-		("convienient", "convenient"),
-		("defaut", "default"),
-		("definately", "definitely"),
-		("defintion", "definition"),
-		("dependancies", "dependencies"),
-		("dependancy", "dependency"),
-		("descripton", "description"),
-		("determininstic", "deterministic"),
-		("diferent", "different"),
-		("docummentation", "documentation"),
-		("effecient", "efficient"),
-		("elemement", "element"),
-		("enviroment", "environment"),
-		("equivilent", "equivalent"),
-		("existance", "existence"),
-		("explicitely", "explicitly"),
-		("extention", "extension"),
-		("failue", "failure"),
-		("fucntion", "function"),
-		("funtion", "function"),
-		("guarentee", "guarantee"),
-		("hierachy", "hierarchy"),
-		("identifer", "identifier"),
-		("implmentation", "implementation"),
-		("incompatable", "incompatible"),
-		("independant", "independent"),
-		("initalize", "initialize"),
-		("initialiseation", "initialization"),
-		("interger", "integer"),
-		("lenght", "length"),
-		("maintainance", "maintenance"),
-		("neccessary", "necessary"),
-		("occured", "occurred"),
-		("occurence", "occurrence"),
-		("ouput", "output"),
-		("overide", "override"),
-		("paramater", "parameter"),
-		("paramaters", "parameters"),
-		("persistant", "persistent"),
-		("preceed", "precede"),
-		("prefered", "preferred"),
-		("recieve", "receive"),
-		("recieved", "received"),
-		("refered", "referred"),
-		("relevent", "relevant"),
-		("seperate", "separate"),
-		("seperated", "separated"),
-		("succesful", "successful"),
-		("sucess", "success"),
-		("supress", "suppress"),
-		("syncronous", "synchronous"),
-		("teh", "the"),
-		("thier", "their"),
-		("tranform", "transform"),
-		("uncommited", "uncommitted"),
-		("unecessary", "unnecessary"),
-		("unkown", "unknown"),
-		("untill", "until"),
-		("useage", "usage"),
-		("validaton", "validation"),
-		("varible", "variable"),
-		("wierd", "weird"),
-		("writting", "writing"),
-	]
+
+	## Upstream permission notice for binary distribution and --licenses output.
+	license : Str
+	license = mit_notice
+
+	## All upstream suggestions, in their original order. Empty means unknown.
+	suggestions : Str -> List(Str)
+	suggestions = |word| {
+		bytes = dictionary.to_utf8()
+		key = word.to_utf8()
+		var $low = 0
+		var $high = bytes.len()
+		while $low < $high {
+			# Locate the start of the record containing the midpoint.
+			var $start = $low + ($high - $low) // 2
+			while $start > $low and (bytes.get($start - 1) ?? 0) != '\n' {
+				$start = $start - 1
+			}
+			var $separator = $start
+			while $separator < bytes.len() and (bytes.get($separator) ?? 0) != ',' {
+				$separator = $separator + 1
+			}
+			candidate = bytes.sublist({ start: $start, len: $separator - $start })
+			ordering = compare_bytes(key, candidate)
+			if ordering == Eq {
+				var $end = $separator + 1
+				while $end < bytes.len() and (bytes.get($end) ?? 0) != '\n' {
+					$end = $end + 1
+				}
+				return Str.from_utf8_lossy(bytes.sublist({ start: $separator + 1, len: $end - $separator - 1 })).split_on(",")
+			} else if ordering == Lt {
+				$high = $start
+			} else {
+				var $end = $separator + 1
+				while $end < bytes.len() and (bytes.get($end) ?? 0) != '\n' {
+					$end = $end + 1
+				}
+				$low = if $end < bytes.len() $end + 1 else bytes.len()
+			}
+		}
+		[]
+	}
+}
+
+compare_bytes : List(U8), List(U8) -> [Lt, Eq, Gt]
+compare_bytes = |left, right| {
+	var $i = 0
+	while $i < left.len() and $i < right.len() {
+		a = left.get($i) ?? 0
+		b = right.get($i) ?? 0
+		if a < b {
+			return Lt
+		}
+		if a > b {
+			return Gt
+		}
+		$i = $i + 1
+	}
+	if left.len() < right.len() Lt else if left.len() > right.len() Gt else Eq
 }
