@@ -10,6 +10,7 @@ PolicyConfig :: [].{
 		value : Str,
 		channels : List(Channel),
 		allow : List(Str),
+		accepted_identifiers : List(Str),
 		words : List((Str, Str)),
 	}
 	Config : { roots : List(Str), rules : List(Rule), test_roots : List(Str), test_main : Str }
@@ -117,7 +118,7 @@ PolicyConfig :: [].{
 					$words = $words.append((typo, correction))
 				}
 			}
-			$rules = $rules.append({ kind, scope, name, value: value_text, channels: $channels, allow, words: $words })
+			$rules = $rules.append({ kind, scope, name, value: value_text, channels: $channels, allow, accepted_identifiers: allow, words: $words })
 		}
 		test_roots = if contains_key(fields, "test_roots") strings(required(fields, "test_roots")?)? else roots
 		if test_roots.is_empty() or !test_roots.all(safe_path) {
