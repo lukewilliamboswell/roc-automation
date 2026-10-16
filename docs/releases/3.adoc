@@ -101,6 +101,7 @@ xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one releas
 The tools release adds `roc-policy` for spelling, public documentation, phrasing,
 import boundaries, compiler/dependency headers and test accounting. It reads a
 selected definition in `Blueprint.roc`, including local constant references and
-field access, without evaluating the application. Source checking and report
-verification require no compiler; explicit test execution requires a supplied
-Roc compiler. See xref:policy.adoc#check-repository-source-policy[Check repository source policy].
+field access, without evaluating the application. Source checking and test
+discovery require no compiler. The optional test runner requires a supplied Roc
+compiler and checks verbose PASS locations with normal caching enabled.
+See xref:policy.adoc#check-repository-source-policy[Check repository source policy].

@@ -5,68 +5,38 @@ app [main!] {
 import src/TestAccounting
 main! = |_| Ok({})
 
-expected = TestAccounting.inventory("A.roc", "expect True".to_utf8()) ?? { path: "", source: "", tests: [], completed: False }
+expected = TestAccounting.inventory("A.roc", "expect True".to_utf8()) ?? { path: "", source: "", tests: [] }
 
-report : List(TestAccounting.FileInventory) -> Str
-report = |files| Json.to_str({ schema_version: 1.U64, files })
-
-passed = { ..expected, completed: True, tests: expected.tests.map(|test| { ..test, status: "passed" }) }
+locations = "PASS: /root/A.roc:1\nAll (1) tests passed in 1 ms."
 expect TestAccounting.inventory("A.roc", "expect True".to_utf8()).is_ok()
 expect TestAccounting.inventory("A.roc", "A := [].{\nexpect True\n}".to_utf8()).map_ok(|file| file.tests.len()) == Ok(1)
 expect TestAccounting.inventory("A.roc", "f = |_| {\nexpect True\n1\n}".to_utf8()).map_ok(|file| file.tests.len()) == Ok(0)
 expect TestAccounting.inventory("A.roc", "expect".to_utf8()).is_err()
-expect TestAccounting.verify([expected], report([passed])) == Ok([])
-expect TestAccounting.verify([expected], report([{ ..passed, source: "expect False" }])).map_ok(|found| found.len()) == Ok(1)
-expect TestAccounting.verify([expected], report([])).map_ok(|found| found.len()) == Ok(1)
-expect TestAccounting.verify([expected], report([{ ..passed, tests: [] }])).map_ok(|found| found.len()) == Ok(1)
-expect TestAccounting.verify([expected], report([{ ..passed, completed: False }])).map_ok(|found| found.len()) == Ok(1)
-expect TestAccounting.verify([expected], report([passed, passed])).is_err()
-expect TestAccounting.verify([expected], report([{ ..passed, tests: passed.tests.concat(passed.tests) }])).is_err()
-expect ["failed", "skipped", "pending"].all(|status| TestAccounting.verify([expected], report([{ ..passed, tests: passed.tests.map(|test| { ..test, status }) }])).map_ok(|found| found.len()) == Ok(1))
-expect TestAccounting.verify([expected], report([{ ..passed, tests: passed.tests.map(|test| { ..test, status: "unknown" }) }])).is_err()
-expect TestAccounting.verify([], report([])).is_err()
-expect TestAccounting.verify([{ ..expected, tests: [] }], report([])).is_err()
-expect TestAccounting.verify([expected], "{}").is_err()
-expect TestAccounting.verify([expected], "{broken").is_err()
-expect TestAccounting.verify([expected], "{\"schema_version\":2,\"files\":[]}").is_err()
-expect TestAccounting.verify([expected], "{\"schema_version\":1,\"schema_version\":1,\"files\":[]}").is_err()
-expect TestAccounting.verify([expected], "{\"schema_version\":1,\"files\":[],\"extra\":{\"a\":1,\"\\u0061\":2}}").is_err()
-expect TestAccounting.summary_count("All (24) tests passed in 292.1 ms.\n") == Ok(24)
-expect TestAccounting.summary_count("All (1) tests passed in 1 s.") == Ok(1)
-expect ["", "All (1) tests passed in 1 ms.\nAll (1) tests passed in 1 ms.", "All (1) tests passed in nope ms.", "All (-1) tests passed in 1 ms.", "All (18446744073709551616) tests passed in 1 ms.", "All (1) tests passed in 1 ms.\n1 failed"].all(|text| TestAccounting.summary_count(text).is_err())
 expect TestAccounting.inventory("A.roc", "# expect False\ntext = \"expect False\"\nexpect True".to_utf8()).map_ok(|file| file.tests.len()) == Ok(1)
 expect TestAccounting.inventory("A.roc", "expect {\nexpect True\nTrue\n}".to_utf8()).map_ok(|file| file.tests.len()) == Ok(1)
-expect TestAccounting.verify([expected, expected], report([passed])).is_err()
-expect TestAccounting.verify([expected], report([{ ..passed, path: "B.roc" }])).map_ok(|found| found.any(|issue| issue.message == "unexpected file in runner report")) == Ok(True)
-expect TestAccounting.verify([expected], report([{ ..passed, tests: [{ start: 1.U64, end: 11.U64, status: "passed" }] }])).map_ok(|found| found.len()) == Ok(2)
-expect TestAccounting.verify([expected], report([{ ..passed, tests: [{ start: 0.U64, end: 99.U64, status: "passed" }] }])).is_err()
-expect TestAccounting.verify([expected], report([{ ..passed, tests: [{ start: 1.U64, end: 1.U64, status: "passed" }] }])).is_err()
-expect TestAccounting.verify([expected], "{\"schema_version\":1,\"files\":[],\"extra\":{\"a\":1,\"nested\":{\"a\":2}}}").is_ok()
-expect TestAccounting.verify([expected], "{\"schema_version\":1,\"files\":[],\"extra\":\"{\\\"a\\\":1,\\\"a\\\":2}\"}").is_ok()
-expect TestAccounting.verify([expected], "{\"schema_version\":1,\"files\":[],\"extra\":[{\"a\":1,\"a\":2}]}").is_err()
-expect TestAccounting.verify([expected], "{\"schema_version\":1,\"files\":[],\"extra\":{\"a\\\"b\":1,\"a\\\"b\":2}}").is_err()
-expect TestAccounting.summary_count("\u(001b)[32mAll (1) tests passed in 1 ms.").is_err()
-expect TestAccounting.summary_count("All (1) tests passed in 1.2.3 ms.").is_err()
-expect TestAccounting.summary_count("All (1) tests passed in 1 ms. extra").is_err()
-expect TestAccounting.summary_count("All (18446744073709551615) tests passed in 1 ms.") == Ok(18446744073709551615)
+expect TestAccounting.inventory("A.roc", "expect { expect True\n True }".to_utf8()).is_err()
+expect TestAccounting.inventory("A.roc", "A := [].{ expect True\n expect True }".to_utf8()).is_ok()
 expect TestAccounting.inventory("A.roc", "# café\nexpect True".to_utf8()).map_ok(|file| file.tests.map(|test| (test.start, test.end))) == Ok([(8, 19)])
-
+expect TestAccounting.summary_count("All (24) tests passed in 292.1 ms.\n") == Ok(24)
+expect TestAccounting.summary_count("All (1) tests passed in 1 s.") == Ok(1)
 expect TestAccounting.summary_count("All (3) tests passed in 1 ms. (cached)") == Ok(3)
-locations = "PASS: /root/A.roc:1\nAll (1) tests passed in 1 ms."
+expect TestAccounting.summary_count("All (18446744073709551615) tests passed in 1 ms.") == Ok(18446744073709551615)
+expect ["", "All (1) tests passed in 1 ms.\nAll (1) tests passed in 1 ms.", "All (1) tests passed in nope ms.", "All (-1) tests passed in 1 ms.", "All (18446744073709551616) tests passed in 1 ms.", "All (1) tests passed in 1 ms.\n1 failed", "\u(001b)[32mAll (1) tests passed in 1 ms.", "All (1) tests passed in 1.2.3 ms.", "All (1) tests passed in 1 ms. extra"].all(|text| TestAccounting.summary_count(text).is_err())
 expect TestAccounting.verify_locations(expected, "/root/A.roc", locations) == Ok([])
 expect TestAccounting.verify_locations(expected, "/root/A.roc", "${locations} (cached)") == Ok([])
-expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/B.roc:1\n${locations}") == Ok([])
-expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/A.roc:9\n${locations}") == Ok([])
-expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/A.roc:1\n${locations}").map_ok(List.len) == Ok(1)
+expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/B.roc:1\nPASS: /root/A.roc:1\nAll (2) tests passed in 1 ms.") == Ok([])
+expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/A.roc:1\nPASS: /root/A.roc:1\nAll (2) tests passed in 1 ms.").map_ok(List.len) == Ok(1)
 expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/B.roc:1\nAll (1) tests passed in 1 ms.").map_ok(List.len) == Ok(1)
-expect TestAccounting.verify_locations(expected, "/root/A.roc", "All (1) tests passed in 1 ms.").map_ok(List.len) == Ok(1)
+expect TestAccounting.verify_locations(expected, "/root/A.roc", "All (0) tests passed in 1 ms.").map_ok(List.len) == Ok(1)
+expect TestAccounting.verify_locations(expected, "/root/A.roc", "All (1) tests passed in 1 ms.").is_err()
 expect TestAccounting.verify_locations(expected, "A.roc", locations).is_err()
 expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/A.roc:nope\nAll (1) tests passed in 1 ms.").is_err()
 expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/A.roc:0\nAll (1) tests passed in 1 ms.").is_err()
 expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: A.roc:1\nAll (1) tests passed in 1 ms.").is_err()
 expect TestAccounting.verify_locations(expected, "/root/A.roc", "PASS: /root/A.roc:1").is_err()
-expect TestAccounting.inventory("A.roc", "expect { expect True\n True }".to_utf8()).is_err()
-expect TestAccounting.inventory("A.roc", "A := [].{ expect True\n expect True }".to_utf8()).is_ok()
+expect TestAccounting.verify_locations({ ..expected, tests: [] }, "/root/A.roc", locations).is_err()
+expect TestAccounting.verify_locations(expected, "/root/colon:A.roc", "PASS: /root/colon:A.roc:1\nAll (1) tests passed in 1 ms.") == Ok([])
+expect TestAccounting.verify_locations(expected, "/root/errors.roc", "PASS: /root/errors.roc:1\nAll (1) tests passed in 1 ms.") == Ok([])
 expect {
 	inv = TestAccounting.inventory("A.roc", "helper = |_| {\nexpect True\nTrue\n}\nexpect helper({})".to_utf8())?
 	TestAccounting.verify_locations(inv, "/root/A.roc", "PASS: /root/A.roc:2\nPASS: /root/A.roc:5\nPASS: /root/B.roc:1\nAll (3) tests passed in 1 ms. (cached)") == Ok([])
@@ -75,7 +45,3 @@ expect {
 	inv = TestAccounting.inventory("A.roc", "# café\r\nexpect True".to_utf8())?
 	TestAccounting.verify_locations(inv, "/root/A.roc", "PASS: /root/A.roc:2\nAll (1) tests passed in 1 ms.") == Ok([])
 }
-expect TestAccounting.verify_locations({ ..expected, tests: [] }, "/root/A.roc", locations).is_err()
-expect TestAccounting.verify_locations(expected, "/root/colon:A.roc", "PASS: /root/colon:A.roc:1\nAll (1) tests passed in 1 ms.") == Ok([])
-
-expect TestAccounting.verify_locations(expected, "/root/errors.roc", "PASS: /root/errors.roc:1\nAll (1) tests passed in 1 ms.") == Ok([])

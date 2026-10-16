@@ -4,7 +4,9 @@
 compiler, Git, Python or Nix at runtime. Configuration lives in `Blueprint.roc`;
 local constant references and record field access keep facts in one place.
 The separate `run-tests` command explicitly requires and invokes a supplied Roc
-compiler. Source checks and receipt verification never execute project code.
+compiler. Source checks and inventory discovery never execute project code.
+Test accounting uses native verbose PASS locations and accepts normal cached
+results; it does not audit a separate CI entrypoint or promise native test IDs.
 
 See `docs/policy.adoc` for the configuration, commands, supported analysis and
 execution-evidence contracts. `src/ConstantData.roc` has no policy, CLI or I/O
@@ -34,7 +36,7 @@ The optional build argument chooses `x86_64-linux`, `aarch64-linux` or
 `aarch64-darwin`; without it all targets are built. Linux targets link statically
 with musl. The build script does not publish. The source-free Python test harness
 uses the standard library and passes a nonexistent PATH to utility invocations.
-Only its optional real-compiler test requires `ROC_POLICY_TEST_COMPILER`.
+Only its optional real-compiler tests require `ROC_POLICY_TEST_COMPILER`.
 
 The tools release workflow builds on native target runners, runs module tests,
 and tests each exact final artifact in a separate job without checkout, compiler

@@ -60,7 +60,6 @@ depth to 64 and expanded-value accounting to 1 MiB.
 roc-policy check --root .
 roc-policy check --root . --format json
 roc-policy manifest --root . > expected-tests.json
-roc-policy verify-tests --root . --report completed-tests.json
 roc-policy run-tests --root . --compiler /absolute/path/to/roc
 ----
 
@@ -129,35 +128,45 @@ inference about authorship or prose quality.
 
 == Test accounting
 
-`manifest` inventories static file-level and associated-block `expect` declarations
-under `test_roots`, defaulting to `roots`. It rejects inline/local expectations
-whose runtime multiplicity cannot be inferred. It emits schema 1 JSON with
-`files`, each containing `path`, exact `source`, `completed: false`, and `tests`
-with byte `start`, `end` and `status: "declared"`. No expectations run.
+`manifest` discovers static file-level and associated-block `expect` declarations
+under `test_roots`, defaulting to `roots`. It emits schema 1 JSON with `files`,
+each containing `path`, exact `source`, and `tests` with byte `start` and `end`.
+It is a source inventory, with no execution statuses. Inline/local expectations
+are valid assertions but are not separate required static tests. A static test
+sharing its starting line with another expectation is rejected because the
+compiler's line output cannot distinguish them. Empty selected static inventories
+fail explicitly.
 
-A runner adapter supplies the same schema after execution, with `completed: true`
-and a result status per source/span identity. `verify-tests` requires exactly the
-current files, source bytes and test identities, with every result `passed`.
-Missing, unexpected, duplicated, stale, incomplete, failed, skipped and pending
-evidence fails. Duplicate JSON keys are rejected, including escaped spellings;
-unknown JSON fields are extensible under the versioned report contract.
-An inventory template is not a completed report. Empty selected test inventories
-fail rather than passing vacuously.
+`run-tests` is an optional discovery-driven runner requiring an explicit compiler
+path. It invokes `roc test <absolute-source-path> --verbose` for each inventoried
+file, leaving normal compiler caching enabled. Optional `test_main` names a
+relative application file used to resolve package aliases with `--main=...`.
+For every static test, exactly one `PASS: <absolute-source-path>:<line>` record
+must be reported. Tests in imported local modules and executed inline assertions
+may add records; they do not inflate the selected file's static count. The total
+number of PASS records must also agree with the compiler's success summary.
+Missing or duplicated required locations fail, even when the overall count is
+unchanged. A successful-looking output fragment cannot override a failed process.
 
-Current Roc CLI summaries do not supply this identity report. `run-tests` offers
-an explicitly weaker count gate: it invokes the supplied compiler separately for
-each inventoried file with `--no-cache`, requires successful termination and one
-fresh success summary, and compares its total with that file's static test count.
-Optional `test_main` names a relative application file passed as `--main` for
-package aliases. Timeouts, malformed/ambiguous/cached summaries, source changes
-and count mismatches fail. Each child has a 60-second deadline and a bounded
-capture budget. No shell command is constructed.
+Normal cached results are accepted. Cache correctness is the compiler's
+responsibility; this utility does not routinely pass `--no-cache`. Every child
+must exit successfully within 60 seconds and uses bounded output capture.
+Inventoried sources are checked again after all invocations; changed sources,
+ambiguous locations, malformed output and incomplete parses fail. No shell
+command is constructed.
 
-Counts cannot prove individual identities: one omitted and one duplicated test
-can cancel. Reports are runner assertions, not authenticated execution attestations.
-Use candidate runners only in unprivileged jobs. The explicit execution command
-can execute project code and invoke the compiler's normal dependency behavior;
-the three read-only commands do neither.
+This checks compiler-reported source lines, not native test IDs, exact span
+receipts, code coverage or authenticated execution provenance. It does not prove
+that a different CI entrypoint selects these tests. It discovers and invokes
+each selected test-bearing file itself, so large import graphs can cause repeated
+compiler invocations; normal caching reduces that cost. The adapter is tested
+against `nightly-2026-10-15-38e6c42` and depends on its human-readable verbose
+output. An incompatible output format fails explicitly; structured compiler
+reporting would provide a more stable future interface.
+
+The runner can execute project code and invoke the compiler's normal dependency
+behavior. Use it in unprivileged jobs. `check` and `manifest` require no compiler,
+execute no project code, and invoke no external helpers.
 
 == Distribution boundary
 

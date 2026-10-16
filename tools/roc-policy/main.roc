@@ -89,54 +89,45 @@ execute! = |args| {
 		}
 		if options.command == "manifest" {
 			Stdout.line!(Json.to_str({ schema_version: 1.U64, files: $inventories }))
-		} else if options.command == "verify-tests" {
-			receipt = Str.from_utf8(read_file!(root, options.report)?)?
-			findings = match TestAccounting.verify($inventories, receipt) {
-				Ok(found) => found
-				Err(message) => return fail!(message)
-			}
-			var $issues = []
-			for issue in findings {
-				file = files.find_first(|candidate| candidate.path == issue.path) ?? { path: issue.path, source: [] }
-				$issues = $issues.append(located(file, { rule: issue.rule, message: issue.message, start: issue.start, end: issue.end }))
-			}
-			report!($issues, $inventories.len(), options.format, "test-identity-receipts")?
-			if $issues.is_empty() Ok({}) else Err(Exit(1))
 		} else {
-			# Explicit execution is a separate command. The source-checking and
-			# receipt-verification paths above never execute candidate code.
+			# Explicit execution is a separate command. Source checking and
+			# inventory discovery above never execute candidate code.
 			compiler = Path.canonicalize!(Path.utf8(options.compiler))?
 			if !Path.is_file!(compiler)? {
 				return fail!("compiler must be a regular file")
 			}
-			if config.test_main != "" {
+			main_flags = if config.test_main == "" [] else {
 				_ = read_file!(root, config.test_main)?
+				["--main=${Path.display(checked_path!(root, config.test_main)?)}"]
 			}
 			var $issues = []
 			for inventory in $inventories {
-				argv = ["test", inventory.path, "--no-cache"].concat(if config.test_main == "" [] else ["--main", config.test_main])
+				source_path = Path.display(checked_path!(root, inventory.path)?)
+				argv = ["test", source_path, "--verbose"].concat(main_flags)
 				output = Cmd.new(Path.to_os_str(compiler)).args(argv.map(OsStr.from_str)).cwd(root).timeout_ms(60000).manage_tree(True).run!()?
 				file = { path: inventory.path, source: inventory.source.to_utf8() }
 				if output.status != Exited(0) {
-					$issues = $issues.append(located(file, { rule: "tests/count", start: 0, end: 0, message: "compiler test command failed; ${Str.from_utf8_lossy(output.stderr_bytes)}" }))
+					$issues = $issues.append(located(file, { rule: "tests/accounting", start: 0, end: 0, message: "compiler test command failed; ${Str.from_utf8_lossy(output.stderr_bytes)}" }))
 				} else {
-					count = match TestAccounting.summary_count(Str.from_utf8_lossy(output.stdout_bytes)) {
+					findings = match TestAccounting.verify_locations(inventory, source_path, Str.from_utf8_lossy(output.stdout_bytes)) {
 						Ok(found) => found
 						Err(message) => return fail!("${inventory.path}: ${message}")
 					}
-					# Re-read after execution: a runner cannot accidentally
-					# validate the count of source it changed while testing.
-					if read_file!(root, inventory.path)? != inventory.source.to_utf8() {
-						return fail!("${inventory.path}: source changed during test execution")
-					}
-					if count != inventory.tests.len() {
-						$issues = $issues.append(located(file, { rule: "tests/count", start: 0, end: 0, message: "declared ${inventory.tests.len().to_str()} static tests but runner reports ${count.to_str()}" }))
+					for issue in findings {
+						$issues = $issues.append(located(file, { rule: issue.rule, start: issue.start, end: issue.end, message: issue.message }))
 					}
 				}
 			}
-			report!($issues, $inventories.len(), options.format, "fresh-per-file-counts")?
+			# Check every inventoried source after the complete run, including files
+			# tested earlier that a later invocation could have changed.
+			for inventory in $inventories {
+				if read_file!(root, inventory.path)? != inventory.source.to_utf8() {
+					return fail!("${inventory.path}: source changed during test execution")
+				}
+			}
+			report!($issues, $inventories.len(), options.format, "compiler-pass-locations")?
 			if options.format == "text" {
-				Stdout.line!("Evidence: fresh per-file counts; this does not prove individual test identities.")?
+				Stdout.line!("Evidence: compiler-reported source lines; cached results are accepted.")?
 			}
 			if $issues.is_empty() Ok({}) else Err(Exit(1))
 		}

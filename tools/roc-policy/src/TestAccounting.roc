@@ -4,10 +4,10 @@ import parser.RocSyntax
 TestAccounting :: [].{
 
 	## Source byte spans identify tests within an exact source revision.
-	Test : { start : U64, end : U64, status : Str }
+	Test : { start : U64, end : U64 }
 
-	## A runner must report its source and explicitly confirm completion.
-	FileInventory : { path : Str, source : Str, tests : List(Test), completed : Bool }
+	## Exact inventoried source and its static test declarations. No execution results.
+	FileInventory : { path : Str, source : Str, tests : List(Test) }
 
 	## A source-linked accounting discrepancy.
 	Issue : { path : Str, start : U64, end : U64, rule : Str, message : Str }
@@ -21,86 +21,19 @@ TestAccounting :: [].{
 			return Err("${path}: test inventory requires a complete parse")
 		}
 		tests = discover(parsed, node(parsed, parsed.root))
-		all_expects = parsed.nodes.keep_if(|item| item.kind == Expect)
-		for test in tests {
-			line = line_at(bytes, test.start)
-			if all_expects.keep_if(|item| line_at(bytes, item.start) == line).len() != 1 {
-				return Err("${path}:${line.to_str()}: multiple expect sites start on one static-test line; location evidence is ambiguous")
+		all_expects = with_lines(bytes, parsed.nodes.keep_if(|item| item.kind == Expect).map(|item| { start: item.start, end: item.end }))
+		var $index = 0.U64
+		for test in with_lines(bytes, tests) {
+			while $index < all_expects.len() and (all_expects.get($index) ?? test).start < test.start {
+				$index = $index + 1
+			}
+			before = if $index == 0 False else (all_expects.get($index - 1) ?? { ..test, line: 0 }).line == test.line
+			after = (all_expects.get($index + 1) ?? { ..test, line: 0 }).line == test.line
+			if before or after {
+				return Err("${path}:${test.line.to_str()}: multiple expect sites start on one static-test line; location evidence is ambiguous")
 			}
 		}
-		Ok({ path, source: Str.from_utf8_lossy(bytes), tests, completed: False })
-	}
-
-	## Verify schema-1 JSON receipts. Unknown fields are extensible; duplicate keys
-	## anywhere are rejected. Source identities prevent stale, not forged, receipts.
-	verify : List(FileInventory), Str -> Try(List(Issue), Str)
-	verify = |expected, report| {
-		if expected.is_empty() or expected.fold(0.U64, |count, file| count + file.tests.len()) == 0 {
-			return Err("test accounting requires a nonempty expected test inventory")
-		}
-		decoded : Try({ schema_version : U64, files : List(FileInventory) }, _)
-		decoded = Json.parse(report)
-		actual = decoded.map_err(|_| "invalid test report JSON or required field types")?
-		unique_json_keys(report)?
-		if actual.schema_version != 1 {
-			return Err("unsupported test report schema_version")
-		}
-		var $expected_paths = []
-		for file in expected {
-			if $expected_paths.contains(file.path) {
-				return Err("duplicate expected file ${file.path}")
-			}
-			$expected_paths = $expected_paths.append(file.path)
-			unique_tests(file.tests).map_err(|_| "duplicate expected test identity in ${file.path}")?
-		}
-		var $issues = []
-		var $actual_paths = []
-		for file in actual.files {
-			if $actual_paths.contains(file.path) {
-				return Err("duplicate report file ${file.path}")
-			}
-			$actual_paths = $actual_paths.append(file.path)
-			unique_tests(file.tests).map_err(|_| "duplicate report test identity in ${file.path}")?
-			for test in file.tests {
-				if !["passed", "failed", "skipped", "pending"].contains(test.status) {
-					return Err("unknown report test status ${test.status}")
-				}
-				if test.start >= test.end or test.end > file.source.to_utf8().len() {
-					return Err("invalid report test span in ${file.path}")
-				}
-			}
-			wanted = match expected.find_first(|candidate| candidate.path == file.path) {
-				Ok(value) => value
-				Err(_) => {
-					$issues = $issues.append(issue(file.path, 0, 0, "unexpected file in runner report"))
-					{ ..file, tests: [] }
-				}
-			}
-			if file.source != wanted.source {
-				$issues = $issues.append(issue(file.path, 0, 0, "runner source does not match expected source"))
-			}
-			if !file.completed {
-				$issues = $issues.append(issue(file.path, 0, 0, "runner did not confirm file completion"))
-			}
-			for test in file.tests {
-				if !wanted.tests.any(|candidate| same_test(candidate, test)) {
-					$issues = $issues.append(issue(file.path, test.start, test.end, "unexpected test identity"))
-				} else if test.status != "passed" {
-					$issues = $issues.append(issue(file.path, test.start, test.end, "test status is ${test.status}, expected passed"))
-				}
-			}
-			for test in wanted.tests {
-				if !file.tests.any(|candidate| same_test(candidate, test)) {
-					$issues = $issues.append(issue(file.path, test.start, test.end, "expected test missing from runner report"))
-				}
-			}
-		}
-		for file in expected {
-			if !$actual_paths.contains(file.path) {
-				$issues = $issues.append(issue(file.path, 0, 0, "expected file missing from runner report"))
-			}
-		}
-		Ok($issues)
+		Ok({ path, source: Str.from_utf8_lossy(bytes), tests })
 	}
 
 	## Match selected static sites against compiler --verbose PASS locations.
@@ -118,10 +51,12 @@ TestAccounting :: [].{
 		if checked.tests != expected.tests {
 			return Err("expected inventory does not match its source")
 		}
-		_ = summary_count(output)?
+		reported_total = summary_count(output)?
 		var $locations = []
+		var $total = 0.U64
 		for line in output.split_on("\n") {
 			if line.starts_with("PASS: ") {
+				$total = $total + 1
 				location = line.drop_prefix("PASS: ")
 				parts = location.split_on(":")
 				line_text = parts.last() ?? ""
@@ -138,12 +73,23 @@ TestAccounting :: [].{
 				}
 			}
 		}
+		if $total != reported_total {
+			return Err("compiler PASS records do not match the summary total")
+		}
 		var $issues = []
-		for test in checked.tests {
-			line = line_at(expected.source.to_utf8(), test.start)
-			count = $locations.keep_if(|found| found == line).len()
-			if count != 1 {
-				$issues = $issues.append(issue(expected.path, test.start, test.end, "expected exactly one compiler PASS at line ${line.to_str()}, found ${count.to_str()}"))
+		locations = $locations.sort_with(compare)
+		var $index = 0.U64
+		for test in with_lines(expected.source.to_utf8(), checked.tests) {
+			while $index < locations.len() and (locations.get($index) ?? 0) < test.line {
+				$index = $index + 1
+			}
+			var $count = 0.U64
+			while $index < locations.len() and (locations.get($index) ?? 0) == test.line {
+				$count = $count + 1
+				$index = $index + 1
+			}
+			if $count != 1 {
+				$issues = $issues.append(issue(expected.path, test.start, test.end, "expected exactly one compiler PASS at line ${test.line.to_str()}, found ${$count.to_str()}"))
 			}
 		}
 		Ok($issues)
@@ -189,27 +135,12 @@ discover = |parsed, parent| {
 	var $tests = []
 	for child in children(parsed, parent) {
 		if child.kind == Expect {
-			$tests = $tests.append({ start: child.start, end: child.end, status: "declared" })
+			$tests = $tests.append({ start: child.start, end: child.end })
 		} else if child.kind == TypeDeclaration or child.kind == AssociatedBlock {
 			$tests = $tests.concat(discover(parsed, child))
 		}
 	}
 	$tests
-}
-
-same_test = |a, b| a.start == b.start and a.end == b.end
-
-unique_tests : List(TestAccounting.Test) -> Try({}, Str)
-unique_tests = |tests| {
-	var $seen = []
-	for test in tests {
-		identity = (test.start, test.end)
-		if $seen.contains(identity) {
-			return Err("duplicate test")
-		}
-		$seen = $seen.append(identity)
-	}
-	Ok({})
 }
 
 decimal : Str -> Try(U64, Str)
@@ -231,47 +162,23 @@ decimal = |text| {
 	Ok($number)
 }
 
-# Json.parse validates grammar first. This scanner only tracks object scopes and
-# decoded keys; string escapes and punctuation inside strings cannot confuse it.
-unique_json_keys : Str -> Try({}, Str)
-unique_json_keys = |source| {
-	bytes = source.to_utf8()
-	var $index = 0.U64
-	var $objects = []
-	while $index < bytes.len() {
-		byte = bytes.get($index) ?? 0
-		if byte == 123 {
-			$objects = $objects.append([])
-		} else if byte == 125 {
-			$objects = $objects.drop_last(1)
-		} else if byte == 34 {
-			start = $index
-			$index = $index + 1
-			while $index < bytes.len() and (bytes.get($index) ?? 0) != 34 {
-				if (bytes.get($index) ?? 0) == 92 {
-					$index = $index + 1
-				}
-				$index = $index + 1
+# Walk source bytes once in source order, avoiding a prefix scan for every pair
+# of expectation nodes. Runtime assertions are included when checking ambiguity.
+with_lines : List(U8), List(TestAccounting.Test) -> List({ start : U64, end : U64, line : U64 })
+with_lines = |bytes, tests| {
+	var $cursor = 0.U64
+	var $line = 1.U64
+	var $out = []
+	for test in tests.sort_with(|a, b| compare(a.start, b.start)) {
+		while $cursor < test.start {
+			if (bytes.get($cursor) ?? 0) == 10 {
+				$line = $line + 1
 			}
-			end = $index + 1
-			var $look = end
-			while $look < bytes.len() and [32.U8, 9, 10, 13].contains(bytes.get($look) ?? 0) {
-				$look = $look + 1
-			}
-			if (bytes.get($look) ?? 0) == 58 {
-				decoded : Try(Str, _)
-				decoded = Json.parse(Str.from_utf8_lossy(bytes.sublist({ start, len: end - start })))
-				key = decoded.map_err(|_| "invalid JSON key")?
-				keys = $objects.last() ?? []
-				if keys.contains(key) {
-					return Err("duplicate JSON key ${key}")
-				}
-				$objects = $objects.drop_last(1).append(keys.append(key))
-			}
+			$cursor = $cursor + 1
 		}
-		$index = $index + 1
+		$out = $out.append({ start: test.start, end: test.end, line: $line })
 	}
-	Ok({})
+	$out
 }
 
-line_at = |bytes, offset| bytes.sublist({ start: 0, len: offset }).keep_if(|byte| byte == 10).len() + 1
+compare = |a, b| if a < b Before else if a > b After else Same

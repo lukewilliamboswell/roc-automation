@@ -1,6 +1,7 @@
 """Exercise exact compiled artifacts; stdlib harness, no source/toolchain required."""
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -215,51 +216,15 @@ class CliTests(unittest.TestCase):
         self.configure('')
         return json.loads(self.invoke("manifest").stdout)
 
-    def receipt(self, report):
-        (self.root / "receipt.json").write_text(json.dumps(report))
-        return ("--report", "receipt.json")
-
-    def completed_report(self):
+    def test_manifest_is_static_discovery_only(self):
         report = self.prepare_tests()
-        for file in report["files"]:
-            file["completed"] = True
-            for test in file["tests"]:
-                test["status"] = "passed"
-        return report
-
-    def test_manifest_and_exact_completed_receipt(self):
-        report = self.completed_report()
+        self.assertEqual(report["schema_version"], 1)
         self.assertEqual(len(report["files"][0]["tests"]), 2)
-        self.invoke("verify-tests", extra=self.receipt(report))
+        self.assertNotIn("completed", report["files"][0])
+        self.assertNotIn("status", report["files"][0]["tests"][0])
 
-    def test_manifest_is_not_execution_evidence(self):
-        report = self.prepare_tests()
-        self.invoke("verify-tests", expected=2, extra=self.receipt(report))
-
-    def test_receipts_detect_missing_duplicate_stale_failed_and_skipped(self):
-        for mutation, expected in [
-            (lambda r: r["files"][0]["tests"].pop(), 1),
-            (lambda r: r["files"][0]["tests"].append(r["files"][0]["tests"][0].copy()), 2),
-            (lambda r: r["files"][0].update(source=r["files"][0]["source"] + "# stale\n"), 1),
-            (lambda r: r["files"][0]["tests"][0].update(status="failed"), 1),
-            (lambda r: r["files"][0]["tests"][0].update(status="skipped"), 1),
-        ]:
-            report = self.completed_report()
-            mutation(report)
-            self.invoke("verify-tests", expected=expected, extra=self.receipt(report))
-
-    def test_equal_counts_do_not_replace_identity_matching(self):
-        report = self.completed_report()
-        report["files"][0]["tests"][0]["start"] += 1
-        output = self.invoke("verify-tests", expected=1, extra=self.receipt(report)).stdout
-        self.assertIn("unexpected test identity", output)
-        self.assertIn("expected test missing", output)
-
-    def test_receipt_duplicate_json_keys_rejected(self):
-        report = self.completed_report()
-        p = self.root / "receipt.json"
-        p.write_text(json.dumps(report).replace('"schema_version": 1', '"schema_version": 1, "schema_version": 1'))
-        self.invoke("verify-tests", expected=2, extra=("--report", "receipt.json"))
+    def test_unused_receipt_protocol_is_not_exposed(self):
+        self.invoke("verify-tests", expected=2)
 
     def test_no_test_inventory_is_error(self):
         self.configure('')
@@ -271,27 +236,89 @@ class CliTests(unittest.TestCase):
         compiler.chmod(0o755)
         return ("--compiler", str(compiler))
 
-    def test_runner_count_gate_requires_fresh_successful_matching_summary(self):
+    def results_body(self, *locations, count=None, cached=False):
+        count = len(locations) if count is None else count
+        output = [f"PASS: {path}:{line}" for path, line in locations]
+        output.append(f"All ({count}) tests passed in 0.1 ms." + (" (cached)" if cached else ""))
+        return "printf '%s\\n' " + " ".join(shlex.quote(line) for line in output)
+
+    def test_runner_uses_verbose_locations_and_normal_caching(self):
         self.prepare_tests()
-        runner = self.fake_compiler("printf 'All (2) tests passed in 0.1 ms.\\n'")
-        self.assertIn("does not prove individual", self.invoke("run-tests", extra=runner).stdout)
-        runner = self.fake_compiler("printf 'All (1) tests passed in 0.1 ms.\\n'")
-        self.invoke("run-tests", expected=1, extra=runner)
-        runner = self.fake_compiler("printf 'All (2) tests passed in 0.1 ms. (cached)\\n'")
+        path = (self.root / "examples/main.roc").resolve()
+        body = 'case "$*" in *--no-cache*) exit 91;; esac\n'
+        body += 'case "$*" in *--verbose*) : ;; *) exit 92;; esac\n'
+        body += self.results_body((path, 2), (path, 3), cached=True)
+        output = self.invoke("run-tests", extra=self.fake_compiler(body)).stdout
+        self.assertIn("cached results are accepted", output)
+
+    def test_matching_total_cannot_hide_missing_or_duplicate_locations(self):
+        self.prepare_tests()
+        path = (self.root / "examples/main.roc").resolve()
+        for locations in [((path, 2), (path, 2)), ((path, 2), (path.parent / "Imported.roc", 1))]:
+            with self.subTest(locations=locations):
+                runner = self.fake_compiler(self.results_body(*locations))
+                self.assertIn("expected exactly one compiler PASS", self.invoke("run-tests", expected=1, extra=runner).stdout)
+
+    def test_summary_and_result_records_must_agree(self):
+        self.prepare_tests()
+        path = (self.root / "examples/main.roc").resolve()
+        runner = self.fake_compiler(self.results_body((path, 2), (path, 3), count=3))
         self.invoke("run-tests", expected=2, extra=runner)
-        runner = self.fake_compiler("exit 1")
+
+    def test_successful_output_cannot_override_failed_compiler_exit(self):
+        self.prepare_tests()
+        path = (self.root / "examples/main.roc").resolve()
+        runner = self.fake_compiler(self.results_body((path, 2), (path, 3)) + "\nexit 1")
         self.invoke("run-tests", expected=1, extra=runner)
+
+    def test_inline_and_imported_results_do_not_inflate_static_file_count(self):
+        path = (self.root / "examples/main.roc").resolve()
+        path.write_text("helper = |_| {\nexpect True\nTrue\n}\nexpect helper({})\n")
+        self.configure('')
+        report = json.loads(self.invoke("manifest").stdout)
+        self.assertEqual(len(report["files"][0]["tests"]), 1)
+        runner = self.fake_compiler(self.results_body((path, 2), (path, 5), (path.parent / "Imported.roc", 1)))
+        self.invoke("run-tests", extra=runner)
+
+    def test_ambiguous_static_and_inline_sites_on_one_line_fail_explicitly(self):
+        (self.root / "examples/main.roc").write_text("expect { expect True\nTrue }\n")
+        self.configure('')
+        self.assertIn("ambiguous", self.invoke("manifest", expected=2).stderr)
 
     def test_runner_source_mutation_is_not_a_pass(self):
         self.prepare_tests()
-        runner = self.fake_compiler("printf '# changed\\n' >> examples/main.roc\nprintf 'All (2) tests passed in 0.1 ms.\\n'")
+        path = (self.root / "examples/main.roc").resolve()
+        runner = self.fake_compiler("printf '# changed\\n' >> examples/main.roc\n" + self.results_body((path, 2), (path, 3)))
         self.assertIn("source changed", self.invoke("run-tests", expected=2, extra=runner).stderr)
 
+    def test_later_invocation_cannot_mutate_an_earlier_inventoried_file(self):
+        (self.root / "examples/main.roc").unlink()
+        for name in ["A.roc", "B.roc"]:
+            (self.root / "examples" / name).write_text("expect True\n")
+        self.configure('')
+        body = 'case "$2" in */B.roc) printf "# changed\\n" >> examples/A.roc;; esac\n'
+        body += 'printf "PASS: %s:1\\nAll (1) tests passed in 0.1 ms.\\n" "$2"'
+        self.assertIn("source changed", self.invoke("run-tests", expected=2, extra=self.fake_compiler(body)).stderr)
+
+    def compiler_environment(self):
+        return {key: value for key, value in os.environ.items() if key != "PATH"} | {"ROC_CACHE_DIR": str(self.root / "cache")}
+
     @unittest.skipUnless(COMPILER, "set ROC_POLICY_TEST_COMPILER for actual Roc execution")
-    def test_real_roc_count_gate(self):
-        self.prepare_tests()
-        env = {key: value for key, value in os.environ.items() if key not in {"PATH"}}
-        self.invoke("run-tests", extra=("--compiler", str(Path(COMPILER).resolve())), env=env)
+    def test_real_roc_imports_inline_expectations_and_cached_results(self):
+        (self.root / "examples/B.roc").write_text("B :: [].{ value = 1 }\nexpect B.value == 1\n")
+        (self.root / "examples/main.roc").write_text("import B\nhelper = |x| {\nexpect x > 0\nx\n}\nexpect helper(B.value) == 1\n")
+        self.configure('')
+        runner = ("--compiler", str(Path(COMPILER).resolve()))
+        self.invoke("run-tests", extra=runner, env=self.compiler_environment())
+        result = self.invoke("run-tests", extra=runner, env=self.compiler_environment())
+        self.assertIn("cached results are accepted", result.stdout)
+
+    @unittest.skipUnless(COMPILER, "set ROC_POLICY_TEST_COMPILER for actual Roc execution")
+    def test_real_roc_main_argument_resolves_package_aliases(self):
+        (self.root / "examples/main.roc").write_text('app [main!] { cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst" }\nmain! = |_| Ok({})\n')
+        (self.root / "examples/Helper.roc").write_text("import cli.Stdout\nexpect True\n")
+        self.configure('', ', test_roots: ["examples/Helper.roc"], test_main: "examples/main.roc"')
+        self.invoke("run-tests", extra=("--compiler", str(Path(COMPILER).resolve())), env=self.compiler_environment())
 
 
 if __name__ == "__main__":
