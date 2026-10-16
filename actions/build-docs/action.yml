@@ -77,7 +77,7 @@ runs:
         DOCS_AUTHOR: ${{ inputs.author }}
         DOCS_LANGUAGE: ${{ inputs.language }}
       run: >-
-        python3 "$DOCS_ACTION_PATH/build_docs.py"
+        bash "$DOCS_ACTION_PATH/build_docs.sh"
         --workspace "$DOCS_WORKSPACE"
         --docs-directory "$DOCS_DIRECTORY"
         --entrypoint "$DOCS_ENTRYPOINT"

@@ -269,5 +269,96 @@ class RocBuildTests(unittest.TestCase):
         self.assert_preserved()
 
 
+class NativeActionShellTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.script = ACTION.with_name("build_docs.sh")
+        self.binary = self.root / "roc-docs"
+        self.record = self.root / "arguments"
+        self.outputs = self.root / "github output"
+        self.binary.write_text(
+            '#!/bin/bash\n'
+            'printf "%s\\0" "$@" > "$RECORD"\n'
+            'printf "site-directory=/absolute/site\\npdf-path=/absolute/manual.pdf\\n" >> "$GITHUB_OUTPUT"\n'
+            'exit "${FAKE_STATUS:-0}"\n')
+        self.binary.chmod(0o755)
+        self.environment = {
+            "PATH": str(self.root), "RECORD": str(self.record), "GITHUB_OUTPUT": str(self.outputs),
+        }
+
+    def invoke(self, *arguments, **environment):
+        return subprocess.run(
+            ["/bin/bash", str(self.script), *arguments], env={**self.environment, **environment},
+            capture_output=True, text=True)
+
+    def recorded(self):
+        return self.record.read_bytes().decode().rstrip("\0").split("\0")
+
+    def test_default_action_executes_native_build_without_python_or_docker(self):
+        arguments = [
+            "--workspace", "/workspace with spaces", "--docs-directory", "docs",
+            "--entrypoint", "index.adoc", "--output-directory", ".docs-out",
+            "--pdf-filename", "manual.pdf", "--docs-version", "v1",
+            "--pdf-image-dpi", "144", "--title", "Title $(touch sentinel)",
+            "--author", "Author", "--language", "en", "--api-entrypoint", "",
+            "--roc-command", "roc",
+        ]
+        result = self.invoke(*arguments)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded(), ["build", *arguments])
+        self.assertEqual(self.outputs.read_text(),
+                         "site-directory=/absolute/site\npdf-path=/absolute/manual.pdf\n")
+        self.assertNotIn("python", result.stderr.lower())
+
+    def test_explicit_renderer_wins_over_environment_and_path(self):
+        result = self.invoke("--renderer-binary", str(self.binary), ROC_DOCS_BINARY="missing")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded(), ["build"])
+
+    def test_empty_action_input_preserves_environment_renderer(self):
+        result = self.invoke("--renderer-binary", "", ROC_DOCS_BINARY=str(self.binary))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_binary_fails_without_bootstrap_or_fallback(self):
+        result = self.invoke("--renderer-binary", "not-installed")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("precompiled roc-docs not found", result.stderr)
+        self.assertFalse(self.record.exists())
+
+    def test_engine_failure_status_is_preserved(self):
+        result = self.invoke(FAKE_STATUS="7")
+        self.assertEqual(result.returncode, 7)
+
+    def test_native_theme_migration_is_explicit(self):
+        result = self.invoke("--theme-directory", "theme")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("backend legacy", result.stderr)
+        self.assertFalse(self.record.exists())
+
+    def test_invalid_options_and_missing_values_do_not_execute_engine(self):
+        for arguments in (("--backend", "other"), ("--workspace",), ("--unexpected", "x")):
+            with self.subTest(arguments=arguments):
+                result = self.invoke(*arguments)
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(self.record.exists())
+
+    def test_explicit_legacy_backend_calls_compatibility_adapter(self):
+        python = self.root / "python3"
+        python.write_bytes(self.binary.read_bytes())
+        python.chmod(0o755)
+        result = self.invoke("--backend", "legacy", "--workspace", "/workspace", "--theme-directory", "theme")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded(), [str(ACTION), "--backend", "legacy", "--theme-directory", "theme",
+                                           "--workspace", "/workspace"])
+
+    def test_only_explicit_legacy_backend_requires_python(self):
+        result = self.invoke("--backend", "legacy")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Python 3 is required for the explicit legacy backend", result.stderr)
+        self.assertFalse(self.record.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
