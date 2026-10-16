@@ -10,9 +10,10 @@ TextPolicy :: [].{
 
 	## Spelling uses bundled corrections plus words (custom entries override).
 	## Nonempty forbidden selects a single custom correction instead. allow
-	## exempts folded whole words or entire identifiers; Phrase allow exempts
+	## exempts folded word components only; accepted_identifiers exempts
+	## exact folded whole identifiers. Phrase allow exempts
 	## its exact folded configured phrase. No banned phrases are enabled here.
-	Rule : { kind : [Spelling, Phrase], channels : List(Channel), forbidden : Str, replacement : Str, allow : List(Str), words : List((Str, Str)) }
+	Rule : { kind : [Spelling, Phrase], channels : List(Channel), forbidden : Str, replacement : Str, allow : List(Str), accepted_identifiers : List(Str), words : List((Str, Str)) }
 	Issue : { rule : Str, message : Str, start : U64, end : U64 }
 
 	## Check selected Roc lexical channels. Callers must reject incomplete parses.
@@ -105,7 +106,7 @@ scan = |source, offset, identifier, rule| {
 	var $out = []
 	if rule.kind == Spelling {
 		# A whole identifier glossary entry suppresses its component words too.
-		if identifier and allowed.contains(fold(Str.from_utf8_lossy(source))) {
+		if identifier and rule.accepted_identifiers.map(fold).contains(fold(Str.from_utf8_lossy(source))) {
 			return []
 		}
 		custom = rule.words.map(|(bad, replacement)| (fold(bad), replacement))

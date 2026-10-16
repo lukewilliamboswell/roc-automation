@@ -7,10 +7,10 @@ import parser.RocSyntax
 import src/TextPolicy
 
 spelling : TextPolicy.Rule
-spelling = { kind: Spelling, channels: [Prose, Comments, Identifiers], forbidden: "", replacement: "", allow: [], words: [] }
+spelling = { kind: Spelling, channels: [Prose, Comments, Identifiers], forbidden: "", replacement: "", allow: [], accepted_identifiers: [], words: [] }
 
 phrase : TextPolicy.Rule
-phrase = { kind: Phrase, channels: [Prose, Comments], forbidden: "it's worth noting", replacement: "", allow: [], words: [] }
+phrase = { kind: Phrase, channels: [Prose, Comments], forbidden: "it's worth noting", replacement: "", allow: [], accepted_identifiers: [], words: [] }
 
 expect TextPolicy.check_text("compiler boundary necessary receive unknown".to_utf8(), spelling).is_empty()
 expect TextPolicy.check_text("complier boundry neccessary recieve unkown".to_utf8(), spelling).len() == 5
@@ -37,7 +37,7 @@ expect {
 }
 expect {
 	p = RocSyntax.parse_str("recieveCount = 1\n")
-	TextPolicy.check_roc(p, { ..spelling, allow: ["recieveCount"] }).is_empty()
+	TextPolicy.check_roc(p, { ..spelling, accepted_identifiers: ["recieveCount"] }).is_empty()
 }
 expect {
 	p = RocSyntax.parse_str("## worth\n## noting\nvalue = 1\n")
@@ -80,3 +80,18 @@ expect TextPolicy.check_text("aache".to_utf8(), { ..spelling, words: [("aache", 
 expect TextPolicy.check_text("aache".to_utf8(), { ..spelling, allow: ["aache"] }).is_empty()
 expect TextPolicy.check_text("abacus frobnicate".to_utf8(), spelling).is_empty()
 expect TextPolicy.check_text("сontains".to_utf8(), spelling).len() == 1
+
+# Word vocabulary never exempts a whole compound identifier implicitly.
+expect {
+	p = RocSyntax.parse_str("recieveCount = 1\n")
+	TextPolicy.check_roc(p, { ..spelling, allow: ["recieveCount"] }).len() == 1
+}
+expect {
+	p = RocSyntax.parse_str("recieveCount = 1\nrecieveOther = 2\n")
+	TextPolicy.check_roc(p, { ..spelling, accepted_identifiers: ["RECIEVECOUNT"] }).len() == 1
+}
+expect {
+	p = RocSyntax.parse_str("recieveCount = 1\nrecieveOther = 2\n")
+	TextPolicy.check_roc(p, { ..spelling, allow: ["recieve"] }).is_empty()
+}
+expect TextPolicy.check_text("recieve".to_utf8(), { ..spelling, accepted_identifiers: ["recieve"] }).len() == 1

@@ -1,0 +1,46 @@
+app [main!] {
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
+	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.1/6dvNG3Q2mx53i4YPJN2ZGK98WdXnBMMuceAmDsCq7BEd.tar.zst",
+}
+
+import src/PathGlob
+
+expect PathGlob.matches("**/*.roc", "main.roc")
+expect PathGlob.matches("**/*.roc", "package/src/main.roc")
+expect !PathGlob.matches("*.roc", "package/main.roc")
+expect PathGlob.matches("package/**", "package")
+expect PathGlob.matches("package/**", "package/src/main.roc")
+expect !PathGlob.matches("package/**", "packages/main.roc")
+expect !PathGlob.matches("package", "package/main.roc")
+expect PathGlob.matches("a/**/b", "a/b")
+expect PathGlob.matches("a/**/b", "a/x/y/b")
+expect PathGlob.matches("**", "a")
+expect PathGlob.matches("**/**/a/**", "a")
+expect PathGlob.matches("a/*/b", "a/x/b")
+expect !PathGlob.matches("a/*/b", "a/b")
+expect PathGlob.matches("?.roc", "é.roc")
+expect PathGlob.matches("?.roc", "🦉.roc")
+expect !PathGlob.matches("??.roc", "é.roc")
+expect PathGlob.matches("*", ".hidden")
+expect PathGlob.matches("**/*.roc", ".hidden/.module.roc")
+expect PathGlob.matches("a*b?c", "abéc")
+expect !PathGlob.matches("a*b?c", "abc")
+expect PathGlob.matches("a*?*z", "abz")
+expect !PathGlob.matches("a*?*z", "az")
+expect PathGlob.matches("*.roc", "main.roc")
+expect !PathGlob.matches("*.roc", "main.roc.bak")
+expect PathGlob.any_match(["src/**", "test/**"], "test/main.roc")
+expect !PathGlob.any_match([], "main.roc")
+expect ["", "/a", "a/", "a//b", ".", "..", "a/../b", "a/./b", "ab**cd", "***", "[ab]", "{a,b}", "!a", "a\\b", "a\n"].all(|pattern| PathGlob.validate(pattern).is_err())
+expect ["", "/a", "a/", "a//b", "a/../b", "a/./b", "a\n"].all(|path| !PathGlob.matches("**", path))
+expect PathGlob.validate("a\u(0085)").is_err()
+expect !PathGlob.matches("[ab]", "[ab]")
+expect !PathGlob.matches("a**", "abc")
+expect PathGlob.validate(Str.repeat("a", 4096)).is_ok()
+expect PathGlob.validate(Str.repeat("a", 4097)).is_err()
+expect PathGlob.validate(Str.join_with(List.repeat("a", 128), "/")).is_ok()
+expect PathGlob.validate(Str.join_with(List.repeat("a", 129), "/")).is_err()
+expect !PathGlob.matches(Str.repeat("*a", 80).concat("z"), Str.repeat("a", 100))
+expect PathGlob.matches(Str.repeat("*a", 80).concat("*"), Str.repeat("a", 100))
+
+main! = |_args| Ok({})
