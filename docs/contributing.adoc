@@ -16,15 +16,20 @@ The sources are the AsciiDoc files under `docs/`.
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
 lists the conventions they follow.
 
-Build the site and PDF locally with Docker:
+Build the site and PDF locally with Python 3 and a precompiled renderer:
 
 [source,sh]
 ----
-python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 3
+python3 actions/build-docs/build_docs.py --workspace . --renderer-binary /path/to/roc-docs --pdf-filename roc-automation.pdf --docs-version 3
 ----
 
 The output is written to `.docs-out/`. The `Documentation` workflow runs the
-same build on every pull request and deploys from the default branch.
+same build on every pull request and deploys from the default branch. Upstream
+CI builds and caches the renderer; downstream consumers supply the released
+binary. To develop the renderer itself, follow `tools/roc-docs/README.adoc`,
+which records its compiler, dependencies, source subset and build commands.
+Use `--backend legacy` only when testing the Docker/Asciidoctor compatibility
+path.
 
 The manual describes the model as it should be practised. A repository or tool
 that does not yet follow it is recorded in a GitHub issue, not in the manual.

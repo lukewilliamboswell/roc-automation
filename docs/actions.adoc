@@ -215,15 +215,23 @@ what the action needs of the runner.
 [#build-docs]
 == `actions/build-docs`
 
-Renders a repository's `docs/*.adoc` sources as an HTML site and a PDF manual
-with a shared theme, Roc syntax highlighting and Mermaid diagrams. It can also
-place compiler-generated API documentation under `site/api`.
+Renders a repository's AsciiDoc or Markdown sources as an HTML site and a PDF
+manual using a precompiled `roc-docs` binary. It provides a built-in theme,
+embedded fonts and Roc syntax highlighting. It can also place
+compiler-generated API documentation under `site/api`.
+
+Install a reviewed renderer binary for the runner's architecture before invoking
+the action. Pass its path explicitly, set `ROC_DOCS_BINARY`, or put `roc-docs`
+on `PATH`. The action does not download or compile a renderer. The tools release
+pipeline builds and tests Linux x86-64, Linux ARM64 and macOS ARM64 binaries;
+a release must be published before downstream consumers can install those assets.
 
 [source,yaml]
 ----
 - id: docs
   uses: lukewilliamboswell/roc-automation/actions/build-docs@REVIEWED_FULL_SHA
   with:
+    renderer-binary: /path/to/verified/roc-docs
     pdf-filename: my-project.pdf
     docs-version: main
     api-entrypoint: platform/main.roc
@@ -243,16 +251,35 @@ place compiler-generated API documentation under `site/api`.
 | `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
 | `api-entrypoint` | empty | Roc package or platform root for the generated API reference
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
-| `theme-directory` | empty | A replacement theme directory, relative to the repository root
+| `backend` | `roc` | `roc` for the precompiled renderer; `legacy` for Docker and Asciidoctor
+| `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
+| `title`, `author`, `language` | empty | Optional overrides for document metadata
+| `pdf-image-dpi` | `144` | PDF raster resolution limit, from 72 to 300; original website images are retained
+| `theme-directory` | empty | Legacy backend only: replacement Asciidoctor theme directory
 |===
 
 Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
-The action needs Docker and Python on the runner, which GitHub's Ubuntu runners
-provide. A replacement theme directory must contain `docs.css`,
-`docs-theme.yml`, `mermaid-config.json` and `fonts/`.
-xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
-lists what the renderer expects of the sources.
+The default backend needs Python 3 with its standard library for source and
+image preparation, plus the renderer binary. It needs no Docker or Roc compiler.
+Generating the optional API reference requires a Roc compiler. The standalone
+renderer accepts Markdown without Python.
+
+The native backend supports the manual's documented source subset. Unsupported
+constructs fail rather than silently disappearing. Mermaid diagrams need prepared
+PNG assets whose hashes match their source; see
+xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
+The initial PDF theme has outlines and linked contents, but no printed contents
+page numbers or chapter-aware running headers. PDF raster images default to a
+144 DPI limit at their printed size; `pdf-image-dpi` adjusts that tradeoff.
+Large documents or high resolutions can exceed the PDF package's bounded
+resource budget and fail before publication.
+
+Set `backend: legacy` to retain Docker/Asciidoctor rendering during migration,
+including custom Asciidoctor themes. A legacy theme directory must contain
+`docs.css`, `docs-theme.yml`, `mermaid-config.json` and `fonts/`. Native rendering
+rejects that input explicitly. Both backends stage the full publication and
+preserve the previous output if conversion, rendering or API generation fails.
 
 [#publish-release]
 == `actions/publish-release`

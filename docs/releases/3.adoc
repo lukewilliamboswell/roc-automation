@@ -111,3 +111,17 @@ ordered repository/file overrides, explicit collection changes, exclusions,
 warning levels and effective-configuration explanations. Repository choices
 remain in `Blueprint.roc`; no extra evaluator or runtime network is required.
 Schema 1 remains supported.
+
+== Precompiled documentation renderer
+
+`roc-docs` renders HTML and PDF with embedded fonts and Roc highlighting, before
+any Roc compiler is installed downstream. The shared documentation action now
+uses a supplied renderer binary by default and prepares the supported AsciiDoc
+subset with Python's standard library. The standalone renderer accepts Markdown.
+The tools pipeline builds and tests three native targets, alongside `roc-policy`.
+
+The initial native theme replaces our manual's Docker build. Prepared Mermaid
+images retain source and image digests; changed diagrams require regeneration.
+Custom Asciidoctor themes remain available through `backend: legacy`. Native
+rendering rejects unsupported input and stages output before replacing a prior
+publication. It does not implement every Asciidoctor extension or PDF theme option.
