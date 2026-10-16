@@ -42,9 +42,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tools/roc-policy/vendor/typos/verify.py
           roc check tools/roc-policy/main.roc
           roc fmt --check tools/roc-policy
-          for suite in constants public_docs text_policy test_accounting; do
+          for suite in constants public_docs text_policy typo_data test_accounting; do
             roc test "tools/roc-policy/test_$suite.roc"
           done
       - name: Build the native release artifact
@@ -81,6 +82,8 @@ jobs:
           pattern: policy-tool-*
           merge-multiple: true
           path: dist
+      - name: Include the policy dictionary permission notice
+        run: cp tools/roc-policy/vendor/typos/LICENSE-MIT dist/roc-policy-dictionary-LICENSE-MIT.txt
       - name: Include the source-free policy test harness
         run: |
           mkdir -p policy-tests

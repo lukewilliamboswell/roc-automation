@@ -1,7 +1,7 @@
 ## Explicit commands keep source checking independent of compiler execution.
 Options :: [].{
 	Value : { command : Str, root : Str, config : Str, definition : Str, format : Str, report : Str, compiler : Str }
-	usage = "roc-policy <check|manifest|verify-tests|run-tests> [--root PATH] [--config PATH] [--definition NAME] [--format text|json] [--report PATH] [--compiler ABSOLUTE_PATH]\nDefaults: root '.', config 'Blueprint.roc', definition 'repository_policy'.\ncheck/manifest/verify-tests never execute source or external tools.\nrun-tests explicitly invokes the supplied Roc compiler and verifies per-file counts.\nExit: 0 completed/pass; 1 policy violations; 2 invalid input or incomplete analysis."
+	usage = "roc-policy <check|manifest|verify-tests|run-tests> [--root PATH] [--config PATH] [--definition NAME] [--format text|json] [--report PATH] [--compiler ABSOLUTE_PATH]\nroc-policy --help | --licenses\nDefaults: root '.', config 'Blueprint.roc', definition 'repository_policy'.\ncheck/manifest/verify-tests never execute source or external tools.\nrun-tests explicitly invokes the supplied Roc compiler and verifies per-file counts.\nExit: 0 completed/pass; 1 policy violations; 2 invalid input or incomplete analysis."
 	parse : List(Str) -> Try(Value, Str)
 	parse = |args| {
 		command = args.first() ?? ""

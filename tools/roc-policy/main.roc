@@ -12,6 +12,7 @@ import src/Lint
 import src/PolicyConfig
 import src/Options
 import src/TestAccounting
+import src/TypoData
 
 main! = |args| {
 	match execute!(args.map(OsStr.display)) {
@@ -25,6 +26,9 @@ main! = |args| {
 }
 
 execute! = |args| {
+	if args == ["--licenses"] {
+		return Stdout.line!("typos correction dictionary (MIT):\n${TypoData.license}")
+	}
 	if args == ["--help"] {
 		return Stdout.line!(Options.usage)
 	}

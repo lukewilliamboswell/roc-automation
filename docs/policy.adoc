@@ -104,8 +104,14 @@ uppercase exposure inventories refer to other module files; select those source
 files for checking. Unresolved imported/qualified/wildcard public surfaces return
 `documentation/incomplete`, never an assertion that they are documented.
 
-`Spelling` uses a bundled project-authored correction map, not an exhaustive
-English dictionary or unknown-word detector. `channels` selects `Comments`,
+`Spelling` embeds the pinned typos v1.44.0 correction map (93,861 entries)
+through a Roc file import. It requires no dictionary file, download or Rust
+toolchain at runtime. This is correction lookup rather than unknown-word
+detection; it does not reproduce the typos CLI heuristics or dialect rules.
+The exact upstream CSV, MIT notice, provenance and offline verification script
+are maintained in `tools/roc-policy/vendor/typos`. `roc-policy --licenses`
+prints the embedded notice, which is also included among release assets.
+`channels` selects `Comments`,
 `Identifiers`, `Strings` and `Prose`; defaults are comments, identifiers and prose.
 Identifiers split snake case, camel case, acronym transitions and digits.
 `allow` exempts whole words or full identifiers. Add repository corrections with

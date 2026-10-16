@@ -36,6 +36,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result
 
+    def test_embedded_dictionary_and_license_without_source_files(self):
+        (self.root / "examples/main.roc").write_text(SOURCE + '# abandonned abbout\n')
+        self.configure('{kind: Spelling, scope: "examples", channels: [Comments]}')
+        output = self.invoke(expected=1).stdout
+        self.assertIn("abandonned", output)
+        self.assertIn("abbout", output)
+        result = subprocess.run([str(BINARY), "--licenses"], cwd=self.root,
+                                env={"PATH": "/nonexistent"}, capture_output=True,
+                                text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Permission is hereby granted", result.stdout)
+        self.assertIn("THE SOFTWARE IS PROVIDED", result.stdout)
+
     def test_matching_dependency_without_helpers(self):
         self.assertIn("1 files, 0 findings", self.invoke().stdout)
 
