@@ -175,6 +175,8 @@ def validate(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
     if (Path(args.pdf_filename).name != args.pdf_filename or not args.pdf_filename.endswith(".pdf")
             or any(c in args.pdf_filename for c in "\r\n\0")):
         raise SystemExit("pdf-filename must be a plain .pdf filename")
+    if not 72 <= args.pdf_image_dpi <= 300:
+        raise SystemExit("pdf-image-dpi must be between 72 and 300")
     for name in ("docs_version", "title", "author", "language"):
         if any(c in getattr(args, name, "") for c in "\r\n\0"):
             raise SystemExit(f"{name.replace('_', '-')} must be a single line")
@@ -265,7 +267,8 @@ def build_roc(args: argparse.Namespace, workspace: Path, stage: Path) -> None:
             raise ValueError("site must contain index.html")
         manual = manifest_path(prepared, manifest["manual"]["input"], "manual")
         rendered = stage / "render-manual"
-        run(executable, "render", str(manual), str(rendered), *base, *assets, "--pdf-only", cwd=workspace)
+        run(executable, "render", str(manual), str(rendered), *base, *assets,
+            "--pdf-image-dpi", str(args.pdf_image_dpi), "--pdf-only", cwd=workspace)
         reject_symlinks(rendered)
         pdf = rendered / args.pdf_filename
         if not pdf.is_file() or not pdf.stat().st_size:
@@ -357,6 +360,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-directory", default=".docs-out")
     parser.add_argument("--pdf-filename", default="manual.pdf")
     parser.add_argument("--docs-version", default="unreleased")
+    parser.add_argument("--pdf-image-dpi", type=int, default=144)
     parser.add_argument("--api-entrypoint", default="")
     parser.add_argument("--roc-command", default="roc")
     parser.add_argument("--theme-directory", default="")

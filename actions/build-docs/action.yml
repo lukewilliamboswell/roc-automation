@@ -17,6 +17,9 @@ inputs:
   docs-version:
     description: Version label used in source attributes and renderer metadata
     default: unreleased
+  pdf-image-dpi:
+    description: PDF raster image resolution, from 72 to 300 DPI; original HTML images are retained
+    default: "144"
   api-entrypoint:
     description: Optional Roc platform or package root used to generate site/api
     default: ""
@@ -64,6 +67,7 @@ runs:
         DOCS_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
         DOCS_PDF_FILENAME: ${{ inputs.pdf-filename }}
         DOCS_VERSION: ${{ inputs.docs-version }}
+        DOCS_PDF_IMAGE_DPI: ${{ inputs.pdf-image-dpi }}
         DOCS_API_ENTRYPOINT: ${{ inputs.api-entrypoint }}
         DOCS_ROC_COMMAND: ${{ inputs.roc-command }}
         DOCS_THEME_DIRECTORY: ${{ inputs.theme-directory }}
@@ -80,6 +84,7 @@ runs:
         --output-directory "$DOCS_OUTPUT_DIRECTORY"
         --pdf-filename "$DOCS_PDF_FILENAME"
         --docs-version "$DOCS_VERSION"
+        --pdf-image-dpi "$DOCS_PDF_IMAGE_DPI"
         --api-entrypoint "$DOCS_API_ENTRYPOINT"
         --roc-command "$DOCS_ROC_COMMAND"
         --theme-directory "$DOCS_THEME_DIRECTORY"

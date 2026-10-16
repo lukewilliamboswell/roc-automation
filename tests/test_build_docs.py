@@ -79,7 +79,7 @@ class RocBuildTests(unittest.TestCase):
         helper.write_text("# reviewed helper fixture")
         self.args = argparse.Namespace(
             docs_directory="docs", entrypoint="index.adoc", output_directory=".docs-out",
-            pdf_filename="book.pdf", docs_version="v42", api_entrypoint="", roc_command="roc",
+            pdf_filename="book.pdf", docs_version="v42", pdf_image_dpi=144, api_entrypoint="", roc_command="roc",
             theme_directory="", renderer_binary="roc-docs", backend="roc",
             title="Override title", author="Author", language="en-AU")
         self.commands = []
@@ -140,6 +140,27 @@ class RocBuildTests(unittest.TestCase):
             self.assertIn("Author", command)
             self.assertIn("en-AU", command)
             self.assertIn("v42", command)
+
+    def test_pdf_image_dpi_forwarded_only_to_pdf_renderer(self):
+        self.build()
+        for command in self.commands[1:]:
+            if "--pdf-only" in command:
+                self.assertEqual(command[command.index("--pdf-image-dpi") + 1], "144")
+            else:
+                self.assertNotIn("--pdf-image-dpi", command)
+        self.args.pdf_image_dpi = 210
+        self.commands.clear()
+        self.build()
+        pdf = next(c for c in self.commands if "--pdf-only" in c)
+        self.assertEqual(pdf[pdf.index("--pdf-image-dpi") + 1], "210")
+
+    def test_invalid_pdf_image_dpi_rejected_before_rendering(self):
+        for dpi in (0, 71, 301):
+            self.args.pdf_image_dpi = dpi
+            with self.subTest(dpi=dpi), self.assertRaisesRegex(SystemExit, "pdf-image-dpi"):
+                self.build()
+        self.assertEqual(self.commands, [])
+        self.assert_preserved()
 
     def test_each_failed_stage_preserves_existing_output(self):
         for stage in ("prepare", "html", "pdf"):
