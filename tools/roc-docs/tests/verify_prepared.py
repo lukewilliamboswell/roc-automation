@@ -1,7 +1,8 @@
 """Check prepared Markdown against actual site output and optional tagged PDF.
 
 Python standard library only. This verifies content inventories and links; it
-is not a visual-layout or complete PDF text-extraction test.
+is not a visual-layout test. --independent-reader additionally requires Poppler
+and checks PDF code characters and heading destinations.
 """
 import argparse
 import hashlib
@@ -9,6 +10,7 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
+import subprocess
 
 
 def digest(data):
@@ -39,6 +41,7 @@ def markdown_inventory(source):
     text = ''.join(visible)
     return {
         'code': [digest(block.encode()) for block in blocks],
+        'code_texts': blocks,
         'headings': re.findall(r'^#{1,6} (.+)$', text, re.M),
         'ids': re.findall(r'^#{1,6} .+ \{#([^}]+)\}$', text, re.M),
         'tables': len(re.findall(r'^\|[ \t]*:?-{3,}:?[ \t]*\|', text, re.M)),
@@ -81,7 +84,7 @@ class Page(HTMLParser):
             self.code[-1] += data
 
 
-def check(prepared, site, pdf=None):
+def check(prepared, site, pdf=None, independent_reader=False):
     prepared, site = Path(prepared), Path(site)
     manifest = json.loads((prepared/'manifest.json').read_text())
     if manifest['schema_version'] != 1:
@@ -135,11 +138,49 @@ def check(prepared, site, pdf=None):
         data = Path(pdf).read_bytes()
         if not data.startswith(b'%PDF-2.0') or not data.rstrip().endswith(b'%%EOF'):
             raise ValueError('Expected complete PDF 2.0 output')
-        if b'/StructTreeRoot' not in data or b'/Outlines' not in data:
-            raise ValueError('PDF lacks tagged structure or document outline')
         totals['pdf_bytes'] = len(data)
         totals['pdf_sha256'] = digest(data)
+        if independent_reader:
+            info = subprocess.check_output(['pdfinfo', str(pdf)], text=True)
+            if not re.search(r'^Tagged:\s+yes$', info, re.M):
+                raise ValueError('Independent PDF reader did not find tagged structure')
+            extracted = subprocess.check_output(['pdftotext', '-layout', str(pdf), '-'], text=True)
+            compact = compact_pdf_text(extracted, manifest['metadata'])
+            for index, block in enumerate(manual['code_texts']):
+                if re.sub(r'\s+', '', block) not in compact:
+                    raise ValueError(f'PDF reader did not retain code block {index}')
+            destinations = subprocess.check_output(['pdfinfo', '-dests', str(pdf)], text=True)
+            missing = [anchor for anchor in manual['ids'] if '"' + anchor + '"' not in destinations]
+            if missing:
+                raise ValueError(f'PDF reader did not find heading destinations: {missing}')
+            totals['pdf_code_blocks_with_text'] = len(manual['code_texts'])
+            totals['pdf_heading_destinations'] = len(manual['ids'])
     return totals
+
+
+
+def compact_pdf_text(extracted, metadata):
+    """Remove edge furniture before testing non-whitespace source sequences.
+
+    This checks retained code characters through an independent reader. Exact
+    authored HTML bytes and source ActualText semantics are tested separately;
+    arbitrary readers need not return tabs or line wraps byte-for-byte.
+    """
+    pages = []
+    for page in extracted.split('\f'):
+        lines = page.splitlines()
+        nonempty = [index for index, line in enumerate(lines) if line.strip()]
+        removed = set()
+        for index in nonempty[:3]:
+            line = lines[index].strip()
+            if line.startswith(metadata['title']) and line.endswith(metadata['version']):
+                removed.add(index)
+        for index in nonempty[-3:]:
+            line = lines[index].strip()
+            if re.search(r'\d+\s*/\s*\d+$', line) and (not metadata['author'] or line.startswith(metadata['author'])):
+                removed.add(index)
+        pages.extend(line for index, line in enumerate(lines) if index not in removed)
+    return re.sub(r'\s+', '', '\n'.join(pages))
 
 
 def main():
@@ -147,8 +188,9 @@ def main():
     args.add_argument('--prepared', required=True)
     args.add_argument('--site', required=True)
     args.add_argument('--pdf')
+    args.add_argument('--independent-reader', action='store_true', help='Require Poppler code-text and destination checks')
     options = args.parse_args()
-    print(json.dumps(check(options.prepared, options.site, options.pdf), indent=2))
+    print(json.dumps(check(options.prepared, options.site, options.pdf, options.independent_reader), indent=2))
 
 
 if __name__ == '__main__':

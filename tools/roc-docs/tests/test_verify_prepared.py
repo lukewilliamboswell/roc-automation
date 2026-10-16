@@ -23,6 +23,11 @@ class AcceptanceTests(unittest.TestCase):
         self.html='<h1 id="title">Title</h1><pre><code>x = 1\n</code></pre><a href="#title">Title</a>'
         (self.site/'index.html').write_text(self.html)
 
+    def test_reader_text_removes_only_edge_furniture(self):
+        metadata={'title':'Manual','author':'Contributors','version':'3'}
+        text='Manual   3\nvalue = 1\nContributors  1 / 2\fManual  3\nnext = 2\nContributors  2 / 2\f'
+        self.assertEqual(verify.compact_pdf_text(text, metadata), 'value=1next=2')
+
     def test_actual_inventory_passes(self):
         self.assertEqual(verify.check(self.prepared,self.site)['code_blocks'],1)
 
