@@ -1,0 +1,51 @@
+= Constant data extraction
+
+`ConstantData.evaluate(source, definition_name)` parses a complete Roc module and
+returns the selected constant's data or a structured error. It performs no I/O,
+imports, application execution, filesystem lookup, or policy-specific behavior.
+This module is kept independent for a possible roc-parser upstream proposal.
+
+== Contract
+
+`Value` is opaque; `ConstantData.unwrap(value)` returns its half-open UTF-8 byte
+span and `kind`. Kinds are `String(Str)`, `Integer(Str)`, `Boolean(Bool)`,
+`Tag(Str)`, `Record(List((Str, Value)))`, and `ListValue(List(Value))`.
+References preserve the originating literal's span. Errors contain `kind`,
+`message`, `start`, and `end`; unknown references point at the offending use.
+
+Supported syntax: ordinary single-line strings with all Roc escapes, including
+Unicode scalars; signed decimal integers without suffixes or separators; booleans;
+bare tags without payloads; lists; plain records; record puns; parentheses;
+local top-level constant references; forward references; record field access.
+A single-field pun needs a trailing comma, as `{ name }` parses as a block.
+Integers retain spelling and are not converted into a machine numeric type.
+
+The entire module must parse with complete consumption and no diagnostics.
+Headers, imports, annotations, and unrelated functions may be present, but imports
+are never loaded. Only selected reachable data expressions are interpreted.
+Duplicate simple top-level definitions are rejected even if unreachable.
+Destructuring bindings and variable declarations are not constant bindings.
+
+Calls, functions, arithmetic, interpolated/multiline strings, tuple values,
+record updates/builders, imported values, and implicit method resolution are
+unsupported. Field access evaluates the base record as data, including its other
+fields. Unsupported reachable expressions fail rather than silently falling back.
+This is a data subset, not typechecking or general Roc evaluation: a bare uppercase
+name is accepted as a tag without proving a surrounding Roc program typechecks.
+
+== Limits
+
+Source bytes are limited to 1 MiB before parsing. There may be at most 10,000
+simple top-level declarations. Evaluation is limited to 64 dependency/expression
+levels, 10,000 visited expressions, and a 1 MiB expanded-value accounting budget
+(32 bytes per visited expression plus scalar source spelling bytes). This budget
+is a deterministic bound, not a measurement of exact heap use. Repeated references
+consume work and size again; cycles fail explicitly. No imported or executable
+fallback exists. The parser has its own independent nesting/token bounds.
+
+== Validation
+
+Run `roc check tools/roc-policy/test_constants.roc` and
+`roc test tools/roc-policy/test_constants.roc` using the tooling compiler.
+The test application lives beside `main.roc` because Roc application imports may
+not escape their source root into a parent directory.
