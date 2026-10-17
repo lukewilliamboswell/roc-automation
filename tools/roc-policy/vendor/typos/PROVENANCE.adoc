@@ -1,0 +1,58 @@
+= Vendored typos correction data
+
+`words.csv` is the exact correction-map input used by `typos-dict` in
+https://github.com/crate-ci/typos/tree/631208b7aac2daa8b707f55e7331f9112b0e062d[crate-ci/typos v1.44.0],
+commit `631208b7aac2daa8b707f55e7331f9112b0e062d`.
+It contains 93,861 known misspellings, each followed by one or more suggestions.
+It is not an English word dictionary: unknown words are accepted.
+
+== Source and license
+
+* https://github.com/crate-ci/typos/blob/631208b7aac2daa8b707f55e7331f9112b0e062d/crates/typos-dict/assets/words.csv[Original correction map]
+* https://github.com/crate-ci/typos/blob/631208b7aac2daa8b707f55e7331f9112b0e062d/crates/typos-dict/tests/codegen.rs[Upstream generator consuming this map]
+* https://github.com/crate-ci/typos/blob/631208b7aac2daa8b707f55e7331f9112b0e062d/crates/typos-dict/Cargo.toml[Package license declaration]
+  inherits the workspace's `MIT OR Apache-2.0` license; we select MIT.
+* `LICENSE-MIT` is the unmodified upstream copyright and permission notice.
+  It must accompany distributed copies, including compiled binary distributions.
+
+No raw `codespell-dict`, `wikipedia-dict`, `misspell-dict`, or `varcon` data is
+vendored. Some of those separate upstream inputs have different license notices;
+the repository's top-level license must not be assumed to cover every dataset.
+This snapshot uses the published `typos-dict` correction map and its declared
+package license.
+
+== Integrity and updates
+
+[cols="1,3"]
+|===
+|File |SHA-256
+|words.csv |`57d79d4354ada7569d24e017c0233b8937c40ba4aac5ad854566f4028f99d0f2`
+|LICENSE-MIT |`6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6`
+|===
+
+Run `python3 tools/roc-policy/vendor/typos/verify.py` offline to check the exact
+snapshot and lookup assumptions. `--fetch` restores the same pinned upstream
+files, validates all bytes before replacement, and needs network access.
+Python is development tooling; it is not needed to build or run the utility.
+
+To update, review a new immutable upstream commit, package/data licenses, data
+changes, and hashes; update the pin and expected count in `verify.py` and this
+provenance record. Do not automatically trust a moving tag or accept a changed
+hash. Run verification and the complete dictionary/text-policy tests before
+committing. If the format changes (quoting, ordering, empty suggestions, etc.),
+update validation and lookup together rather than silently dropping entries.
+
+== Runtime contract
+
+Roc embeds the unmodified CSV using a file import. Lookup binary-searches byte
+positions and preserves every suggestion in upstream order. It does not build
+a giant Roc literal, scan the entire dictionary for every word, open a dictionary
+file, or call external tools. UTF-8 keys are retained; the text policy currently
+folds ASCII case only. Mixed-case Unicode equivalence is not promised.
+
+Repository corrections take precedence over bundled corrections; allow words
+and whole-identifier exceptions remain supported. Multiple suggestions produce
+one diagnostic listing alternatives. No automatic replacement is performed.
+This is not behavioral parity with the typos CLI: its dialect normalization,
+Unicode identifier rules, file exclusions, ignore heuristics, and other features
+are not included. Defaults remain opt-in spelling rules scoped by the consumer.

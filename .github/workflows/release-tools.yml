@@ -1,6 +1,6 @@
 name: Release tools
-# Builds the Roc scripts behind the shared actions as static Linux executables,
-# tests those exact files on both runner architectures, and publishes them once.
+# Builds action programs and reusable policy/documentation utilities,
+# tests the exact native executables, and publishes them once.
 # A pull request runs the build and the tests as a dry run and publishes nothing.
 on:
   workflow_dispatch:
@@ -15,8 +15,81 @@ concurrency:
   group: release-tools-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  policy-build:
+    name: Build policy utility (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+          - runner: macos-15
+            system: aarch64-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-15-38e6c42
+      - name: Check policy source and unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/roc-policy/vendor/typos/verify.py
+          roc check tools/roc-policy/main.roc
+          roc fmt --check tools/roc-policy
+          for suite in constants public_docs text_policy typo_data test_accounting path_glob sha256 embedded_profiles policy_plan; do
+            roc test "tools/roc-policy/test_$suite.roc"
+          done
+      - name: Build the native release artifact
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+        run: |
+          set -euo pipefail
+          ROC="$(command -v roc)" roc tools/roc-policy/build.roc -- "$SYSTEM"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: policy-tool-${{ matrix.system }}
+          if-no-files-found: error
+          path: dist/roc-policy-${{ matrix.system }}
+
+  docs-build:
+    name: Build documentation utility (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+          - runner: macos-15
+            system: aarch64-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/build-roc-docs-tool
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-tool-${{ matrix.system }}
+          if-no-files-found: error
+          path: dist/roc-docs-${{ matrix.system }}
+
   build:
     name: Build the tools
+    needs: [policy-build, docs-build]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -30,6 +103,28 @@ jobs:
       - uses: ./actions/setup-blueprint
       - run: blueprint run check
       - run: blueprint run build-tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: policy-tool-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: docs-tool-*
+          merge-multiple: true
+          path: dist
+      - name: Include documentation renderer font notices and source-free tests
+        run: |
+          mkdir -p docs-tests
+          cp tools/roc-docs/tests/test_cli.py docs-tests/test_cli.py
+          cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
+          cat LICENSE tools/roc-docs/fonts/NotoSans-OFL.txt tools/roc-docs/fonts/NotoSans-Italic-OFL.txt tools/roc-docs/fonts/SourceCodePro-OFL.md tools/roc-docs/vendor/roc-deflate-LICENSE tools/roc-docs/vendor/NOTICE.adoc > dist/roc-docs-LICENSES.txt
+      - name: Include the policy dictionary permission notice
+        run: cp tools/roc-policy/vendor/typos/LICENSE-MIT dist/roc-policy-dictionary-LICENSE-MIT.txt
+      - name: Include the source-free policy test harness
+        run: |
+          mkdir -p policy-tests
+          cp tools/roc-policy/tests/test_cli.py policy-tests/test_cli.py
       # A dispatch must have authored notes for its version. A dry run renders
       # the notes for the highest version, which are those of the next release.
       - id: version
@@ -56,6 +151,7 @@ jobs:
             printf '\n## Compilers\n\n```\n'
             blueprint run compiler-version
             printf '```\n'
+            printf '\nPolicy and documentation utility compiler: nightly-2026-10-15-38e6c42\n'
           } > release-notes.md
       - name: List the digests
         working-directory: dist
@@ -69,6 +165,9 @@ jobs:
           path: |
             dist/
             release-notes.md
+            policy-tests/test_cli.py
+            docs-tests/test_cli.py
+            docs-tests/test_build.py
 
   # The exact files that would be published, on a runner with no checkout, no
   # Nix and no compiler: what a calling job has when an action runs one.
@@ -133,9 +232,86 @@ jobs:
           cat error.txt
           grep -q 'prerelease' error.txt
 
+  policy-test:
+    name: Test exact policy artifact (${{ matrix.system }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+          - runner: macos-15
+            system: aarch64-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions: {}
+    steps:
+      # No checkout, compiler installation, or Nix.
+      # The downloaded harness creates inert fixtures and exercises the binary.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tools
+          path: tools
+      - name: Verify every release artifact and test the native policy binary
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+          ROC_POLICY_BINARY: ${{ github.workspace }}/tools/dist/roc-policy-${{ matrix.system }}
+        run: |
+          set -euo pipefail
+          cd tools/dist
+          if [ "$RUNNER_OS" = macOS ]; then
+            shasum -a 256 --check sha256sums.txt
+          else
+            sha256sum --check --strict sha256sums.txt
+          fi
+          chmod +x "roc-policy-$SYSTEM"
+          cd ../..
+          python3 tools/policy-tests/test_cli.py -v
+
+  docs-test:
+    name: Test exact documentation artifact (${{ matrix.system }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+          - runner: macos-15
+            system: aarch64-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tools
+          path: tools
+      - name: Verify and test the exact native documentation binary
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+          ROC_DOCS_BINARY: ${{ github.workspace }}/tools/dist/roc-docs-${{ matrix.system }}
+        run: |
+          set -euo pipefail
+          cd tools/dist
+          if [ "$RUNNER_OS" = macOS ]; then
+            shasum -a 256 --check sha256sums.txt
+          else
+            sha256sum --check --strict sha256sums.txt
+          fi
+          chmod +x "roc-docs-$SYSTEM"
+          cd ../..
+          python3 tools/docs-tests/test_cli.py -v
+          python3 tools/docs-tests/test_build.py -v
+
   publish:
     name: Publish the tools
-    needs: [build, test]
+    needs: [build, test, policy-test, docs-test]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: release

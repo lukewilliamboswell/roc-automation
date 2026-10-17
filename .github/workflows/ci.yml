@@ -14,15 +14,22 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -v
+      - name: Test documentation preparation and acceptance verifier
+        run: |
+          python3 -m unittest discover -s tools/roc-docs/tests -p test_prepare_docs.py -v
+          python3 -m unittest discover -s tools/roc-docs/tests -p test_verify_prepared.py -v
   documentation-action:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: renderer
+        uses: ./actions/build-roc-docs-tool
       - id: docs
         uses: ./actions/build-docs
         with:
+          renderer-binary: ${{ steps.renderer.outputs.renderer-binary }}
           docs-directory: tests/fixtures/docs-manual/docs
           output-directory: .docs-test
           pdf-filename: fixture.pdf
@@ -38,7 +45,7 @@ jobs:
           test -s "$SITE/fixture.pdf"
           test -s "$PDF"
           grep -q 'data-lang="roc"' "$SITE/usage.html"
-          grep -q 'diag-mermaid-' "$SITE/index.html"
+          grep -q 'images/diagram-' "$SITE/index.html"
   setup-blueprint-action:
     strategy:
       fail-fast: false

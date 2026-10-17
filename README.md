@@ -16,7 +16,7 @@ build inputs, and the trust model behind the shared actions.
 | --- | --- |
 | `actions/setup-blueprint` | Install Nix and the verified `blueprint` binary |
 | `actions/nightly-report` | Keep the one tracking issue of a nightly compatibility workflow |
-| `actions/build-docs` | Render `docs/*.adoc` as an HTML site and PDF manual |
+| `actions/build-docs` | Render AsciiDoc or Markdown as an HTML site and PDF using a supplied Roc binary |
 | `actions/publish-release` | Stage a draft release, verify every asset against the tested file, then publish |
 | `actions/publish-build-inputs` | Publish linker inputs built on a pull request, and commit only their lock |
 

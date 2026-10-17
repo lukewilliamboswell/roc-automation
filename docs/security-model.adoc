@@ -12,6 +12,14 @@ Two rules carry most of the weight:
 * A job with write access runs only reviewed code at a full commit SHA, and
   handles candidate output as inert files.
 
+Documentation source conversion, renderer builds and renderer execution also
+belong in jobs with read-only tokens. The documentation and tools workflows
+build the native renderer from pinned compiler and package versions. Their cache
+key includes the target, compiler identity, renderer source and embedded fonts;
+restored binaries still run the renderer acceptance tests. The deploy job only
+receives the resulting Pages artifact. It does not compile the renderer, execute
+documentation sources or restore a candidate-produced executable cache.
+
 == The three workflows
 
 [cols="2,2,3",options="header"]

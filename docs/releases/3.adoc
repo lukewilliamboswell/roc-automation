@@ -95,3 +95,34 @@ matrix and no aggregate job, and skips the platform chapters.
 
 See xref:workflows.adoc#write-the-release-notes[Write the release notes] and
 xref:workflows.adoc#several-bundles-in-one-release[Several bundles in one release].
+
+== Precompiled source-policy utility
+
+The tools release adds `roc-policy` for spelling, public documentation, phrasing,
+import boundaries, compiler/dependency headers and test accounting. It reads a
+selected definition in `Blueprint.roc`, including local constant references and
+field access, without evaluating the application. Source checking and test
+discovery require no compiler. The optional test runner requires a supplied Roc
+compiler and checks verbose PASS locations with normal caching enabled.
+See xref:policy.adoc#check-repository-source-policy[Check repository source policy].
+
+Schema 2 adds named rules, embedded or SHA-256-pinned offline policy profiles,
+ordered repository/file overrides, explicit collection changes, exclusions,
+warning levels and effective-configuration explanations. Repository choices
+remain in `Blueprint.roc`; no extra evaluator or runtime network is required.
+Schema 1 remains supported.
+
+== Precompiled documentation renderer
+
+`roc-docs` renders HTML and PDF with embedded fonts and Roc highlighting, before
+any Roc compiler is installed downstream. The shared documentation action now
+uses a supplied renderer binary by default. AsciiDoc parsing, PNG preparation,
+HTML and PDF rendering all run inside that binary, using roc-parser 2.1.0-rc.2.
+The default action path needs no Python; the renderer also accepts Markdown.
+The tools pipeline builds and tests three native targets, alongside `roc-policy`.
+
+The initial native theme replaces our manual's Docker build. Prepared Mermaid
+images retain source and image digests; changed diagrams require regeneration.
+Custom Asciidoctor themes remain available through `backend: legacy`. Native
+rendering rejects unsupported input and stages output before replacing a prior
+publication. It does not implement every Asciidoctor extension or PDF theme option.

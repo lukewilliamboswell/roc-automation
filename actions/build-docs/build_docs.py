@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Build a project manual with the shared Roc AsciiDoc toolchain."""
+"""Explicit legacy Docker/Asciidoctor adapter; native builds use build_docs.sh."""
 
 from __future__ import annotations
 
 import argparse
+import copy
+import tempfile
 import os
 import shutil
 import subprocess
@@ -22,7 +24,16 @@ def run(*command: str, cwd: Path) -> None:
 def contained_path(root: Path, value: str, label: str, *, must_exist: bool = False) -> Path:
     if not value or Path(value).is_absolute():
         raise SystemExit(f"{label} must be a non-empty relative path")
-    result = (root / value).resolve()
+    relative = Path(value)
+    if any(part in ("..", ".git") for part in relative.parts) or any(c in value for c in "\r\n\0"):
+        raise SystemExit(f"{label} contains an unsafe path component")
+    result = root / relative
+    cursor = root
+    for part in relative.parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise SystemExit(f"{label} must not traverse a symlink")
+    result = result.resolve()
     if not result.is_relative_to(root):
         raise SystemExit(f"{label} must stay inside the repository")
     if must_exist and not result.exists():
@@ -133,6 +144,98 @@ def write_outputs(site: Path, pdf: Path) -> None:
     print(f"Manual: {pdf}")
 
 
+def reject_symlinks(root: Path) -> None:
+    for item in root.rglob("*"):
+        if item.is_symlink():
+            raise SystemExit(f"documentation tree contains a symlink: {item}")
+        if not item.is_file() and not item.is_dir():
+            raise SystemExit(f"documentation tree contains a special file: {item}")
+
+
+def validate(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
+    docs = contained_path(workspace, args.docs_directory, "docs-directory", must_exist=True)
+    if not docs.is_dir():
+        raise SystemExit("docs-directory must name a directory")
+    reject_symlinks(docs)
+    entrypoint = contained_path(docs, args.entrypoint, "entrypoint", must_exist=True)
+    if not entrypoint.is_file() or entrypoint.parent != docs:
+        raise SystemExit("entrypoint must be a top-level documentation file")
+    output = contained_path(workspace, args.output_directory, "output-directory")
+    if output == workspace or output.is_relative_to(docs) or docs.is_relative_to(output):
+        raise SystemExit("output-directory must not overlap documentation sources or workspace root")
+    if output.exists() and not output.is_dir():
+        raise SystemExit("output-directory must name a directory")
+    for name in ("api_entrypoint", "theme_directory"):
+        value = getattr(args, name, "")
+        if value:
+            source = contained_path(workspace, value, name.replace("_", "-"), must_exist=True)
+            if source == output or source.is_relative_to(output) or output.is_relative_to(source):
+                raise SystemExit("output-directory must not overlap API or theme sources")
+    if (Path(args.pdf_filename).name != args.pdf_filename or not args.pdf_filename.endswith(".pdf")
+            or any(c in args.pdf_filename for c in "\r\n\0")):
+        raise SystemExit("pdf-filename must be a plain .pdf filename")
+    if not 72 <= args.pdf_image_dpi <= 300:
+        raise SystemExit("pdf-image-dpi must be between 72 and 300")
+    for name in ("docs_version", "title", "author", "language"):
+        if any(c in getattr(args, name, "") for c in "\r\n\0"):
+            raise SystemExit(f"{name.replace('_', '-')} must be a single line")
+    return docs, output
+
+
+def publish(stage: Path, output: Path) -> None:
+    # Keep existing output untouched until conversion, rendering and API all succeed.
+    backup = stage.parent / "previous-output"
+    if output.exists():
+        output.rename(backup)
+    try:
+        stage.rename(output)
+    except BaseException:
+        if backup.exists():
+            backup.rename(output)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
+def build(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
+    if args.backend != "legacy":
+        raise SystemExit("Python adapter supports only --backend legacy; use build_docs.sh for native Roc builds")
+    _, output = validate(args, workspace)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".roc-docs-", dir=output.parent) as temporary:
+        temporary_path = Path(temporary)
+        stage = temporary_path / "output"
+        stage.mkdir()
+        if shutil.which("docker") is None:
+            raise SystemExit("Docker is required for the explicit legacy documentation backend")
+        run("docker", "build", "--tag", IMAGE, "--file", str(ACTION_ROOT / "Dockerfile"),
+            str(ACTION_ROOT), cwd=workspace)
+        staged_args = copy.copy(args)
+        staged_args.output_directory = str(stage.relative_to(workspace))
+        command = [
+            "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+            "--env", "XDG_CACHE_HOME=/tmp", "--env", "XDG_CONFIG_HOME=/tmp",
+            "--volume", f"{workspace}:/workspace", "--workdir", "/workspace", IMAGE,
+            "python3", "/opt/roc-docs/build_docs.py", "--inside-container",
+            "--workspace", "/workspace", "--docs-directory", args.docs_directory,
+            "--entrypoint", args.entrypoint, "--output-directory", staged_args.output_directory,
+            "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version,
+            "--theme-directory", args.theme_directory,
+        ]
+        run(*command, cwd=workspace)
+        build_api(args, workspace, stage / "site")
+        reject_symlinks(stage / "site")
+        # Working inputs and per-page render directories are never published.
+        for item in stage.iterdir():
+            if item.name not in ("site", args.pdf_filename):
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+        publish(stage, output)
+    return output / "site", output / args.pdf_filename
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", required=True)
@@ -141,9 +244,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-directory", default=".docs-out")
     parser.add_argument("--pdf-filename", default="manual.pdf")
     parser.add_argument("--docs-version", default="unreleased")
+    parser.add_argument("--pdf-image-dpi", type=int, default=144)
     parser.add_argument("--api-entrypoint", default="")
     parser.add_argument("--roc-command", default="roc")
     parser.add_argument("--theme-directory", default="")
+    parser.add_argument("--backend", choices=("legacy",), default=None)
+    parser.add_argument("--title", default="")
+    parser.add_argument("--author", default="")
+    parser.add_argument("--language", default="")
     parser.add_argument("--inside-container", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args()
 
@@ -154,28 +262,10 @@ def main() -> None:
     if not workspace.is_dir():
         raise SystemExit("workspace must be an existing directory")
     if args.inside_container:
+        validate(args, workspace)
         site, pdf = build_inside_container(args, workspace)
-        write_outputs(site, pdf)
-        return
-
-    if shutil.which("docker") is None:
-        raise SystemExit("Docker is required to build the documentation")
-    run("docker", "build", "--tag", IMAGE, "--file", str(ACTION_ROOT / "Dockerfile"),
-        str(ACTION_ROOT), cwd=workspace)
-    command = [
-        "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
-        "--env", "XDG_CACHE_HOME=/tmp", "--env", "XDG_CONFIG_HOME=/tmp",
-        "--volume", f"{workspace}:/workspace", "--workdir", "/workspace", IMAGE,
-        "python3", "/opt/roc-docs/build_docs.py", "--inside-container",
-        "--workspace", "/workspace", "--docs-directory", args.docs_directory,
-        "--entrypoint", args.entrypoint, "--output-directory", args.output_directory,
-        "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version,
-        "--theme-directory", args.theme_directory,
-    ]
-    run(*command, cwd=workspace)
-    output = contained_path(workspace, args.output_directory, "output-directory", must_exist=True)
-    site, pdf = output / "site", output / args.pdf_filename
-    build_api(args, workspace, site)
+    else:
+        site, pdf = build(args, workspace)
     write_outputs(site, pdf)
 
 

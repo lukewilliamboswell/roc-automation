@@ -1,0 +1,324 @@
+[#check-repository-source-policy]
+= Check repository source policy
+
+`roc-policy` is a precompiled, read-only source-policy utility. It checks
+repository conventions that compiler diagnostics, formatting and behavioral
+tests do not establish. The tools release builds binaries for x86_64 Linux,
+ARM64 Linux and Apple Silicon macOS. The Linux binaries are static musl
+executables. Building and testing the implementation happens upstream; source
+checking downstream requires no Roc compiler, Python, Git or Nix.
+
+== Declare policy in Blueprint
+
+The default authority is `repository_policy` in `Blueprint.roc`. Schema 2 composes
+shared defaults with repository rules and explicit overrides. The surrounding
+file remains normal Roc configuration; add the binding beside its existing
+`config`, without replacing its Blueprint platform declaration:
+
+[source,roc]
+----
+tooling = { compiler: "nightly-2026-10-09-258ab27" }
+
+repository_policy = {
+    schema_version: 2,
+    roots: ["package", "examples", "scripts", "docs"],
+    exclude: ["**/generated/**"],
+    test_roots: ["package"],
+    profiles: [{ name: "base", builtin: "roc-package", version: 1 }],
+    rules: [
+        { id: "project/compiler", kind: CompilerPin, include: ["scripts/**"], value: tooling.compiler },
+        { id: "project/no_internal_imports", kind: ForbiddenImport, include: ["package/core/**"], name: "support/Internal" },
+        { id: "prose/worth_noting", kind: Phrase, include: ["docs/**"], channels: [Prose], phrase: "it is worth noting" },
+    ],
+    overrides: [
+        {
+            rule: "base/spelling",
+            reason: "Published ecosystem name",
+            changes: { accepted_words: { add: ["rocpkgs"] } },
+        },
+        {
+            rule: "base/public_docs",
+            include: ["package/fixtures/**"],
+            reason: "Imported fixtures preserve upstream source",
+            changes: { level: Off },
+        },
+        {
+            rule: "prose/worth_noting",
+            include: ["docs/history/**"],
+            require_match: False,
+            reason: "Historical quotations are reviewed separately",
+            changes: { level: Warning },
+        },
+    ],
+}
+----
+
+An environment may reference the same `tooling.compiler` when declaring its
+compiler. The utility resolves local constants, forward references, record puns
+and field access without evaluating Blueprint. It does not prove that arbitrary
+Blueprint expressions actually use those facts. Configuration composition is
+implemented by the policy resolver, separate from generic constant extraction.
+
+Supported data are literal records, lists, strings, booleans, plain decimal
+integers and bare tags, plus references, field access and parentheses. Strings
+support Roc escapes including Unicode scalars. Calls, arithmetic, functions,
+record updates, interpolation and imported values in the selected dependency
+graph are rejected. Unrelated functions and imports may remain in the file.
+The complete file must parse without diagnostics. Duplicate definitions/fields,
+cycles, unknown fields, irrelevant options and resource-limit violations fail.
+
+The generic constant-data module has no profile loading or policy-specific
+behavior. It limits each source to 1 MiB, declarations/work to 10,000, depth to
+64 and expanded-value accounting to 1 MiB. Policy composition admits at most
+32 profiles, 10,000 final rule instances and 10,000 overrides.
+
+== Shared profiles and rule identities
+
+A rule's `kind` selects an implementation. Its required `id` identifies one
+configured policy instance. The diagnostic code identifies the finding category.
+For example, two `Phrase` rules can share diagnostic code `text/phrase` while
+having independently overridable IDs. IDs use slash-separated components of
+letters, digits, dots, underscores and hyphens; empty, `.` and `..` components
+are invalid. Duplicate IDs fail instead of replacing earlier declarations.
+
+Profiles load in declared order, followed by local rule declarations. Their rule
+IDs are namespaced by the profile's `name`: rule `spelling` in profile `base`
+becomes `base/spelling`. A local rule cannot accidentally replace that ID. Change
+its settings through an explicit override instead.
+
+`roc-policy list-profiles` lists profiles embedded in the binary. The immutable
+`roc-package` version 1 supplies `public_docs` for `package/**/*.roc` and
+`spelling` for supported Roc/prose extensions. Both rules are intentionally
+optional across repository layouts. Embedded profiles need no sidecar files;
+the reviewed binary selects their bytes, and explanations include their SHA-256.
+Unknown names and versions fail.
+
+Alternatively, a profile descriptor may contain `name`, repository-relative
+`path`, `definition` and the reviewed lowercase 64-character `sha256`. The file
+must define a bounded record such as:
+
+[source,roc]
+----
+profile = {
+    schema_version: 2,
+    rules: [
+        { id: "spelling", kind: Spelling, channels: [Comments, Prose] },
+    ],
+}
+----
+
+The loader verifies the exact file bytes before interpreting the chosen binding.
+A missing file, symlink, unsafe path or mismatched digest fails; no download or
+external hashing tool is invoked. Profiles contain rules only, without nested
+profile loading, discovery roots or overrides. Profile paths are anchored at the
+explicit repository root. This permits independent policy-data releases while
+keeping profile selection, pins and repository decisions in Blueprint.
+
+Shared profiles are reusable defaults that repository authors may override.
+Mandatory organizational requirements require an independently trusted CI
+policy/invocation. Selecting a profile in a repository-controlled Blueprint is
+not evidence that such external requirements were enforced.
+
+== Ordered overrides
+
+Overrides target one exact rule ID. Every override requires a nonempty `reason`;
+unknown IDs and unknown or irrelevant changes fail. Without `include`/`exclude`,
+an override applies repository-wide. With file selectors, it applies to matching
+paths. All matching overrides apply in written order, including global overrides:
+later scalar values win, without hidden path-specificity precedence.
+
+`level` is `Off`, `Warning` or `Error`, defaulting to `Error`. There is no separate
+`enabled` flag. Off suppresses the selected rule. Warnings are reported without
+failing by default; set repository `max_warnings: 0` to reject any warning, or a
+nonnegative number to allow that many. Configuration errors, I/O failures and
+incomplete analysis remain exit 2 regardless of rule level.
+
+Collection changes use explicit operations:
+
+[source,roc]
+----
+changes: {
+    accepted_words: { add: ["rocpkgs"], remove: ["oldterm"] },
+    channels: { replace: [Comments, Prose] },
+    corrections: { add: [{ word: "mispeling", replacement: "misspelling" }] },
+}
+----
+
+`replace` discards inherited values and cannot be combined with `add` or `remove`.
+`add` extends sets without duplicates; `remove` subtracts matching entries.
+Vocabulary and correction keys fold ASCII case; paths remain case-sensitive.
+Adding a correction replaces the inherited correction with the same normalized
+key. Removing a custom correction exposes the bundled correction, if any; use
+`accepted_words` to accept the word instead. Contradictory operations and duplicate
+keys in one layer fail. There is no implicit list concatenation or deep merge.
+
+Overrides may change level and the options supported by their rule kind.
+Repository-wide overrides may also change rule `include`/`exclude` collections
+and `require_match`. File-scoped overrides cannot change rule IDs, kinds, selectors or the
+aggregate rule `require_match` assertion. Discovery roots and profile pins are not patchable through rules.
+
+Rules require an applicable source file by default. An intentionally optional
+rule may declare `require_match: False`, useful in profiles shared across
+different layouts. Overrides likewise require a selected target/file by default;
+set their `require_match: False` for intentional future or optional exceptions.
+This catches renamed paths and stale exceptions without making every shared rule
+mandatory. It checks applicability, not whether an exception suppressed a finding.
+
+== Commands and paths
+
+[source,sh]
+----
+roc-policy check --root .
+roc-policy check --root . --format json
+roc-policy list-profiles
+roc-policy explain-config --root .
+roc-policy explain-config --root . --path package/Thing.roc
+roc-policy manifest --root . > expected-tests.json
+roc-policy run-tests --root . --compiler /absolute/path/to/roc
+----
+
+`--config` selects a file relative to the root and `--definition` selects a
+binding; defaults are `Blueprint.roc` and `repository_policy`. All configured
+commands use this same authority. `manifest` and `explain-config` emit JSON.
+Explanation includes profile digests, rule IDs, origins, effective options,
+selector decisions and ordered override traces. Without `--path` it shows global
+settings; a path shows effective settings and why rules are selected, excluded
+or disabled. It need not open the source file to explain its configuration.
+
+`roots` and `test_roots` are exact repository-relative files/directories.
+Schema 2 rule and override selectors use root-relative slash-separated globs:
+`*` matches within one component, `?` matches one Unicode scalar, and a complete
+`**` component matches zero or more path components. Thus `**/*.roc` includes
+root files and `package/**` includes the directory and descendants. Literal
+patterns match exactly. Dotfiles match normally. Unsupported bracket/brace,
+negation and escape syntax, absolute paths, controls and dot segments fail.
+Patterns and matched paths are bounded to 4096 bytes and 128 components.
+
+Global `exclude` prunes discovery before opening sources or descending into
+excluded directories. Rule exclusions affect that rule alone. File overrides do
+not resurrect globally excluded files. There is no implicit Git ignore behavior,
+parent-configuration cascade or dependence on the current directory once the
+explicit root is fixed. Global exclusions also apply to test discovery, but do
+not bypass explicit configuration/profile reads or their integrity checks.
+
+Discovery is deterministic and overlapping roots are deduplicated. Sources are
+`.roc`, `.md`, `.markdown`, `.adoc`, `.txt` and `.rst`; accounting uses only `.roc`.
+Selected sources reject symlinks and special files. Input files are limited to
+8 MiB and inventory traversal to 100,000 paths.
+
+Exit 0 means completed checks within the warning allowance, 1 means error-level
+findings or too many warnings, and 2 means invalid input or incomplete analysis.
+Diagnostic JSON uses schema 2 and includes `rule_id`, `level`, `origin` and `trace`
+alongside the category `rule`. Text locations use one-based Unicode scalar
+columns; JSON retains half-open UTF-8 byte spans.
+
+== Migrating schema 1
+
+Schema 1 remains supported with its original explicit rule list, literal `scope`
+and additive behavior. It has no profile or override composition. Diagnostic IDs
+are generated as `legacy/1`, `legacy/2`, etc.; new configurations should use stable
+schema 2 IDs.
+
+For schema 2, give each rule an ID, translate a directory `scope` to
+`include: ["directory/**"]` and an exact file to `include: ["file.roc"]`.
+Rename `words` to `corrections`; separate the old `allow` entries into
+`accepted_words` and `accepted_identifiers`. A word may belong in both lists
+when preserving the old combined behavior. Schema 2 does not reinterpret old
+lists as overrides: collection operations are explicit only inside `changes`.
+
+== Rules
+
+`CompilerPin`, `NoCompilerPin` and `Dependency` inspect app/package/platform
+headers, not lookalike fields in bodies, comments or strings. A required
+compiler/dependency rule aimed at an exact entrypoint reports a missing header.
+Directory-wide required rules apply only to header-bearing entrypoints, allowing
+ordinary helper modules. They fail configuration if no entrypoint is applicable.
+A dependency value is an exact decoded string in this version; resolving multiple
+relative spellings to one package identity is a future extension.
+
+`ForbiddenImport` matches the written path or its dot/slash descendants, ignoring
+trivia and preserving aliases' original paths. It does not resolve bindings,
+reexports, indirect calls or a complete project dependency graph.
+
+`PublicDocs` identifies explicit module exposures and filename-based nominal
+modules, including nested public associated definitions. It requires nonempty
+attached `##` documentation, supporting documentation before an annotation or
+its definition. Private helpers and local declarations are excluded. Package
+uppercase exposure inventories refer to other module files; select those source
+files for checking. Unresolved imported/qualified/wildcard public surfaces return
+`documentation/incomplete`, never an assertion that they are documented.
+
+`Spelling` embeds the pinned typos v1.44.0 correction map (93,861 entries)
+through a Roc file import. It requires no dictionary file, download or Rust
+toolchain at runtime. This is correction lookup rather than unknown-word
+detection; it does not reproduce the typos CLI heuristics or dialect rules.
+The exact upstream CSV, MIT notice, provenance and offline verification script
+are maintained in `tools/roc-policy/vendor/typos`. `roc-policy --licenses`
+prints the embedded notice, which is also included among release assets.
+`channels` selects `Comments`,
+`Identifiers`, `Strings` and `Prose`; defaults are comments, identifiers and prose.
+Identifiers split snake case, camel case, acronym transitions and digits.
+`accepted_words` exempts word components and `accepted_identifiers` exempts whole
+Roc identifiers, without accepting their components elsewhere. Add corrections
+with `corrections: [{ word: "mispeling", replacement: "misspelling" }]`; entries
+replace the same bundled key. Keys must be single words. Case folding is ASCII;
+Unicode bytes and source offsets are preserved. String channels inspect raw
+string parts rather than evaluating escape sequences.
+
+`Phrase` requires `phrase`, optionally `replacement`, and uses the same channels
+as spelling. Exceptions target the particular phrase rule ID. Whole-word matching folds ASCII case and normalizes whitespace
+across consecutive comment/documentation lines; internal and surrounding
+punctuation must match. Patterns must contain a matchable word. There are no
+implicit banned phrases. A policy enforces chosen language conventions, not
+inference about authorship or prose quality.
+
+== Test accounting
+
+`manifest` discovers static file-level and associated-block `expect` declarations
+under `test_roots`, defaulting to `roots`. It emits schema 1 JSON with `files`,
+each containing `path`, exact `source`, and `tests` with byte `start` and `end`.
+It is a source inventory, with no execution statuses. Inline/local expectations
+are valid assertions but are not separate required static tests. A static test
+sharing its starting line with another expectation is rejected because the
+compiler's line output cannot distinguish them. Empty selected static inventories
+fail explicitly.
+
+`run-tests` is an optional discovery-driven runner requiring an explicit compiler
+path. It invokes `roc test <absolute-source-path> --verbose` for each inventoried
+file, leaving normal compiler caching enabled. Optional `test_main` names a
+relative application file used to resolve package aliases with `--main=...`.
+For every static test, exactly one `PASS: <absolute-source-path>:<line>` record
+must be reported. Tests in imported local modules and executed inline assertions
+may add records; they do not inflate the selected file's static count. The total
+number of PASS records must also agree with the compiler's success summary.
+Missing or duplicated required locations fail, even when the overall count is
+unchanged. A successful-looking output fragment cannot override a failed process.
+
+Normal cached results are accepted. Cache correctness is the compiler's
+responsibility; this utility does not routinely pass `--no-cache`. Every child
+must exit successfully within 60 seconds and uses bounded output capture.
+Inventoried sources are checked again after all invocations; changed sources,
+ambiguous locations, malformed output and incomplete parses fail. No shell
+command is constructed.
+
+This checks compiler-reported source lines, not native test IDs, exact span
+receipts, code coverage or authenticated execution provenance. It does not prove
+that a different CI entrypoint selects these tests. It discovers and invokes
+each selected test-bearing file itself, so large import graphs can cause repeated
+compiler invocations; normal caching reduces that cost. The adapter is tested
+against `nightly-2026-10-15-38e6c42` and depends on its human-readable verbose
+output. An incompatible output format fails explicitly; structured compiler
+reporting would provide a more stable future interface.
+
+The runner can execute project code and invoke the compiler's normal dependency
+behavior. Use it in unprivileged jobs. `check` and `manifest` require no compiler,
+execute no project code, and invoke no external helpers.
+
+== Distribution boundary
+
+Use a reviewed tools release and locally verified content digest to install a
+binary before invoking it. On newer Blueprint versions, `Programs`/`Fetch` can
+manage released binaries and `Blueprint.lock` pins their bytes. Blueprint still
+needs its own compiler to evaluate configuration before those programs are made
+available. A dedicated compiler-free bootstrap installer is not part of this
+change. Content hashes establish expected bytes, not build provenance.

@@ -1,0 +1,14 @@
+= Bounded decompression adapter
+
+`BoundedInflate.roc` adapts the raw decompression control loop and block decoder
+from `roc-deflate` 0.4.0-rc2 `package/Inflate.roc`, copyright its contributors,
+licensed under Apache License 2.0 (see `roc-deflate-LICENSE`). The source package
+is pinned by the content-addressed URL in `main.roc`. Upstream file SHA-256:
+`9be7f4fab5525c62ae4c8721e8407acaecf0dda8a1e70ec99ff9c4b66aed759b`.
+
+Changes: enforce a caller output limit before each literal, stored-block append
+and overlapping match; bound block count; reject bytes after the final block.
+Decode tables, refill operations and other helpers come from the pinned
+package's public `Inflate` module. This is a modified adaptation, not upstream
+code with identical behavior. The package describes its algorithm as a port
+of libdeflate's decompressor. No C code or native library is vendored here.
