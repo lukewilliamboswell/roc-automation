@@ -50,8 +50,10 @@ runs:
       shell: bash
       env:
         ROC_DOCS_BINARY: ${{ steps.target.outputs.binary }}
+        ROC_DOCS_ACTION_TEST_BINARY: ${{ steps.target.outputs.binary }}
       run: |
         set -euo pipefail
         chmod +x "$ROC_DOCS_BINARY"
         python3 tools/roc-docs/tests/test_cli.py -v
         python3 tools/roc-docs/tests/test_build.py -v
+        python3 -m unittest discover -s tests -p test_build_docs.py -v
