@@ -1,6 +1,5 @@
 import importlib.util
 import argparse
-import json
 import subprocess
 import os
 import tempfile
@@ -62,7 +61,7 @@ class BuildDocsTests(unittest.TestCase):
             )
 
 
-class RocBuildTests(unittest.TestCase):
+class LegacyBuildTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -72,51 +71,28 @@ class RocBuildTests(unittest.TestCase):
         self.output = self.root / ".docs-out"
         self.output.mkdir()
         (self.output / "old-output").write_text("keep until success")
-        self.action = self.root / "action/actions/build-docs"
-        self.action.mkdir(parents=True)
-        helper = self.root / "action/tools/roc-docs/prepare_docs.py"
-        helper.parent.mkdir(parents=True)
-        helper.write_text("# reviewed helper fixture")
         self.args = argparse.Namespace(
             docs_directory="docs", entrypoint="index.adoc", output_directory=".docs-out",
-            pdf_filename="book.pdf", docs_version="v42", pdf_image_dpi=144, api_entrypoint="", roc_command="roc",
-            theme_directory="", renderer_binary="roc-docs", backend="roc",
-            title="Override title", author="Author", language="en-AU")
+            pdf_filename="book.pdf", docs_version="v42", pdf_image_dpi=144,
+            api_entrypoint="", roc_command="roc", theme_directory="", backend="legacy",
+            title="", author="", language="")
         self.commands = []
         self.fail_at = ""
-        self.mutate_manifest = lambda data: None
 
     def invoke(self, *command, cwd):
         self.commands.append(command)
-        if command[0] == "python3":
-            prepared = self.root / command[command.index("--output-directory") + 1]
-            prepared.mkdir()
-            (prepared / "pages").mkdir()
-            (prepared / "pages/index.md").write_text("# Main")
-            (prepared / "pages/chapter.md").write_text("# Chapter")
-            (prepared / "manual.md").write_text("# Full manual")
-            data = {"schema_version": 1,
-                    "metadata": {"title": "Source title", "author": "", "language": "en", "version": "v42"},
-                    "pages": [{"input": "pages/index.md", "output": "index.html"},
-                              {"input": "pages/chapter.md", "output": "chapter.html"}],
-                    "manual": {"input": "manual.md", "output": "book.pdf"}, "assets": []}
-            self.mutate_manifest(data)
-            (prepared / "manifest.json").write_text(json.dumps(data))
-            stage = "prepare"
-        else:
-            stage = "pdf" if "--pdf-only" in command else "html"
-            destination = Path(command[3])
-            destination.mkdir()
-            if stage == "pdf":
-                (destination / "book.pdf").write_bytes(b"%PDF-fixture")
-            else:
-                (destination / "index.html").write_text("<h1>rendered fixture</h1>")
+        stage = command[1]
+        if stage == "run":
+            destination = self.root / command[command.index("--output-directory") + 1]
+            (destination / "site").mkdir()
+            (destination / "site/index.html").write_text("rendered legacy fixture")
+            (destination / "book.pdf").write_bytes(b"%PDF-fixture")
+            (destination / "site/book.pdf").write_bytes(b"%PDF-fixture")
         if self.fail_at == stage:
             raise subprocess.CalledProcessError(1, command)
 
     def build(self):
-        with patch.object(build_docs, "ACTION_ROOT", self.action), \
-             patch.object(build_docs.shutil, "which", return_value="/reviewed/roc-docs"), \
+        with patch.object(build_docs.shutil, "which", return_value="/reviewed/docker"), \
              patch.object(build_docs, "run", side_effect=self.invoke):
             return build_docs.build(self.args, self.root)
 
@@ -124,46 +100,16 @@ class RocBuildTests(unittest.TestCase):
         self.assertEqual((self.output / "old-output").read_text(), "keep until success")
         self.assertEqual(list(self.root.glob(".roc-docs-*")), [])
 
-    def test_precompiled_renderer_builds_multipage_site_without_docker_or_compiler(self):
-        (self.root / "docs/download.txt").write_text("static")
+    def test_legacy_build_publishes_only_completed_site_and_pdf(self):
         site, pdf = self.build()
         self.assertEqual(site, self.output / "site")
         self.assertEqual(pdf, self.output / "book.pdf")
         self.assertEqual(sorted(p.name for p in self.output.iterdir()), ["book.pdf", "site"])
         self.assertEqual((site / "book.pdf").read_bytes(), pdf.read_bytes())
-        self.assertTrue((site / "chapter.html").is_file())
-        self.assertEqual((site / "download.txt").read_text(), "static")
-        self.assertFalse((site / "index.adoc").exists())
-        for command in self.commands[1:]:
-            self.assertEqual(command[0:2], ("/reviewed/roc-docs", "render"))
-            self.assertIn("Override title", command)
-            self.assertIn("Author", command)
-            self.assertIn("en-AU", command)
-            self.assertIn("v42", command)
+        self.assertEqual([command[:2] for command in self.commands], [("docker", "build"), ("docker", "run")])
 
-    def test_pdf_image_dpi_forwarded_only_to_pdf_renderer(self):
-        self.build()
-        for command in self.commands[1:]:
-            if "--pdf-only" in command:
-                self.assertEqual(command[command.index("--pdf-image-dpi") + 1], "144")
-            else:
-                self.assertNotIn("--pdf-image-dpi", command)
-        self.args.pdf_image_dpi = 210
-        self.commands.clear()
-        self.build()
-        pdf = next(c for c in self.commands if "--pdf-only" in c)
-        self.assertEqual(pdf[pdf.index("--pdf-image-dpi") + 1], "210")
-
-    def test_invalid_pdf_image_dpi_rejected_before_rendering(self):
-        for dpi in (0, 71, 301):
-            self.args.pdf_image_dpi = dpi
-            with self.subTest(dpi=dpi), self.assertRaisesRegex(SystemExit, "pdf-image-dpi"):
-                self.build()
-        self.assertEqual(self.commands, [])
-        self.assert_preserved()
-
-    def test_each_failed_stage_preserves_existing_output(self):
-        for stage in ("prepare", "html", "pdf"):
+    def test_failed_image_build_and_render_preserve_existing_output(self):
+        for stage in ("build", "run"):
             with self.subTest(stage=stage):
                 self.fail_at = stage
                 with self.assertRaises(subprocess.CalledProcessError):
@@ -176,22 +122,20 @@ class RocBuildTests(unittest.TestCase):
                 self.build()
         self.assert_preserved()
 
-    def test_invalid_manifests_never_publish(self):
-        mutations = [
-            lambda m: m.update(schema_version=99),
-            lambda m: m["pages"][0].update(input="../../secret.md"),
-            lambda m: m["pages"][0].update(output="../bad.html"),
-            lambda m: m["pages"][1].update(output="index.html"),
-            lambda m: m["pages"][0].update(output="other.html"),
-            lambda m: m["metadata"].update(version=42),
-            lambda m: m.update(assets=[{"href": "../bad.png"}]),
-        ]
-        for mutate in mutations:
-            with self.subTest(mutate=mutate):
-                self.mutate_manifest = mutate
-                with self.assertRaises(SystemExit):
-                    self.build()
-                self.assert_preserved()
+    def test_python_adapter_cannot_run_native_builds(self):
+        for backend in (None, "roc"):
+            self.args.backend = backend
+            with self.subTest(backend=backend), self.assertRaisesRegex(SystemExit, "only --backend legacy"):
+                self.build()
+        self.assertEqual(self.commands, [])
+        self.assert_preserved()
+
+    def test_missing_docker_has_no_fallback(self):
+        with patch.object(build_docs.shutil, "which", return_value=None), patch.object(build_docs, "run") as run:
+            with self.assertRaisesRegex(SystemExit, "explicit legacy"):
+                build_docs.build(self.args, self.root)
+        run.assert_not_called()
+        self.assert_preserved()
 
     def test_source_symlinks_are_rejected(self):
         (self.root / "secret").write_text("outside docs")
@@ -215,7 +159,7 @@ class RocBuildTests(unittest.TestCase):
                     self.build()
         self.assert_preserved()
 
-    def test_output_cannot_overwrite_api_or_theme_sources(self):
+    def test_output_cannot_overwrite_api_sources(self):
         (self.root / "package").mkdir()
         (self.root / "package/main.roc").write_text("package [] {}")
         self.args.api_entrypoint = "package/main.roc"
@@ -231,28 +175,6 @@ class RocBuildTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "pdf-filename"):
                 self.build()
         self.assertEqual(self.commands, [])
-        self.assert_preserved()
-
-    def test_static_files_cannot_replace_rendered_routes(self):
-        (self.root / "docs/index.html").write_text("malicious replacement")
-        with self.assertRaisesRegex(SystemExit, "collides"):
-            self.build()
-        self.assert_preserved()
-
-    def test_custom_asciidoctor_theme_has_explicit_migration_error(self):
-        (self.root / "old-theme").mkdir()
-        self.args.theme_directory = "old-theme"
-        with self.assertRaisesRegex(SystemExit, "backend legacy"):
-            self.build()
-        self.assert_preserved()
-
-    def test_missing_binary_does_not_fall_back_to_compiling_or_docker(self):
-        with patch.object(build_docs.shutil, "which", return_value=None), \
-             patch.dict(os.environ, {}, clear=True), \
-             patch.object(build_docs, "run") as run:
-            with self.assertRaisesRegex(SystemExit, "precompiled roc-docs"):
-                build_docs.build(self.args, self.root)
-        run.assert_not_called()
         self.assert_preserved()
 
     def test_failed_publish_restores_previous_directory(self):
@@ -358,6 +280,68 @@ class NativeActionShellTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("Python 3 is required for the explicit legacy backend", result.stderr)
         self.assertFalse(self.record.exists())
+
+
+@unittest.skipUnless(os.environ.get("ROC_DOCS_ACTION_TEST_BINARY"), "set ROC_DOCS_ACTION_TEST_BINARY for native action integration")
+class NativeActionIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.docs = self.root / "docs"
+        self.docs.mkdir()
+        self.binary = str(Path(os.environ["ROC_DOCS_ACTION_TEST_BINARY"]).resolve())
+        self.outputs = self.root / "github-output"
+
+    def invoke(self, entrypoint, *extra, success=True):
+        result = subprocess.run([
+            "/bin/bash", str(ACTION.with_name("build_docs.sh")),
+            "--renderer-binary", self.binary, "--workspace", str(self.root),
+            "--entrypoint", entrypoint, "--pdf-filename", "project.pdf", "--docs-version", "42",
+            "--pdf-image-dpi", "144", "--title", "", "--author", "", "--language", "",
+            "--api-entrypoint", "", "--roc-command", "roc", *extra],
+            env={**os.environ, "PATH": "/nonexistent", "GITHUB_OUTPUT": str(self.outputs)},
+            capture_output=True, text=True, timeout=90)
+        if success:
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        else:
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result
+
+    def snapshot(self):
+        output = self.root / ".docs-out"
+        return {str(p.relative_to(output)): p.read_bytes() for p in output.rglob("*") if p.is_file()}
+
+    def test_native_asciidoc_action_outputs_and_rejection_preserve_publication(self):
+        (self.docs / "index.adoc").write_text("= Project\n\ninclude::usage.adoc[leveloffset=+1]\n")
+        (self.docs / "usage.adoc").write_text("= Usage\n\nVersion {docs-version}.\n\n[source,roc]\n----\napp [main!] {}\n----\n")
+        self.invoke("index.adoc")
+        site = self.root / ".docs-out/site"
+        pdf = self.root / ".docs-out/project.pdf"
+        self.assertIn("Version 42", (site / "usage.html").read_text())
+        self.assertIn("syntax-keyword", (site / "usage.html").read_text())
+        self.assertTrue(pdf.read_bytes().startswith(b"%PDF-2.0"))
+        self.assertEqual(pdf.read_bytes(), (site / "project.pdf").read_bytes())
+        expected_outputs = f"site-directory={site}\npdf-path={pdf}\n"
+        self.assertEqual(self.outputs.read_text(), expected_outputs)
+        before = self.snapshot()
+        (self.docs / "index.adoc").write_text("= Project\n\ninclude::missing.adoc[]\n")
+        self.invoke("index.adoc", success=False)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.outputs.read_text(), expected_outputs)
+
+    def test_native_markdown_and_explicit_failed_api_preserve_publication(self):
+        (self.docs / "index.md").write_text("# Project\n\n```roc\napp [main!] {}\n```\n")
+        self.invoke("index.md")
+        before = self.snapshot()
+        previous_outputs = self.outputs.read_text()
+        (self.root / "main.roc").write_text("placeholder")
+        compiler = self.root / "failing-compiler"
+        compiler.write_text("#!/bin/bash\nexit 1\n")
+        compiler.chmod(0o755)
+        self.invoke("index.md", "--api-entrypoint", "main.roc", "--roc-command", str(compiler), success=False)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.outputs.read_text(), previous_outputs)
 
 
 if __name__ == "__main__":

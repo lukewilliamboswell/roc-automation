@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Stage a manual with a precompiled Roc renderer or explicit legacy backend."""
+"""Explicit legacy Docker/Asciidoctor adapter; native builds use build_docs.sh."""
 
 from __future__ import annotations
 
 import argparse
 import copy
-import json
 import tempfile
 import os
 import shutil
@@ -183,120 +182,6 @@ def validate(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
     return docs, output
 
 
-def renderer_executable(value: str) -> str:
-    command = value or os.environ.get("ROC_DOCS_BINARY", "") or "roc-docs"
-    executable = shutil.which(command)
-    if executable is None:
-        raise SystemExit("precompiled roc-docs not found; provide --renderer-binary or ROC_DOCS_BINARY")
-    return executable
-
-
-def manifest_path(prepared: Path, value: object, label: str) -> Path:
-    if not isinstance(value, str):
-        raise SystemExit(f"invalid prepared {label}")
-    path = contained_path(prepared, value, f"prepared {label}", must_exist=True)
-    if not path.is_file():
-        raise SystemExit(f"prepared {label} must be a file")
-    return path
-
-
-def build_roc(args: argparse.Namespace, workspace: Path, stage: Path) -> None:
-    if args.theme_directory:
-        raise SystemExit("theme-directory uses Asciidoctor themes; choose --backend legacy or the built-in Roc theme")
-    executable = renderer_executable(args.renderer_binary)
-    prepared = stage / "prepared"
-    helper = ACTION_ROOT.parents[1] / "tools" / "roc-docs" / "prepare_docs.py"
-    if not helper.is_file():
-        raise SystemExit("Roc documentation preparation helper is missing from this action revision")
-    command = ["python3", str(helper), "--workspace", str(workspace), "--docs-directory", args.docs_directory,
-               "--entrypoint", args.entrypoint, "--output-directory", str(prepared.relative_to(workspace)),
-               "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version]
-    run(*command, cwd=workspace)
-    try:
-        manifest = json.loads((prepared / "manifest.json").read_text(encoding="utf-8"))
-        if type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
-            raise ValueError("unsupported schema")
-        metadata = manifest["metadata"]
-        for name in ("title", "author", "language"):
-            if getattr(args, name):
-                metadata[name] = getattr(args, name)
-        base = ["--title", metadata["title"], "--author", metadata["author"],
-                "--version", metadata["version"], "--language", metadata["language"],
-                "--pdf-filename", args.pdf_filename]
-        if not all(isinstance(value, str) and not any(c in value for c in "\r\n\0") for value in base):
-            raise ValueError("metadata must contain strings")
-        assets = []
-        for asset in manifest["assets"]:
-            href = asset["href"]
-            if (not isinstance(href, str) or not href or Path(href).is_absolute()
-                    or ".." in Path(href).parts or any(c in href for c in "\r\n\0")):
-                raise ValueError("unsafe asset href")
-            width, height = asset["width"], asset["height"]
-            if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
-                raise ValueError("invalid asset dimensions")
-            assets.extend(["--asset", href, str(manifest_path(prepared, asset["png"], "PNG")),
-                           str(manifest_path(prepared, asset["rgb"], "RGB")), str(width), str(height)])
-        pages = manifest["pages"]
-        if not isinstance(pages, list) or not pages:
-            raise ValueError("no HTML pages")
-        site = stage / "site"
-        site.mkdir()
-        destinations = set()
-        for number, page in enumerate(pages):
-            destination = page["output"]
-            if (not isinstance(destination, str) or Path(destination).name != destination
-                    or not destination.endswith(".html") or destination in destinations):
-                raise ValueError("invalid or duplicate HTML route")
-            destinations.add(destination)
-            source = manifest_path(prepared, page["input"], "page")
-            rendered = stage / f"render-page-{number}"
-            run(executable, "render", str(source), str(rendered), *base, *assets,
-                "--html-only", cwd=workspace)
-            reject_symlinks(rendered)
-            if not (rendered / "index.html").is_file():
-                raise SystemExit("Roc renderer did not produce index.html")
-            shutil.copy2(rendered / "index.html", site / destination)
-            # Renderer-owned CSS and assets have stable names shared by all pages.
-            for item in rendered.iterdir():
-                if item.name != "index.html":
-                    if item.is_dir():
-                        shutil.copytree(item, site / item.name, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(item, site / item.name)
-        if "index.html" not in destinations:
-            raise ValueError("site must contain index.html")
-        manual = manifest_path(prepared, manifest["manual"]["input"], "manual")
-        rendered = stage / "render-manual"
-        run(executable, "render", str(manual), str(rendered), *base, *assets,
-            "--pdf-image-dpi", str(args.pdf_image_dpi), "--pdf-only", cwd=workspace)
-        reject_symlinks(rendered)
-        pdf = rendered / args.pdf_filename
-        if not pdf.is_file() or not pdf.stat().st_size:
-            raise SystemExit("Roc renderer did not produce the PDF")
-        shutil.copy2(pdf, stage / args.pdf_filename)
-        shutil.copy2(pdf, site / args.pdf_filename)
-        copy_roc_static(workspace / args.docs_directory, site)
-    except (KeyError, TypeError, ValueError, OSError) as error:
-        raise SystemExit(f"invalid prepared documentation: {error}") from error
-
-
-def copy_roc_static(docs: Path, site: Path) -> None:
-    for source in sorted(docs.rglob("*")):
-        if source.is_dir() or source.suffix.lower() in (".adoc", ".md", ".markdown"):
-            continue
-        relative = source.relative_to(docs)
-        # Themes contain backend-specific source resources, not website assets.
-        if relative.parts[0] == "theme":
-            continue
-        destination = site / relative
-        if destination.exists():
-            if not destination.is_file() or destination.read_bytes() != source.read_bytes():
-                raise ValueError(f"static file collides with rendered output: {relative}")
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-
-
 def publish(stage: Path, output: Path) -> None:
     # Keep existing output untouched until conversion, rendering and API all succeed.
     backup = stage.parent / "previous-output"
@@ -313,32 +198,31 @@ def publish(stage: Path, output: Path) -> None:
 
 
 def build(args: argparse.Namespace, workspace: Path) -> tuple[Path, Path]:
+    if args.backend != "legacy":
+        raise SystemExit("Python adapter supports only --backend legacy; use build_docs.sh for native Roc builds")
     _, output = validate(args, workspace)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".roc-docs-", dir=output.parent) as temporary:
         temporary_path = Path(temporary)
         stage = temporary_path / "output"
         stage.mkdir()
-        if args.backend == "roc":
-            build_roc(args, workspace, stage)
-        else:
-            if shutil.which("docker") is None:
-                raise SystemExit("Docker is required for the explicit legacy documentation backend")
-            run("docker", "build", "--tag", IMAGE, "--file", str(ACTION_ROOT / "Dockerfile"),
-                str(ACTION_ROOT), cwd=workspace)
-            staged_args = copy.copy(args)
-            staged_args.output_directory = str(stage.relative_to(workspace))
-            command = [
-                "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
-                "--env", "XDG_CACHE_HOME=/tmp", "--env", "XDG_CONFIG_HOME=/tmp",
-                "--volume", f"{workspace}:/workspace", "--workdir", "/workspace", IMAGE,
-                "python3", "/opt/roc-docs/build_docs.py", "--inside-container",
-                "--workspace", "/workspace", "--docs-directory", args.docs_directory,
-                "--entrypoint", args.entrypoint, "--output-directory", staged_args.output_directory,
-                "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version,
-                "--theme-directory", args.theme_directory,
-            ]
-            run(*command, cwd=workspace)
+        if shutil.which("docker") is None:
+            raise SystemExit("Docker is required for the explicit legacy documentation backend")
+        run("docker", "build", "--tag", IMAGE, "--file", str(ACTION_ROOT / "Dockerfile"),
+            str(ACTION_ROOT), cwd=workspace)
+        staged_args = copy.copy(args)
+        staged_args.output_directory = str(stage.relative_to(workspace))
+        command = [
+            "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+            "--env", "XDG_CACHE_HOME=/tmp", "--env", "XDG_CONFIG_HOME=/tmp",
+            "--volume", f"{workspace}:/workspace", "--workdir", "/workspace", IMAGE,
+            "python3", "/opt/roc-docs/build_docs.py", "--inside-container",
+            "--workspace", "/workspace", "--docs-directory", args.docs_directory,
+            "--entrypoint", args.entrypoint, "--output-directory", staged_args.output_directory,
+            "--pdf-filename", args.pdf_filename, "--docs-version", args.docs_version,
+            "--theme-directory", args.theme_directory,
+        ]
+        run(*command, cwd=workspace)
         build_api(args, workspace, stage / "site")
         reject_symlinks(stage / "site")
         # Working inputs and per-page render directories are never published.
@@ -364,8 +248,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-entrypoint", default="")
     parser.add_argument("--roc-command", default="roc")
     parser.add_argument("--theme-directory", default="")
-    parser.add_argument("--backend", choices=("roc", "legacy"), default="roc")
-    parser.add_argument("--renderer-binary", default="")
+    parser.add_argument("--backend", choices=("legacy",), default=None)
     parser.add_argument("--title", default="")
     parser.add_argument("--author", default="")
     parser.add_argument("--language", default="")
