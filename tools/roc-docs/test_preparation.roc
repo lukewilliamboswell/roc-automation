@@ -40,3 +40,14 @@ expect manual("= Manual\n\n[source,roc]\n----\nx = 1 \n----\n\n[source,roc]\n---
 expect manual("= Manual\n\n[source,asciidoc]\n------\n[source,roc]\n----\n  code = 1\n----\n------\n").map_ok(|s| s.contains("```asciidoc\n[source,roc]\n----\n  code = 1\n----\n```")) == Ok(True)
 
 expect Preparation.prepare(source("= Manual\n\n[mermaid]\n....\nflowchart LR\n A --> B\n....\n"), { ..options, diagrams: [{ source_sha256: "7280f74112e34565683139ffbd08ec64e8cd163c56051ee0e26d4268581b635b", href: "images/diagram.png" }] }).map_ok(|r| r.images) == Ok(["images/diagram.png"])
+
+# Public AsciiDoc AST does not carry source paths: ambiguous included titles
+# must reject rather than silently route links using the previous chapter.
+expect Preparation.prepare(
+	[
+		{ path: "index.adoc", source: "= Manual\n\ninclude::a.adoc[leveloffset=+1]\n\ninclude::b.adoc[leveloffset=+1]\n" },
+		{ path: "a.adoc", source: "= Shared title\n\nFirst.\n" },
+		{ path: "b.adoc", source: "= Shared title\n\nSecond.\n" },
+	],
+	options,
+).is_err()

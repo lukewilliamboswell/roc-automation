@@ -147,6 +147,9 @@ identify = |input, files, path, used, refs| {
 		if n.context == "section" or n.context == "floating_title" {
 			if n.level == 1 {
 				candidates = files.keep_if(|f| f.source.split_on("\n").any(|line| line == "= ${n.title}"))
+				if candidates.len() > 1 {
+					return Err("ambiguous source origin for included chapter ${n.title}")
+				}
 				if candidates.len() == 1 {
 					$path = (candidates.first() ?? { path, source: "" }).path
 				}
