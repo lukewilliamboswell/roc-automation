@@ -116,8 +116,9 @@ Schema 1 remains supported.
 
 `roc-docs` renders HTML and PDF with embedded fonts and Roc highlighting, before
 any Roc compiler is installed downstream. The shared documentation action now
-uses a supplied renderer binary by default and prepares the supported AsciiDoc
-subset with Python's standard library. The standalone renderer accepts Markdown.
+uses a supplied renderer binary by default. AsciiDoc parsing, PNG preparation,
+HTML and PDF rendering all run inside that binary, using roc-parser 2.1.0-rc.2.
+The default action path needs no Python; the renderer also accepts Markdown.
 The tools pipeline builds and tests three native targets, alongside `roc-policy`.
 
 The initial native theme replaces our manual's Docker build. Prepared Mermaid

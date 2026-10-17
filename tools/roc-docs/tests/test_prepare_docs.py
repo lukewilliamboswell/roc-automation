@@ -9,7 +9,7 @@ import unittest
 import zlib
 from pathlib import Path
 
-MODULE = Path(__file__).resolve().parents[1] / 'prepare_docs.py'
+MODULE = Path(__file__).resolve().parent / 'reference_prepare_docs.py'
 spec = importlib.util.spec_from_file_location('prepare_docs', MODULE)
 prep = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = prep

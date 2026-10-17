@@ -117,7 +117,8 @@ jobs:
         run: |
           mkdir -p docs-tests
           cp tools/roc-docs/tests/test_cli.py docs-tests/test_cli.py
-          cat LICENSE tools/roc-docs/fonts/NotoSans-OFL.txt tools/roc-docs/fonts/NotoSans-Italic-OFL.txt tools/roc-docs/fonts/SourceCodePro-OFL.md > dist/roc-docs-font-LICENSES.txt
+          cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
+          cat LICENSE tools/roc-docs/fonts/NotoSans-OFL.txt tools/roc-docs/fonts/NotoSans-Italic-OFL.txt tools/roc-docs/fonts/SourceCodePro-OFL.md tools/roc-docs/vendor/roc-deflate-LICENSE tools/roc-docs/vendor/NOTICE.adoc > dist/roc-docs-LICENSES.txt
       - name: Include the policy dictionary permission notice
         run: cp tools/roc-policy/vendor/typos/LICENSE-MIT dist/roc-policy-dictionary-LICENSE-MIT.txt
       - name: Include the source-free policy test harness
@@ -166,6 +167,7 @@ jobs:
             release-notes.md
             policy-tests/test_cli.py
             docs-tests/test_cli.py
+            docs-tests/test_build.py
 
   # The exact files that would be published, on a runner with no checkout, no
   # Nix and no compiler: what a calling job has when an action runs one.
@@ -305,6 +307,7 @@ jobs:
           chmod +x "roc-docs-$SYSTEM"
           cd ../..
           python3 tools/docs-tests/test_cli.py -v
+          python3 tools/docs-tests/test_build.py -v
 
   publish:
     name: Publish the tools

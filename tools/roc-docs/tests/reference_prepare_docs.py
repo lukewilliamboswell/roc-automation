@@ -1,4 +1,7 @@
-"""Offline, bounded AsciiDoc preparation for roc-docs (not general AsciiDoc)."""
+"""Independent Python reference for native preparation regression tests only.
+
+The production action and roc-docs binary never invoke this reference adapter.
+"""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -9,7 +12,7 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 MAX_BYTES = 16 * 1024 * 1024
 
 

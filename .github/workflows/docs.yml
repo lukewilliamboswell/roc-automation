@@ -42,13 +42,14 @@ jobs:
             sudo apt-get install --yes --no-install-recommends poppler-utils
           fi
 
+      # Python here is an independent test oracle, never part of rendering.
       - name: Verify the rendered manual preserves source inventories and links
         env:
           SITE: ${{ steps.docs.outputs.site-directory }}
           PDF: ${{ steps.docs.outputs.pdf-path }}
           DOCS_VERSION: ${{ github.event_name == 'pull_request' && format('3 (pull request {0})', github.event.number) || '3' }}
         run: |
-          python3 tools/roc-docs/prepare_docs.py --workspace . --output-directory .docs-verification-prepared --pdf-filename roc-automation.pdf --docs-version "$DOCS_VERSION"
+          python3 tools/roc-docs/tests/reference_prepare_docs.py --workspace . --output-directory .docs-verification-prepared --pdf-filename roc-automation.pdf --docs-version "$DOCS_VERSION"
           python3 tools/roc-docs/tests/verify_prepared.py --prepared .docs-verification-prepared --site "$SITE" --pdf "$PDF" --independent-reader
 
       - name: Upload Pages artifact

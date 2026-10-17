@@ -7,10 +7,11 @@ Adds two reusable, precompiled utilities for repositories and CI runners:
   `Blueprint.roc`, including immutable embedded profiles and digest-pinned local
   profiles. `explain-config` reports effective policy and its origins. Source
   checks require no Roc compiler; the optional test runner requires one.
-- `roc-docs` renders Markdown into HTML and PDF with embedded fonts and Roc
-  highlighting. It requires no compiler, Docker or runtime network access.
-  `actions/build-docs` prepares supported AsciiDoc and image assets using Python's
-  standard library and invokes a supplied binary. Prepared Mermaid images are
+- `roc-docs` builds AsciiDoc or Markdown websites and PDF manuals with embedded
+  fonts and Roc highlighting. AsciiDoc parsing uses roc-parser 2.1.0-rc.2; PNG
+  decoding and preparation also run in Roc. The default `actions/build-docs`
+  path needs no Python, compiler, Docker or runtime network access.
+  Prepared Mermaid images are
   checked against their source and image digests. Custom Asciidoctor themes
   require the explicit legacy backend.
 
