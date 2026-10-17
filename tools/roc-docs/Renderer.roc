@@ -354,23 +354,44 @@ Renderer :: [].{
 					$result = $result.append(table).append(Pdf.spacer(6))
 				}
 				ListBlock({ kind, items, .. }) => {
-					var $items = []
-					for item in items {
-						if item.task != NoTask {
-							return Err(UnsupportedMarkdown("task list"))
-						}
-						$items = $items.append(Pdf.list_item(pdf_blocks(item.blocks, options, True, assets)?))
+					if items.any(|item| item.task != NoTask) {
+						return Err(UnsupportedMarkdown("task list"))
 					}
-					$result = $result.append(
-						match kind {
-							Unordered => Pdf.bullet_list($items)
-							Ordered({ start }) => Pdf.numbered_list(
-								{ start: start },
-								$items,
-							)
-						},
-					)
+					if !items.all(|item| list_compatible(item.blocks)) {
+						# roc-pdf's list item accepts paragraphs/nested lists only. Keep every
+						# complex item's visible marker and flow blocks rather than dropping
+						# source, figures or tables. HTML retains its original list structure.
+						for item_entry in items.map_with_index(|item, index| { item, index }) {
+							marker = match kind {
+								Unordered => "• "
+								Ordered({ start }) => "${(start + item_entry.index).to_str()}. "
+							}
+							marked = match item_entry.item.blocks {
+								[Paragraph(content), .. as tail] if !contains_image(content) => [Paragraph([Text(marker)].concat(content))].concat(tail)
+								_ => [Paragraph([Text(marker)])].concat(item_entry.item.blocks)
+							}
+							$result = $result.concat(pdf_blocks(marked, options, False, assets)?)
+						}
+					} else {
+						var $items = []
+						for item in items {
+							if item.task != NoTask {
+								return Err(UnsupportedMarkdown("task list"))
+							}
+							$items = $items.append(Pdf.list_item(pdf_blocks(item.blocks, options, True, assets)?))
+						}
+						$result = $result.append(
+							match kind {
+								Unordered => Pdf.bullet_list($items)
+								Ordered({ start }) => Pdf.numbered_list(
+									{ start: start },
+									$items,
+								)
+							},
+						)
+					}
 				}
+
 				Blockquote(children) => {
 					$result = $result.concat(pdf_blocks(children, options, in_list, assets)?)
 				}
@@ -382,6 +403,24 @@ Renderer :: [].{
 		}
 		Ok($result)
 	}
+
+	list_compatible : List(Markdown) -> Bool
+	list_compatible = |blocks| blocks.all(
+		|block| match block {
+			Paragraph(content) => !contains_image(content)
+			ListBlock({ items, .. }) => items.all(|item| list_compatible(item.blocks))
+			_ => False
+		},
+	)
+	contains_image : List(Markdown.Inline) -> Bool
+	contains_image = |inlines| inlines.any(
+		|inline| match inline {
+			Image(_) => True
+			Strong(children) | Emphasis(children) | Strikethrough(children) => contains_image(children)
+			Link({ label, .. }) => contains_image(label)
+			_ => False
+		},
+	)
 
 	# Native source layout owns whitespace, wrapping and page continuation.
 	code_panel : Str, Str, Pdf.Options -> Try(Document.Block, _)

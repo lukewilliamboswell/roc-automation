@@ -70,6 +70,28 @@ class RendererTests(unittest.TestCase):
         output, _ = self.run_doc('# Images\n\n![Red square](images/red.png)\n', '--asset', 'images/red.png', str(png), str(rgb), '1', '1')
         self.assertEqual((output / 'images/red.png').read_bytes(), png.read_bytes())
         self.assertEqual(Page((output / 'index.html').read_text()).images[0]['alt'], 'Red square')
+    def test_complex_lists_preserve_nested_source_and_figure(self):
+        png = self.root / 'nested.png'; png.write_bytes(png_bytes(1, 1, b'\x12\x34\x56'))
+        code = 'marker = "nested source"\n'
+        source = '# Lists\n\n1. First\n\n   ```roc\n   ' + code + '   ```\n\n2. ![Pixel](pixel.png)\n'
+        output, _ = self.run_doc(source, '--image', 'pixel.png', str(png))
+        page = Page((output / 'index.html').read_text())
+        self.assertEqual(page.code, [code]); self.assertEqual(len(page.images), 1)
+        if shutil.which('pdftotext'):
+            text = subprocess.check_output(['pdftotext', str(output / 'manual.pdf'), '-'], text=True)
+            self.assertIn('nested source', text)
+    def test_pdf_only_complex_task_list_rejects_without_dropping_task_state(self):
+        output, _ = self.run_doc('# Tasks\n\n- [x] Item\n\n  ```text\n  code\n  ```\n', '--pdf-only', expect=1)
+        self.assertFalse(output.exists())
+    def test_native_png_asset_requires_no_rgb_preparation(self):
+        png = self.root / 'native.png'; png.write_bytes(png_bytes(1, 1, b'\x12\x34\x56'))
+        output, _ = self.run_doc('# Native image\n\n![Pixel](images/pixel.png)\n', '--image', 'images/pixel.png', str(png))
+        self.assertEqual((output / 'images/pixel.png').read_bytes(), png.read_bytes())
+        self.assertTrue((output / 'manual.pdf').is_file())
+    def test_native_png_crc_rejects_before_publication(self):
+        png = self.root / 'bad.png'; data = bytearray(png_bytes(1, 1, b'\x12\x34\x56')); data[-1] ^= 1; png.write_bytes(data)
+        output, _ = self.run_doc('# Native image\n\n![Pixel](pixel.png)\n', '--image', 'pixel.png', str(png), expect=1)
+        self.assertFalse(output.exists())
     def test_pdf_image_resolution_retains_original_website_bytes(self):
         png = self.root / 'wide.png'; rgb = self.root / 'wide.rgb'
         rgb.write_bytes(b'\xff\0\0' * (1200 * 10)); png.write_bytes(png_bytes(1200, 10, rgb.read_bytes()))

@@ -1,69 +1,98 @@
-= Documentation preparation contract
+= Native documentation preparation
 
-`prepare_docs.py` is an offline Python standard-library adapter. It prepares
-native Markdown input and an explicitly bounded AsciiDoc subset for the reusable
-Roc renderer. It does not execute author input or claim general AsciiDoc
-compatibility. HTML and PDF rendering belong to the compiled Roc executable.
+`roc-docs build` and `roc-docs prepare` run entirely in the released Roc binary.
+`Preparation.roc` is a pure adapter over roc-parser 2.1.0-rc.2's public AsciiDoc
+syntax tree, virtual-file preprocessing and inline rendering APIs. Files and
+source-linked diagram registrations are supplied as inert data by
+`RepositoryBuild.roc`. No author input is executed and includes cannot fetch
+network content.
 
 [source,sh]
 ----
-python3 tools/roc-docs/prepare_docs.py --workspace . --docs-directory docs --entrypoint index.adoc --output-directory .docs-prepared --docs-version 3 --pdf-filename manual.pdf
+roc-docs build --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-out --docs-version 3 --pdf-filename manual.pdf
+roc-docs prepare --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-prepared --docs-version 3 --pdf-filename manual.pdf
 ----
 
-Output must be a new directory. Inputs are bounded regular files; includes and
-asset paths stay within the documentation directory and cannot traverse symlinks.
-Includes have a depth limit, a 32 MiB cumulative source limit and reject cycles.
-Prepared output and image assets have aggregate bounds. Unsupported structural directives,
-unknown references, unprepared Mermaid blocks, malformed tables and unsupported
-PNG encodings fail before the preparation directory is created.
+`build` renders the site and combined PDF through the shared Markdown renderer.
+`prepare` writes intermediate Markdown/assets and a schema-2 debugging inventory
+into a new directory. It is useful for reviewing parser adaptation independently
+of PDF layout. Its metadata, page inputs/routes, manual input/output, image
+identities/dimensions and source hashes are experimental inspection data.
+The shared action calls native `build` directly and does not consume a Python
+preparation manifest.
 
-== Supported authoring
+== Source boundaries
 
-Native `.md` input is preserved. Each top-level Markdown file becomes one page;
-the selected entrypoint alone supplies the combined PDF document. Markdown
-include directives are not implemented. Image references use local PNG files.
+Source and output paths remain within the explicit workspace. Symlinks and
+special files reject; output overlap with the source tree rejects. Source size,
+file count, include depth, prepared output, images and decompression are bounded.
+A build stages every page, image and PDF before publishing. Failure preserves
+previous output; stale publication stages/backups are never silently reused.
 
-The AsciiDoc adapter supports local includes with integer level offsets, headings
-with generated or explicit IDs, LF source blocks (including nested delimiter
-examples), header tables with continued cells, ordinary lists, description lists,
-sidebar text, captions, links and cross references, local PNG images, and
-`backend-html5`/`backend-pdf` conditionals. Every top-level `.adoc` file retains its
-`.html` route. The entrypoint's complete include tree supplies the PDF. Original
-source-block whitespace is retained. CRLF AsciiDoc input rejects explicitly.
+Native Markdown uses roc-parser's Markdown AST for image discovery and rendering.
+Top-level Markdown files become site pages; the chosen entrypoint alone supplies
+the PDF. Markdown include directives and automatic cross-file PDF link rewriting
+are not implemented. Relative website links require a deliberate absolute URL
+or internal destination in the PDF input.
 
-Description lists become bold-label Markdown lists. Sidebars become ordinary
-content; captions become bold paragraphs. Table column weights are recorded in
-the coverage manifest, while the renderer selects Markdown table widths. This
-adapter does not preserve every Asciidoctor presentation convention.
+The AsciiDoc adapter supports virtual local includes with level offsets,
+backend HTML/PDF conditionals, attributes, document/section headings and explicit
+IDs, ordinary lists, description/sidebar content, LF source blocks, header PSV
+tables with continued cells, captions, links/cross-references, local PNG images
+and source-linked Mermaid assets. Top-level AsciiDoc pages retain their `.html`
+routes. The entrypoint include tree supplies the combined PDF; its cross-references
+resolve against indexed source paths/headings rather than accidental page order.
 
-== Prepared diagrams
+The adapter rejects unsupported block contexts, raw HTML/passthrough, custom
+source substitution/indent modes, unsafe paths, unknown diagram bodies,
+unresolved references and unsupported table modes. The rendering subset does not
+claim general Asciidoctor compatibility. Source body bytes are recovered from
+original files when the upstream AST normalizes trailing whitespace; ambiguous
+original bodies reject rather than guessing. The acceptance corpus checks every
+manual source block against the original source inventory.
 
-The seven repository diagrams are checked-in PNG assets with exact source-block
-SHA-256 keys, source snapshots, output hashes and the one-time renderer recipe in
-`prepared-diagrams/manifest.json`. Six are the actual manual diagrams; one is the
-documentation action's fixture. These replace runtime Mermaid execution. A source
-change rejects until its prepared image and provenance are deliberately updated.
+== Explicit presentation adaptations
 
-Downstream projects can provide `docs/prepared-diagrams.json` with schema version
-1 and `diagrams` entries containing `source_sha256`, `href`, `png` and
-`png_sha256`. `png` is relative to their documentation directory. `href` is the
-stable site image path. The source hash covers the exact Mermaid block body,
-including its terminal LF. The image hash covers the prepared PNG bytes. Local
-entries take precedence over the bundled corpus. Diagram preparation tools are a
-authoring-time choice, separate from the native documentation build.
+Both formats share prepared Markdown, but presentation is not identical to
+Asciidoctor. Description lists use bold labels. Sidebar/caption content remains
+ordinary document content. Header PSV table content is preserved; original
+column weights and advanced table spans/styles are not implemented.
 
-PNG preparation validates chunk CRCs, dimensions and decompressed lengths. It
-supports non-interlaced eight-bit RGB and RGBA PNG. Alpha is composited on white
-for the PDF RGB asset; HTML retains the original PNG. There is no runtime image
-download. Other formats and encodings reject explicitly.
+HTML retains nested list structure, including attached code blocks. Roc-pdf's
+current list item model accepts only paragraphs and nested lists. PDF lists that
+contain source blocks, figures or tables therefore retain visible item markers
+and all content as body flow blocks. Such complex PDF lists lack the original
+list-container semantics; source still uses searchable native code blocks and
+retains syntax colours. Ordinary PDF lists retain native list semantics.
 
-== Prepared manifest
+Printed contents page numbers, chapter-aware running headers and Asciidoctor
+YAML theme compatibility are not implemented. Font/shape limits come from the
+pinned PDF engine and embedded faces; unsupported requests fail explicitly.
 
-`manifest.json` has `schema_version: 1`, metadata (`title`, `author`, `version`,
-`language`), `pages` entries with relative `input` Markdown and `output` HTML paths,
-a `manual` entry with relative PDF input/output, and `assets` entries with `href`,
-relative `png`/`rgb` paths, dimensions and hashes. All preparation paths are relative
-to its output directory. `coverage` records source hashes, heading identities,
-source-block hashes, table inventories and documented adaptations. The action
-stages rendered outputs separately and publishes them only after every render
-succeeds.
+== Images and diagrams
+
+The executable embeds seven source-linked prepared diagrams with source-body
+and PNG SHA-256 identities. Local `prepared-diagrams.json` registrations can
+override them. See link:README.adoc[the utility README] for the registry schema
+and exact LF/final-newline source-hash convention. A changed Mermaid body or
+image hash fails until its prepared asset is deliberately updated. Creating a
+new Mermaid image remains an authoring-time choice, outside the build runtime.
+
+`Png.decode` validates chunk CRCs, zlib header/Adler32 and exact pixel lengths,
+with output/work bounds enforced during decompression. It supports non-interlaced
+eight-bit RGB/RGBA only. Alpha is composited onto white for PDF; HTML retains the
+original PNG. PDF-only box averaging uses the requested 72–300 DPI cap, default
+144, and never upscales originals. Large manuals at higher resolutions can
+exceed the PDF engine's resource budget and fail before publication.
+
+== Independent verification
+
+The previous Python adapter lives only under `tests/` as an independent source
+inventory/reference implementation. Python and optional Poppler tools are test
+host dependencies, not production build dependencies. The real native CLI is
+tested with external tooling unavailable on `PATH`. Reference inventories compare
+all emitted HTML code bytes, table/image counts, anchors and cross-page links;
+independent PDF reader checks cover code characters, destinations and actual
+highlight colours. These tests do not establish PDF/A or PDF/UA compliance.

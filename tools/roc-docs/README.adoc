@@ -1,160 +1,167 @@
 = roc-docs
 
-`roc-docs` renders Markdown to a website page and a searchable, tagged PDF 2.0.
-The released executable embeds its licensed fonts and Roc lexical highlighter.
-Rendering needs no Roc compiler, Docker, Ruby, Node, browser, Python, host fonts
-or network. The shared action uses Python's standard library to prepare the
-supported AsciiDoc subset and assemble a multi-page site; that preparation is
-separate from the native renderer.
+`roc-docs` builds a multi-page website and a searchable, tagged PDF 2.0 from
+AsciiDoc or Markdown. Parsing, virtual include preprocessing, PNG decoding,
+syntax highlighting, fonts and HTML/PDF rendering run inside the released Roc
+executable. A downstream build needs no Python, Roc compiler, Docker, Ruby,
+Node, browser, host fonts or network. Optional Roc API generation explicitly
+requires a compiler supplied by the caller.
 
 [source,sh]
 ----
-roc-docs render manual.md new-output \
-  --title 'Project manual' --author 'Project contributors' \
-  --version 1.2 --language en-AU --pdf-filename project.pdf
+roc-docs build --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-out --pdf-filename project.pdf --docs-version 1.2
 ----
 
-The output directory must not exist. Both requested formats are prepared before
-any publication. Files are written to a new sibling staging directory, then
-renamed into place; existing output is never replaced by this CLI. The action
-adds its own workspace checks and final directory publication. `--html-only`
-and `--pdf-only` support assembling a multi-page site and a combined manual.
-An interrupted write can leave `<output>.roc-docs-stage`; review and remove that
-directory before retrying. The renderer refuses to reuse it.
+The website is `.docs-out/site/`; the PDF is available both there and at
+`.docs-out/project.pdf`. `--title`, `--author` and `--language` override document
+metadata. `--pdf-image-dpi` accepts 72 through 300, default 144. The shared action
+invokes this native command directly and preserves its site/PDF outputs.
+`--api-entrypoint` and `--roc-command` add API documentation as a separate,
+explicitly requested compiler invocation.
 
-== Authoring and assets
+Repository input/output paths stay within `--workspace`. Source trees reject
+symlinks and special files. Sources, includes, decompression and assets have
+resource limits. A complete build is staged before replacing previous output;
+a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
+`.roc-docs-backup` directories require inspection before retrying.
 
-The native input is Markdown parsed by roc-parser. Supported blocks are
-headings, paragraphs, fenced code, ordinary lists, tables, quotes and thematic
-breaks. PDF quote content is retained as body paragraphs; the initial PDF theme
-does not reproduce the HTML quote indentation. Roc fences use original UTF-8 lexical ranges in HTML and PDF; other
-languages retain preformatted text. Raw HTML, unsupported inline constructs and
-unknown images fail explicitly. Links permit HTTP(S), mailto, local fragments
-and, in HTML, safe relative paths; executable URL schemes are rejected. PDF
-links require absolute URLs or internal destinations; the action rewrites
-manual cross-references to internal destinations. The renderer
-does not fetch remote content.
+== Authoring
 
-Headings may use an explicit trailing `{#stable-id}`. Duplicate explicit IDs
-fail. Repeated implicit labels acquire `-2`, `-3` and subsequent suffixes.
-Unicode labels retain their UTF-8 characters in implicit IDs. Cross-page links
-are ordinary relative links; the action preparation stage indexes the complete
-manual and rewrites links for HTML pages and the combined PDF separately.
+The parser package pins roc-parser 2.1.0-rc.2. `Preparation.roc` adapts its real
+AsciiDoc syntax tree and virtual-file preprocessor to the shared Markdown
+rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
+Includes, backend conditionals, attributes and cross-references are resolved
+against the supplied source tree; there is no remote include loader or source
+execution. See link:PREPARATION.adoc[the preparation contract] for the supported
+subset and known presentation adaptations.
 
-Images are runtime assets, not compiled repository-specific fixtures:
+Every top-level source file in the entrypoint's format retains its `.html` route. An AsciiDoc entrypoint's
+include tree supplies the combined PDF; cross-references are rewritten for the
+site pages and PDF destinations. Native Markdown makes every top-level `.md`
+file a website page, but the PDF uses only the selected entrypoint. Markdown
+includes and automatic cross-file PDF link rewriting are not implemented. Use
+absolute URLs or destinations present in that PDF entrypoint.
 
-[source,sh]
-----
-roc-docs render manual.md new-output \
-  --asset images/example.png example.png example.rgb 640 480
-----
+Supported rendering blocks include headings, paragraphs, fenced source,
+ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported
+rendering nodes reject explicitly. PDF quote content is retained as body
+paragraphs; the initial PDF theme does not reproduce HTML quote indentation.
+Printed contents page numbers, source table column weights and chapter-aware
+running headers are not implemented. Existing Asciidoctor YAML themes are
+incompatible and reject on the native backend; the initial native theme is
+built in. These are explicit experimental authoring/presentation boundaries,
+not a claim of complete Asciidoctor compatibility.
 
-The paired inputs are the original PNG copied into HTML and tightly packed RGB8
-bytes used by PDF. Width and height describe their pixel dimensions. The action
-preparer validates and decodes supported non-interlaced 8-bit RGB/RGBA PNGs,
-including chunk checksums, and composites alpha onto white. This is a prepared
-asset interface, not a general native PNG decoder. The CLI independently checks
-RGB lengths, PNG signatures, dimensions and resource limits. It fits figures to
-the A4 body and retains alt text. `--pdf-image-dpi` sets a maximum PDF raster
-resolution from 72 to 300 DPI, default 144. Deterministic box averaging reduces
-oversized RGB rasters; it never upscales small originals. HTML retains each
-original PNG byte-for-byte. The initial roc-pdf facade has a fixed resource
-budget, so a large manual at a higher resolution may fail explicitly before
-publication; reduce PDF resolution or image dimensions rather than dropping
-figures.
+Roc source uses original UTF-8 lexical ranges in HTML and PDF; other languages
+retain preformatted text. The highlighter accepts incomplete snippets and does
+not require type checking. HTML code retains source bytes for supported input;
+PDF source layout owns wrapping, tabs and page continuation. The acceptance
+corpus checks extracted code characters, actual colours, repeated table headers
+and continuing source lines through an independent PDF reader.
 
-The initial theme is built in. Existing Asciidoctor YAML themes are incompatible;
-the action rejects them with the Roc backend. Custom themes and broader image
-formats require an explicit future interface. A PDF outline and linked contents
-are provided; printed contents page numbers and chapter-aware running headers
-are not currently implemented. Font shaping support is limited by roc-pdf and
-the embedded faces; unsupported requests must fail rather than substitute text.
+Headings may use an explicit trailing Markdown `{#stable-id}`. Duplicate explicit
+IDs fail; repeated implicit labels acquire numeric suffixes. HTML links allow
+HTTP(S), mailto, local fragments and safe relative paths. PDF links require
+absolute URLs or internal destinations. Executable URL schemes and controls
+reject. Neither renderer fetches linked content.
 
-== Build and verify
+== Images and diagrams
 
-Use compiler `nightly-2026-10-15-38e6c42` and its normal cache. Package URLs in
-`main.roc` pin basic-cli, roc-parser and roc-pdf by content hash. The build script
-uses the validated `--opt=speed` configuration; compilation has substantial RAM
-cost even though rendering is small and fast.
+The native PNG reader supports non-interlaced eight-bit RGB/RGBA, checks chunk
+CRCs, zlib framing, Adler32 and exact decompressed length, and bounds DEFLATE
+output before appending it. Alpha is composited onto white for PDF. Indexed,
+interlaced, other bit-depth PNGs and unsupported critical chunks reject.
 
-[source,sh]
-----
-ROC=/absolute/path/to/roc roc tools/roc-docs/build.roc -- aarch64-darwin
-ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
-  python3 tools/roc-docs/tests/test_cli.py
-roc test tools/roc-docs/test_highlight.roc
-roc test tools/roc-docs/test_assets.roc
-python3 -m unittest discover -s tools/roc-docs/tests -p test_prepare_docs.py -v
-----
+HTML retains original PNG bytes. PDF fits figures to the A4 body and applies
+bounded, deterministic box averaging at `--pdf-image-dpi`, never upscaling small
+originals. The initial roc-pdf facade has a fixed resource budget: a large
+manual at higher resolution can reject before publication. Reduce PDF
+resolution or source image dimensions rather than dropping figures.
 
-The binary harness runs renderer subprocesses with `PATH=/nonexistent`.
-Independent PDF-reader tests additionally use optional Poppler tools installed
-on the verification host; those are not render-time dependencies. They check
-actual token colours, tagged output, continuing source/table content, source
-bytes in HTML, runtime assets, metadata, determinism and rejection before
-publication. The action tests additionally exercise multi-page assembly and
-workspace/publication boundaries. Passing these checks is not an independent
-PDF/A or PDF/UA compliance claim.
-
-`SyntaxHighlight.roc` is a pure reusable module with no PDF, HTML, font or
-platform dependency. `Renderer.roc` holds the reusable Markdown adaptation,
-HTML/PDF theme and registered fonts; `main.roc` owns CLI parsing, runtime asset
-reads and publication. Renderer code was adapted from roc-ansi commit
-`75df8efb085fb5f5fd90f5909a49dd7f5e364dcc`, copyright 2023 Luke Boswell and
-subsequent authors, under UPL 1.0. Font files retain their SIL OFL notices and
-pinned hashes in `fonts/provenance.json`. `roc-docs --licenses` prints bundled
-font notices without requiring adjacent files.
-
-== Prepare a repository manual
-
-The standard-library adapter preserves top-level page routes and prepares the
-entrypoint include tree as a combined PDF input:
-
-[source,sh]
-----
-python3 tools/roc-docs/prepare_docs.py --workspace . \
-  --docs-directory docs --entrypoint index.adoc \
-  --output-directory .docs-prepared --docs-version 1.2 \
-  --pdf-filename project-1.2.pdf
-----
-
-`.docs-prepared/manifest.json` identifies metadata, each page's Markdown input
-and HTML output, the combined manual input/output, prepared image paths and
-source/heading/code/table inventories. Paths are relative to that new preparation
-directory. The shared action consumes this manifest; rendering alone never
-executes a converter. See link:PREPARATION.adoc[the preparation contract] for
-schema details and precise supported AsciiDoc constructs and adaptations.
-Unknown structural directives, references and attribute references fail.
-Ordinary text that happens to resemble an unsupported inline extension is not a
-general AsciiDoc validator: inspect the prepared/rendered content when adopting
-a new authoring convention.
-
-Native Markdown makes each top-level `.md` file a website page, but the PDF uses
-only the selected entrypoint. Markdown includes and automatic cross-file PDF
-link rewriting are not implemented. Use absolute URLs or destinations present
-in that PDF entrypoint. The AsciiDoc adapter indexes its include tree and rewrites
-its supported cross-references for the combined PDF.
-
-Mermaid diagrams are prepared authoring assets. To register downstream diagrams,
-add `docs/prepared-diagrams.json`:
+Mermaid is an authoring-time asset preparation step. The executable embeds the
+repository's seven source-linked diagrams; ordinary builds need no Mermaid
+runtime. Downstream registrations go in `docs/prepared-diagrams.json`:
 
 [source,json]
 ----
 {
   "schema_version": 1,
   "diagrams": [{
-    "source_sha256": "<SHA-256 of the exact Mermaid body>",
+    "source_sha256": "<SHA-256 of exact Mermaid body>",
     "href": "images/build-flow.png",
     "png": "images/build-flow.png",
-    "png_sha256": "<SHA-256 of the prepared PNG bytes>"
+    "png_sha256": "<SHA-256 of prepared PNG bytes>"
   }]
 }
 ----
 
 The source hash covers body lines joined by LF, including the final LF, excluding
 AsciiDoc block markers. `png` is relative to the documentation directory; `href`
-is the safe published image path. An edited diagram fails until its prepared
-PNG and source hash are updated. Local registrations override the bundled
-repository corpus. Preparation verifies PNG hashes/chunk CRCs and supports
-non-interlaced eight-bit RGB/RGBA, compositing alpha onto white for PDF. Runtime
-builds use the recorded PNG and need no Mermaid/browser tooling.
+is the safe published image path. An edited diagram rejects until its prepared
+PNG and source hash are deliberately updated. Local registrations take
+precedence over bundled entries. Hash checking establishes exact bytes, not an
+independent claim that a diagram correctly represents its source.
+
+== Lower-level commands
+
+`prepare` exposes intermediate Markdown, assets and an experimental schema-2
+inventory for inspection. It has the same repository/metadata options as
+`build`, requires a new output directory, and does not require a Python adapter:
+
+[source,sh]
+----
+roc-docs prepare --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-prepared --docs-version 1.2
+----
+
+The standalone renderer remains useful for individual Markdown documents:
+
+[source,sh]
+----
+roc-docs render manual.md new-output --title 'Project manual' \
+  --author 'Contributors' --version 1.2 --language en-AU \
+  --pdf-filename project.pdf --image images/example.png example.png
+----
+
+`--image HREF PNG_PATH` decodes PNG directly. The older
+`--asset HREF PNG_PATH RGB_PATH WIDTH HEIGHT` prepared-RGB interface remains
+available. `--html-only` and `--pdf-only` select an output format. This command
+requires a new output directory, prepares both requested formats first and
+publishes through a sibling staging directory.
+
+== Build and verify
+
+Use compiler `nightly-2026-10-15-38e6c42` and its normal cache. Immutable package
+URLs pin basic-cli, roc-parser, roc-pdf and roc-deflate. Release builds use the
+validated `--opt=speed` configuration; compilation has substantial RAM cost,
+separate from native rendering.
+
+[source,sh]
+----
+ROC=/absolute/path/to/roc roc tools/roc-docs/build.roc -- aarch64-darwin
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  python3 tools/roc-docs/tests/test_cli.py
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  python3 tools/roc-docs/tests/test_build.py
+roc test tools/roc-docs/test_highlight.roc
+roc test tools/roc-docs/test_assets.roc
+roc test tools/roc-docs/test_png.roc
+roc test tools/roc-docs/test_preparation.roc
+roc test tools/roc-docs/test_build_options.roc
+----
+
+Python is used only by the test harness and independent reference adapter under
+`tests/`. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
+exercise the actual compiled pipeline. Optional Poppler tools on the test host
+check PDF tags, destinations, text and actual token colours. This is not an
+independent PDF/A or PDF/UA compliance claim.
+
+`SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
+platform. `Renderer.roc` owns the shared adaptation/theme/fonts; `Png.roc` and
+`ImageAssets.roc` own bounded image handling. Source adapted from roc-ansi commit
+`75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
+retain SIL OFL notices and pinned hashes in `fonts/provenance.json`. The bounded
+DEFLATE adaptation retains its Apache-2.0 license, modification notice and source
+identity under `vendor/`. `roc-docs --licenses` prints bundled notices without
+requiring adjacent files.
