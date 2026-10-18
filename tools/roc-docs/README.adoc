@@ -20,6 +20,14 @@ invokes this native command directly and preserves its site/PDF outputs.
 `--api-entrypoint` and `--roc-command` add API documentation as a separate,
 explicitly requested compiler invocation.
 
+The first candidate is `tools-0.1.0-rc.1`. Its shared AsciiDoc authoring profile,
+asset-preparation policy, supported systems and known migration limits are in
+link:../../docs/documentation.adoc#experimental-native-docs-contract[the experimental native documentation contract].
+Adopt a reviewed release asset digest and verify it before execution. The
+`actions/build-docs` wrapper accepts a supplied executable and does not download
+or authenticate one. Documentation options currently use CLI/action inputs;
+there is no documentation-specific `Blueprint.roc` configuration schema yet.
+
 Repository input/output paths stay within `--workspace`. Source trees reject
 symlinks and special files. Sources, includes, decompression and assets have
 resource limits. A complete build is staged before replacing previous output;

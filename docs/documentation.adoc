@@ -157,6 +157,60 @@ rules keep all three outputs correct.
 Build the manual in a pull request, and deploy it from the default branch, as
 described in xref:optional-workflows.adoc#documentation-site[Documentation site].
 
+[#experimental-native-docs-contract]
+== Experimental native documentation contract
+
+The `tools-0.1.0-rc.1` candidate starts a controlled migration to shared AsciiDoc
+websites and PDF manuals. The utility owns the common theme, navigation,
+highlighting and validation policy. A repository supplies its content, metadata,
+entrypoint and prepared assets through the action inputs or CLI. Documentation
+configuration is not yet read from a separate `Blueprint.roc` record.
+
+Use the book and chapter structure above, unique chapter titles and stable ASCII
+anchors. Use simple PSV tables with header rows and explicit columns; keep cell
+separators on lines beginning with `|`. Wrapped separators, spans and nested cell
+blocks are outside this candidate's supported profile. Preserve existing public
+URLs and anchors deliberately when replacing a site.
+
+Includes are bounded local `.adoc` or `.md` sources. Direct checked `.roc` and
+`.expected` includes, ambiguous chapter provenance and included/tagged listings
+remain migration gaps. A temporary generated documentation fragment must retain
+the original example's compile/test checks and source-fidelity verification.
+Do not silently substitute unchecked examples.
+
+Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared
+Mermaid registrations. An optional validated SVG companion improves the website;
+PDF uses PNG. Prepare unsupported JPEG, GIF, WebP and general SVG assets before
+rendering. An animation needs a static print image and a link to the separate
+animation; an existing GIF file is not itself a supported native image input.
+Keep preparation repeatable and check the resulting assets into the repository
+or generate them in a read-only build job. The utility does not fetch remote
+images or run converters.
+
+Raw HTML, Asciidoctor extensions and custom YAML themes are unsupported. PDF
+links need absolute URLs or destinations within the combined manual. API routes,
+downloads and legacy underscore anchors require explicit migration review.
+Markdown remains available, but its PDF uses only the selected entrypoint and
+does not rewrite links between pages. The bundled fonts have finite coverage;
+unsupported glyphs reject. Printed contents page numbers, chapter-specific
+running headers and PDF table proportions are not yet integrated. Inputs and
+PDF preparation have resource limits; no PDF/UA compliance is claimed.
+
+Keep release-snippet generation, compiler-generated API documentation, historical
+version assembly and interactive example builds as explicit stages. Only the
+optional API stage requires a caller-supplied compiler; ordinary native rendering
+needs no compiler, Docker, Ruby, Python, Node or browser. The candidate's
+supported systems are Linux x86-64, Linux ARM64 and Apple Silicon macOS.
+
+Pin the utility release and a reviewed binary digest, verify downloaded and
+cached bytes before execution, and pin shared actions to full commit SHAs.
+`actions/build-docs` takes a supplied executable; it does not install or verify
+it. Build with read-only permissions and deploy only the resulting artifact.
+Before switching a repository's publication, review desktop/mobile HTML and PDF,
+and check source text, links, anchors, tables and figures. Keep the migration
+unchecked in its tracking issue until those outputs pass. Known shared defects
+belong in roc-automation rather than copied downstream adapter scripts.
+
 == One manual, several audiences
 
 A project has more than one kind of reader: someone deciding whether to use the
