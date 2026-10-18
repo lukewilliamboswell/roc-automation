@@ -54,6 +54,11 @@ incompatible and reject on the native backend; the initial native theme is
 built in. These are explicit experimental authoring/presentation boundaries,
 not a claim of complete Asciidoctor compatibility.
 
+The printed PDF contents uses nested linked lists with bold chapter entries
+and three levels of heading ancestry. A leading heading matching the book
+title is omitted from the contents, and wrapped titles keep their item's
+indentation.
+
 HTML and PDF share the same language-aware source highlighter and original
 UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
 tokenizers, and shell, JSON and diff

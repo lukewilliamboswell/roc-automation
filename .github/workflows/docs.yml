@@ -42,10 +42,10 @@ jobs:
             sudo apt-get install --yes --no-install-recommends poppler-utils
           fi
 
-      - name: Check PDF source colours and layout with the independent reader
+      - name: Check PDF contents hierarchy, source colours and layout with the independent reader
         env:
           ROC_DOCS_BINARY: ${{ steps.renderer.outputs.renderer-binary }}
-        run: python3 tools/roc-docs/tests/test_cli.py RendererTests.test_pdf_highlighting_accepts_each_supported_language RendererTests.test_independent_reader_pagination_tags_colours_and_source -v
+        run: python3 tools/roc-docs/tests/test_cli.py RendererTests.test_pdf_contents_preserves_heading_hierarchy_and_wrapping RendererTests.test_pdf_highlighting_accepts_each_supported_language RendererTests.test_independent_reader_pagination_tags_colours_and_source -v
 
       # Python here is an independent test oracle, never part of rendering.
       - name: Verify the rendered manual preserves source inventories and links

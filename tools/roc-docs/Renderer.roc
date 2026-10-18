@@ -208,17 +208,44 @@ Renderer :: [].{
 	}
 
 	front_matter = |blocks, metadata| {
-		var $contents = [Pdf.title(metadata.title), Pdf.spacer(18), Pdf.paragraph(if metadata.author.is_empty() "Project documentation" else metadata.author), Pdf.paragraph(if metadata.version.is_empty() "unreleased" else metadata.version), Pdf.spacer(24), Pdf.heading(1, "Contents"), Pdf.spacer(6)]
-		for block in flatten_blocks(blocks) {
-			match block {
-				Heading({ level, content }) if level_number(level) <= 3 => {
-					h = heading(content)
-					$contents = $contents.append(Pdf.rich_paragraph([Pdf.inline_internal_link([Pdf.text(h.label)], h.id)])).append(Pdf.spacer(6))
-				}
-				_ => {}
+		contents = [Pdf.title(metadata.title), Pdf.spacer(18), Pdf.paragraph(if metadata.author.is_empty() "Project documentation" else metadata.author), Pdf.paragraph(if metadata.version.is_empty() "unreleased" else metadata.version), Pdf.spacer(24), Pdf.heading(1, "Contents"), Pdf.spacer(6)]
+		entries = flatten_blocks(blocks).keep_oks(
+			|block| match block {
+				Heading({ level, content }) => Ok({ level: level_number(level), label: heading(content).label, id: heading(content).id })
+				_ => Err(NotHeading)
+			},
+		)
+		# The book title already appears above the contents. Chapters begin the
+		# navigation tree; heading-level jumps still represent one parent edge.
+		selected = match entries.first() {
+			Ok(first) if first.level == 1 and first.label == metadata.title => entries.drop_first(1)
+			_ => entries
+		}
+		tree = contents_items(selected, 0, 0, 0)
+		if tree.items.is_empty() contents else contents.append(Pdf.bullet_list(tree.items))
+	}
+
+	ContentsEntry : { level : U8, label : Str, id : Str }
+	contents_items : List(ContentsEntry), U64, U8, U8 -> { items : List(Pdf.ListItem), next : U64 }
+	contents_items = |entries, start, parent_level, depth| {
+		var $next = start
+		var $items = []
+		while $next < entries.len() {
+			entry = entries.get($next) ?? { level: 0, label: "", id: "" }
+			if entry.level <= parent_level {
+				break
+			}
+			children = contents_items(entries, $next + 1, entry.level, depth + 1)
+			$next = children.next
+			# Limit displayed ancestry, rather than absolute heading numbers, so
+			# a book's H2/H3/H4 chapters receive three useful contents levels.
+			if depth < 3 {
+				label = if depth == 0 [Pdf.strong([Pdf.text(entry.label)])] else [Pdf.text(entry.label)]
+				body = [Pdf.rich_paragraph([Pdf.inline_internal_link(label, entry.id)])]
+				$items = $items.append(Pdf.list_item(if children.items.is_empty() body else body.append(Pdf.bullet_list(children.items))))
 			}
 		}
-		$contents
+		{ items: $items, next: $next }
 	}
 
 	plain : List(Markdown.Inline) -> Str

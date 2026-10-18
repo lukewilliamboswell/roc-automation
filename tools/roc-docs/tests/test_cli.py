@@ -13,6 +13,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 import zlib
 
 BINARY = str(Path(os.environ.get('ROC_DOCS_BINARY', '/tmp/roc-docs')).resolve())
@@ -168,6 +169,23 @@ class RendererTests(unittest.TestCase):
         html, _ = self.run_doc('# Heading\n', '--html-only', name='html'); pdf, _ = self.run_doc('# Heading\n', '--pdf-only', name='pdf')
         self.assertTrue((html / 'index.html').is_file()); self.assertFalse((html / 'manual.pdf').exists())
         self.assertTrue((pdf / 'manual.pdf').is_file()); self.assertFalse((pdf / 'index.html').exists())
+    @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler optional independent reader')
+    def test_pdf_contents_preserves_heading_hierarchy_and_wrapping(self):
+        section = 'SectionBeta ' + 'wrapping text ' * 18 + 'WrappedMarker'
+        source = '# Hierarchy probe\n\n## ChapterAlpha\n\n### ' + section + ' {#section-beta}\n\n#### DetailGamma\n\n##### OmittedDeep\n\n### SectionDelta\n\n## ChapterOmega\n\n### SectionEpsilon\n\n#### DetailZeta\n'
+        output, _ = self.run_doc(source, '--title', 'Hierarchy probe', '--pdf-only')
+        bbox = subprocess.check_output(['pdftotext', '-bbox-layout', str(output/'manual.pdf'), '-'], text=True)
+        page = ET.fromstring(bbox).findall('.//{*}page')[0]
+        words = {word.text: float(word.attrib['xMin']) for word in page.findall('.//{*}word')}
+        self.assertGreater(words['SectionBeta'] - words['ChapterAlpha'], 12)
+        self.assertGreater(words['DetailGamma'] - words['SectionBeta'], 12)
+        self.assertAlmostEqual(words['ChapterOmega'], words['ChapterAlpha'], delta=0.5)
+        self.assertAlmostEqual(words['SectionDelta'], words['SectionBeta'], delta=0.5)
+        self.assertAlmostEqual(words['SectionEpsilon'], words['SectionBeta'], delta=0.5)
+        self.assertAlmostEqual(words['DetailZeta'], words['DetailGamma'], delta=0.5)
+        self.assertNotIn('OmittedDeep', words)
+        line = next(line for line in page.findall('.//{*}line') if any(w.text == 'WrappedMarker' for w in line.findall('{*}word')))
+        self.assertAlmostEqual(float(line.findall('{*}word')[0].attrib['xMin']), words['SectionBeta'], delta=0.5)
     @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler optional independent reader')
     def test_pdf_highlighting_accepts_each_supported_language(self):
         snippets = {
