@@ -1,3 +1,4 @@
+import Html
 import parser.Markdown
 import SyntaxHighlight
 import pdf.Color
@@ -467,122 +468,9 @@ Renderer :: [].{
 		Ok($result)
 	}
 
-	escape : Str -> Str
-	escape = |text| {
-		amp = Str.join_with(Str.split_on(text, "&"), "&amp;")
-		lt = Str.join_with(Str.split_on(amp, "<"), "&lt;")
-		gt = Str.join_with(Str.split_on(lt, ">"), "&gt;")
-		Str.join_with(Str.split_on(gt, "\""), "&quot;")
-	}
-
-	html_inlines : List(Markdown.Inline), List(Asset) -> Try(Str, _)
-	html_inlines = |inlines, assets| {
-		var $result = ""
-		for inline in inlines {
-			part = match inline {
-				Text(text) => escape(text)
-				InlineCode(text) => "<code>${escape(text)}</code>"
-				Strong(children) => "<strong>${html_inlines(children, assets)?}</strong>"
-				Emphasis(children) => "<em>${html_inlines(children, assets)?}</em>"
-				Link({ label, target }) => {
-					if !safe_link(target.href) {
-						return Err(UnsupportedLink(target.href))
-					}
-					"<a href=\"${escape(target.href)}\">${html_inlines(label, assets)?}</a>"
-				}
-				Image({ alt, target }) => {
-					asset = image_asset(assets, target.href)?
-					"<img src=\"${escape(asset.name)}\" alt=\"${escape(plain(alt))}\">"
-				}
-				HardBreak => "<br>"
-				_ => return Err(UnsupportedMarkdown("inline: ${Str.inspect(inline)}"))
-			}
-			$result = "${$result}${part}"
-		}
-		Ok($result)
-	}
-
-	html_source = |language, source| {
-		if language != "roc" {
-			return escape(source)
-		}
-		Str.join_with(
-			SyntaxHighlight.highlight(source).map(
-				|span| {
-					text = escape(SyntaxHighlight.text(source, span))
-					if span.category == Trivia text else "<span class=\"syntax-${SyntaxHighlight.name(span.category)}\">${text}</span>"
-				},
-			),
-			"",
-		)
-	}
-
-	highlight_styles = || Str.join_with(
-		[CommentText, Name, TypeName, ReservedWord, NumericLiteral, StringText, Symbol, InvalidText].map(
-			|category| {
-				color = SyntaxHighlight.color(SyntaxHighlight.light, category)
-				".syntax-${SyntaxHighlight.name(category)}{color:rgb(${color.red.to_str()},${color.green.to_str()},${color.blue.to_str()})}"
-			},
-		),
-		"",
-	)
-
-	html_blocks : List(Markdown), List(Asset) -> Try(Str, _)
-	html_blocks = |blocks, assets| {
-		var $result = ""
-		for block in blocks {
-			part = match block {
-				Heading({ level, content }) => {
-					n = level_number(level).to_str()
-					"<h${n} id=\"${heading(content).id}\">${html_inlines(clean_heading(content), assets)?}</h${n}>"
-				}
-				Paragraph(content) => "<p>${html_inlines(content, assets)?}</p>"
-				Code({ info, pre }) => "<pre><code data-lang=\"${escape(info)}\" class=\"language-${escape(info)}\">${html_source(info, pre)}</code></pre>"
-				Table({ header, rows, .. }) => {
-					var $head = ""
-					for cell in header {
-						$head = "${$head}<th>${html_inlines(cell, assets)?}</th>"
-					}
-					var $body = ""
-					for row in rows {
-						var $cells = ""
-						for cell in row {
-							$cells = "${$cells}<td>${html_inlines(cell, assets)?}</td>"
-						}
-						$body = "${$body}<tr>${$cells}</tr>"
-					}
-					"<table><thead><tr>${$head}</tr></thead><tbody>${$body}</tbody></table>"
-				}
-				ListBlock({ kind, items, .. }) => {
-					tag = match kind {
-						Unordered => "ul"
-						Ordered(_) => "ol"
-					}
-					start = match kind {
-						Ordered({ start: value }) => " start=\"${value.to_str()}\""
-						_ => ""
-					}
-					var $items = ""
-					for item in items {
-						if item.task != NoTask {
-							return Err(UnsupportedMarkdown("task list"))
-						}
-						$items = "${$items}<li>${html_blocks(item.blocks, assets)?}</li>"
-					}
-					"<${tag}${start}>${$items}</${tag}>"
-				}
-				Blockquote(children) => "<blockquote>${html_blocks(children, assets)?}</blockquote>"
-				ThematicBreak => "<hr>"
-				_ => return Err(UnsupportedMarkdown("block: ${Str.inspect(block)}"))
-			}
-			$result = "${$result}${part}\n"
-		}
-		Ok($result)
-	}
-
 	html_document = |blocks, metadata, assets| {
-		content = html_blocks(blocks, assets)?
-		navigation = Str.join_with(outline(blocks).map(|entry| "<li><a href=\"#${entry.destination}\">${escape(entry.title)}</a></li>"), "")
-		Ok("<!doctype html><html lang=\"${escape(metadata.language)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${escape(metadata.title)}</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#203047;max-width:900px;margin:3rem auto;padding:0 1.5rem}a{color:#125bb3}h1,h2,h3{line-height:1.2;scroll-margin-top:2rem}h2{margin-top:3rem;border-bottom:1px solid #d6e0eb;padding-bottom:.5rem}nav{background:#edf3fa;padding:1rem 1.5rem;border-radius:8px}nav ul{columns:2}code{font-family:ui-monospace,monospace;background:#edf3fa;padding:.1rem .25rem}pre{background:#edf3fa;padding:1rem;overflow:auto;border-radius:8px;tab-size:4}pre code{padding:0}${highlight_styles()}table{border-collapse:collapse;width:100%;font-size:.92em}td,th{border:1px solid #d6e0eb;padding:.6rem;text-align:left}th{background:#edf3fa}img{max-width:100%;height:auto}footer{border-top:1px solid #d6e0eb;margin-top:3rem;padding-top:1rem}</style></head><body><p>${escape(metadata.version)} · <a href=\"${escape(metadata.pdf_filename)}\">Download PDF</a></p><nav aria-label=\"Contents\"><ul>${navigation}</ul></nav><main>${content}</main><footer>${escape(metadata.author)}</footer></body></html>")
+		html_assets = assets.map(|a| { href: a.href, name: a.name })
+		body = Html.blocks(blocks, html_assets)?
+		Ok(Html.document(body, blocks, metadata, False, 3, ""))
 	}
 }

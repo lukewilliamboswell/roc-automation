@@ -8,8 +8,12 @@ import BuildFiles
 import Preparation
 import Renderer
 import Png
+import Svg
 import ImageAssets
 import BundledDiagrams
+import Html
+import WebAssets
+import parser.Markdown
 import Sha256
 import pdf.Layout
 
@@ -99,9 +103,11 @@ RepositoryBuild :: [].{
 	}
 }
 
-Diagram : { source_sha256 : Str, href : Str, png_sha256 : Str, png : List(U8) }
+Diagram : { source_sha256 : Str, href : Str, png_sha256 : Str, png : List(U8), svg : List(U8), svg_sha256 : Str }
 
 Registry : { schema_version : U64, diagrams : List({ source_sha256 : Str, href : Str, png : Str, png_sha256 : Str }) }
+
+RegistryVectors : { schema_version : U64, diagrams : List({ source_sha256 : Str, href : Str, png : Str, png_sha256 : Str, svg : Str, svg_sha256 : Str }) }
 
 load_diagrams! : Path => Try(List(Diagram), Str)
 load_diagrams! = |docs| {
@@ -109,12 +115,24 @@ load_diagrams! = |docs| {
 	registry_path = BuildFiles.inside!(docs, "prepared-diagrams.json")?
 	if Path.exists!(registry_path).map_err(|e| Str.inspect(e))? {
 		bytes = BuildFiles.read!(registry_path, 1048576)?
-		registry : Registry
-		registry = Json.parse(Str.from_utf8(bytes).map_err(|_| "diagram registry must be UTF-8")?).map_err(|_| "invalid diagram registry")?
-		if registry.schema_version != 1 or registry.diagrams.len() > 256 {
-			return Err("unsupported diagram registry schema or size")
+		text = Str.from_utf8(bytes).map_err(|_| "diagram registry must be UTF-8")?
+		header : { schema_version : U64 }
+		header = Json.parse(text).map_err(|_| "invalid diagram registry")?
+		entries = if header.schema_version == 1 {
+			registry : Registry
+			registry = Json.parse(text).map_err(|_| "invalid diagram registry")?
+			registry.diagrams.map(|d| { source_sha256: d.source_sha256, href: d.href, png: d.png, png_sha256: d.png_sha256, svg: "", svg_sha256: "" })
+		} else if header.schema_version == 2 {
+			registry : RegistryVectors
+			registry = Json.parse(text).map_err(|_| "invalid vector diagram registry")?
+			registry.diagrams
+		} else {
+			return Err("unsupported diagram registry schema")
 		}
-		for entry in registry.diagrams {
+		if entries.len() > 256 {
+			return Err("diagram registry exceeds size limit")
+		}
+		for entry in entries {
 			if !valid_digest(entry.source_sha256) or !valid_digest(entry.png_sha256) or !BuildOptions.safe_path(entry.href) {
 				return Err("invalid diagram identity or path")
 			}
@@ -126,7 +144,16 @@ load_diagrams! = |docs| {
 			if Sha256.hex(png) != entry.png_sha256 {
 				return Err("prepared diagram image hash mismatch: ${entry.href}")
 			}
-			$diagrams = $diagrams.append({ source_sha256: entry.source_sha256, href: entry.href, png_sha256: entry.png_sha256, png })
+			svg = if entry.svg == "" [] else BuildFiles.read!(BuildFiles.inside!(docs, entry.svg)?, 1048576)?
+			if !svg.is_empty() {
+				if !valid_digest(entry.svg_sha256) or Sha256.hex(svg) != entry.svg_sha256 {
+					return Err("prepared SVG hash mismatch")
+				}
+				Svg.validate(svg)?
+			} else if entry.svg != "" or entry.svg_sha256 != "" {
+				return Err("incomplete prepared SVG identity")
+			}
+			$diagrams = $diagrams.append({ source_sha256: entry.source_sha256, href: entry.href, png_sha256: entry.png_sha256, png, svg, svg_sha256: entry.svg_sha256 })
 		}
 	}
 	for entry in BundledDiagrams.list {
@@ -137,7 +164,7 @@ load_diagrams! = |docs| {
 	Ok($diagrams)
 }
 
-LoadedAsset : { href : Str, png : List(U8), rgb : List(U8), width : U64, height : U64, rendered : Renderer.Asset }
+LoadedAsset : { href : Str, png : List(U8), rgb : List(U8), width : U64, height : U64, rendered : Renderer.Asset, svg : List(U8), svg_href : Str }
 
 load_assets! : Path, List(Str), List(Diagram), U64 => Try(List(LoadedAsset), Str)
 load_assets! = |docs, hrefs, diagrams, dpi| {
@@ -148,20 +175,28 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 			if $assets.len() >= 256 or !BuildOptions.safe_path(href) {
 				return Err("invalid image path or too many images")
 			}
+			var $svg = []
 			png = match diagrams.find_first(|d| d.href == href) {
 				Ok(d) => {
-					if diagrams.any(|other| other.href == href and other.png_sha256 != d.png_sha256) {
+					if diagrams.any(|other| other.href == href and (other.png_sha256 != d.png_sha256 or other.svg_sha256 != d.svg_sha256)) {
 						return Err("conflicting diagram image path")
 					}
 					if Sha256.hex(d.png) != d.png_sha256 {
 						return Err("bundled diagram image hash mismatch")
+					}
+					if !d.svg.is_empty() {
+						if Sha256.hex(d.svg) != d.svg_sha256 {
+							return Err("bundled SVG hash mismatch")
+						}
+						Svg.validate(d.svg)?
+						$svg = d.svg
 					}
 					d.png
 				}
 				Err(_) => BuildFiles.read!(BuildFiles.inside!(docs, href)?, 16777216)?
 			}
 			decoded = Png.decode(png)?
-			$total = $total + png.len() + decoded.pixels.len()
+			$total = $total + png.len() + decoded.pixels.len() + $svg.len()
 			if $total > 134217728 {
 				return Err("prepared image assets exceed aggregate byte limit")
 			}
@@ -174,7 +209,7 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 			raster = ImageAssets.fit(decoded.pixels, decoded.width, decoded.height, if rendered_width * dpi < 72000 1 else rendered_width * dpi // 72000, if rendered_height * dpi < 72000 1 else rendered_height * dpi // 72000).map_err(|_| "invalid decoded image")?
 			rendered : Renderer.Asset
 			rendered = { href, name: href, dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } }
-			$assets = $assets.append({ href, png, rgb: decoded.pixels, width: decoded.width, height: decoded.height, rendered })
+			$assets = $assets.append({ href, png, rgb: decoded.pixels, width: decoded.width, height: decoded.height, rendered, svg: $svg, svg_href: if $svg.is_empty() "" else href.drop_suffix(".png").concat(".svg") })
 		}
 	}
 	Ok($assets)
@@ -184,13 +219,19 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 	site = Path.join(stage, "site")
 	Path.create_dir!(site).map_err(|e| Str.inspect(e))?
 	var $routes = []
+	for file in WebAssets.list {
+		BuildFiles.write_bytes!(site, file.path, file.bytes)?
+	}
 	for page in prepared.pages {
 		if !BuildOptions.safe_path(page.route) or page.route.contains("/") or !page.route.ends_with(".html") or $routes.contains(page.route) {
 			return Err("invalid or duplicate page route")
 		}
 		$routes = $routes.append(page.route)
-		rendered = Renderer.render(page.source, metadata, assets.map(|a| a.rendered), HtmlOnly).map_err(|e| Str.inspect(e))?
-		BuildFiles.write_text!(site, page.route, rendered.html)?
+		html = match page.html {
+			MarkdownSource => Renderer.render(page.source, metadata, assets.map(|a| a.rendered), HtmlOnly).map_ok(|r| r.html).map_err(|e| Str.inspect(e))?
+			Prepared(presentation) => Html.document(presentation.body, Markdown.parse_str(page.source), metadata, presentation.numbered, presentation.toc_depth, presentation.remark)
+		}
+		BuildFiles.write_text!(site, page.route, Html.vector_images(html, assets.map(|a| { href: a.href, svg_href: a.svg_href })))?
 	}
 	if !$routes.contains("index.html") {
 		entry_route = "${Str.join_with(options.entrypoint.split_on(".").drop_last(1), ".")}.html"
@@ -198,10 +239,16 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 		BuildFiles.copy!(entry, Path.join(site, "index.html"))?
 	}
 	for asset in assets {
-		if $routes.contains(asset.href) or asset.href == "index.html" or asset.href == metadata.pdf_filename or (options.api_entrypoint != "" and (asset.href == "api" or asset.href.starts_with("api/"))) {
+		if WebAssets.list.any(|f| f.path == asset.href or f.path == asset.svg_href) or $routes.contains(asset.href) or asset.href == "index.html" or asset.href == metadata.pdf_filename or (options.api_entrypoint != "" and (asset.href == "api" or asset.href.starts_with("api/"))) {
 			return Err("image asset conflicts with publication output")
 		}
 		BuildFiles.write_bytes!(site, asset.href, asset.png)?
+		if asset.svg_href != "" {
+			if $routes.contains(asset.svg_href) or asset.svg_href == metadata.pdf_filename or asset.svg_href == "index.html" or assets.any(|other| other.href == asset.svg_href or (other.href != asset.href and other.svg_href == asset.svg_href)) {
+				return Err("vector image asset conflicts with publication output")
+			}
+			BuildFiles.write_bytes!(site, asset.svg_href, asset.svg)?
+		}
 	}
 	for file in files {
 		if !file.path.ends_with(".adoc") and !file.path.ends_with(".md") and !file.path.ends_with(".markdown") and !file.path.starts_with("theme/") {

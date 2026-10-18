@@ -28,9 +28,10 @@ a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
 
 == Authoring
 
-The parser package pins roc-parser 2.1.0-rc.2. `Preparation.roc` adapts its real
-AsciiDoc syntax tree and virtual-file preprocessor to the shared Markdown
-rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
+The parser package pins roc-parser 2.1.0-rc.3. `Preparation.roc` adapts its real
+AsciiDoc syntax tree and virtual-file preprocessor. HTML preserves description
+lists, sidebars, captions and table column weights directly from that tree;
+PDF uses the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
 Includes, backend conditionals, attributes and cross-references are resolved
 against the supplied source tree; there is no remote include loader or source
 execution. See link:PREPARATION.adoc[the preparation contract] for the supported
@@ -47,15 +48,18 @@ Supported rendering blocks include headings, paragraphs, fenced source,
 ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported
 rendering nodes reject explicitly. PDF quote content is retained as body
 paragraphs; the initial PDF theme does not reproduce HTML quote indentation.
-Printed contents page numbers, source table column weights and chapter-aware
+Printed PDF contents page numbers, PDF table column weights and chapter-aware
 running headers are not implemented. Existing Asciidoctor YAML themes are
 incompatible and reject on the native backend; the initial native theme is
 built in. These are explicit experimental authoring/presentation boundaries,
 not a claim of complete Asciidoctor compatibility.
 
-Roc source uses original UTF-8 lexical ranges in HTML and PDF; other languages
-retain preformatted text. The highlighter accepts incomplete snippets and does
-not require type checking. HTML code retains source bytes for supported input;
+Roc source uses original UTF-8 lexical ranges in HTML and PDF. HTML also
+highlights YAML through roc-parser's source tokenizer, and shell, JSON and diff
+through small lexical adapters. Unknown languages retain preformatted text. The highlighter accepts incomplete snippets and does
+not require type checking. AsciiDoc LF source blocks retain their original
+bytes. Native Markdown follows the upstream CommonMark line-ending
+normalization before code highlighting;
 PDF source layout owns wrapping, tabs and page continuation. The acceptance
 corpus checks extracted code characters, actual colours, repeated table headers
 and continuing source lines through an independent PDF reader.
@@ -73,7 +77,8 @@ CRCs, zlib framing, Adler32 and exact decompressed length, and bounds DEFLATE
 output before appending it. Alpha is composited onto white for PDF. Indexed,
 interlaced, other bit-depth PNGs and unsupported critical chunks reject.
 
-HTML retains original PNG bytes. PDF fits figures to the A4 body and applies
+HTML retains original PNG bytes and can prefer a validated SVG companion through
+`picture`, with PNG fallback. PDF fits figures to the A4 body and applies
 bounded, deterministic box averaging at `--pdf-image-dpi`, never upscaling small
 originals. The initial roc-pdf facade has a fixed resource budget: a large
 manual at higher resolution can reject before publication. Reduce PDF
@@ -86,12 +91,14 @@ runtime. Downstream registrations go in `docs/prepared-diagrams.json`:
 [source,json]
 ----
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "diagrams": [{
     "source_sha256": "<SHA-256 of exact Mermaid body>",
     "href": "images/build-flow.png",
     "png": "images/build-flow.png",
-    "png_sha256": "<SHA-256 of prepared PNG bytes>"
+    "png_sha256": "<SHA-256 of prepared PNG bytes>",
+    "svg": "images/build-flow.svg",
+    "svg_sha256": "<SHA-256 of prepared SVG bytes>"
   }]
 }
 ----
@@ -100,7 +107,12 @@ The source hash covers body lines joined by LF, including the final LF, excludin
 AsciiDoc block markers. `png` is relative to the documentation directory; `href`
 is the safe published image path. An edited diagram rejects until its prepared
 PNG and source hash are deliberately updated. Local registrations take
-precedence over bundled entries. Hash checking establishes exact bytes, not an
+precedence over bundled entries. Schema 1 remains supported for PNG-only
+registrations. Schema 2 adds `svg` and `svg_sha256`; use empty strings for both
+when a registration has no vector companion. SVG uses a bounded static profile:
+geometry, text, local paint references and simple XHTML label containers; scripts,
+event attributes, external resources and unsupported CSS reject. Prepared SVGs
+are separate image files, never inline authored page markup. Hash checking establishes exact bytes, not an
 independent claim that a diagram correctly represents its source.
 
 == Lower-level commands
@@ -145,6 +157,7 @@ ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
 ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
   python3 tools/roc-docs/tests/test_build.py
 roc test tools/roc-docs/test_highlight.roc
+roc test tools/roc-docs/test_html.roc
 roc test tools/roc-docs/test_assets.roc
 roc test tools/roc-docs/test_png.roc
 roc test tools/roc-docs/test_preparation.roc
@@ -157,9 +170,30 @@ exercise the actual compiled pipeline. Optional Poppler tools on the test host
 check PDF tags, destinations, text and actual token colours. This is not an
 independent PDF/A or PDF/UA compliance claim.
 
+HTML ships the existing Space Grotesk and Plus Jakarta Sans reading fonts as
+local assets, with their SIL OFL notices, and supports light/dark colour schemes.
+HTML uses a nested persistent desktop contents sidebar and a collapsible,
+single-column mobile contents list. It honors AsciiDoc `sectnums` and
+`toclevels` (1–6), adds heading permalinks and preserves legacy duplicate-heading
+anchors. Without JavaScript the contents remain expanded and usable.
+
+For a real-browser acceptance audit of the built roc-automation manual, use Node
+22.4+ and an installed Chrome on the test host:
+
+[source,sh]
+----
+node tools/roc-docs/tests/check_html_browser.mjs .docs-out/site /tmp/roc-docs-screenshots
+----
+
+The audit checks every page's links, loaded images and highlighting, then desktop
+navigation, mobile overflow/contents controls, column ratios and vector selection.
+Set `CHROME` when its executable is not in the default location. These are test
+host dependencies, not dependencies of the released utility.
+
 `SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
-platform. `Renderer.roc` owns the shared adaptation/theme/fonts; `Png.roc` and
-`ImageAssets.roc` own bounded image handling. Source adapted from roc-ansi commit
+platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source
+highlighters, and `Renderer.roc` owns PDF adaptation/theme/fonts. `Png.roc`,
+`Svg.roc` and `ImageAssets.roc` own bounded image handling. Source adapted from roc-ansi commit
 `75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
 retain SIL OFL notices and pinned hashes in `fonts/provenance.json`. The bounded
 DEFLATE adaptation retains its Apache-2.0 license, modification notice and source

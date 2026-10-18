@@ -19,11 +19,12 @@ BINARY = str(Path(os.environ.get('ROC_DOCS_BINARY', '/tmp/roc-docs')).resolve())
 
 class Page(HTMLParser):
     def __init__(self, text):
-        super().__init__(); self.ids = []; self.links = []; self.code = []; self.pre = False; self.images = []; self.syntax = []
+        super().__init__(); self.ids = []; self.links = []; self.code = []; self.pre = False; self.images = []; self.syntax = []; self.heading_ids = []
         self.feed(text)
     def handle_starttag(self, tag, attributes):
         attrs = dict(attributes)
         if 'id' in attrs: self.ids.append(attrs['id'])
+        if tag in ('h1','h2','h3','h4','h5','h6'): self.heading_ids.append(attrs.get('id'))
         if tag == 'a': self.links.append(attrs.get('href', ''))
         if tag == 'pre': self.pre = True; self.code.append('')
         if tag == 'img': self.images.append(attrs)
@@ -59,9 +60,39 @@ class RendererTests(unittest.TestCase):
         self.assertIn('project.pdf', page.links); self.assertIn('syntax-string', ' '.join(page.syntax)); self.assertIn('Project &lt;&amp;&gt; manual', html)
         self.assertEqual((one / 'project.pdf').read_bytes(), (two / 'project.pdf').read_bytes())
         self.assertTrue((one / 'project.pdf').read_bytes().startswith(b'%PDF-2.0'))
+    def test_highlighted_languages_keep_prepared_source_text(self):
+        snippets = {
+            'yaml': 'on:\r\n  push: true # café\r\nrun: |-\r\n  # shell comment\r\n  echo "hi"\r\n',
+            'yml': 'on: off\nurl: https://example.com/#part\nvalue: "unterminated\n',
+            'sh': '# shell\nexport MODE="green"\nif true; then echo "$MODE"; fi\n',
+            'json': '{"key": false, "value": 42}\n',
+            'diff': '@@ -1 +1 @@\n-old\n+new\n',
+        }
+        for language, code in snippets.items():
+            with self.subTest(language=language):
+                output, _ = self.run_doc('# Sources\n\n```' + language + '\n' + code + '```\n', '--html-only', name=language)
+                page = Page((output/'index.html').read_bytes().decode())
+                # CommonMark normalizes CRLF before handing code to the lexer;
+                # the highlighter must preserve that prepared text exactly.
+                self.assertEqual(page.code, [code.replace('\r\n','\n')]); self.assertTrue(page.syntax)
+    def test_chrome_ids_do_not_collide_with_authored_headings(self):
+        output, _ = self.run_doc('# Content {#content}\n\n## TOC {#toc}\n', '--html-only')
+        page = Page((output/'index.html').read_text())
+        self.assertEqual(len(page.ids), len(set(page.ids)))
+        self.assertIn('content', page.ids); self.assertIn('toc', page.ids)
+        self.assertIn('#content-navigation', page.links)
+    def test_reading_fonts_and_notices_ship_with_standalone_html(self):
+        output, _ = self.run_doc('# Reading fonts\n\nA **bold** and *italic* paragraph.\n', '--html-only')
+        fonts = output/'_roc-docs/fonts'
+        for name in ['SpaceGrotesk-Regular.ttf','SpaceGrotesk-Bold.ttf','PlusJakartaSans-Regular.ttf','PlusJakartaSans-Bold.ttf','PlusJakartaSans-Italic.ttf','PlusJakartaSans-BoldItalic.ttf']:
+            font = (fonts/name).read_bytes()
+            self.assertEqual(font[:4], b'\x00\x01\x00\x00'); self.assertGreater(len(font), 32000)
+        for name in ['SPACE-GROTESK-OFL.txt','PLUS-JAKARTA-SANS-OFL.txt']:
+            self.assertIn('SIL OPEN FONT LICENSE', (fonts/name).read_text())
+        self.assertIn('prefers-color-scheme:dark', (output/'index.html').read_text())
     def test_unicode_and_duplicate_implicit_anchors(self):
         output, _ = self.run_doc('# Éléphant\n\n## Repeat\n\n## Repeat\n', '--html-only')
-        self.assertEqual(Page((output / 'index.html').read_text()).ids, ['Éléphant', 'repeat', 'repeat-2'])
+        self.assertEqual(Page((output / 'index.html').read_text()).heading_ids, ['Éléphant', 'repeat', 'repeat-2'])
     def test_duplicate_explicit_anchors_reject_before_publication(self):
         output, result = self.run_doc('# One {#same}\n\n## Two {#same}\n', '--html-only', expect=1)
         self.assertFalse(output.exists()); self.assertIn('DuplicateHeadingId', result.stderr)
@@ -108,7 +139,7 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(image, {'src': href, 'alt': 'Red'})
     def test_nested_heading_ids_are_unique_and_explicit_duplicates_reject(self):
         output, _ = self.run_doc('# Repeat\n\n> ## Repeat\n', '--html-only', name='nested')
-        self.assertEqual(Page((output / 'index.html').read_text()).ids, ['repeat', 'repeat-2'])
+        self.assertEqual(Page((output / 'index.html').read_text()).heading_ids, ['repeat', 'repeat-2'])
         output, _ = self.run_doc('# One {#same}\n\n> ## Two {#same}\n', '--html-only', name='duplicate-nested', expect=1)
         self.assertFalse(output.exists())
     def test_deep_documents_reject_before_publication(self):

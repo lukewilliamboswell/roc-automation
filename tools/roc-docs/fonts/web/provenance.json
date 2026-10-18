@@ -1,0 +1,16 @@
+{
+  "source_repository": "https://github.com/lukewilliamboswell/roc-automation",
+  "source_commit": "d9e99b9daff74b0e7bfe4de22e103b8a072b8bdc",
+  "source_directory": "actions/build-docs/theme/fonts",
+  "license": "SIL Open Font License 1.1; notices alongside fonts",
+  "sha256": {
+    "PLUS-JAKARTA-SANS-OFL.txt": "995c7199cab65954f545996326755daee7b63cc6b42b06c13da1f9502ab08a99",
+    "PlusJakartaSans-Bold.ttf": "5f5342ef76862b5b5365d1dff1a667629dfa484e388dd602552f647219c3870f",
+    "PlusJakartaSans-BoldItalic.ttf": "333bf7237f496aefdd71de40c7cc5452394d5f842a85dad00629d4007ad3c6d7",
+    "PlusJakartaSans-Italic.ttf": "140ae2bc35471386ca0a4a2a91cdae2f7ed600e70745a25293cc8db08754cd7c",
+    "PlusJakartaSans-Regular.ttf": "bd6276d4060e3b1ebc45047469e0bb86b08f301ba681cdf1ceb6245ea10478d2",
+    "SPACE-GROTESK-OFL.txt": "564ce565c371c5e5bbf286006565a7c9aa55a9f56e7ca58d56e05d649dd61a72",
+    "SpaceGrotesk-Bold.ttf": "7209bbb75fc0f5c546a5f5773b0db74ffc6abf04c2148c1105cace5765a96bdb",
+    "SpaceGrotesk-Regular.ttf": "5ede28c4425f3fe4830c8f4754b39e9a87a93d0c3baa5e0a9924532aaa8a98bd"
+  }
+}

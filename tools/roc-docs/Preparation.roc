@@ -1,6 +1,7 @@
 import parser.AsciiDoc
 import parser.Xml
 import parser.Markdown
+import Html
 import Sha256
 
 ## Pure preparation using roc-parser's actual AsciiDoc AST and inline renderer.
@@ -8,7 +9,7 @@ import Sha256
 Preparation :: [].{
 	File : { path : Str, source : Str }
 	Options : { entrypoint : Str, version : Str, pdf_filename : Str, diagrams : List({ source_sha256 : Str, href : Str }) }
-	Result : { pages : List({ route : Str, source : Str }), manual : Str, metadata : { title : Str, author : Str, version : Str, language : Str }, images : List(Str) }
+	Result : { pages : List({ route : Str, source : Str, html : [MarkdownSource, Prepared({ body : Str, numbered : Bool, toc_depth : U64, remark : Str })] }), manual : Str, metadata : { title : Str, author : Str, version : Str, language : Str }, images : List(Str) }
 	prepare : List(File), Options -> Try(Result, Str)
 	prepare = |files, options| {
 		if files.len() > 1024 or files.any(|f| !safe_path(f.path) or (if f.path.ends_with(".adoc") f.source.to_utf8().len() > 262144 else f.source.to_utf8().len() > 16777216)) or files.fold(0.U64, |n, f| n + f.source.to_utf8().len()) > 33554432 {
@@ -49,10 +50,25 @@ Preparation :: [].{
 		for doc in $documents {
 			state = initial(options, raw, doc.identified.refs.concat(refs), $routes, doc.file.path, "html5")
 			result = blocks(doc.identified.blocks, state, 0)?
-			$pages = $pages.append({ route: doc.route, source: result.text })
+			html_result = html_blocks(doc.identified.blocks, state, 0)?
+			page_attrs = attributes(files, doc.file, options)?
+			numbered = page_attrs.any(|a| a.name == "sectnums")
+			toc_depth = if lookup(page_attrs, "toclevels") == "" 3 else U64.from_str(lookup(page_attrs, "toclevels")).map_err(|_| "toclevels must be an integer from 1 to 6")?
+			if toc_depth < 1 or toc_depth > 6 {
+				return Err("toclevels must be between 1 and 6")
+			}
+			$pages = $pages.append({ route: doc.route, source: result.text, html: Prepared({ body: html_result.text, numbered, toc_depth, remark: lookup(page_attrs, "revremark") }) })
 			$images = $images.concat(result.state.images)
 		}
-		if $pages.fold(0.U64, |n, p| n + p.source.to_utf8().len()) + rendered_manual.text.to_utf8().len() > 67108864 {
+		if $pages.fold(
+			0.U64,
+			|n, p| n + p.source.to_utf8().len() + (
+				match p.html {
+					Prepared(h) => h.body.to_utf8().len()
+					MarkdownSource => 0
+				}
+			),
+		) + rendered_manual.text.to_utf8().len() > 67108864 {
 			return Err("prepared documentation exceeds output limit")
 		}
 		attrs = attributes(files, entry, options)?
@@ -221,9 +237,9 @@ code_sources = |files| {
 	Ok($found)
 }
 
-State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, backend : Str, images : List(Str) }
+State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64 }
 
-initial = |options, raw, refs, routes, path, backend| { options, raw, refs, routes, path, backend, images: [] }
+initial = |options, raw, refs, routes, path, backend| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0 }
 
 blocks : List(AsciiDoc.Block), State, U64 -> Try({ text : Str, state : State }, Str)
 blocks = |input, state, depth| {
@@ -407,7 +423,7 @@ protect_code = |source, attrs| {
 	var $codes = []
 	var $text = ""
 	for entry in parts.map_with_index(|text, index| { text, index }) {
-		if entry.index % 2 == 0 {
+		if entry.index % 2.U64 == 0.U64 {
 			$text = "${$text}${entry.text}"
 		}
 			else {
@@ -492,16 +508,14 @@ resolve = |href, state| {
 		if state.backend == "pdf" {
 			return Ok({ href: "#${ref.id}", title: ref.title })
 		}
-		route = route_for(ref, state)?
-		return Ok({ href: if route.route == state.path.replace_each(".adoc", ".html") "#${route.id}" else "${route.route}#${route.id}", title: ref.title })
+		return html_reference(ref, state)
 	}
 	if path != "" and path.ends_with(".adoc") {
 		ref = state.refs.find_first(|r| r.path == path and (anchor == "" or r.local_id == anchor)).map_err(|_| "unknown AsciiDoc cross-page reference ${href}")?
 		if state.backend == "pdf" {
 			return Ok({ href: "#${ref.id}", title: ref.title })
 		}
-		route = route_for(ref, state)?
-		return Ok({ href: "${route.route}#${route.id}", title: ref.title })
+		return html_reference(ref, state)
 	}
 	if !safe_path(href) {
 		return Err("unsafe AsciiDoc link ${href}")
@@ -514,7 +528,7 @@ markdown = |files, entry, options| {
 	var $pages = []
 	for file in files.keep_if(|f| f.path.ends_with(".md") and !f.path.contains("/")) {
 		$images = $images.concat(markdown_images(Markdown.parse_str(file.source)))
-		$pages = $pages.append({ route: file.path.drop_suffix(".md").concat(".html"), source: file.source })
+		$pages = $pages.append({ route: file.path.drop_suffix(".md").concat(".html"), source: file.source, html: MarkdownSource })
 	}
 	title = entry.source.split_on("\n").find_first(|line| line.starts_with("# ")).map_ok(|line| line.drop_prefix("# ").split_on(" {#").first() ?? "Manual") ?? "Manual"
 	Ok({ pages: $pages, manual: entry.source, metadata: { title, author: "", version: options.version, language: "en" }, images: $images })
@@ -550,6 +564,170 @@ route_for = |ref, state| {
 		Err(_) => match candidates.find_first(|r| r.route != state.options.entrypoint.drop_suffix(".adoc").concat(".html")) {
 			Ok(route) => Ok(route)
 			Err(_) => candidates.first().map_err(|_| "unroutable AsciiDoc reference ${ref.local_id}")
+		}
+	}
+}
+
+# HTML retains the AsciiDoc structure that ordinary Markdown cannot express.
+# Inline conversion still passes through the same validated link/escape path.
+html_inline = |value, scope, state| {
+	prepared = inline(value, scope, state)?
+	match Markdown.parse_str(prepared) {
+		[Paragraph(content)] => Html.inlines(content, []).map_err(|e| Str.inspect(e))
+		[] => Ok("")
+		_ => Err("unexpected block in inline AsciiDoc content")
+	}
+}
+
+html_blocks : List(AsciiDoc.Block), State, U64 -> Try({ text : Str, state : State }, Str)
+html_blocks = |input, state, depth| {
+	if depth > 64 {
+		return Err("AsciiDoc HTML nesting exceeds adapter limit")
+	}
+	var $state = state
+	var $out = ""
+	for block in input {
+		n = node(block)
+		if n.context == "section" and n.level == 1 {
+			match $state.refs.find_first(|r| r.id == n.id) {
+				Ok(ref) => {
+					$state = { ..$state, path: ref.path }
+				}
+				_ => {}
+			}
+		}
+		attrs = AsciiDoc.materialize_attributes(n.attrs)
+		title = html_inline(n.title, n.attrs, $state)?
+		block_title = if title == "" "" else "<div class=\"block-title\">${title}</div>"
+		var $text = ""
+		match n.context {
+			"section" | "floating_title" => {
+				var $occurrences = 0.U64
+				var $found = False
+				for ref in $state.refs {
+					if !$found and ref.title == n.title {
+						$occurrences = $occurrences + 1
+					}
+					if ref.id == n.id {
+						$found = True
+					}
+				}
+				legacy = "${slug(n.title)}-${$occurrences.to_str()}"
+				alias = if $occurrences > 1 and legacy != n.id and !$state.refs.any(|r| r.id == legacy) "<span class=\"anchor-alias\" id=\"${Html.escape(legacy)}\"></span>" else ""
+				child = html_blocks(n.blocks, $state, depth + 1)?
+				$state = child.state
+				$text = "${alias}${Html.heading_html(n.level + 1, n.id, title)}\n${child.text}"
+			}
+			"paragraph" => {
+				$text = "${block_title}<p>${html_inline(n.source, n.attrs, $state)?}</p>"
+			}
+			"listing" | "literal" => {
+				prepared = blocks([block], $state, depth + 1)?
+				$state = prepared.state
+				if n.style == "mermaid" or lookup(attrs, "1") == "mermaid" {
+					digest = Sha256.hex("${n.source}\n".to_utf8())
+					diagram = $state.options.diagrams.find_first(|d| d.source_sha256 == digest).map_err(|_| "missing prepared diagram")?
+					$state = { ..$state, figure: $state.figure + (if title == "" 0 else 1) }
+					caption = if title == "" "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
+					$text = "<figure class=\"diagram\"><img src=\"${Html.escape(diagram.href)}\" alt=\"${Html.escape(if n.title == "" "Diagram" else n.title)}\">${caption}</figure>"
+				} else {
+					code = Markdown.parse_str(prepared.text).keep_oks(
+						|b| match b {
+							Code(c) => Ok(c)
+							_ => Err(NotCode)
+						},
+					).first().map_err(|_| "missing prepared source block")?
+					caption = if title == "" "" else "<div class=\"listing-caption\">${title}</div>"
+					$text = "<div class=\"listing\">${caption}<pre><code data-lang=\"${Html.escape(code.info)}\" class=\"language-${Html.escape(code.info)}\">${Html.source(code.info, code.pre)}</code></pre></div>"
+				}
+			}
+			"table" => {
+				markdown_table = table(n.source, attrs, n.attrs, $state)?
+				var $widths = []
+				for value in lookup(attrs, "cols").split_on(",") {
+					width = if value == "" 1 else U64.from_str(value).map_err(|_| "invalid column weight")?
+					if width == 0 or width > 10000 {
+						return Err("column weights must be between 1 and 10000")
+					}
+					$widths = $widths.append(width)
+				}
+				total = $widths.fold(0.U64, |sum, width| sum + width)
+				cols = Str.join_with(
+					$widths.map(
+						|width| {
+							percent = width * 10000 // total
+							"<col style=\"width:${(percent // 100).to_str()}.${if percent % 100 < 10 "0" else ""}${(percent % 100).to_str()}%\">"
+						},
+					),
+					"",
+				)
+				rendered = Html.blocks(Markdown.parse_str(markdown_table), []).map_err(|e| Str.inspect(e))?
+				$state = { ..$state, table_count: $state.table_count + (if title == "" 0 else 1) }
+				caption = if title == "" "" else "<caption>Table ${$state.table_count.to_str()}. ${title}</caption>"
+				$text = rendered.replace_each("<table>", "<table>${caption}<colgroup>${cols}</colgroup>")
+			}
+			"image" => {
+				if !safe_path(n.source) {
+					return Err("unsafe local image path")
+				}
+				$state = { ..$state, images: $state.images.append(n.source), figure: $state.figure + (if title == "" 0 else 1) }
+				caption = if title == "" "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
+				$text = "<figure><img src=\"${Html.escape(n.source)}\" alt=\"${Html.escape(lookup(attrs, "1"))}\">${caption}</figure>"
+			}
+			"ulist" | "olist" | "dlist" => {
+				tag = if n.context == "dlist" "dl" else if n.context == "olist" "ol" else "ul"
+				$text = "${block_title}<${tag}>"
+				for item in n.blocks {
+					it = node(item)
+					if it.context != "list_item" {
+						return Err("unexpected list child")
+					}
+					child = html_blocks(it.blocks, $state, depth + 1)?
+					$state = child.state
+					body = html_inline(it.source, it.attrs, $state)?
+					if n.context == "dlist" {
+						$text = "${$text}<dt>${html_inline(it.title, it.attrs, $state)?}</dt><dd><p>${body}</p>${child.text}</dd>"
+					} else {
+						$text = "${$text}<li><p>${body}</p>${child.text}</li>"
+					}
+				}
+				$text = "${$text}</${tag}>"
+			}
+			"sidebar" | "open" | "example" | "quote" | "admonition" => {
+				child = html_blocks(n.blocks, $state, depth + 1)?
+				$state = child.state
+				tag = if n.context == "quote" "blockquote" else if n.context == "sidebar" or n.context == "admonition" "aside" else "div"
+				(style, name) = match n.style {
+					"WARNING" => ("warning", "Warning")
+					"CAUTION" => ("caution", "Caution")
+					"IMPORTANT" => ("important", "Important")
+					"TIP" => ("tip", "Tip")
+					_ => ("note", "Note")
+				}
+				label = if n.context == "admonition" and title == "" "<div class=\"block-title\">${name}</div>" else block_title
+				body = if n.source == "" "" else "<p>${html_inline(n.source, n.attrs, $state)?}</p>"
+				$text = "<${tag} class=\"${n.context} ${style}\">${label}${body}${child.text}</${tag}>"
+			}
+			"thematic_break" => {
+				$text = "<hr>"
+			}
+			"__document_header" | "toc" => {}
+			_ => return Err("unsupported AsciiDoc HTML block: ${n.context}")
+		}
+		$out = "${$out}${$text}\n"
+	}
+	Ok({ text: $out, state: $state })
+}
+
+# A page may contain several included chapters. Resolve against the rendered
+# page identity, not the current chapter's source path, before routing elsewhere.
+html_reference = |ref, state| {
+	local = state.routes.find_first(|r| r.path == ref.path and r.local_id == ref.local_id and r.route == state.page.drop_suffix(".adoc").concat(".html"))
+	match local {
+		Ok(route) => Ok({ href: "#${route.id}", title: ref.title })
+		Err(_) => {
+			route = route_for(ref, state)?
+			Ok({ href: "${route.route}#${route.id}", title: ref.title })
 		}
 	}
 }

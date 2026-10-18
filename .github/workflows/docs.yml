@@ -52,6 +52,12 @@ jobs:
           python3 tools/roc-docs/tests/reference_prepare_docs.py --workspace . --output-directory .docs-verification-prepared --pdf-filename roc-automation.pdf --docs-version "$DOCS_VERSION"
           python3 tools/roc-docs/tests/verify_prepared.py --prepared .docs-verification-prepared --site "$SITE" --pdf "$PDF" --independent-reader
 
+      - name: Check desktop and mobile HTML in a real browser
+        env:
+          SITE: ${{ steps.docs.outputs.site-directory }}
+          CHROME: google-chrome
+        run: node tools/roc-docs/tests/check_html_browser.mjs "$SITE" .docs-verification-browser
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:

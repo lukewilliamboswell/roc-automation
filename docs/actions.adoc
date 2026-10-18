@@ -261,7 +261,7 @@ a release must be published before downstream consumers can install those assets
 Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
 The default backend needs only the renderer binary and the action runner's
-shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.2, decodes
+shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.3, decodes
 PNG assets and renders both formats in Roc. It needs no Python, Docker or Roc
 compiler. Generating the optional API reference requires an explicitly supplied
 Roc compiler. The same binary can build a repository locally with

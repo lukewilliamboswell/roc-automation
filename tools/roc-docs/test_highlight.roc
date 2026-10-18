@@ -1,6 +1,6 @@
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0-rc2/Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst",
-	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.2/CZPwnt8ziVkc4v27SX7y2c8shxvPToiXiU1Y55E8tobb.tar.zst",
+	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.3/E5r48puF3KGvqzbd6v1JWA7qJFMehppWb7A6NzRWieJT.tar.zst",
 }
 
 import SyntaxHighlight

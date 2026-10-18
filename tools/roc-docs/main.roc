@@ -1,7 +1,7 @@
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0-rc2/Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst",
 	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.4.0-rc2/BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze.tar.zst",
-	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.2/CZPwnt8ziVkc4v27SX7y2c8shxvPToiXiU1Y55E8tobb.tar.zst",
+	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.3/E5r48puF3KGvqzbd6v1JWA7qJFMehppWb7A6NzRWieJT.tar.zst",
 	pdf: "https://github.com/lukewilliamboswell/roc-pdf/releases/download/0.1.0-rc5/ANqp54fCvoErcZijX5Dr2cZj5G7ZzW6DYNLPj5GJBz4N.tar.zst",
 }
 
@@ -10,6 +10,8 @@ import cli.Path
 import cli.Stdout
 import cli.Stderr
 import Renderer
+import WebAssets
+import BuildFiles
 import Png
 import RepositoryBuild
 import ImageAssets
@@ -31,6 +33,9 @@ main! = |arguments| {
 		Stdout.line!(noto_license)?
 		Stdout.line!(noto_italic_license)?
 		Stdout.line!(mono_license)?
+		for file in WebAssets.list.keep_if(|f| f.path.ends_with(".txt")) {
+			Stdout.line!(Str.from_utf8_lossy(file.bytes))?
+		}
 		Stdout.line!(deflate_notice)?
 		return Stdout.line!(deflate_license)
 	}
@@ -58,6 +63,9 @@ main! = |arguments| {
 	var $assets = []
 	var $total = 0
 	for spec in options.assets {
+		if WebAssets.list.any(|file| file.path == spec.href) {
+			return Err(InvalidAssetPath(spec.href))
+		}
 		if Path.size_in_bytes!(Path.utf8(spec.png))? > 33554432 {
 			return Err(ImageTooLarge(spec.href))
 		}
@@ -110,6 +118,11 @@ main! = |arguments| {
 }
 
 write! = |stage, options, rendered, assets| {
+	if options.mode != PdfOnly {
+		for file in WebAssets.list {
+			BuildFiles.write_bytes!(stage, file.path, file.bytes).map_err(|message| WebAssetRejected(message))?
+		}
+	}
 	if options.mode != PdfOnly {
 		Path.write_utf8!(Path.join(stage, "index.html"), rendered.html)?
 	}

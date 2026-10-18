@@ -67,6 +67,38 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('Version 7', (site/'usage.html').read_text())
         self.assertTrue((output/'manual.pdf').read_bytes().startswith(b'%PDF-2.0'))
         self.assertEqual((output/'manual.pdf').read_bytes(), (site/'manual.pdf').read_bytes())
+    def test_asciidoc_semantics_numbered_toc_and_legacy_anchors(self):
+        self.source('index.adoc', '= Guide\n:sectnums:\n:toclevels: 3\n\n.How to use it\n****\nTerm:: Definition with `code`.\n****\n\ninclude::a.adoc[leveloffset=+1]\n\ninclude::b.adoc[leveloffset=+1]\n')
+        self.source('a.adoc','= First\n\n== Reporting\n\n[cols="1,3",options="header"]\n|===\n| A | B\n| One | Two\n|===\n')
+        self.source('b.adoc','= Second\n\n== Reporting\n\nNOTE: Important note.\n')
+        self.run_build()
+        html = (self.root/'.docs-out/site/index.html').read_text(); page = Html(html)
+        self.assertIn('<aside class="sidebar',html); self.assertIn('<dt>Term</dt><dd>',html)
+        self.assertIn('width:25.00%',html); self.assertIn('width:75.00%',html)
+        self.assertIn('class="admonition',html); self.assertIn('reporting-2',page.ids)
+        self.assertIn('1.1. ',html); self.assertIn('2.1. ',html)
+        self.assertRegex(html,r'<li><a href="#first">1\. First</a><ul>')
+        self.assertEqual(len(page.ids),len(set(page.ids)))
+    def test_prepared_vectors_use_picture_and_png_fallback_and_reject_active_svg(self):
+        body='flowchart LR\n  First --> Last\n'
+        self.source('index.adoc','= Diagrams\n\n.A useful diagram\n[mermaid]\n....\n'+body+'....\n')
+        (self.docs/'diagram.png').write_bytes(png_bytes())
+        svg=b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>'
+        (self.docs/'diagram.svg').write_bytes(svg)
+        entry={'source_sha256':hashlib.sha256(body.encode()).hexdigest(),'href':'images/diagram.png','png':'diagram.png','png_sha256':hashlib.sha256(png_bytes()).hexdigest(),'svg':'diagram.svg','svg_sha256':hashlib.sha256(svg).hexdigest()}
+        registry={'schema_version':2,'diagrams':[entry]}
+        (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
+        self.run_build(); site=self.root/'.docs-out/site'; html=(site/'index.html').read_text()
+        self.assertIn('<picture><source type="image/svg+xml" srcset="images/diagram.svg">',html)
+        self.assertEqual((site/'images/diagram.svg').read_bytes(),svg)
+        self.assertEqual((site/'images/diagram.png').read_bytes(),png_bytes())
+        self.assertIn('<figcaption>Figure 1. A useful diagram</figcaption>',html)
+        for attack in [b'<svg onload="alert(1)"/>',b'<svg><script>alert(1)</script></svg>',b'<svg><style>p{background:image-set("remote.png")}</style></svg>']:
+            attack = attack.replace(b'<svg', b'<svg xmlns="http://www.w3.org/2000/svg"', 1)
+            (self.docs/'diagram.svg').write_bytes(attack); entry['svg_sha256']=hashlib.sha256(attack).hexdigest()
+            (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
+            self.run_build(success=False)
+            self.assertEqual((site/'images/diagram.svg').read_bytes(),svg)
     def test_markdown_images_static_files_and_successful_replacement(self):
         self.source('index.md', '# Home\n\n![Pixel](images/pixel.png)\n')
         image = self.docs/'images/pixel.png'; image.parent.mkdir(); image.write_bytes(png_bytes())
