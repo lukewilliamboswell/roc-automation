@@ -149,7 +149,14 @@ try {
   }
   console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:6,darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed'}, null, 2));
 } finally {
-  ws?.close(); child.kill(); server.close();
-  await new Promise(resolve => { if(!child.pid || child.exitCode !== null || child.signalCode !== null) resolve(); else child.once('exit',resolve); });
-  await fs.rm(profile, { recursive: true, force: true });
+  // Let Chrome flush its profile and stop renderers before removing it. A
+  // parent-only SIGTERM can leave Linux helper processes briefly writing files.
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({id: 2147483647, method:'Browser.close'}));
+  await new Promise(resolve => {
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) { resolve(); return; }
+    const timeout = setTimeout(() => { child.kill(); resolve(); }, 5000);
+    child.once('exit', () => { clearTimeout(timeout); resolve(); });
+  });
+  ws?.close(); server.close();
+  await fs.rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

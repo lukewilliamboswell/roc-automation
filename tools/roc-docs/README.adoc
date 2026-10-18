@@ -147,7 +147,10 @@ publishes through a sibling staging directory.
 Use compiler `nightly-2026-10-15-38e6c42` and its normal cache. Immutable package
 URLs pin basic-cli, roc-parser, roc-pdf and roc-deflate. Release builds use the
 validated `--opt=speed` configuration; compilation has substantial RAM cost,
-separate from native rendering.
+separate from native rendering. Keep Roc commands sharing a cache sequential on
+this pin: its
+https://github.com/roc-lang/roc/blob/38e6c42c889cc7ffd97beea9199186790cc848f5/src/compile/cache_cleanup.zig#L130-L162[scratch cleanup]
+can remove another build's active scratch directory once it is five minutes old.
 
 [source,sh]
 ----
