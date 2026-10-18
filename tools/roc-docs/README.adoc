@@ -188,14 +188,17 @@ node tools/roc-docs/tests/check_html_browser.mjs .docs-out/site /tmp/roc-docs-sc
 The audit checks every page's links, loaded images and highlighting, then desktop
 navigation, mobile overflow/contents controls, column ratios and vector selection.
 Set `CHROME` when its executable is not in the default location. These are test
-host dependencies, not dependencies of the released utility.
+host dependencies, not dependencies of the released utility. The upstream
+documentation workflow runs this audit and uploads desktop, mobile and dark-mode
+screenshots as the `docs-browser-review` artifact.
 
 `SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
 platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source
 highlighters, and `Renderer.roc` owns PDF adaptation/theme/fonts. `Png.roc`,
 `Svg.roc` and `ImageAssets.roc` own bounded image handling. Source adapted from roc-ansi commit
 `75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
-retain SIL OFL notices and pinned hashes in `fonts/provenance.json`. The bounded
+retain SIL OFL notices and pinned hashes in `fonts/provenance.json` and
+`fonts/web/provenance.json`. The bounded
 DEFLATE adaptation retains its Apache-2.0 license, modification notice and source
 identity under `vendor/`. `roc-docs --licenses` prints bundled notices without
 requiring adjacent files.

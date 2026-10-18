@@ -58,6 +58,14 @@ jobs:
           CHROME: google-chrome
         run: node tools/roc-docs/tests/check_html_browser.mjs "$SITE" .docs-verification-browser
 
+      - name: Upload HTML review screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-browser-review
+          path: .docs-verification-browser
+          if-no-files-found: ignore
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:

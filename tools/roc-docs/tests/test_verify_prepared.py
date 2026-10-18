@@ -41,6 +41,20 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Unresolved anchor'):
             verify.check(self.prepared,self.site)
 
+    def test_skip_links_and_legacy_nonheading_anchors_resolve(self):
+        (self.site/'index.html').write_text('<a href="#content">Skip</a><main id="content">'+self.html+'<span id="legacy"></span><a href="#legacy">Old link</a></main>')
+        self.assertEqual(verify.check(self.prepared,self.site)['headings'],1)
+
+    def test_chrome_cannot_reuse_a_heading_id(self):
+        (self.site/'index.html').write_text(self.html+'<main id="title"></main>')
+        with self.assertRaisesRegex(ValueError,'duplicate'):
+            verify.check(self.prepared,self.site)
+
+    def test_heading_anchor_cannot_move_to_chrome(self):
+        (self.site/'index.html').write_text(self.html.replace('<h1 id="title">','<h1 id="other">')+'<main id="title"></main>')
+        with self.assertRaisesRegex(ValueError,'Explicit anchors'):
+            verify.check(self.prepared,self.site)
+
     def test_missing_published_asset_rejects(self):
         (self.site/'index.html').write_text(self.html+'<img src="missing.png">')
         (self.prepared/'index.md').write_text((self.prepared/'index.md').read_text()+'\n![Missing](missing.png)\n')

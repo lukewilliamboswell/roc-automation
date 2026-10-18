@@ -55,6 +55,7 @@ class Page(HTMLParser):
         self.pre = False
         self.code = []
         self.ids = []
+        self.heading_ids = []
         self.headings = 0
         self.tables = 0
         self.images = []
@@ -65,9 +66,11 @@ class Page(HTMLParser):
         if tag == 'pre':
             self.pre = True
             self.code.append('')
+        if 'id' in attrs:
+            self.ids.append(attrs['id'])
         if tag in ('h1','h2','h3','h4','h5','h6'):
             self.headings += 1
-            self.ids.append(attrs.get('id'))
+            self.heading_ids.append(attrs.get('id'))
         if tag == 'table':
             self.tables += 1
         if tag == 'img':
@@ -99,7 +102,7 @@ def check(prepared, site, pdf=None, independent_reader=False):
             raise ValueError(f"Source bytes changed in {entry['output']}")
         if len(inventory['headings']) != page.headings or len(page.ids) != len(set(page.ids)):
             raise ValueError(f"Heading inventory changed/duplicate in {entry['output']}")
-        if not set(inventory['ids']).issubset(page.ids):
+        if None in page.heading_ids or not set(inventory['ids']).issubset(page.heading_ids):
             raise ValueError(f"Explicit anchors changed in {entry['output']}")
         if inventory['tables'] != page.tables or inventory['images'] != len(page.images):
             raise ValueError(f"Table/image inventory changed in {entry['output']}")

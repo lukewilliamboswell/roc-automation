@@ -61,6 +61,8 @@ try {
     return response.result.value;
   };
   await cdp('Page.enable');
+  await cdp('Page.bringToFront');
+  await cdp('Emulation.setFocusEmulationEnabled', {enabled:true});
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   const pages = (await fs.readdir(site)).filter(name => name.endsWith('.html'));
   const inventory = {};
@@ -115,6 +117,7 @@ try {
   assert.ok(index.captions[0].startsWith('Figure 1.'), 'Figure caption numbering missing');
   assert.equal(await evaluate(`document.querySelector('main h2 .section-number')?.innerText.trim()`), '1.', 'Body heading numbering missing');
   await evaluate(`document.querySelector('main h2 .anchor').focus()`);
+  assert.equal(await evaluate(`document.activeElement === document.querySelector('main h2 .anchor')`), true, 'Permalink must receive keyboard focus');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('main h2 .anchor')).opacity`), '1', 'Keyboard-focused permalink must be visible');
   await evaluate('scrollTo({top:0,behavior:"instant"})');
   const proportions = await evaluate(`(()=>{const cells=[...document.querySelector('main table').querySelectorAll('th')];return cells[0].getBoundingClientRect().width/cells[1].getBoundingClientRect().width})()`);
