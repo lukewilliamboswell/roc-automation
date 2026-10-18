@@ -1,0 +1,8 @@
+flowchart TD
+    C[Tested commit on the default branch] --> B[Build bundle, examples archive, docs archive, manual]
+    B --> T[Test those exact files against a loopback bundle]
+    T -->|any failure| X[Stop: nothing is published]
+    T -->|pass| D[Create draft release at the tested commit]
+    D --> U[Upload every asset]
+    U --> V[Download each asset and verify name, size and hash]
+    V --> P[Publish the release]

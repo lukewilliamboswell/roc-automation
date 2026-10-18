@@ -16,15 +16,21 @@ The sources are the AsciiDoc files under `docs/`.
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
 lists the conventions they follow.
 
-Build the site and PDF locally with Docker:
+Build the site and PDF locally with a precompiled renderer:
 
 [source,sh]
 ----
-python3 actions/build-docs/build_docs.py --workspace . --pdf-filename roc-automation.pdf --docs-version 3
+/path/to/roc-docs build --workspace . --pdf-filename roc-automation.pdf --docs-version 3
 ----
 
 The output is written to `.docs-out/`. The `Documentation` workflow runs the
-same build on every pull request and deploys from the default branch.
+same build on every pull request and deploys from the default branch. Upstream
+CI builds and caches the renderer; downstream consumers supply the released
+binary. To develop the renderer itself, follow `tools/roc-docs/README.adoc`,
+which records its compiler, dependencies, source subset and build commands.
+The action's explicit `backend: legacy` retains Docker/Asciidoctor compatibility.
+Python remains a test-harness and legacy-backend dependency; native rendering
+does not invoke it.
 
 The manual describes the model as it should be practised. A repository or tool
 that does not yet follow it is recorded in a GitHub issue, not in the manual.
@@ -41,8 +47,10 @@ boundaries and arrives with regression tests for them.
 `scripts/nightly_report.roc` and `scripts/publish_release.roc`, and their tests
 are `expect` tests that `blueprint run check` runs;
 xref:contributing.adoc#change-an-action-that-is-a-roc-script[Change an action that is a Roc script]
-says how they are built and tested. The other actions are Python. Python 3.10
-or later and the standard library are sufficient for their tests:
+says how they are built and tested. The documentation action invokes the native
+renderer through its shell wrapper. Other controllers and the independent test
+harnesses use Python. Python 3.10 or later and the standard library are sufficient
+for their tests:
 
 [source,sh]
 ----

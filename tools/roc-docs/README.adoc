@@ -1,0 +1,221 @@
+= roc-docs
+
+`roc-docs` builds a multi-page website and a searchable, tagged PDF 2.0 from
+AsciiDoc or Markdown. Parsing, virtual include preprocessing, PNG decoding,
+syntax highlighting, fonts and HTML/PDF rendering run inside the released Roc
+executable. A downstream build needs no Python, Roc compiler, Docker, Ruby,
+Node, browser, host fonts or network. Optional Roc API generation explicitly
+requires a compiler supplied by the caller.
+
+[source,sh]
+----
+roc-docs build --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-out --pdf-filename project.pdf --docs-version 1.2
+----
+
+The website is `.docs-out/site/`; the PDF is available both there and at
+`.docs-out/project.pdf`. `--title`, `--author` and `--language` override document
+metadata. `--pdf-image-dpi` accepts 72 through 300, default 144. The shared action
+invokes this native command directly and preserves its site/PDF outputs.
+`--api-entrypoint` and `--roc-command` add API documentation as a separate,
+explicitly requested compiler invocation.
+
+The first candidate is `tools-0.1.0-rc.1`. Its shared AsciiDoc authoring profile,
+asset-preparation policy, supported systems and known migration limits are in
+link:../../docs/documentation.adoc#experimental-native-docs-contract[the experimental native documentation contract].
+Adopt a reviewed release asset digest and verify it before execution. The
+`actions/build-docs` wrapper accepts a supplied executable and does not download
+or authenticate one. Documentation options currently use CLI/action inputs;
+there is no documentation-specific `Blueprint.roc` configuration schema yet.
+
+Repository input/output paths stay within `--workspace`. Source trees reject
+symlinks and special files. Sources, includes, decompression and assets have
+resource limits. A complete build is staged before replacing previous output;
+a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
+`.roc-docs-backup` directories require inspection before retrying.
+
+== Authoring
+
+The parser package pins roc-parser 2.1.0-rc.3. `Preparation.roc` adapts its real
+AsciiDoc syntax tree and virtual-file preprocessor. HTML preserves description
+lists, sidebars, captions and table column weights directly from that tree;
+PDF uses roc-pdf 0.1.0-rc6 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
+Includes, backend conditionals, attributes and cross-references are resolved
+against the supplied source tree; there is no remote include loader or source
+execution. See link:PREPARATION.adoc[the preparation contract] for the supported
+subset and known presentation adaptations.
+
+Every top-level source file in the entrypoint's format retains its `.html` route. An AsciiDoc entrypoint's
+include tree supplies the combined PDF; cross-references are rewritten for the
+site pages and PDF destinations. Native Markdown makes every top-level `.md`
+file a website page, but the PDF uses only the selected entrypoint. Markdown
+includes and automatic cross-file PDF link rewriting are not implemented. Use
+absolute URLs or destinations present in that PDF entrypoint.
+
+Supported rendering blocks include headings, paragraphs, fenced source,
+ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported
+rendering nodes reject explicitly. PDF quote content is retained as body
+paragraphs; the initial PDF theme does not reproduce HTML quote indentation.
+Printed PDF contents page numbers, PDF table column weights and chapter-aware
+running headers are not implemented. Existing Asciidoctor YAML themes are
+incompatible and reject on the native backend; the initial native theme is
+built in. These are explicit experimental authoring/presentation boundaries,
+not a claim of complete Asciidoctor compatibility.
+
+The printed PDF contents uses nested linked lists with bold chapter entries
+and three levels of heading ancestry. A leading heading matching the book
+title is omitted from the contents, and wrapped titles keep their item's
+indentation.
+
+HTML and PDF share the same language-aware source highlighter and original
+UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
+tokenizers, and shell, JSON and diff
+through small lexical adapters. Unknown languages retain preformatted text. The highlighter accepts incomplete snippets and does
+not require type checking. AsciiDoc LF source blocks retain their original
+bytes. Native Markdown follows the upstream CommonMark line-ending
+normalization before code highlighting;
+PDF source layout owns wrapping, tabs and page continuation. The acceptance
+corpus checks extracted code characters, actual colours, repeated table headers
+and continuing source lines through an independent PDF reader.
+
+Headings may use an explicit trailing Markdown `{#stable-id}`. Duplicate explicit
+IDs fail; repeated implicit labels acquire numeric suffixes. HTML links allow
+HTTP(S), mailto, local fragments and safe relative paths. PDF links require
+absolute URLs or internal destinations. Executable URL schemes and controls
+reject. Neither renderer fetches linked content.
+
+== Images and diagrams
+
+The native PNG reader supports non-interlaced eight-bit RGB/RGBA, checks chunk
+CRCs, zlib framing, Adler32 and exact decompressed length, and bounds DEFLATE
+output before appending it. Alpha is composited onto white for PDF. Indexed,
+interlaced, other bit-depth PNGs and unsupported critical chunks reject.
+
+HTML retains original PNG bytes and can prefer a validated SVG companion through
+`picture`, with PNG fallback. PDF fits figures to the A4 body and applies
+bounded, deterministic box averaging at `--pdf-image-dpi`, never upscaling small
+originals. The initial roc-pdf facade has a fixed resource budget: a large
+manual at higher resolution can reject before publication. Reduce PDF
+resolution or source image dimensions rather than dropping figures.
+
+Mermaid is an authoring-time asset preparation step. The executable embeds the
+repository's seven source-linked diagrams; ordinary builds need no Mermaid
+runtime. Downstream registrations go in `docs/prepared-diagrams.json`:
+
+[source,json]
+----
+{
+  "schema_version": 2,
+  "diagrams": [{
+    "source_sha256": "<SHA-256 of exact Mermaid body>",
+    "href": "images/build-flow.png",
+    "png": "images/build-flow.png",
+    "png_sha256": "<SHA-256 of prepared PNG bytes>",
+    "svg": "images/build-flow.svg",
+    "svg_sha256": "<SHA-256 of prepared SVG bytes>"
+  }]
+}
+----
+
+The source hash covers body lines joined by LF, including the final LF, excluding
+AsciiDoc block markers. `png` is relative to the documentation directory; `href`
+is the safe published image path. An edited diagram rejects until its prepared
+PNG and source hash are deliberately updated. Local registrations take
+precedence over bundled entries. Schema 1 remains supported for PNG-only
+registrations. Schema 2 adds `svg` and `svg_sha256`; use empty strings for both
+when a registration has no vector companion. SVG uses a bounded static profile:
+geometry, text, local paint references and simple XHTML label containers; scripts,
+event attributes, external resources and unsupported CSS reject. Prepared SVGs
+are separate image files, never inline authored page markup. Hash checking establishes exact bytes, not an
+independent claim that a diagram correctly represents its source.
+
+== Lower-level commands
+
+`prepare` exposes intermediate Markdown, assets and an experimental schema-2
+inventory for inspection. It has the same repository/metadata options as
+`build`, requires a new output directory, and does not require a Python adapter:
+
+[source,sh]
+----
+roc-docs prepare --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-prepared --docs-version 1.2
+----
+
+The standalone renderer remains useful for individual Markdown documents:
+
+[source,sh]
+----
+roc-docs render manual.md new-output --title 'Project manual' \
+  --author 'Contributors' --version 1.2 --language en-AU \
+  --pdf-filename project.pdf --image images/example.png example.png
+----
+
+`--image HREF PNG_PATH` decodes PNG directly. The older
+`--asset HREF PNG_PATH RGB_PATH WIDTH HEIGHT` prepared-RGB interface remains
+available. `--html-only` and `--pdf-only` select an output format. This command
+requires a new output directory, prepares both requested formats first and
+publishes through a sibling staging directory.
+
+== Build and verify
+
+Use compiler `nightly-2026-10-15-38e6c42` and its normal cache. Immutable package
+URLs pin basic-cli, roc-parser, roc-pdf and roc-deflate. Release builds use the
+validated `--opt=speed` configuration; compilation has substantial RAM cost,
+separate from native rendering. Keep Roc commands sharing a cache sequential on
+this pin: its
+https://github.com/roc-lang/roc/blob/38e6c42c889cc7ffd97beea9199186790cc848f5/src/compile/cache_cleanup.zig#L130-L162[scratch cleanup]
+can remove another build's active scratch directory once it is five minutes old.
+
+[source,sh]
+----
+ROC=/absolute/path/to/roc roc tools/roc-docs/build.roc -- aarch64-darwin
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  python3 tools/roc-docs/tests/test_cli.py
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  python3 tools/roc-docs/tests/test_build.py
+roc test tools/roc-docs/test_highlight.roc
+roc test tools/roc-docs/test_html.roc
+roc test tools/roc-docs/test_assets.roc
+roc test tools/roc-docs/test_png.roc
+roc test tools/roc-docs/test_preparation.roc
+roc test tools/roc-docs/test_build_options.roc
+----
+
+Python is used only by the test harness and independent reference adapter under
+`tests/`. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
+exercise the actual compiled pipeline. Optional Poppler tools on the test host
+check PDF tags, destinations, text and actual token colours. This is not an
+independent PDF/A or PDF/UA compliance claim.
+
+HTML ships the existing Space Grotesk and Plus Jakarta Sans reading fonts as
+local assets, with their SIL OFL notices, and supports light/dark colour schemes.
+HTML uses a nested persistent desktop contents sidebar and a collapsible,
+single-column mobile contents list. It honors AsciiDoc `sectnums` and
+`toclevels` (1–6), adds heading permalinks and preserves legacy duplicate-heading
+anchors. Without JavaScript the contents remain expanded and usable.
+
+For a real-browser acceptance audit of the built roc-automation manual, use Node
+22.4+ and an installed Chrome on the test host:
+
+[source,sh]
+----
+node tools/roc-docs/tests/check_html_browser.mjs .docs-out/site /tmp/roc-docs-screenshots
+----
+
+The audit checks every page's links, loaded images and highlighting, then desktop
+navigation, mobile overflow/contents controls, column ratios and vector selection.
+Set `CHROME` when its executable is not in the default location. These are test
+host dependencies, not dependencies of the released utility. The upstream
+documentation workflow runs this audit and uploads desktop, mobile and dark-mode
+screenshots as the `docs-browser-review` artifact.
+
+`SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
+platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source
+highlighters, and `Renderer.roc` owns PDF adaptation/theme/fonts. `Png.roc`,
+`Svg.roc` and `ImageAssets.roc` own bounded image handling. Source adapted from roc-ansi commit
+`75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
+retain SIL OFL notices and pinned hashes in `fonts/provenance.json` and
+`fonts/web/provenance.json`. The bounded
+DEFLATE adaptation retains its Apache-2.0 license, modification notice and source
+identity under `vendor/`. `roc-docs --licenses` prints bundled notices without
+requiring adjacent files.

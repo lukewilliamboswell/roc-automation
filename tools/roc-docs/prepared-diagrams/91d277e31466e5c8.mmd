@@ -1,0 +1,6 @@
+flowchart LR
+    N[Latest nightly] --> T[Test job]
+    R[Latest release bundle] --> T
+    A[That release's examples archive] --> T
+    T -->|pass| G[Close the tracking issue]
+    T -->|fail| I[Open or update one tracking issue]

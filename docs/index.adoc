@@ -56,6 +56,8 @@ include::examples.adoc[leveloffset=+1]
 
 include::testing.adoc[leveloffset=+1]
 
+include::policy.adoc[leveloffset=+1]
+
 include::workflows.adoc[leveloffset=+1]
 
 include::optional-workflows.adoc[leveloffset=+1]

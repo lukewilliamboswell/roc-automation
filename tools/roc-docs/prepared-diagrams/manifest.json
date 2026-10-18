@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "recipe": {
+    "container": "asciidoctor/docker-asciidoctor:1.100.0@sha256:93ea06944afbc8e7a74ea31348b5f0624f1dfc69fa038ead3e7c4838faaa27d7",
+    "mermaid_cli": "11.16.0",
+    "theme": "actions/build-docs/theme/mermaid-config.json",
+    "background": "FAFAF7",
+    "scale": 2,
+    "description": "Existing roc-automation Asciidoctor Diagram build output, preserved as prepared raster inputs. Source block SHA256 is checked before reuse.",
+    "theme_sha256": "bf2fe07bbf6618c363d48517e69a73d7f3a02b1acdb5fa52398569f46dbe89ec"
+  },
+  "diagrams": [
+    {
+      "source": "testing.adoc",
+      "source_line": 89,
+      "source_sha256": "aff17195ea6d8a9e4e6bd2805a08bd7c7096e899cb32ce3cfeb55e71c25919de",
+      "source_file": "aff17195ea6d8a9e.mmd",
+      "href": "images/diagram-aff17195ea6d8a9e.png",
+      "png": "aff17195ea6d8a9e.png",
+      "png_sha256": "2a455aa275c10af7bfa1fe848462716d0ddb74c96149a261b045e0709612113c",
+      "original_generated_png": "diag-mermaid-md5-cfb07f58d831234ad376ecd7bcd98bbf.png",
+      "svg": "aff17195ea6d8a9e.svg",
+      "svg_sha256": "97506da2b13a3b356138ee7adc96f92e435cfbb08f4e9cd48140ab1ca8dd77e1",
+      "svg_origin": "Existing public Asciidoctor Mermaid output",
+      "svg_source_url": "https://lukewilliamboswell.github.io/roc-automation/diag-mermaid-md5-cfb07f58d831234ad376ecd7bcd98bbf.svg"
+    },
+    {
+      "source": "overview.adoc",
+      "source_line": 120,
+      "source_sha256": "dc82f98e7091b5be6324daf6883bf0a0fb6148eb73a7b62d685933c1cc3d473f",
+      "source_file": "dc82f98e7091b5be.mmd",
+      "href": "images/diagram-dc82f98e7091b5be.png",
+      "png": "dc82f98e7091b5be.png",
+      "png_sha256": "c1a2350780366ce39cb13fa39da62a76387ae03bb116d4d8bf6860c9c8c86693",
+      "original_generated_png": "diag-mermaid-md5-332f3e2cc13154f0257848fa9f290595.png",
+      "svg": "dc82f98e7091b5be.svg",
+      "svg_sha256": "bd8d7dc92b231582ea73fd91b8bb6f96ff28afe20a3cb1ce3f25764825f45686",
+      "svg_origin": "Existing public Asciidoctor Mermaid output",
+      "svg_source_url": "https://lukewilliamboswell.github.io/roc-automation/diag-mermaid-md5-332f3e2cc13154f0257848fa9f290595.svg"
+    },
+    {
+      "source": "workflows.adoc",
+      "source_line": 203,
+      "source_sha256": "7329b9cb18489873cfaabed01172959f5f5ed418723e7c2b64d3c95b1003a84a",
+      "source_file": "7329b9cb18489873.mmd",
+      "href": "images/diagram-7329b9cb18489873.png",
+      "png": "7329b9cb18489873.png",
+      "png_sha256": "c639e4fee69e55a1876f1937be040d4587d31ce71e547e00da6360881732092d",
+      "original_generated_png": "diag-mermaid-md5-b699ad077b330a251f5206c73a33a991.png",
+      "svg": "7329b9cb18489873.svg",
+      "svg_sha256": "6fbcb5bbf97d16658a5e8a34c32d433ad4cebd92b6df4f16a689e75db35b792f",
+      "svg_origin": "Existing public Asciidoctor Mermaid output",
+      "svg_source_url": "https://lukewilliamboswell.github.io/roc-automation/diag-mermaid-md5-b699ad077b330a251f5206c73a33a991.svg"
+    },
+    {
+      "source": "workflows.adoc",
+      "source_line": 340,
+      "source_sha256": "91d277e31466e5c84190f6c3b5d19992398286335c0b71840dfe34f2c3cfd357",
+      "source_file": "91d277e31466e5c8.mmd",
+      "href": "images/diagram-91d277e31466e5c8.png",
+      "png": "91d277e31466e5c8.png",
+      "png_sha256": "23fc2eae0a9060cef5d7b230ecbb221e1e919a853cf69e0518d6a40dde68389c",
+      "original_generated_png": "diag-mermaid-md5-77883008effbefb4f615e85fd70c94bc.png",
+      "svg": "91d277e31466e5c8.svg",
+      "svg_sha256": "c0d80a036ee03296c2701c4132f06dddfb3e2ad53a8afeba3d2b7545fb07aa22",
+      "svg_origin": "Existing public Asciidoctor Mermaid output",
+      "svg_source_url": "https://lukewilliamboswell.github.io/roc-automation/diag-mermaid-md5-77883008effbefb4f615e85fd70c94bc.svg"
+    },
+    {
+      "source": "platforms.adoc",
+      "source_line": 61,
+      "source_sha256": "e5246aecf89b7145ca974feb874ca1304f444069f98d28f585f9cccc1ae182ba",
+      "source_file": "e5246aecf89b7145.mmd",
+      "href": "images/diagram-e5246aecf89b7145.png",
+      "png": "e5246aecf89b7145.png",
+      "png_sha256": "79e8452b8de5b8eb8dd3536190fd11059f9cb08869ef00ff004185c5d0ebb7e9",
+      "original_generated_png": "diag-mermaid-md5-c4c89f9293005fe0851b7f8f091d4aac.png",
+      "svg": "e5246aecf89b7145.svg",
+      "svg_sha256": "040e8e72e299a4042f0d9480ccbddd9258c5de7ea477272a4908ea397365171a",
+      "svg_origin": "Existing public Asciidoctor Mermaid output",
+      "svg_source_url": "https://lukewilliamboswell.github.io/roc-automation/diag-mermaid-md5-c4c89f9293005fe0851b7f8f091d4aac.svg"
+    },
+    {
+      "source": "platforms.adoc",
+      "source_line": 322,
+      "source_sha256": "7dbcbac43b346c915d04c8a31b7e4d3bbf4b88da2ca50bbf86917354602374c5",
+      "source_file": "7dbcbac43b346c91.mmd",
+      "href": "images/diagram-7dbcbac43b346c91.png",
+      "png": "7dbcbac43b346c91.png",
+      "png_sha256": "49da1d66628774a92ee46c1b67e312917d857c4d53051ff538e832b300f295a2",
+      "original_generated_png": "diag-mermaid-md5-dab3be4a4446dcbd175acccdd43e6393.png",
+      "svg": "7dbcbac43b346c91.svg",
+      "svg_sha256": "e6de0264809766dac5acb305aa02ac1f9048d4b1d8f10eabcf8bff757baba43b",
+      "svg_origin": "Existing public Asciidoctor Mermaid output",
+      "svg_source_url": "https://lukewilliamboswell.github.io/roc-automation/diag-mermaid-md5-dab3be4a4446dcbd175acccdd43e6393.svg"
+    },
+    {
+      "source": "tests/fixtures/docs-manual/docs/index.adoc",
+      "source_line": 9,
+      "source_sha256": "44e5120023fb21efa70945e7aac13cb7e011458b7b702fa2efbab64c4db2dbcf",
+      "source_file": "44e5120023fb21ef.mmd",
+      "href": "images/diagram-44e5120023fb21ef.png",
+      "png": "44e5120023fb21ef.png",
+      "png_sha256": "29fac6301e162b68685e6232b7abc9ddbaf19423ff3256e9d2d9d96bd4d2f5f6",
+      "preparation": "mmdc -i source.mmd -o output.png -c theme.json -p mermaid-puppeteer.json -b FAFAF7 -s 2",
+      "svg": "44e5120023fb21ef.svg",
+      "svg_sha256": "b73b2d47731cbf0e5ab0ef099af9a69b944598f0983f3a159f99db6a183a5e9f",
+      "svg_origin": "Authored vector equivalent of the two-node action fixture"
+    }
+  ]
+}
