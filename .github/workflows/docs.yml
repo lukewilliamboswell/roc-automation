@@ -56,14 +56,14 @@ jobs:
         env:
           SITE: ${{ steps.docs.outputs.site-directory }}
           CHROME: google-chrome
-        run: node tools/roc-docs/tests/check_html_browser.mjs "$SITE" .docs-verification-browser
+        run: node tools/roc-docs/tests/check_html_browser.mjs "$SITE" docs-browser-review
 
       - name: Upload HTML review screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-browser-review
-          path: .docs-verification-browser
+          path: docs-browser-review
           if-no-files-found: ignore
 
       - name: Upload Pages artifact
