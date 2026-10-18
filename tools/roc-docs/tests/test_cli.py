@@ -169,6 +169,28 @@ class RendererTests(unittest.TestCase):
         self.assertTrue((html / 'index.html').is_file()); self.assertFalse((html / 'manual.pdf').exists())
         self.assertTrue((pdf / 'manual.pdf').is_file()); self.assertFalse((pdf / 'index.html').exists())
     @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler optional independent reader')
+    def test_pdf_highlighting_accepts_each_supported_language(self):
+        snippets = {
+            'yaml': 'on: true # comment\nport: 42\nname: "green string"\nrun: |\n  echo "multiline"\n',
+            'yml': 'enabled: false\nname: "green string"\n',
+            'sh': 'export MODE="green string"\n',
+            'json': '{"name": "green string", "port": 42, "enabled": true}\n',
+            'diff': '@@ -1 +1 @@\n-old\n+green string\n',
+            'unknown-language': 'unhighlighted plain source\n',
+        }
+        for language, code in snippets.items():
+            with self.subTest(language=language):
+                output, _ = self.run_doc('# Highlight probe\n\n```' + language + '\n' + code + '```\n', '--pdf-only', name=language)
+                pdf = output/'manual.pdf'
+                text = subprocess.check_output(['pdftotext', '-layout', str(pdf), '-'], text=True)
+                for line in code.splitlines():
+                    self.assertIn(line.strip(), text)
+                svg = self.root/(language + '.svg')
+                subprocess.run(['pdftocairo', '-svg', '-f', '2', '-l', '2', str(pdf), str(svg)], check=True, capture_output=True)
+                colours = [tuple(float(component) * 2.55 for component in match) for match in re.findall(r'rgb\(([\d.]+)%,\s*([\d.]+)%,\s*([\d.]+)%\)', svg.read_text())]
+                green = any(all(abs(a-b) < 1 for a,b in zip(colour, (36,99,51))) for colour in colours)
+                self.assertEqual(green, language != 'unknown-language', ('PDF string colour/fallback', language))
+    @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler optional independent reader')
     def test_independent_reader_pagination_tags_colours_and_source(self):
         code = 'main! = |_args| { if True 42 else echo!("green string") }\n' + ''.join(f'# Unique source line {n:03d}\n' for n in range(100))
         source = '# Reader probe\n\n```roc\n' + code + '```\n\n| Repeated heading | Value |\n| --- | --- |\n' + ''.join(f'| Row {n:03d} | Item {n:03d} |\n' for n in range(120))

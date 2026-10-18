@@ -37,10 +37,15 @@ jobs:
 
       - name: Install the independent PDF reader for upstream verification
         run: |
-          if ! command -v pdfinfo >/dev/null || ! command -v pdftotext >/dev/null; then
+          if ! command -v pdfinfo >/dev/null || ! command -v pdftotext >/dev/null || ! command -v pdftocairo >/dev/null; then
             sudo apt-get update
             sudo apt-get install --yes --no-install-recommends poppler-utils
           fi
+
+      - name: Check PDF source colours and layout with the independent reader
+        env:
+          ROC_DOCS_BINARY: ${{ steps.renderer.outputs.renderer-binary }}
+        run: python3 tools/roc-docs/tests/test_cli.py RendererTests.test_pdf_highlighting_accepts_each_supported_language RendererTests.test_independent_reader_pagination_tags_colours_and_source -v
 
       # Python here is an independent test oracle, never part of rendering.
       - name: Verify the rendered manual preserves source inventories and links

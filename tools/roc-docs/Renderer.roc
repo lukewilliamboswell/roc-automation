@@ -1,6 +1,7 @@
 import Html
 import parser.Markdown
 import SyntaxHighlight
+import CodeHighlight
 import pdf.Color
 import pdf.Theme
 import pdf.Document
@@ -430,7 +431,7 @@ Renderer :: [].{
 			Face(value) => value
 			_ => return Err(UnsupportedMarkdown("source blocks require a registered code face"))
 		}
-		foregrounds = if language == "roc" SyntaxHighlight.foregrounds(SyntaxHighlight.light, SyntaxHighlight.highlight(source)) else []
+		foregrounds = SyntaxHighlight.foregrounds(SyntaxHighlight.light, CodeHighlight.highlight(language, source))
 		Ok(
 			Pdf.source_block({
 				text: source,

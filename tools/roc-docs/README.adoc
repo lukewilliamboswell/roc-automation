@@ -31,7 +31,7 @@ a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
 The parser package pins roc-parser 2.1.0-rc.3. `Preparation.roc` adapts its real
 AsciiDoc syntax tree and virtual-file preprocessor. HTML preserves description
 lists, sidebars, captions and table column weights directly from that tree;
-PDF uses the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
+PDF uses roc-pdf 0.1.0-rc6 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
 Includes, backend conditionals, attributes and cross-references are resolved
 against the supplied source tree; there is no remote include loader or source
 execution. See link:PREPARATION.adoc[the preparation contract] for the supported
@@ -54,8 +54,9 @@ incompatible and reject on the native backend; the initial native theme is
 built in. These are explicit experimental authoring/presentation boundaries,
 not a claim of complete Asciidoctor compatibility.
 
-Roc source uses original UTF-8 lexical ranges in HTML and PDF. HTML also
-highlights YAML through roc-parser's source tokenizer, and shell, JSON and diff
+HTML and PDF share the same language-aware source highlighter and original
+UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
+tokenizers, and shell, JSON and diff
 through small lexical adapters. Unknown languages retain preformatted text. The highlighter accepts incomplete snippets and does
 not require type checking. AsciiDoc LF source blocks retain their original
 bytes. Native Markdown follows the upstream CommonMark line-ending
