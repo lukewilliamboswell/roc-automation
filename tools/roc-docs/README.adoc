@@ -183,7 +183,7 @@ python3 tools/roc-docs/tests/run_roc_tests.py
 ----
 
 The suite runner requires a passing test summary. On the pinned compiler it
-accepts warning status 2 only for unreachable-code warnings in the three pinned
+accepts warning status 2 only for unreachable-code warnings in the four pinned
 dependencies; warnings in local code, other diagnostics and failed tests reject.
 
 Python is used only by the test harness and independent reference adapter under

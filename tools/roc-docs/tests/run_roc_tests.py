@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 PACKAGES = {
+    'BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze',
     'E5r48puF3KGvqzbd6v1JWA7qJFMehppWb7A6NzRWieJT',
     '4W8SHzvwet9hH9qZewJ1J1CVQoH7YKA6zyijWFTB3y1w',
     'BRKYfdjzNFJmhx5c3Do9gTnW7FrZuYqoUzMcg1FHkYBf',
