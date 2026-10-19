@@ -11,6 +11,7 @@ import re
 import stat
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -135,6 +136,39 @@ def install(version: str, system: str, expected: str, directory: Path, download:
         candidate.unlink(missing_ok=True)
 
 
+def boolean_input(value: str, name: str) -> bool:
+    if value not in ("true", "false"):
+        raise ValueError(f"{name} must be true or false")
+    return value == "true"
+
+
+def cache_settings(env: dict[str, str], version: str, system: str) -> tuple[str, str]:
+    """Cache only Blueprint's verified download bytes, scoped by locked tool set."""
+    boolean_input(env.get("INPUT_INSTALL_NIX", "false"), "install-nix")
+    if not boolean_input(env.get("INPUT_CACHE", "false"), "cache"):
+        return "", ""
+    workload = env.get("INPUT_CACHE_WORKLOAD", "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", workload):
+        raise ValueError("cache-workload must name the tool set (1 to 80 letters, digits, '.', '_' or '-'); use distinct names for different job/matrix tool subsets")
+    workspace = Path(env["GITHUB_WORKSPACE"])
+    lock = workspace / "Blueprint.lock"
+    if lock.is_symlink() or not lock.is_file():
+        raise ValueError("artifact caching requires a regular checked-in Blueprint.lock")
+    with lock.open("rb") as source:
+        content = source.read(MAX_CONFIG_BYTES + 1)
+    if len(content) > MAX_CONFIG_BYTES:
+        raise ValueError("Blueprint.lock exceeds cache-key byte limit")
+    lock_digest = hashlib.sha256(content).hexdigest()
+    installer_digest = hashlib.sha256(Path(__file__).read_bytes() + KNOWN_RELEASES.read_bytes()).hexdigest()
+    workflow = hashlib.sha256(env.get("GITHUB_WORKFLOW", "local").encode()).hexdigest()[:16]
+    cache_home = env.get("XDG_CACHE_HOME") or str(Path(env["HOME"]) / ".cache")
+    if not Path(cache_home).is_absolute() or any(ord(c) < 32 or ord(c) == 127 for c in cache_home):
+        raise ValueError("the Blueprint cache home must be an absolute path without control characters")
+    artifacts = str(Path(cache_home) / "blueprint" / "v1" / "artifacts")
+    key = f"blueprint-artifacts-v1-{system}-{version}-{workflow}-{workload}-{installer_digest}-{lock_digest}"
+    return artifacts, key
+
+
 def main() -> None:
     env = os.environ
     system = system_for(env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", ""))
@@ -145,13 +179,20 @@ def main() -> None:
     else:
         version = version_in(read_config(Path(env.get("GITHUB_WORKSPACE", ".")) / "Blueprint.roc"))
     expected = expected_sha256(supplied, known_releases(), version, system)
+    artifacts, cache_key = cache_settings(env, version, system)
+    started = time.perf_counter()
     directory = Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint"
     installed = install(version, system, expected, directory)
+    duration = time.perf_counter() - started
+    size = installed.stat().st_size
     with open(env["GITHUB_PATH"], "a", encoding="utf-8") as path_file:
         path_file.write(f"{directory}\n")
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-        output.write(f"blueprint-path={installed}\nsystem={system}\nversion={version}\n")
-    print(f"Installed blueprint {version} for {system}; SHA-256 {expected} verified")
+        output.write(f"blueprint-path={installed}\nsystem={system}\nversion={version}\nsha256={expected}\nbytes={size}\ninstall-seconds={duration:.3f}\nartifacts-directory={artifacts}\ncache-key={cache_key}\n")
+    print(f"Installed blueprint {version} for {system}; SHA-256 {expected} verified; {size} bytes; installation {duration:.3f} seconds")
+    if env.get("GITHUB_STEP_SUMMARY"):
+        with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+            summary.write(f"\n### Blueprint bootstrap\n\nRelease `{version}`, system `{system}`; {size} bytes; {duration:.3f} seconds. Verified SHA-256: `{expected}`.\n")
 
 
 if __name__ == "__main__":

@@ -148,7 +148,8 @@ def check(prepared, site, pdf=None, independent_reader=False):
             if not re.search(r'^Tagged:\s+yes$', info, re.M):
                 raise ValueError('Independent PDF reader did not find tagged structure')
             extracted = subprocess.check_output(['pdftotext', '-layout', str(pdf), '-'], text=True)
-            compact = compact_pdf_text(extracted, manifest['metadata'])
+            labels = [re.sub(r'[`*_]', '', re.sub(r' \{#[^}]+\}$', '', heading)) for heading in manual['headings']]
+            compact = compact_pdf_text(extracted, manifest['metadata'], labels)
             for index, block in enumerate(manual['code_texts']):
                 if re.sub(r'\s+', '', block) not in compact:
                     raise ValueError(f'PDF reader did not retain code block {index}')
@@ -162,7 +163,7 @@ def check(prepared, site, pdf=None, independent_reader=False):
 
 
 
-def compact_pdf_text(extracted, metadata):
+def compact_pdf_text(extracted, metadata, chapter_labels=()):
     """Remove edge furniture before testing non-whitespace source sequences.
 
     This checks retained code characters through an independent reader. Exact
@@ -174,6 +175,10 @@ def compact_pdf_text(extracted, metadata):
         lines = page.splitlines()
         nonempty = [index for index, line in enumerate(lines) if line.strip()]
         removed = set()
+        # rc6 continuation furniture is the chapter title. Only remove an
+        # exact known title at the first nonempty line, never a body occurrence.
+        if nonempty and lines[nonempty[0]].strip() in chapter_labels:
+            removed.add(nonempty[0])
         for index in nonempty[:3]:
             line = lines[index].strip()
             if line.startswith(metadata['title']) and line.endswith(metadata['version']):

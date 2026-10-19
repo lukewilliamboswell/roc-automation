@@ -12,8 +12,10 @@ request. A shared change never reaches a repository silently.
 [#setup-blueprint]
 == `actions/setup-blueprint`
 
-Installs Nix and the `blueprint` binary that `Blueprint.roc` names, so that
-`blueprint run <task>` works in the next step. It builds nothing.
+Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
+installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
+and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
+The setup action builds nothing.
 
 [source,yaml]
 ----
@@ -24,7 +26,7 @@ Installs Nix and the `blueprint` binary that `Blueprint.roc` names, so that
 - run: blueprint run check
 ----
 
-The call takes no inputs. The action reads the roc-blueprint release from the
+The Blueprint version needs no duplicate input. The action reads the roc-blueprint release from the
 platform URL in the checked-out `Blueprint.roc`, and it records the reviewed
 SHA-256 of every binary of each release it installs. `Blueprint.roc` is
 therefore the one place a repository names its Blueprint release, and a
@@ -34,6 +36,9 @@ workflow cannot disagree with it.
 |===
 | Input | Meaning
 
+| `install-nix` | Defaults to `false`. Enable for Nix-sourced tools, sandboxed builds or an older Blueprint environment requiring Nix.
+| `cache` | Defaults to `false`. Restore/save only Blueprint `v1/artifacts` bytes.
+| `cache-workload` | Required with caching: a logical tool-set name, distinct for jobs or matrix variants that provision different subsets.
 | `version` | The roc-blueprint release to install. Defaults to the release named by the platform URL in `Blueprint.roc` at the root of the workspace. Set it only in a job that has no checkout.
 | `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
@@ -42,7 +47,11 @@ workflow cannot disagree with it.
 
 Outputs are `blueprint-path`, the absolute path of the installed binary,
 `system`, the release system name chosen for the runner, and `version`, the
-release that was installed.
+release that was installed. `sha256`, `bytes` and `install-seconds` report the
+verified bootstrap executable and its download/verification duration. `cache-hit` reports an exact cache hit, while
+`cache-key` and `artifacts-directory` identify the saved download bytes. The
+cache action restores before tasks and saves after a successful job. Blueprint
+rehashes restored bytes and rebuilds derived trees; hit status is not verification.
 
 The recorded checksums live in `actions/setup-blueprint/releases.json`, one
 entry for each roc-blueprint release, copied from that release's
@@ -63,6 +72,29 @@ makes it executable and puts it on `PATH`. A mismatch fails the step and
 installs nothing. It takes no token and needs no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
 what the checksum does and does not establish.
+
+[#blueprint-tool]
+== `actions/blueprint-tool`
+
+Runs a repository Blueprint task that prints one persistent executable path.
+Use it in read-only build jobs after `setup-blueprint`. The task resolves the
+step's temporary `PATH` link with `realpath` before it ends; see
+xref:pure-package.adoc#pass-an-executable-to-a-shared-action[the complete handoff example].
+
+`task` is required. `blueprint-binary` may select the installed executable;
+otherwise the action uses `blueprint` on `PATH`. `label` supplies descriptive
+diagnostic text. With `measure: 'true'`, `binary` names a host-side wrapper
+that measures calls, while `executable-path` names the actual file. The wrapper
+preserves arguments and the command's exit status. `output-directory` optionally
+adds output file counts and sizes. Python is used for this optional host-side
+measurement, never for source preparation or rendering.
+
+Outputs include `binary`, `executable-path`, actual `sha256` and `bytes`,
+`provision-seconds`, `metrics-path` and `measure-script`. The last permits
+separate preparation/API measurements. Provisioning includes the repository
+task's verification/download work. Labels and reported digests do not replace
+Blueprint's reviewed lock or authenticate an arbitrary task's chosen program.
+Paths are valid in that job; a new runner restores artifacts and reruns the task.
 
 [#install-the-nightly-compiler]
 == Install the nightly compiler
@@ -224,7 +256,8 @@ Install a reviewed renderer binary for the runner's architecture before invoking
 the action. Pass its path explicitly, set `ROC_DOCS_BINARY`, or put `roc-docs`
 on `PATH`. The action does not download or compile a renderer. The tools release
 pipeline builds and tests Linux x86-64, Linux ARM64 and macOS ARM64 binaries;
-a release must be published before downstream consumers can install those assets.
+a release must be published before downstream consumers can install those assets
+using xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Blueprint adoption path].
 
 [source,yaml]
 ----
@@ -251,37 +284,36 @@ a release must be published before downstream consumers can install those assets
 | `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
 | `api-entrypoint` | empty | Roc package or platform root for the generated API reference
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
-| `backend` | `roc` | `roc` for the precompiled renderer; `legacy` for Docker and Asciidoctor
+| `site-url` | empty | HTTPS publication directory for PDF links to website-only pages, API docs and downloads
 | `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
 | `title`, `author`, `language` | empty | Optional overrides for document metadata
 | `pdf-image-dpi` | `144` | PDF raster resolution limit, from 72 to 300; original website images are retained
-| `theme-directory` | empty | Legacy backend only: replacement Asciidoctor theme directory
 |===
 
 Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
-The default backend needs only the renderer binary and the action runner's
+The action needs only the renderer binary and the action runner's
 shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.3, decodes
 PNG assets and renders both formats in Roc. It needs no Python, Docker or Roc
 compiler. Generating the optional API reference requires an explicitly supplied
 Roc compiler. The same binary can build a repository locally with
 `roc-docs build --workspace .`.
 
-The native backend supports the manual's documented source subset. Unsupported
+The renderer supports the manual's documented source subset. Unsupported
 constructs fail rather than silently disappearing. Mermaid diagrams need prepared
 PNG assets whose hashes match their source; see
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
-The initial PDF theme has outlines and linked contents, but no printed contents
-page numbers or chapter-aware running headers. PDF raster images default to a
+The PDF theme has outlines, hierarchical linked contents with printed page
+numbers, chapter opening pages and chapter-aware continuation headers. PDF raster images default to a
 144 DPI limit at their printed size; `pdf-image-dpi` adjusts that tradeoff.
 Large documents or high resolutions can exceed the PDF package's bounded
 resource budget and fail before publication.
 
-Set `backend: legacy` to retain Docker/Asciidoctor rendering during migration,
-including custom Asciidoctor themes. A legacy theme directory must contain
-`docs.css`, `docs-theme.yml`, `mermaid-config.json` and `fonts/`. Native rendering
-rejects that input explicitly. Both backends stage the full publication and
-preserve the previous output if conversion, rendering or API generation fails.
+The action uses one shared renderer and built-in theme. It stages the full
+publication and preserves the previous output if conversion, rendering or API
+generation fails. Repositories pinned to older action SHAs keep the behavior
+of those revisions; adopting this action removes the Docker backend and the
+`backend` and `theme-directory` inputs.
 
 [#publish-release]
 == `actions/publish-release`

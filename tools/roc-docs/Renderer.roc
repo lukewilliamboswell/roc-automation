@@ -1,4 +1,5 @@
 import Html
+import Destination
 import parser.Markdown
 import SyntaxHighlight
 import CodeHighlight
@@ -32,14 +33,14 @@ Renderer :: [].{
 	## explicit prepared RGB8; no repository content is embedded in this module.
 	render = |source, metadata, assets, mode| {
 		blocks = normalize(Markdown.parse_str(source))?
-		html = if mode == PdfOnly "" else html_document(blocks, metadata, assets)?
+		html = if (mode == PdfOnly) "" else html_document(blocks, metadata, assets)?
 		if mode == HtmlOnly {
 			return Ok({ html, pdf: [], pages: 0 })
 		}
 		fonts = register_fonts()?
 		options = renderer_options(fonts)
-		body = pdf_blocks(blocks, options, False, assets)?
-		contents = if body.is_empty() front_matter(blocks, metadata) else front_matter(blocks, metadata).append(Pdf.page_break).concat(body)
+		body = chapter_blocks(blocks, options, assets, metadata)?
+		contents = if (body.is_empty()) front_matter(blocks, metadata) else front_matter(blocks, metadata).append(Pdf.page_break).concat(body)
 		document = Pdf.document({ contents, language: metadata.language, title: metadata.title, outline: outline(blocks), page_templates: Templates(page_templates(metadata)) })
 		prepared = Pdf.prepare_with_report(document, options).map_err(|error| PdfRejected(error))?
 		bytes = Pdf.to_bytes_prepared(prepared.prepared).map_err(|error| PdfRejected(error))?
@@ -202,13 +203,69 @@ Renderer :: [].{
 
 	page_templates = |metadata| {
 		rule = Scene.Drawing.empty.rectangle({ origin: { x: 0, y: 0 }, size: { width: 471, height: 0.5 } }, rgb(202, 213, 228))
-		header = Pdf.region({ height: 22, slot_inset: 6, backdrop: Backdrop(rule), start: [Pdf.furniture_text([Pdf.text("${metadata.title}")])], end: if metadata.version.is_empty() [] else [Pdf.furniture_text([Pdf.text(metadata.version)])] })
-		footer = Pdf.region({ height: 22, slot_inset: 6, backdrop: Backdrop(rule), start: if metadata.author.is_empty() [] else [Pdf.furniture_text([Pdf.text(metadata.author)])], end: [Pdf.furniture_text([Pdf.page_number(Decimal), Pdf.text(" / "), Pdf.total_pages(Decimal)])] })
+		header = Pdf.region({ height: 22, slot_inset: 6, backdrop: Backdrop(rule), start: [Pdf.furniture_text([Pdf.text("${metadata.title}")])], end: if (metadata.version.is_empty()) [] else [Pdf.furniture_text([Pdf.text(metadata.version)])] })
+		footer = Pdf.region({ height: 22, slot_inset: 6, backdrop: Backdrop(rule), start: if (metadata.author.is_empty()) [] else [Pdf.furniture_text([Pdf.text(metadata.author)])], end: [Pdf.furniture_text([Pdf.page_number(Decimal), Pdf.text(" / "), Pdf.total_pages(Decimal)])] })
 		{ first: Pdf.first_page_template({ footer, gap: 12 }), continuation: Pdf.page_template({ header, footer, gap: 12 }) }
 	}
 
+	# Chapter boundaries follow the shallowest heading below an optional book
+	# title. Scopes keep navigation, global pagination and structure in one PDF.
+	chapter_blocks = |blocks, options, assets, metadata| {
+		book = match blocks.first() {
+			Ok(Heading({ level: One, content })) => heading(content).label == metadata.title
+			_ => False
+		}
+		body = if (book) blocks.drop_first(1) else blocks
+		levels = body.keep_oks(
+			|block| match block {
+				Heading({ level, .. }) => Ok(level_number(level))
+				_ => Err(NotHeading)
+			},
+		)
+		chapter_level = levels.fold(7.U8, |minimum, level| if (level < minimum) level else minimum)
+		var $result = []
+		var $pending = []
+		var $label = ""
+		for block in body {
+			match block {
+				Heading({ level, content }) if level_number(level) == chapter_level => {
+					if !$pending.is_empty() {
+						$result = $result.concat(scoped_chapter($pending, $label, options, assets, metadata)?)
+					}
+					$pending = []
+					$label = heading(content).label
+				}
+				_ => {}
+			}
+			$pending = $pending.append(block)
+		}
+		$result = $result.concat(scoped_chapter($pending, $label, options, assets, metadata)?)
+		# Preserve the book destination even though its title is on the cover.
+		if book {
+			h = match blocks.first() {
+				Ok(Heading({ content, .. })) => heading(content)
+				_ => { id: "", label: "" }
+			}
+			Ok([Pdf.destination_heading(Destination.encode(h.id), 1, h.label)].concat($result))
+		} else Ok($result)
+	}
+
+	scoped_chapter = |blocks, label, options, assets, metadata| {
+		contents = pdf_blocks(blocks, options, False, assets)?
+		if contents.is_empty() {
+			return Ok([])
+		}
+		if label == "" {
+			return Ok(contents)
+		}
+		header = Pdf.region({ height: 22, slot_inset: 6, start: [Pdf.furniture_text([Pdf.reserved_width(380, Start, [Pdf.running_label])])] })
+		Ok([Pdf.page_scope({ running_label: Label(label), page_templates: Templates({ opening: Pdf.page_template({ footer: chapter_footer(metadata), gap: 12 }), continuation: Pdf.page_template({ header, footer: chapter_footer(metadata), gap: 12 }) }) }, contents)])
+	}
+
+	chapter_footer = |metadata| Pdf.region({ height: 22, slot_inset: 6, start: if (metadata.author.is_empty()) [] else [Pdf.furniture_text([Pdf.text(metadata.author)])], end: [Pdf.furniture_text([Pdf.page_number(Decimal), Pdf.text(" / "), Pdf.total_pages(Decimal)])] })
+
 	front_matter = |blocks, metadata| {
-		contents = [Pdf.title(metadata.title), Pdf.spacer(18), Pdf.paragraph(if metadata.author.is_empty() "Project documentation" else metadata.author), Pdf.paragraph(if metadata.version.is_empty() "unreleased" else metadata.version), Pdf.spacer(24), Pdf.heading(1, "Contents"), Pdf.spacer(6)]
+		contents = [Pdf.title(metadata.title), Pdf.spacer(18), Pdf.paragraph(if (metadata.author.is_empty()) "Project documentation" else metadata.author), Pdf.paragraph(if (metadata.version.is_empty()) "unreleased" else metadata.version), Pdf.spacer(24), Pdf.heading(1, "Contents"), Pdf.spacer(6)]
 		entries = flatten_blocks(blocks).keep_oks(
 			|block| match block {
 				Heading({ level, content }) => Ok({ level: level_number(level), label: heading(content).label, id: heading(content).id })
@@ -222,7 +279,7 @@ Renderer :: [].{
 			_ => entries
 		}
 		tree = contents_items(selected, 0, 0, 0)
-		if tree.items.is_empty() contents else contents.append(Pdf.bullet_list(tree.items))
+		if (tree.items.is_empty()) contents else contents.append(Pdf.bullet_list(tree.items))
 	}
 
 	ContentsEntry : { level : U8, label : Str, id : Str }
@@ -240,9 +297,9 @@ Renderer :: [].{
 			# Limit displayed ancestry, rather than absolute heading numbers, so
 			# a book's H2/H3/H4 chapters receive three useful contents levels.
 			if depth < 3 {
-				label = if depth == 0 [Pdf.strong([Pdf.text(entry.label)])] else [Pdf.text(entry.label)]
-				body = [Pdf.rich_paragraph([Pdf.inline_internal_link(label, entry.id)])]
-				$items = $items.append(Pdf.list_item(if children.items.is_empty() body else body.append(Pdf.bullet_list(children.items))))
+				label = if (depth == 0) [Pdf.strong([Pdf.text(entry.label)])] else [Pdf.text(entry.label)]
+				body = [Pdf.rich_paragraph([Pdf.inline_internal_link(label, Destination.encode(entry.id)), Pdf.text("  "), Pdf.inline_internal_link([Pdf.page_reference({ destination: Destination.encode(entry.id), width: 32 })], Destination.encode(entry.id))])]
+				$items = $items.append(Pdf.list_item(if (children.items.is_empty()) body else body.append(Pdf.bullet_list(children.items))))
 			}
 		}
 		{ items: $items, next: $next }
@@ -281,7 +338,7 @@ Renderer :: [].{
 	outline : List(Markdown) -> List(Document.OutlineEntry)
 	outline = |blocks| flatten_blocks(blocks).keep_oks(
 		|block| match block {
-			Heading({ level, content }) => Ok({ depth: if level_number(level) == 1 0 else level_number(level).to_u64() - 2, destination: heading(content).id, open: True, title: heading(content).label })
+			Heading({ level, content }) => Ok({ depth: if (level_number(level) == 1) 0 else level_number(level).to_u64() - 2, destination: Destination.encode(heading(content).id), open: True, title: heading(content).label })
 			_ => Err(NotHeading)
 		},
 	)
@@ -327,14 +384,17 @@ Renderer :: [].{
 					if level_number(level) > 1 {
 						$result = $result.append(Pdf.spacer(12))
 					}
-					$result = $result.append(Pdf.destination_heading(h.id, level_number(level), h.label)).append(Pdf.spacer(6))
+					$result = $result.append(Pdf.destination_heading(Destination.encode(h.id), level_number(level), h.label)).append(Pdf.spacer(6))
 				}
 				Paragraph([Image({ alt, target })]) => {
 					asset = image_asset(assets, target.href)?
 					image = Image.Source.rgb8({ dimensions: asset.dimensions, pixels: asset.pixels, row_stride: asset.dimensions.width.to_u64() * 3, alpha: NoAlpha })
 					drawing = Scene.Drawing.empty.image(image, { origin: { x: 0, y: 0 }, size: asset.size })
 					caption = Pdf.no_caption
-					$result = $result.append(Pdf.figure({ drawing, alt: plain(alt), caption })).append(Pdf.spacer(6))
+					$result = $result.append(Pdf.figure({ drawing, alt: plain(alt), caption, fit: ScaleToFit({ minimum_percent: 25 }) }))
+					if !in_list {
+						$result = $result.append(Pdf.spacer(6))
+					}
 				}
 				Paragraph(inlines) => {
 					paragraph = Pdf.rich_paragraph(pdf_inlines(inlines)?)
@@ -342,14 +402,16 @@ Renderer :: [].{
 						Ok(Paragraph([Image(_)])) => True
 						_ => False
 					}
-					$result = $result.append(if followed_by_image Pdf.keep_with_next(Preferred, paragraph) else paragraph)
+					$result = $result.append(if (followed_by_image) Pdf.keep_with_next(Preferred, paragraph) else paragraph)
 					if !in_list and !followed_by_image {
 						$result = $result.append(Pdf.spacer(6))
 					}
 				}
 				Code({ info, pre }) => {
 					$result = $result.append(code_panel(info, pre, options)?)
-					$result = $result.append(Pdf.spacer(6))
+					if !in_list {
+						$result = $result.append(Pdf.spacer(6))
+					}
 				}
 				Table({ header, rows, align }) => {
 					var $headers = []
@@ -368,7 +430,7 @@ Renderer :: [].{
 						caption: Pdf.no_caption,
 						columns: align.map_with_index(
 							|alignment, index| {
-								width: if index == align.len() - 1 Share(1) else Content,
+								width: if (index == align.len() - 1) Share(1) else Content,
 								align: match alignment {
 									Right => End
 									Center => Center
@@ -380,49 +442,38 @@ Renderer :: [].{
 						row_split: SplitRows,
 						body_rows: $rows,
 					})
-					$result = $result.append(table).append(Pdf.spacer(6))
+					$result = $result.append(table)
+					if !in_list {
+						$result = $result.append(Pdf.spacer(6))
+					}
 				}
 				ListBlock({ kind, items, .. }) => {
 					if items.any(|item| item.task != NoTask) {
 						return Err(UnsupportedMarkdown("task list"))
 					}
-					if !items.all(|item| list_compatible(item.blocks)) {
-						# roc-pdf's list item accepts paragraphs/nested lists only. Keep every
-						# complex item's visible marker and flow blocks rather than dropping
-						# source, figures or tables. HTML retains its original list structure.
-						for item_entry in items.map_with_index(|item, index| { item, index }) {
-							marker = match kind {
-								Unordered => "• "
-								Ordered({ start }) => "${(start + item_entry.index).to_str()}. "
-							}
-							marked = match item_entry.item.blocks {
-								[Paragraph(content), .. as tail] if !contains_image(content) => [Paragraph([Text(marker)].concat(content))].concat(tail)
-								_ => [Paragraph([Text(marker)])].concat(item_entry.item.blocks)
-							}
-							$result = $result.concat(pdf_blocks(marked, options, False, assets)?)
+					var $items = []
+					for item in items {
+						children = pdf_blocks(item.blocks, options, True, assets)?
+						# rc6 requires a paragraph before rich item children.
+						body = match item.blocks.first() {
+							Ok(Paragraph(content)) if !contains_image(content) => children
+							_ => [Pdf.paragraph(" ")].concat(children)
 						}
-					} else {
-						var $items = []
-						for item in items {
-							if item.task != NoTask {
-								return Err(UnsupportedMarkdown("task list"))
-							}
-							$items = $items.append(Pdf.list_item(pdf_blocks(item.blocks, options, True, assets)?))
-						}
-						$result = $result.append(
-							match kind {
-								Unordered => Pdf.bullet_list($items)
-								Ordered({ start }) => Pdf.numbered_list(
-									{ start: start },
-									$items,
-								)
-							},
-						)
+						$items = $items.append(Pdf.list_item(body))
 					}
+					$result = $result.append(
+						match kind {
+							Unordered => Pdf.bullet_list($items)
+							Ordered({ start }) => Pdf.numbered_list({ start: start }, $items)
+						},
+					)
 				}
 
 				Blockquote(children) => {
-					$result = $result.concat(pdf_blocks(children, options, in_list, assets)?)
+					$result = $result.append(Pdf.callout({ name: "Note", contents: pdf_blocks(children, options, True, assets)?, padding: 10, panel: { fill: Fill(rgb(247, 249, 252)), border: Border({ color: rgb(173, 192, 215), width: 0.6 }) } }))
+					if !in_list {
+						$result = $result.append(Pdf.spacer(6))
+					}
 				}
 				ThematicBreak => {
 					$result = $result.append(Pdf.spacer(12))
@@ -433,14 +484,6 @@ Renderer :: [].{
 		Ok($result)
 	}
 
-	list_compatible : List(Markdown) -> Bool
-	list_compatible = |blocks| blocks.all(
-		|block| match block {
-			Paragraph(content) => !contains_image(content)
-			ListBlock({ items, .. }) => items.all(|item| list_compatible(item.blocks))
-			_ => False
-		},
-	)
 	contains_image : List(Markdown.Inline) -> Bool
 	contains_image = |inlines| inlines.any(
 		|inline| match inline {
@@ -486,7 +529,7 @@ Renderer :: [].{
 					if !safe_link(target.href) {
 						return Err(UnsupportedLink(target.href))
 					}
-					if target.href.starts_with("#") Pdf.inline_internal_link(pdf_inlines(label)?, target.href.drop_prefix("#")) else Pdf.inline_link(pdf_inlines(label)?, target.href)
+					if (target.href.starts_with("#")) Pdf.inline_internal_link(pdf_inlines(label)?, Destination.encode(target.href.drop_prefix("#"))) else Pdf.inline_link(pdf_inlines(label)?, target.href)
 				}
 				HardBreak => Pdf.line_break
 				_ => return Err(UnsupportedMarkdown("inline: ${Str.inspect(inline)}"))

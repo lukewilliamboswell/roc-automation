@@ -6,6 +6,7 @@ import cli.Stdout
 import BuildOptions
 import BuildFiles
 import Preparation
+import SourceIncludes
 import Renderer
 import Png
 import Svg
@@ -65,9 +66,10 @@ RepositoryBuild :: [].{
 			return Err("documentation entrypoint does not exist")
 		}
 		diagrams = load_diagrams!(docs)?
-		prepared = Preparation.prepare($sources, { entrypoint: options.entrypoint, version: options.docs_version, pdf_filename: options.pdf_filename, diagrams: diagrams.map(|d| { source_sha256: d.source_sha256, href: d.href }) })?
+		expanded = SourceIncludes.expand!(workspace, options.docs_directory, options.output_directory, $sources)?
+		prepared = Preparation.prepare(expanded.files, { entrypoint: options.entrypoint, version: options.docs_version, pdf_filename: options.pdf_filename, site_url: options.site_url, diagrams: diagrams.map(|d| { source_sha256: d.source_sha256, href: d.href }) })?
 		metadata : Renderer.Metadata
-		metadata = { title: if options.title == "" prepared.metadata.title else options.title, author: if options.author == "" prepared.metadata.author else options.author, language: if options.language == "" prepared.metadata.language else options.language, version: options.docs_version, pdf_filename: options.pdf_filename }
+		metadata = { title: if (options.title == "") prepared.metadata.title else options.title, author: if (options.author == "") prepared.metadata.author else options.author, language: if (options.language == "") prepared.metadata.language else options.language, version: options.docs_version, pdf_filename: options.pdf_filename }
 		if metadata.title.is_empty() or metadata.language.is_empty() or ![metadata.title, metadata.author, metadata.language, metadata.version].all(BuildOptions.safe_text) {
 			return Err("invalid document metadata")
 		}
@@ -79,7 +81,7 @@ RepositoryBuild :: [].{
 		}
 		Path.create_all!(BuildFiles.parent_path(output)).map_err(|e| Str.inspect(e))?
 		Path.create_dir!(stage).map_err(|e| Str.inspect(e))?
-		result = if options.mode == Prepare write_prepared!(stage, prepared, metadata, assets, $sources) else render_site!(stage, prepared, metadata, assets, files, options, workspace)
+		result = if (options.mode == Prepare) write_prepared!(stage, prepared, metadata, assets, $sources, expanded.origins) else render_site!(stage, prepared, metadata, assets, files, options, workspace)
 		match result {
 			Err(message) => {
 				_ = Path.delete_all!(stage)
@@ -144,7 +146,7 @@ load_diagrams! = |docs| {
 			if Sha256.hex(png) != entry.png_sha256 {
 				return Err("prepared diagram image hash mismatch: ${entry.href}")
 			}
-			svg = if entry.svg == "" [] else BuildFiles.read!(BuildFiles.inside!(docs, entry.svg)?, 1048576)?
+			svg = if (entry.svg == "") [] else BuildFiles.read!(BuildFiles.inside!(docs, entry.svg)?, 1048576)?
 			if !svg.is_empty() {
 				if !valid_digest(entry.svg_sha256) or Sha256.hex(svg) != entry.svg_sha256 {
 					return Err("prepared SVG hash mismatch")
@@ -202,14 +204,14 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 			}
 			width = decoded.width * 750
 			height = decoded.height * 750
-			width_fit = if width > 471000 471000 else width
+			width_fit = if (width > 471000) 471000 else width
 			height_fit = height * width_fit // width
-			rendered_height = if height_fit > 620000 620000 else height_fit
+			rendered_height = if (height_fit > 620000) 620000 else height_fit
 			rendered_width = width_fit * rendered_height // height_fit
-			raster = ImageAssets.fit(decoded.pixels, decoded.width, decoded.height, if rendered_width * dpi < 72000 1 else rendered_width * dpi // 72000, if rendered_height * dpi < 72000 1 else rendered_height * dpi // 72000).map_err(|_| "invalid decoded image")?
+			raster = ImageAssets.fit(decoded.pixels, decoded.width, decoded.height, if (rendered_width * dpi < 72000) 1 else rendered_width * dpi // 72000, if (rendered_height * dpi < 72000) 1 else rendered_height * dpi // 72000).map_err(|_| "invalid decoded image")?
 			rendered : Renderer.Asset
 			rendered = { href, name: href, dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } }
-			$assets = $assets.append({ href, png, rgb: decoded.pixels, width: decoded.width, height: decoded.height, rendered, svg: $svg, svg_href: if $svg.is_empty() "" else href.drop_suffix(".png").concat(".svg") })
+			$assets = $assets.append({ href, png, rgb: decoded.pixels, width: decoded.width, height: decoded.height, rendered, svg: $svg, svg_href: if ($svg.is_empty()) "" else href.drop_suffix(".png").concat(".svg") })
 		}
 	}
 	Ok($assets)
@@ -290,8 +292,8 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 	Ok({})
 }
 
-write_prepared! : Path, Preparation.Result, Renderer.Metadata, List(LoadedAsset), List(Preparation.File) => Try({}, Str)
-write_prepared! = |stage, prepared, metadata, assets, sources| {
+write_prepared! : Path, Preparation.Result, Renderer.Metadata, List(LoadedAsset), List(Preparation.File), List(SourceIncludes.Origin) => Try({}, Str)
+write_prepared! = |stage, prepared, metadata, assets, sources, includes| {
 	for page in prepared.pages {
 		BuildFiles.write_text!(stage, "pages/${page.route.drop_suffix(".html")}.md", page.source)?
 	}
@@ -301,7 +303,7 @@ write_prepared! = |stage, prepared, metadata, assets, sources| {
 		BuildFiles.write_bytes!(stage, "assets/${stem}.png", asset.png)?
 		BuildFiles.write_bytes!(stage, "assets/${stem}.rgb", asset.rgb)?
 	}
-	manifest = { schema_version: 2.U64, metadata, pages: prepared.pages.map(|p| { input: "pages/${p.route.drop_suffix(".html")}.md", output: p.route }), manual: { input: "manual.md", output: metadata.pdf_filename }, assets: assets.map(|a| { href: a.href, png: "assets/${Sha256.hex(a.png)}.png", rgb: "assets/${Sha256.hex(a.png)}.rgb", width: a.width, height: a.height, png_sha256: Sha256.hex(a.png), rgb_sha256: Sha256.hex(a.rgb) }), sources: sources.map(|s| { path: s.path, sha256: Sha256.hex(s.source.to_utf8()) }) }
+	manifest = { schema_version: 2.U64, includes, metadata, pages: prepared.pages.map(|p| { input: "pages/${p.route.drop_suffix(".html")}.md", output: p.route }), manual: { input: "manual.md", output: metadata.pdf_filename }, assets: assets.map(|a| { href: a.href, png: "assets/${Sha256.hex(a.png)}.png", rgb: "assets/${Sha256.hex(a.png)}.rgb", width: a.width, height: a.height, png_sha256: Sha256.hex(a.png), rgb_sha256: Sha256.hex(a.rgb) }), sources: sources.map(|s| { path: s.path, sha256: Sha256.hex(s.source.to_utf8()) }) }
 	BuildFiles.write_text!(stage, "manifest.json", Json.to_str(manifest))
 }
 

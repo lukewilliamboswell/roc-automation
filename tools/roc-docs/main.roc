@@ -92,11 +92,11 @@ main! = |arguments| {
 		}
 		width = original.width * 750
 		height = original.height * 750
-		width_fit = if width > 471000 471000 else width
+		width_fit = if (width > 471000) 471000 else width
 		height_fit = height * width_fit // width
-		rendered_height = if height_fit > 620000 620000 else height_fit
+		rendered_height = if (height_fit > 620000) 620000 else height_fit
 		rendered_width = width_fit * rendered_height // height_fit
-		raster = ImageAssets.fit(pixels, original.width, original.height, if rendered_width * options.pdf_image_dpi < 72000 1 else rendered_width * options.pdf_image_dpi // 72000, if rendered_height * options.pdf_image_dpi < 72000 1 else rendered_height * options.pdf_image_dpi // 72000)?
+		raster = ImageAssets.fit(pixels, original.width, original.height, if (rendered_width * options.pdf_image_dpi < 72000) 1 else rendered_width * options.pdf_image_dpi // 72000, if (rendered_height * options.pdf_image_dpi < 72000) 1 else rendered_height * options.pdf_image_dpi // 72000)?
 		$assets = $assets.append({ href: spec.href, name: spec.href, dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } })
 	}
 	rendered = Renderer.render(source, options.metadata, $assets, options.mode)?

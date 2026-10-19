@@ -8,11 +8,11 @@ import Sha256
 ## Files and prepared diagrams are supplied as inert data by the caller.
 Preparation :: [].{
 	File : { path : Str, source : Str }
-	Options : { entrypoint : Str, version : Str, pdf_filename : Str, diagrams : List({ source_sha256 : Str, href : Str }) }
+	Options : { entrypoint : Str, version : Str, pdf_filename : Str, diagrams : List({ source_sha256 : Str, href : Str }), site_url : Str }
 	Result : { pages : List({ route : Str, source : Str, html : [MarkdownSource, Prepared({ body : Str, numbered : Bool, toc_depth : U64, remark : Str })] }), manual : Str, metadata : { title : Str, author : Str, version : Str, language : Str }, images : List(Str) }
 	prepare : List(File), Options -> Try(Result, Str)
 	prepare = |files, options| {
-		if files.len() > 1024 or files.any(|f| !safe_path(f.path) or (if f.path.ends_with(".adoc") f.source.to_utf8().len() > 262144 else f.source.to_utf8().len() > 16777216)) or files.fold(0.U64, |n, f| n + f.source.to_utf8().len()) > 33554432 {
+		if files.len() > 1024 or files.any(|f| !safe_path(f.path) or (if (f.path.ends_with(".adoc")) f.source.to_utf8().len() > 262144 else f.source.to_utf8().len() > 16777216)) or files.fold(0.U64, |n, f| n + f.source.to_utf8().len()) > 33554432 {
 			return Err("documentation inputs exceed path/file/size limits")
 		}
 		if files.any(|f| f.path.ends_with(".adoc") and f.source.contains("\r")) {
@@ -44,16 +44,16 @@ Preparation :: [].{
 			$documents = $documents.append({ file, document, identified, route })
 		}
 		refs = manual_normalized.refs
-		manual_state = initial(options, raw, refs, $routes, entry.path, "pdf")
+		manual_state = initial(options, raw, refs, $routes, entry.path, "pdf", files)
 		rendered_manual = blocks(manual_normalized.blocks, manual_state, 0)?
 		var $images = rendered_manual.state.images
 		for doc in $documents {
-			state = initial(options, raw, doc.identified.refs.concat(refs), $routes, doc.file.path, "html5")
+			state = initial(options, raw, doc.identified.refs.concat(refs), $routes, doc.file.path, "html5", files)
 			result = blocks(doc.identified.blocks, state, 0)?
 			html_result = html_blocks(doc.identified.blocks, state, 0)?
 			page_attrs = attributes(files, doc.file, options)?
 			numbered = page_attrs.any(|a| a.name == "sectnums")
-			toc_depth = if lookup(page_attrs, "toclevels") == "" 3 else U64.from_str(lookup(page_attrs, "toclevels")).map_err(|_| "toclevels must be an integer from 1 to 6")?
+			toc_depth = if (lookup(page_attrs, "toclevels") == "") 3 else U64.from_str(lookup(page_attrs, "toclevels")).map_err(|_| "toclevels must be an integer from 1 to 6")?
 			if toc_depth < 1 or toc_depth > 6 {
 				return Err("toclevels must be between 1 and 6")
 			}
@@ -73,13 +73,13 @@ Preparation :: [].{
 		}
 		attrs = attributes(files, entry, options)?
 		title = manual_doc.title
-		Ok({ pages: $pages, manual: rendered_manual.text, metadata: { title, author: lookup(attrs, "author"), version: options.version, language: if lookup(attrs, "lang") == "" "en" else lookup(attrs, "lang") }, images: unique($images) })
+		Ok({ pages: $pages, manual: rendered_manual.text, metadata: { title, author: lookup(attrs, "author"), version: options.version, language: if (lookup(attrs, "lang") == "") "en" else lookup(attrs, "lang") }, images: unique($images) })
 	}
 }
 
 safe_path = |s| !s.is_empty() and !s.starts_with("/") and !s.contains("\\") and s.split_on("/").all(|p| p != "" and p != "." and p != "..") and s.to_utf8().all(|b| b >= 32 and b != 127)
 
-unique = |values| values.fold([], |out, item| if out.contains(item) out else out.append(item))
+unique = |values| values.fold([], |out, item| if (out.contains(item)) out else out.append(item))
 
 lookup = |attrs, name| attrs.find_first(|a| a.name == name).map_ok(|a| a.value) ?? ""
 
@@ -93,19 +93,19 @@ slug = |text| {
 				$dash = True
 			}
 		}
-			else if b >= 128 or (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or b == '_' {
-				$out = $out.append(if b >= 'A' and b <= 'Z' b + 32 else b)
-				$dash = False
-			}
+		else if b >= 128 or (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or b == '_' {
+			$out = $out.append(if (b >= 'A' and b <= 'Z') b + 32 else b)
+			$dash = False
+		}
 	}
 	value = Str.from_utf8_lossy($out).drop_suffix("-")
-	if value == "" "section" else value
+	if (value == "") "section" else value
 }
 
 base_attributes = |options, backend| [{ name: "docs-version", value: options.version }, { name: "backend", value: backend }, { name: "backend-${backend}", value: "" }, { name: "idprefix", value: "" }, { name: "idseparator", value: "-" }]
 
 parse = |files, file, options, backend| {
-	source = if backend == "pdf" ":backend-html5!:\n:backend-html5-doctype-article!:\n:basebackend-html!:\n${file.source}" else file.source
+	source = if (backend == "pdf") ":backend-html5!:\n:backend-html5-doctype-article!:\n:basebackend-html!:\n${file.source}" else file.source
 	document = AsciiDoc.parse_with(source, { includes: files, attributes: base_attributes(options, backend), max_depth: 32, expand_includes: True }).map_err(|e| "${file.path}: ${Str.inspect(e)}")?
 	# The document title is separately represented in roc-parser's AST.
 	title = inline_plain(document.title)?
@@ -170,16 +170,16 @@ identify = |input, files, path, used, refs| {
 					$path = (candidates.first() ?? { path, source: "" }).path
 				}
 			}
-			base = if n.id == "" slug(n.title) else n.id
+			base = if (n.id == "") slug(n.title) else n.id
 			local_count = $refs.keep_if(|r| r.path == $path and r.local_id == base).len()
 			if n.id != "" and local_count > 0 {
 				return Err("duplicate explicit heading ID ${base} in ${$path}")
 			}
-			local_id = if local_count == 0 base else "${base}-${(local_count + 1).to_str()}"
+			local_id = if (local_count == 0) base else "${base}-${(local_count + 1).to_str()}"
 			var $id = local_id
 			var $suffix = 2.U64
 			while $used.contains($id) {
-				$id = if $suffix == 2 "${slug($path.drop_suffix(".adoc"))}-${local_id}" else "${slug($path.drop_suffix(".adoc"))}-${local_id}-${($suffix - 1).to_str()}"
+				$id = if ($suffix == 2) "${slug($path.drop_suffix(".adoc"))}-${local_id}" else "${slug($path.drop_suffix(".adoc"))}-${local_id}-${($suffix - 1).to_str()}"
 				$suffix = $suffix + 1
 			}
 			$used = $used.append($id)
@@ -237,9 +237,9 @@ code_sources = |files| {
 	Ok($found)
 }
 
-State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64 }
+State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64, sources : List(Preparation.File) }
 
-initial = |options, raw, refs, routes, path, backend| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0 }
+initial = |options, raw, refs, routes, path, backend, sources| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0, sources }
 
 blocks : List(AsciiDoc.Block), State, U64 -> Try({ text : Str, state : State }, Str)
 blocks = |input, state, depth| {
@@ -260,9 +260,9 @@ blocks = |input, state, depth| {
 		}
 		attrs = AsciiDoc.materialize_attributes(n.attrs)
 		if lookup(attrs, "subs") != "" or lookup(attrs, "indent") != "" {
-			return Err("custom substitution/indent modes are unsupported")
+			return Err("${source_location(n.source, $state)}: custom substitution/indent modes are unsupported")
 		}
-		title = if n.context == "section" or n.context == "floating_title" "" else if n.title == "" "" else "**${inline(n.title, n.attrs, $state)?}**\n\n"
+		title = if (n.context == "section" or n.context == "floating_title") "" else if (n.title == "") "" else "**${inline(n.title, n.attrs, $state)?}**\n\n"
 		var $text = title
 		match n.context {
 			"section" | "floating_title" => {
@@ -291,7 +291,7 @@ blocks = |input, state, depth| {
 						return Err("ambiguous original source bytes after upstream whitespace normalization")
 					}
 					if values.is_empty() and n.context == "listing" {
-						return Err("listing requires a source-preserving delimited original block")
+						return Err("${source_location(n.source, $state)}: listing requires a source-preserving delimited original block")
 					}
 					source = values.first() ?? "${n.source}\n"
 					language = lookup(attrs, "2")
@@ -303,7 +303,7 @@ blocks = |input, state, depth| {
 				}
 			}
 			"table" => {
-				$text = "${$text}${table(n.source, attrs, n.attrs, $state)?}\n\n"
+				$text = "${$text}${table(n.source, attrs, n.attrs, $state).map_err(|e| "${source_location(n.source, $state)}: table: ${e}")?}\n\n"
 			}
 			"image" => {
 				if !safe_path(n.source) {
@@ -320,8 +320,8 @@ blocks = |input, state, depth| {
 					if it.context != "list_item" {
 						return Err("unexpected AsciiDoc list child")
 					}
-					marker = if n.context == "olist" "${$index.to_str()}. " else "- "
-					label = if n.context == "dlist" "**${inline(it.title, it.attrs, $state)?}**: " else ""
+					marker = if (n.context == "olist") "${$index.to_str()}. " else "- "
+					label = if (n.context == "dlist") "**${inline(it.title, it.attrs, $state)?}**: " else ""
 					body = inline(it.source, it.attrs, $state)?
 					child = blocks(it.blocks, $state, depth + 1)?
 					$state = child.state
@@ -336,43 +336,92 @@ blocks = |input, state, depth| {
 			"sidebar" | "open" | "example" | "quote" | "admonition" => {
 				result = blocks(n.blocks, $state, depth + 1)?
 				$state = result.state
-				$text = "${$text}${if n.source == "" "" else "${inline(n.source, n.attrs, $state)?}\n\n"}${result.text}"
+				label = if (n.context == "admonition" and n.style != "") "**${n.style}**\n\n" else ""
+				body = "${label}${$text}${if (n.source == "") "" else "${inline(n.source, n.attrs, $state)?}\n\n"}${result.text}"
+				$text = if n.context == "sidebar" or n.context == "admonition" {
+					Str.join_with(body.trim().split_on("\n").map(|line| "> ${line}"), "\n").concat("\n\n")
+				} else body
 			}
 			"thematic_break" => {
 				$text = "${$text}---\n\n"
 			}
 			"__document_header" | "toc" => {}
-			_ => return Err("unsupported AsciiDoc block context: ${n.context}")
+			_ => return Err("${source_location(n.source, $state)}: unsupported AsciiDoc block context: ${n.context}")
 		}
 		$out = "${$out}${$text}"
 	}
 	Ok({ text: $out, state: $state })
 }
 
-indent = |s| Str.join_with(s.split_on("\n").map(|line| if line == "" "" else "    ${line}"), "\n")
+indent = |s| Str.join_with(s.split_on("\n").map(|line| if (line == "") "" else "    ${line}"), "\n")
+
+source_location = |source, state| {
+	file = state.sources.find_first(|f| f.path == state.path) ?? { path: state.path, source: "" }
+	if source == "" {
+		return state.path
+	}
+	parts = file.source.split_on(source)
+	if parts.len() != 2 {
+		return state.path
+	}
+	line = (parts.first() ?? "").split_on("\n").len()
+	"${state.path}:${line.to_str()}"
+}
+
+table_widths = |source, attrs| {
+	cols = lookup(attrs, "cols")
+	var $widths = []
+	if cols == "" {
+		first = source.split_on("\n").find_first(|line| line.trim() != "") ?? ""
+		$widths = List.repeat(1.U64, first.split_on("|").len() - 1)
+	} else {
+		for value in cols.split_on(",") {
+			width = if value.trim() == "" {
+				1.U64
+			} else {
+				U64.from_str(value.trim()).map_err(|_| "column weights must be positive integers")?
+			}
+			if width == 0 or width > 10000 {
+				return Err("column weights must be from 1 to 10000")
+			}
+			$widths = $widths.append(width)
+		}
+	}
+	if $widths.is_empty() or $widths.len() > 64 {
+		return Err("tables require from 1 to 64 columns")
+	}
+	Ok($widths)
+}
 
 table = |source, attrs, scope, state| {
 	if lookup(attrs, "format") != "" or lookup(attrs, "separator") != "" {
 		return Err("only PSV tables are supported by renderer adapter")
 	}
-	if !lookup(attrs, "cols").to_utf8().all(|b| (b >= '0' and b <= '9') or b == ',') or !lookup(attrs, "options").split_on(",").all(|o| o == "header" or o == "") or !lookup(attrs, "options").split_on(",").contains("header") or source.contains("\\|") {
+	if !lookup(attrs, "cols").to_utf8().all(|b| (b >= '0' and b <= '9') or b == ',' or b == ' ') or !lookup(attrs, "options").split_on(",").all(|o| o == "header" or o == "") or !lookup(attrs, "options").split_on(",").contains("header") or source.contains("\\|") {
 		return Err("table styles/spans/escaped separators/non-header tables are unsupported")
 	}
-	columns = lookup(attrs, "cols").split_on(",").len()
+	columns = table_widths(source, attrs)?.len()
 	var $cells = []
-	for line in source.split_on("\n") {
-		if line.starts_with("|") {
-			$cells = $cells.concat(line.drop_prefix("|").split_on("|").map(|v| v.trim()))
-		} else if line.trim() != "" {
+	for entry in source.split_on("\n").map_with_index(|line, index| { line, index }) {
+		parts = entry.line.split_on("|")
+		prefix = (parts.first() ?? "").trim()
+		starts_with_digit = prefix.to_utf8().first().map_ok(|b| b >= '0' and b <= '9') ?? False
+		if parts.len() > 1 and prefix != "" and !prefix.contains(" ") and (starts_with_digit or ["a", "h", "e", "s", "l", "m", "v", "d", "<", ">", "^"].contains(prefix)) {
+			return Err("table cell styles and spans are unsupported")
+		}
+		if prefix != "" {
 			if $cells.is_empty() {
-				return Err("table continuation before cell")
+				return Err("${state.path}: table line ${(entry.index + 1).to_str()}: continuation before first cell")
 			}
 			last = $cells.last() ?? ""
-			$cells = $cells.drop_last(1).append("${last} ${line.trim()}")
+			$cells = $cells.drop_last(1).append("${last} ${prefix}")
+		}
+		if parts.len() > 1 {
+			$cells = $cells.concat(parts.drop_first(1).map(|v| v.trim()))
 		}
 	}
 	if columns == 0 or $cells.is_empty() or $cells.len() % columns != 0 {
-		return Err("ragged or empty PSV table")
+		return Err("${state.path}: ragged or empty PSV table: ${$cells.len().to_str()} cells for ${columns.to_str()} columns")
 	}
 	var $out = ""
 	var $offset = 0.U64
@@ -391,14 +440,15 @@ table = |source, attrs, scope, state| {
 }
 
 inline = |source, attrs, state| {
-	protected = protect_code(source, attrs)?
+	location = source_location(source, state)
+	protected = protect_code(source, attrs).map_err(|e| "${location}: inline: ${e}")?
 	html = AsciiDoc.render_inline_attributes(protected.text, attrs)
-	xml = Xml.parse_str("<root>${html.replace_each("<br>", "<br/>").replace_each("&nbsp;", "&#160;")}</root>").map_err(|e| "unsupported AsciiDoc inline representation: ${Str.inspect(e)}")?
+	xml = Xml.parse_str("<root>${html.replace_each("<br>", "<br/>").replace_each("&nbsp;", "&#160;")}</root>").map_err(|e| "${location}: unsupported AsciiDoc inline representation: ${Str.inspect(e)}")?
 	nodes = match xml.root {
 		Xml.Node.Element(e) => e.children
 		_ => []
 	}
-	var $result = xml_markdown(nodes, state, False)?
+	var $result = xml_markdown(nodes, state, False).map_err(|e| "${location}: inline: ${e}")?
 	for code in protected.codes {
 		var $fence = "`"
 		while code.source.contains($fence) {
@@ -411,6 +461,7 @@ inline = |source, attrs, state| {
 
 # rc2's inline HTML renderer misnests strong markup inside monospace backticks.
 # Preserve monospace spans before invoking it; only ordinary attributes expand.
+protect_code : Str, AsciiDoc.Attributes -> Try({ text : Str, codes : List({ marker : Str, source : Str }) }, Str)
 protect_code = |source, attrs| {
 	var $prefix = "ROCINLINECODETOKEN"
 	while source.contains($prefix) {
@@ -426,23 +477,23 @@ protect_code = |source, attrs| {
 		if entry.index % 2.U64 == 0.U64 {
 			$text = "${$text}${entry.text}"
 		}
-			else {
-				var $value = if entry.text.starts_with("+") and entry.text.ends_with("+") entry.text.drop_prefix("+").drop_suffix("+") else entry.text
-				for attr in AsciiDoc.materialize_attributes(attrs) {
-					if !attr.name.starts_with("\u(0)") and !$value.is_empty() {
-						pattern = "{${attr.name}}"
-						occurrences = $value.split_on(pattern).len() - 1
-						expanded = $value.to_utf8().len() + occurrences * attr.value.to_utf8().len()
-						if expanded > 1048576 {
-							return Err("inline code attribute expansion exceeds resource limit")
-						}
-						$value = $value.replace_each(pattern, attr.value)
+		else {
+			var $value = if (entry.text.starts_with("+") and entry.text.ends_with("+")) entry.text.drop_prefix("+").drop_suffix("+") else entry.text
+			for attr in AsciiDoc.materialize_attributes(attrs) {
+				if !attr.name.starts_with("\u(0)") and !$value.is_empty() {
+					pattern = "{${attr.name}}"
+					occurrences = $value.split_on(pattern).len() - 1
+					expanded = $value.to_utf8().len() + occurrences * attr.value.to_utf8().len()
+					if expanded > 1048576 {
+						return Err("inline code attribute expansion exceeds resource limit")
 					}
+					$value = $value.replace_each(pattern, attr.value)
 				}
-				marker = "${$prefix}${entry.index.to_str()}END"
-				$codes = $codes.append({ marker, source: $value })
-				$text = "${$text}${marker}"
 			}
+			marker = "${$prefix}${entry.index.to_str()}END"
+			$codes = $codes.append({ marker, source: $value })
+			$text = "${$text}${marker}"
+		}
 	}
 	Ok({ text: $text, codes: $codes })
 }
@@ -459,7 +510,7 @@ xml_markdown = |nodes, state, code| {
 	var $out = ""
 	for item in nodes {
 		value = match item {
-			Xml.Node.Text(s) => if code s else escape_text(s)
+			Xml.Node.Text(s) => if (code) s else escape_text(s)
 			Xml.Node.Element(e) => {
 				child = xml_markdown(e.children, state, e.name == "code")?
 				match e.name {
@@ -475,7 +526,7 @@ xml_markdown = |nodes, state, code| {
 					"a" => {
 						href = lookup(e.attributes, "href")
 						resolved = resolve(href, state)?
-						label = if child.starts_with("\\[") and child.ends_with("\\]") resolved.title else child
+						label = if (child.starts_with("\\[") and child.ends_with("\\]")) resolved.title else child
 						"[${label}](${resolved.href})"
 					}
 					"br" => "  \n"
@@ -492,12 +543,10 @@ resolve = |href, state| {
 	if href.starts_with("https://") or href.starts_with("http://") or href.starts_with("mailto:") {
 		return Ok({ href, title: href })
 	}
-	if href.ends_with(".pdf") {
-		return Ok({ href: state.options.pdf_filename, title: href })
-	}
 	parts = href.split_on("#")
-	path = (parts.first() ?? "").replace_each(".html", ".adoc")
-	anchor = if parts.len() > 1 parts.get(1) ?? "" else ""
+	authored = parts.first() ?? ""
+	path = if (authored.ends_with(".html") and state.routes.any(|r| r.path == authored.drop_suffix(".html").concat(".adoc"))) authored.drop_suffix(".html").concat(".adoc") else authored
+	anchor = if (parts.len() > 1) parts.get(1) ?? "" else ""
 	if path == "" and anchor != "" {
 		preferred : Try(Ref, [NotFound])
 		preferred = match state.refs.find_first(|r| r.path == state.path and r.local_id == anchor) {
@@ -511,16 +560,41 @@ resolve = |href, state| {
 		return html_reference(ref, state)
 	}
 	if path != "" and path.ends_with(".adoc") {
-		ref = state.refs.find_first(|r| r.path == path and (anchor == "" or r.local_id == anchor)).map_err(|_| "unknown AsciiDoc cross-page reference ${href}")?
+		ref = match state.refs.find_first(|r| r.path == path and (anchor == "" or r.local_id == anchor)) {
+			Ok(found) => found
+			Err(_) => {
+				route = state.routes.find_first(|r| r.path == path and (anchor == "" or r.local_id == anchor)).map_err(|_| "${state.path}: unknown publication reference ${href}")?
+				if state.backend == "html5" {
+					return Ok({ href: "${route.route}#${route.id}", title: route.title })
+				}
+				if state.options.site_url != "" {
+					return Ok({ href: "${state.options.site_url.drop_suffix("/")}/${route.route}#${route.id}", title: route.title })
+				}
+				return Err("${state.path}: PDF reference ${href} needs --site-url because the chapter is outside the manual")
+			}
+		}
 		if state.backend == "pdf" {
 			return Ok({ href: "#${ref.id}", title: ref.title })
 		}
 		return html_reference(ref, state)
 	}
-	if !safe_path(href) {
-		return Err("unsafe AsciiDoc link ${href}")
+	if !safe_path(path) {
+		return Err("${state.path}: unsafe AsciiDoc link ${href}")
 	}
-	Ok({ href, title: href })
+	# Only links to the selected manual name are rewritten as its download.
+	# Other PDFs and API/download routes retain their authored identity.
+	local = href
+	if path == state.options.pdf_filename and state.backend == "pdf" {
+		root = state.refs.first().map_err(|_| "manual download has no document destination")?
+		return Ok({ href: "#${root.id}", title: href })
+	}
+	if state.backend == "pdf" {
+		if state.options.site_url == "" {
+			return Err("${state.path}: PDF link ${href} needs --site-url or an absolute URL")
+		}
+		return Ok({ href: "${state.options.site_url.drop_suffix("/")}/${local}", title: href })
+	}
+	Ok({ href: local, title: href })
 }
 
 markdown = |files, entry, options| {
@@ -598,7 +672,7 @@ html_blocks = |input, state, depth| {
 		}
 		attrs = AsciiDoc.materialize_attributes(n.attrs)
 		title = html_inline(n.title, n.attrs, $state)?
-		block_title = if title == "" "" else "<div class=\"block-title\">${title}</div>"
+		block_title = if (title == "") "" else "<div class=\"block-title\">${title}</div>"
 		var $text = ""
 		match n.context {
 			"section" | "floating_title" => {
@@ -613,7 +687,7 @@ html_blocks = |input, state, depth| {
 					}
 				}
 				legacy = "${slug(n.title)}-${$occurrences.to_str()}"
-				alias = if $occurrences > 1 and legacy != n.id and !$state.refs.any(|r| r.id == legacy) "<span class=\"anchor-alias\" id=\"${Html.escape(legacy)}\"></span>" else ""
+				alias = if ($occurrences > 1 and legacy != n.id and !$state.refs.any(|r| r.id == legacy)) "<span class=\"anchor-alias\" id=\"${Html.escape(legacy)}\"></span>" else ""
 				child = html_blocks(n.blocks, $state, depth + 1)?
 				$state = child.state
 				$text = "${alias}${Html.heading_html(n.level + 1, n.id, title)}\n${child.text}"
@@ -627,9 +701,9 @@ html_blocks = |input, state, depth| {
 				if n.style == "mermaid" or lookup(attrs, "1") == "mermaid" {
 					digest = Sha256.hex("${n.source}\n".to_utf8())
 					diagram = $state.options.diagrams.find_first(|d| d.source_sha256 == digest).map_err(|_| "missing prepared diagram")?
-					$state = { ..$state, figure: $state.figure + (if title == "" 0 else 1) }
-					caption = if title == "" "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
-					$text = "<figure class=\"diagram\"><img src=\"${Html.escape(diagram.href)}\" alt=\"${Html.escape(if n.title == "" "Diagram" else n.title)}\">${caption}</figure>"
+					$state = { ..$state, figure: $state.figure + (if (title == "") 0 else 1) }
+					caption = if (title == "") "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
+					$text = "<figure class=\"diagram\"><img src=\"${Html.escape(diagram.href)}\" alt=\"${Html.escape(if (n.title == "") "Diagram" else n.title)}\">${caption}</figure>"
 				} else {
 					code = Markdown.parse_str(prepared.text).keep_oks(
 						|b| match b {
@@ -637,45 +711,38 @@ html_blocks = |input, state, depth| {
 							_ => Err(NotCode)
 						},
 					).first().map_err(|_| "missing prepared source block")?
-					caption = if title == "" "" else "<div class=\"listing-caption\">${title}</div>"
+					caption = if (title == "") "" else "<div class=\"listing-caption\">${title}</div>"
 					$text = "<div class=\"listing\">${caption}<pre><code data-lang=\"${Html.escape(code.info)}\" class=\"language-${Html.escape(code.info)}\">${Html.source(code.info, code.pre)}</code></pre></div>"
 				}
 			}
 			"table" => {
-				markdown_table = table(n.source, attrs, n.attrs, $state)?
-				var $widths = []
-				for value in lookup(attrs, "cols").split_on(",") {
-					width = if value == "" 1 else U64.from_str(value).map_err(|_| "invalid column weight")?
-					if width == 0 or width > 10000 {
-						return Err("column weights must be between 1 and 10000")
-					}
-					$widths = $widths.append(width)
-				}
-				total = $widths.fold(0.U64, |sum, width| sum + width)
+				markdown_table = table(n.source, attrs, n.attrs, $state).map_err(|e| "${source_location(n.source, $state)}: table: ${e}")?
+				widths = table_widths(n.source, attrs)?
+				total = widths.fold(0.U64, |sum, width| sum + width)
 				cols = Str.join_with(
-					$widths.map(
+					widths.map(
 						|width| {
 							percent = width * 10000 // total
-							"<col style=\"width:${(percent // 100).to_str()}.${if percent % 100 < 10 "0" else ""}${(percent % 100).to_str()}%\">"
+							"<col style=\"width:${(percent // 100).to_str()}.${if (percent % 100 < 10) "0" else ""}${(percent % 100).to_str()}%\">"
 						},
 					),
 					"",
 				)
 				rendered = Html.blocks(Markdown.parse_str(markdown_table), []).map_err(|e| Str.inspect(e))?
-				$state = { ..$state, table_count: $state.table_count + (if title == "" 0 else 1) }
-				caption = if title == "" "" else "<caption>Table ${$state.table_count.to_str()}. ${title}</caption>"
+				$state = { ..$state, table_count: $state.table_count + (if (title == "") 0 else 1) }
+				caption = if (title == "") "" else "<caption>Table ${$state.table_count.to_str()}. ${title}</caption>"
 				$text = rendered.replace_each("<table>", "<table>${caption}<colgroup>${cols}</colgroup>")
 			}
 			"image" => {
 				if !safe_path(n.source) {
 					return Err("unsafe local image path")
 				}
-				$state = { ..$state, images: $state.images.append(n.source), figure: $state.figure + (if title == "" 0 else 1) }
-				caption = if title == "" "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
+				$state = { ..$state, images: $state.images.append(n.source), figure: $state.figure + (if (title == "") 0 else 1) }
+				caption = if (title == "") "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
 				$text = "<figure><img src=\"${Html.escape(n.source)}\" alt=\"${Html.escape(lookup(attrs, "1"))}\">${caption}</figure>"
 			}
 			"ulist" | "olist" | "dlist" => {
-				tag = if n.context == "dlist" "dl" else if n.context == "olist" "ol" else "ul"
+				tag = if (n.context == "dlist") "dl" else if (n.context == "olist") "ol" else "ul"
 				$text = "${block_title}<${tag}>"
 				for item in n.blocks {
 					it = node(item)
@@ -696,7 +763,7 @@ html_blocks = |input, state, depth| {
 			"sidebar" | "open" | "example" | "quote" | "admonition" => {
 				child = html_blocks(n.blocks, $state, depth + 1)?
 				$state = child.state
-				tag = if n.context == "quote" "blockquote" else if n.context == "sidebar" or n.context == "admonition" "aside" else "div"
+				tag = if (n.context == "quote") "blockquote" else if (n.context == "sidebar" or n.context == "admonition") "aside" else "div"
 				(style, name) = match n.style {
 					"WARNING" => ("warning", "Warning")
 					"CAUTION" => ("caution", "Caution")
@@ -704,15 +771,15 @@ html_blocks = |input, state, depth| {
 					"TIP" => ("tip", "Tip")
 					_ => ("note", "Note")
 				}
-				label = if n.context == "admonition" and title == "" "<div class=\"block-title\">${name}</div>" else block_title
-				body = if n.source == "" "" else "<p>${html_inline(n.source, n.attrs, $state)?}</p>"
+				label = if (n.context == "admonition" and title == "") "<div class=\"block-title\">${name}</div>" else block_title
+				body = if (n.source == "") "" else "<p>${html_inline(n.source, n.attrs, $state)?}</p>"
 				$text = "<${tag} class=\"${n.context} ${style}\">${label}${body}${child.text}</${tag}>"
 			}
 			"thematic_break" => {
 				$text = "<hr>"
 			}
 			"__document_header" | "toc" => {}
-			_ => return Err("unsupported AsciiDoc HTML block: ${n.context}")
+			_ => return Err("${source_location(n.source, $state)}: unsupported AsciiDoc HTML block: ${n.context}")
 		}
 		$out = "${$out}${$text}\n"
 	}

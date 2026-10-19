@@ -28,9 +28,8 @@ same build on every pull request and deploys from the default branch. Upstream
 CI builds and caches the renderer; downstream consumers supply the released
 binary. To develop the renderer itself, follow `tools/roc-docs/README.adoc`,
 which records its compiler, dependencies, source subset and build commands.
-The action's explicit `backend: legacy` retains Docker/Asciidoctor compatibility.
-Python remains a test-harness and legacy-backend dependency; native rendering
-does not invoke it.
+The action uses the shared renderer and built-in theme. Python is used by the
+independent test harness; rendering does not invoke it.
 
 The manual describes the model as it should be practised. A repository or tool
 that does not yet follow it is recorded in a GitHub issue, not in the manual.

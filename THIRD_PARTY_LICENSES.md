@@ -1,13 +1,8 @@
 # Third-party documentation assets
 
-The shared documentation action redistributes the Space Grotesk and Plus
-Jakarta Sans font files under `actions/build-docs/theme/fonts/`. Both are
-licensed under the SIL Open Font License 1.1; the complete license texts are
-stored beside the font files.
-
-The optional legacy backend's container installs Asciidoctor, Asciidoctor PDF,
-Asciidoctor Diagram, Rouge, Mermaid CLI, Chromium, Node.js, and their runtime
-dependencies. Their upstream distributions retain their respective licenses.
+The native `roc-docs` renderer embeds Space Grotesk and Plus Jakarta Sans
+for its website theme. Their font files, complete SIL Open Font License 1.1
+notices and pinned provenance are in `tools/roc-docs/fonts/web/`.
 
 The native `roc-docs` renderer embeds Noto Sans and Source Code Pro under the
 SIL Open Font License 1.1. The font files, complete notices and pinned provenance

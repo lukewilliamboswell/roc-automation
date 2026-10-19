@@ -1,0 +1,15 @@
+= Compatibility regression fixtures
+
+`roc-ray-step1.roc.txt` is copied unchanged from roc-ray's
+`docs/tutorial/step1.roc` at commit `3b9b7dc0d0b3a5fbb36d15966caab41341d02b88`. The accompanying
+integration test uses the `tag=body,indent=0` include form from
+`docs/first-game.adoc`. It compares the displayed source with an independent
+selection of the original checked-in example. Rendering does not compile or
+execute examples; consumers retain their example checks.
+
+`roc-ray-examples-table.adoc` retains the header and first row of the
+same revision's `docs/examples.adoc` table, with a literal `src` attribute.
+The first cell wraps onto a line containing the next cell separators.
+
+Copyright © 2024 Luke Boswell and subsequent authors. These roc-ray excerpts
+are licensed under the Universal Permissive License (UPL), Version 1.0.

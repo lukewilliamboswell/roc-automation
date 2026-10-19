@@ -8,13 +8,13 @@ ImageAssets :: [].{
 		if width == 0 or height == 0 or width > 8192 or height > 8192 or max_width == 0 or max_height == 0 or pixels.len() != width * height * 3 {
 			return Err(InvalidRaster)
 		}
-		width_fit = if width > max_width max_width else width
+		width_fit = if (width > max_width) max_width else width
 		height_floor = height * width_fit // width
-		height_fit = if height_floor == 0 1 else height_floor
-		final_height = if height_fit > max_height max_height else height_fit
+		height_fit = if (height_floor == 0) 1 else height_floor
+		final_height = if (height_fit > max_height) max_height else height_fit
 		final_width = width_fit * final_height // height_fit
-		target_width = if final_width == 0 1 else final_width
-		target_height = if final_height == 0 1 else final_height
+		target_width = if (final_width == 0) 1 else final_width
+		target_height = if (final_height == 0) 1 else final_height
 		if target_width == width and target_height == height {
 			return Ok({ width, height, pixels })
 		}

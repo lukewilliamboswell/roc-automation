@@ -6,6 +6,7 @@ import hashlib
 from html.parser import HTMLParser
 import json
 import os
+import shutil
 from pathlib import Path
 import struct
 import subprocess
@@ -56,6 +57,122 @@ class RepositoryTests(unittest.TestCase):
         return output
     def unchanged(self, output):
         self.assertEqual({str(p.relative_to(output)):p.read_bytes() for p in output.rglob('*') if p.is_file()}, {'keep':b'previous publication'})
+    def test_roc_ray_tagged_listing_preserves_checked_source(self):
+        fixture = Path(__file__).parent/'fixtures/compatibility/roc-ray-step1.roc.txt'
+        original = fixture.read_text()
+        self.source('tutorial/step1.roc', original)
+        self.source('index.adoc', '= Game tutorial\n\n[source,roc]\n----\ninclude::tutorial/step1.roc[tag=body,indent=0]\n----\n')
+        self.run_build()
+        expected = original.split('# tag::body[]\n', 1)[1].split('# end::body[]', 1)[0]
+        self.assertEqual(Html((self.root/'.docs-out/site/index.html').read_text()).code, [expected])
+        self.run_build(command='prepare')
+        provenance = json.loads((self.root/'.docs-prepared/manifest.json').read_text())['includes']
+        self.assertEqual(provenance, [{'document':'index.adoc', 'line':5, 'path':'docs/tutorial/step1.roc', 'options':'tag=body,indent=0', 'source_sha256':hashlib.sha256(original.encode()).hexdigest(), 'selected_sha256':hashlib.sha256(expected.encode()).hexdigest()}])
+
+    def test_external_checked_listing_and_rejections_preserve_publication(self):
+        examples = self.root/'examples'; examples.mkdir()
+        (examples/'value.expected').write_text('  expected value  \n')
+        self.source('index.adoc', '= Examples\n\n[source,text]\n----\ninclude::../examples/value.expected[]\n----\n')
+        self.run_build()
+        self.assertEqual(Html((self.root/'.docs-out/site/index.html').read_text()).code, ['  expected value  \n'])
+        before = (self.root/'.docs-out/manual.pdf').read_bytes()
+        for target in ['../../outside', '../examples/value.expected[tag=missing]', '../examples/link.expected']:
+            if target.endswith('link.expected'):
+                (examples/'link.expected').symlink_to(examples/'value.expected')
+            directive = target if '[' in target else target+'[]'
+            self.source('index.adoc', '= Examples\n\n[source,text]\n----\ninclude::'+directive+'\n----\n')
+            result = self.run_build(success=False)
+            self.assertIn('index.adoc:5:', result.stdout+result.stderr)
+            self.assertEqual((self.root/'.docs-out/manual.pdf').read_bytes(), before)
+
+    def test_listing_cannot_overwrite_its_source_or_bypass_limits(self):
+        self.source('index.adoc', '= Examples\n\n[source,text]\n----\ninclude::../examples/value.expected[]\n----\n')
+        examples = self.root/'examples'; examples.mkdir()
+        original = examples/'value.expected'; original.write_text('keep me\n')
+        result = self.run_build('--output-directory', 'examples', success=False)
+        self.assertIn('overlaps publication output', result.stdout+result.stderr)
+        self.assertEqual(original.read_text(), 'keep me\n')
+        original.write_bytes(b'x' * (1048576+1))
+        result = self.run_build(success=False)
+        self.assertIn('byte limit', result.stdout+result.stderr)
+        original.write_text('# tag::body[]\nvalue\n# end::body[]\n# tag::body[]\nagain\n# end::body[]\n')
+        self.source('index.adoc', '= Examples\n\n[source,text]\n----\ninclude::../examples/value.expected[tag=body]\n----\n')
+        result = self.run_build(success=False)
+        self.assertIn('duplicate or nested selected tag', result.stdout+result.stderr)
+
+    def test_listing_include_count_is_bounded_before_publication(self):
+        self.source('tiny.expected', 'value\n')
+        self.source('index.adoc', '= Examples\n\n[source,text]\n----\n' + 'include::tiny.expected[]\n' * 1025 + '----\n')
+        output = self.prior()
+        result = self.run_build(success=False)
+        self.assertIn('include count exceeds limit', result.stdout+result.stderr)
+        self.unchanged(output)
+
+    def test_publication_links_keep_api_and_download_identities(self):
+        self.source('index.adoc', '= Manual\n\nlink:api/index.html[API] link:downloads/reference.pdf[Reference]\n')
+        self.run_build('--site-url', 'https://example.com/project/')
+        links = Html((self.root/'.docs-out/site/index.html').read_text()).links
+        self.assertIn('api/index.html', links)
+        self.assertIn('downloads/reference.pdf', links)
+        self.run_build('--site-url', 'https://example.com/project/', command='prepare')
+        prepared = (self.root/'.docs-prepared/manual.md').read_text()
+        for url in ['https://example.com/project/api/index.html', 'https://example.com/project/downloads/reference.pdf']:
+            self.assertIn(url, prepared)
+        if shutil.which('pdfinfo'):
+            urls = subprocess.check_output(['pdfinfo', '-url', str(self.root/'.docs-out/manual.pdf')], text=True)
+            self.assertIn('https://example.com/project/api/index.html', urls)
+            self.assertIn('https://example.com/project/downloads/reference.pdf', urls)
+
+    def test_website_only_chapter_links_use_the_publication_url_in_pdf(self):
+        self.source('index.adoc', '= Manual\n\nxref:extra.adoc#details[Extra]\n')
+        self.source('extra.adoc', '= Extra\n\n[#details]\n== Details\n\nExtra chapter.\n')
+        self.run_build('--site-url', 'https://example.com/project')
+        self.assertIn('extra.html#details', Html((self.root/'.docs-out/site/index.html').read_text()).links)
+        self.run_build('--site-url', 'https://example.com/project', command='prepare')
+        self.assertIn('https://example.com/project/extra.html#details', (self.root/'.docs-prepared/manual.md').read_text())
+        if shutil.which('pdfinfo'):
+            urls = subprocess.check_output(['pdfinfo', '-url', str(self.root/'.docs-out/manual.pdf')], text=True)
+            self.assertIn('https://example.com/project/extra.html#details', urls)
+
+    def test_unresolved_inline_reference_reports_source_location(self):
+        self.source('index.adoc', '= Manual\n\nA reference to <<missing>>.\n')
+        output = self.prior()
+        result = self.run_build(success=False)
+        self.assertRegex(result.stdout+result.stderr, r'index\.adoc:3: inline:')
+        self.unchanged(output)
+
+    def test_roc_ray_wrapped_examples_table(self):
+        fixture = Path(__file__).parent/'fixtures/compatibility/roc-ray-examples-table.adoc'
+        self.source('index.adoc', fixture.read_text())
+        self.run_build()
+        html = (self.root/'.docs-out/site/index.html').read_text()
+        self.assertIn('A polished minimal interactive scene', html)
+        self.assertIn('hello_world', html)
+        self.assertIn('https://github.com/lukewilliamboswell/roc-ray/blob/main/examples/hello_world/main.roc', html)
+
+    def test_simple_table_infers_columns_and_zero_weights_reject(self):
+        self.source('index.adoc', '= Table\n\n[options="header"]\n|===\n| Key | Value\n| One | Two\n|===\n')
+        self.run_build()
+        html = (self.root/'.docs-out/site/index.html').read_text()
+        self.assertIn('Key', html)
+        self.assertIn('Two', html)
+        self.source('index.adoc', '= Table\n\n[cols=",",options="header"]\n|===\n| Key | Value\n| One | Two\n|===\n')
+        self.run_build()
+        self.assertIn('Two', (self.root/'.docs-out/site/index.html').read_text())
+        self.source('index.adoc', '= Table\n\n[cols="0,0",options="header"]\n|===\n| Key | Value\n| One | Two\n|===\n')
+        result = self.run_build(success=False)
+        self.assertIn('column weights must be from 1', result.stdout+result.stderr)
+
+    def test_wrapped_psv_cell_separator_and_located_invalid_table(self):
+        self.source('index.adoc', '= Tables\n\n[cols="1,2",options="header"]\n|===\n| Key | Value\n| One long\ncontinued key | Two\n|===\n')
+        self.run_build()
+        html = (self.root/'.docs-out/site/index.html').read_text()
+        self.assertIn('One long continued key', html)
+        self.assertIn('Two', html)
+        self.source('index.adoc', '= Tables\n\n[cols="1,2",options="header"]\n|===\n| A | B | extra\n|===\n')
+        result = self.run_build(success=False)
+        self.assertRegex(result.stdout+result.stderr, r'index\.adoc:\d+: table:')
+
     def test_ascii_manual_includes_routes_links_tables_and_exact_source(self):
         self.source('index.adoc', '= Test manual\n:doctype: book\n\ninclude::usage.adoc[leveloffset=+1]\n')
         code = 'main! = |_args| {\n\techo!("café <&>")  \n}\n'

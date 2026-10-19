@@ -142,9 +142,9 @@ record the version used.
 [#the-blueprint-binary]
 == The `blueprint` binary
 
-`actions/setup-blueprint` installs Nix, through an action referenced by full
-commit SHA, and downloads the prebuilt `blueprint` binary from a roc-blueprint
-release. It builds nothing. Before the binary runs, the action checks it against
+`actions/setup-blueprint` downloads the prebuilt `blueprint` binary from a
+roc-blueprint release. Nix installation is an explicit caller option, through
+an action referenced by full commit SHA, for environments/builds that need it. It builds nothing. Before the binary runs, the action checks it against
 a reviewed SHA-256 and fails on a mismatch. Routine CI verifies that reviewed
 hash locally and does not call an attestation service. The hash establishes
 which bytes run; it is not provenance for the roc-blueprint build.
@@ -168,16 +168,37 @@ written to a private temporary file and becomes executable and visible on `PATH`
 only after its hash matches. A mismatch, a release with no reviewed hash for the
 runner, or a system with no released binary fails the step and installs nothing.
 
-The binary evaluates `Blueprint.roc` with a Roc compiler of its own. It uses a
-`roc` on `PATH` only when that is exactly the nightly the binary was built with.
-Otherwise it fetches that nightly through Nix from a roc-overlay revision pinned
-inside the binary, and Nix verifies the archive against the hash that revision
-records. The `ROC` environment variable overrides this selection.
+Blueprint 0.6 evaluates `Blueprint.roc` with its own fixed compiler, fetched into
+its store and admitted by a hash recorded inside the binary, or an exactly
+matching host compiler. This is separate from both fixed repository tooling and
+the floating package compiler. Earlier Blueprint releases bootstrap that compiler
+through their pinned Nix overlay. `Programs`/`Fetch`/`Expect` environments need no
+Nix; environments selecting Nix-sourced tools and sandboxed builds do.
 
-The action takes no token as an input. The Nix installer it runs reads the
-job's default token and configures Nix to present it to GitHub when it fetches
-from there. A cache that requires `id-token: write` widens a test job's token
-and must be an explicit caller choice, never a default.
+Optional artifact caching restores only `v1/artifacts`, never extracted trees or
+temporary task links. Keys separate logical tool subsets and include the lock,
+installer/registry identity, Blueprint release, system and workflow. Blueprint
+checks restored artifact bytes against their content identity and locked length
+before use. Corrupt artifacts and their derived trees are discarded and refetched;
+a mismatching download is not usable. Derived trees are rebuilt on a fresh
+runner rather than trusted from a cache. GitHub cache-hit status is not admission.
+Roc's package cache is separate and is not included by this action.
+
+`actions/blueprint-tool` runs a repository task and therefore belongs only in
+read-only build jobs. The task resolves a temporary program link before its
+lifetime ends; the action reports the actual file identity and can measure calls
+through an optional host-side wrapper. It does not independently authenticate a
+program merely because a task printed its path. The repository's reviewed Fetch
+recipe and lock, plus Blueprint's verification during provisioning, supply that
+admission. Privileged controllers never evaluate candidate Blueprint files or
+consume candidate executable caches.
+
+The setup action takes no token as an input. When requested, the Nix installer
+can configure Nix with the job's default token. The report/publisher actions
+retain their explicit token-clearing checks described above. An optional cache
+requiring `id-token: write` must remain an explicit caller choice; the artifact
+cache here requires no such token permission. See
+xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide].
 
 == Documentation deployment
 

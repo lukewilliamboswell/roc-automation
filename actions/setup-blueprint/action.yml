@@ -1,7 +1,16 @@
 name: Set up Blueprint
-description: Install Nix and the blueprint binary that Blueprint.roc names, admitted only by a reviewed SHA-256.
+description: Install the Blueprint.roc-selected binary after SHA-256 verification, with optional Nix and verified-download caching.
 
 inputs:
+  install-nix:
+    description: Install Nix when the repository uses Nix sources or native builds; standalone Programs/Fetch/Expect environments do not need it
+    default: 'false'
+  cache:
+    description: Restore and save Blueprint v1/artifacts download bytes; requires cache-workload and Blueprint.lock
+    default: 'false'
+  cache-workload:
+    description: Logical tool-set identity; choose distinct names for jobs or matrix workloads that provision different subsets
+    default: ''
   version:
     description: roc-blueprint release to install; by default the release named by the platform URL in the checked-out Blueprint.roc
     default: ''
@@ -16,6 +25,24 @@ inputs:
     default: ''
 
 outputs:
+  sha256:
+    description: Verified Blueprint executable digest
+    value: ${{ steps.install.outputs.sha256 }}
+  bytes:
+    description: Installed Blueprint executable size
+    value: ${{ steps.install.outputs.bytes }}
+  install-seconds:
+    description: Blueprint download and verification duration
+    value: ${{ steps.install.outputs.install-seconds }}
+  cache-hit:
+    description: Whether the exact artifact cache key was restored
+    value: ${{ steps.downloads.outputs.cache-hit || 'false' }}
+  cache-key:
+    description: Artifact cache key for the selected release, installer, workflow, workload and lock
+    value: ${{ steps.install.outputs.cache-key }}
+  artifacts-directory:
+    description: Directory containing only Blueprint download artifacts, never extracted trees or task PATH links
+    value: ${{ steps.install.outputs.artifacts-directory }}
   blueprint-path:
     description: Absolute path of the installed blueprint binary
     value: ${{ steps.install.outputs.blueprint-path }}
@@ -29,16 +56,40 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install Nix
-      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
-
     - id: install
       name: Download and verify blueprint
       shell: bash
       env:
+        INPUT_INSTALL_NIX: ${{ inputs.install-nix }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_CACHE_WORKLOAD: ${{ inputs.cache-workload }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_SHA256_X86_64_LINUX: ${{ inputs.sha256-x86_64-linux }}
         INPUT_SHA256_AARCH64_LINUX: ${{ inputs.sha256-aarch64-linux }}
         INPUT_SHA256_AARCH64_DARWIN: ${{ inputs.sha256-aarch64-darwin }}
         INSTALLER: ${{ github.action_path }}/setup_blueprint.py
       run: python3 "$INSTALLER"
+
+    - name: Install Nix when requested
+      if: inputs.install-nix == 'true'
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+    - id: downloads
+      name: Cache verified Blueprint downloads
+      if: inputs.cache == 'true'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.install.outputs.artifacts-directory }}
+        key: ${{ steps.install.outputs.cache-key }}
+
+    - name: Report the artifact cache
+      if: inputs.cache == 'true'
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.downloads.outputs.cache-hit }}
+        CACHE_WORKLOAD: ${{ inputs.cache-workload }}
+        ARTIFACTS: ${{ steps.install.outputs.artifacts-directory }}
+      run: |
+        printf 'Blueprint artifact cache: exact hit=%s; tool set=%s\n' "${CACHE_HIT:-false}" "$CACHE_WORKLOAD"
+        printf 'Artifact directory: %s\n' "$ARTIFACTS"
+        printf '\n### Blueprint artifact cache\n\nExact hit: `%s`; tool set: `%s`. Transfer size and restore duration are reported by the cache step.\n' "${CACHE_HIT:-false}" "$CACHE_WORKLOAD" >> "$GITHUB_STEP_SUMMARY"

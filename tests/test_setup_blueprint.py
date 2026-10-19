@@ -233,5 +233,53 @@ class SetupBlueprintTests(unittest.TestCase):
         self.assertEqual(seen, [])
 
 
+class ArtifactCacheTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "Blueprint.lock").write_text('{"version":1}')
+        self.env = {"INPUT_CACHE":"true", "INPUT_CACHE_WORKLOAD":"docs", "GITHUB_WORKSPACE":str(self.root), "HOME":str(self.root), "GITHUB_WORKFLOW":"Package CI", "GITHUB_JOB":"cold"}
+
+    def settings(self, **extra):
+        return setup.cache_settings({**self.env, **extra}, "0.6.0-rc1", "x86_64-linux")
+
+    def test_only_artifact_bytes_are_cached_and_same_tool_set_can_warm_on_another_job(self):
+        path, key = self.settings()
+        self.assertEqual(Path(path), self.root / ".cache/blueprint/v1/artifacts")
+        self.assertEqual(self.settings(GITHUB_JOB="warm"), (path, key))
+        self.assertNotIn("trees", path)
+        self.assertNotIn(".blueprint/run", path)
+
+    def test_different_tool_subsets_and_lock_updates_cannot_claim_each_others_cache(self):
+        _, docs = self.settings()
+        _, checks = self.settings(INPUT_CACHE_WORKLOAD="fixed-check-tools")
+        self.assertNotEqual(docs, checks)
+        (self.root / "Blueprint.lock").write_text('{"version":2}')
+        self.assertNotEqual(docs, self.settings()[1])
+        self.assertNotEqual(self.settings()[1], self.settings(GITHUB_WORKFLOW="Release")[1])
+
+    def test_xdg_path_and_disabled_cache(self):
+        path, _ = self.settings(XDG_CACHE_HOME=str(self.root / "xdg"))
+        self.assertEqual(Path(path), self.root / "xdg/blueprint/v1/artifacts")
+        self.assertEqual(setup.cache_settings({}, "0.6.0-rc1", "x86_64-linux"), ("", ""))
+
+    def test_invalid_flags_missing_scope_and_symlinked_lock_fail_before_use(self):
+        for extra in [{"INPUT_CACHE":"yes"}, {"INPUT_INSTALL_NIX":"yes"}, {"INPUT_CACHE_WORKLOAD":""}, {"INPUT_CACHE_WORKLOAD":"bad\nkey"}, {"XDG_CACHE_HOME":"relative"}]:
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.settings(**extra)
+        lock = self.root / "Blueprint.lock"
+        lock.unlink()
+        target = self.root / "elsewhere"; target.write_text("outside")
+        lock.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "regular checked-in"):
+            self.settings()
+
+    def test_rc1_version_selection_and_reviewed_registry_cover_native_runners(self):
+        self.assertEqual(setup.version_in(config("0.6.0-rc1")), "0.6.0-rc1")
+        for system in setup.SYSTEMS.values():
+            self.assertRegex(setup.expected_sha256({}, setup.known_releases(), "0.6.0-rc1", system), r"^[0-9a-f]{64}$")
+
+
 if __name__ == "__main__":
     unittest.main()
