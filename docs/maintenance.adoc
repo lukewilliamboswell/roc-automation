@@ -98,3 +98,23 @@ Contributors then download the binary from the same release.
 == Regenerate host bindings
 
 See xref:platforms.adoc#upgrade-the-bindings[Upgrade the bindings].
+
+== Maintain released utility downloads
+
+For pure packages, `Programs` and `Fetch` lock released utilities and fixed
+tooling without Nix. Change the utility recipe in `Blueprint.roc`, run
+`blueprint update`, review per-system URLs, hashes, lengths and download hosts,
+and commit the lock. Keep the package compiler floating independently. Native
+platforms can retain Nix sources and sandboxed builds for their toolchains.
+
+The shared artifact cache key changes with the lock and installer/registry
+identity. Separate logical tool subsets use separate `cache-workload` values,
+so an immutable compiler-only cache cannot claim the docs cache key. Restored
+artifacts are rehashed before use and extracted trees/task links are rebuilt;
+cache hits do not authenticate executables. Routine use needs no remote
+attestation service. Review provenance when adopting a release, following
+xref:artifact-verification.adoc#verify-released-artifacts[released artifact verification].
+
+See xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete adoption guide] for the tested cold/warm
+workflow and persistent executable handoff. The shared setup's `install-nix`
+option defaults to false; opt in where the selected tools/builds need Nix.

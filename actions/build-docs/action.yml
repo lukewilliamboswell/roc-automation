@@ -29,6 +29,9 @@ inputs:
   renderer-binary:
     description: Path or executable name for a precompiled roc-docs binary; otherwise ROC_DOCS_BINARY or PATH is used
     default: ""
+  site-url:
+    description: HTTPS publication directory used for PDF links to website-only pages, API docs and downloads
+    default: ""
   title:
     description: Optional document title override
     default: ""
@@ -65,6 +68,7 @@ runs:
         DOCS_API_ENTRYPOINT: ${{ inputs.api-entrypoint }}
         DOCS_ROC_COMMAND: ${{ inputs.roc-command }}
         DOCS_RENDERER_BINARY: ${{ inputs.renderer-binary }}
+        DOCS_SITE_URL: ${{ inputs.site-url }}
         DOCS_TITLE: ${{ inputs.title }}
         DOCS_AUTHOR: ${{ inputs.author }}
         DOCS_LANGUAGE: ${{ inputs.language }}
@@ -80,6 +84,7 @@ runs:
         --api-entrypoint "$DOCS_API_ENTRYPOINT"
         --roc-command "$DOCS_ROC_COMMAND"
         --renderer-binary "$DOCS_RENDERER_BINARY"
+        --site-url "$DOCS_SITE_URL"
         --title "$DOCS_TITLE"
         --author "$DOCS_AUTHOR"
         --language "$DOCS_LANGUAGE"

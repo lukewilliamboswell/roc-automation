@@ -53,7 +53,7 @@ SyntaxHighlight :: [].{
 				}
 			}
 		}
-		if $cursor == lexed.source.len() $spans else plain(source)
+		if ($cursor == lexed.source.len()) $spans else plain(source)
 	}
 
 	## The adapter should slice the original source, never a wrapped version.
@@ -92,7 +92,7 @@ SyntaxHighlight :: [].{
 	}
 }
 
-plain = |source| if source.is_empty() [] else [{ start: 0, end: source.to_utf8().len(), category: Trivia }]
+plain = |source| if (source.is_empty()) [] else [{ start: 0, end: source.to_utf8().len(), category: Trivia }]
 
 # These properties cover the interchange contract, not lexer grammar details.
 expect {

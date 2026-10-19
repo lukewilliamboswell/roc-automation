@@ -27,3 +27,15 @@ ship alongside the binaries and are available through each utility's `--licenses
 runtime command requirements. The policy and documentation utilities are
 experimental. The native documentation backend implements a bounded source
 subset and built-in theme, rather than every Asciidoctor extension.
+
+Documentation migration improvements include printed PDF contents page references,
+chapter-specific headers and opening pages, native rich lists and splittable
+callouts using roc-pdf rc6. Checked local listing includes support positive tag
+selection and optional dedentation. Wrapped PSV cells retain following separators,
+and table errors identify their source. `site-url` supplies published destinations
+for PDF links to API documentation, downloads and website-only chapters. Unicode
+PDF destination names are encoded consistently without changing website anchors.
+
+The documentation utility uses compiler `nightly-2026-10-18-1df370f`, which
+includes the upstream cold-builtin ABI fix for invalid LLVM bitcode
+(roc-lang/roc#12324). Policy tooling retains its separately pinned compiler.

@@ -9,6 +9,10 @@ The environment holds the tooling compiler, the tools the scripts call, and the
 native toolchains a platform host or a test host needs. It does not hold the
 package compiler, which is never pinned.
 
+Pure packages can use `Programs`, `Fetch` and `Expect` with no Nix source.
+Follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide]. Native
+platforms can declare Nix sources for their host toolchains and sandboxed builds.
+
 == Declare the environment
 
 [source,roc]
@@ -17,17 +21,18 @@ app [config] { pf: platform "<roc-blueprint release URL>" }
 
 config = [
 	Name("roc-example"),
+	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
 	Overlay("roc", "github:roc-lang/roc-overlay"),
 	Environment(
 		"dev",
 		[
 			Overlays(["roc"]),
-			Command("roc-stable", "rocpkgs.nightly-2026-10-09-258ab27"),
+			Command("roc-stable", "nix#rocpkgs.nightly-2026-10-09-258ab27"),
 			RocPackages([
 				"https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
 				"https://github.com/roc-lang/http/releases/download/<version>/<hash>.tar.zst",
 			]),
-			Tools(["coreutils", "gh", "git", "unzip", "zip"]),
+			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#unzip", "nix#zip"]),
 		],
 	),
 	Shell("default", [Use("dev")]),
@@ -40,6 +45,7 @@ config = [
 ]
 ----
 
+This example declares its Nix package source explicitly for Blueprint 0.6.
 Each setting has one job:
 
 `Command("roc-stable", ...)`:: Names the exact nightly release used for tooling.
@@ -63,14 +69,15 @@ tooling compiler and which tools are needed, where a reviewer can read it.
 `Blueprint.lock` pins the overlay revision that supplies that release's download
 URL and hash, the package source, and each locked bundle.
 
-Nothing that `blueprint` generates is committed. Its generated Nix files stay in
+Commit the generated lock after review. Derived files and generated Nix stay in
 `.blueprint/`, which the repository's `.gitignore` lists.
 
 [#get-the-blueprint-binary]
 == Get `blueprint`
 
-Blueprint needs Nix on the machine, so install https://nixos.org/download[Nix]
-first. There are then two ways to get the `blueprint` command. Whichever you
+Blueprint 0.6 needs Nix only for Nix-sourced tools and sandboxed builds. For
+those environments install https://nixos.org/download[Nix] first. There are two
+ways to get the `blueprint` command. Whichever you
 use, take the same roc-blueprint release as the platform URL in the
 repository's `Blueprint.roc` header.
 
@@ -92,9 +99,8 @@ This is the simplest route for a contributor. Nix builds the command from the
 tagged source the first time, which takes longer than a download, and the flake
 provides it for x86_64 Linux, arm64 Linux and Apple Silicon macOS.
 
-Blueprint does not run on Intel macOS. nixpkgs no longer supports that system,
-so there is no environment for Blueprint to realise there and no
-`blueprint-x86_64-darwin` binary is released.
+The shared setup supports x86_64 Linux, arm64 Linux and Apple Silicon macOS.
+No Intel macOS Blueprint binary is admitted by this action.
 
 === As a release binary
 
@@ -109,11 +115,11 @@ from source in CI.
 
 === What the command needs
 
-The binary needs Nix on the machine. It needs neither Python nor Roc installed.
-To evaluate `Blueprint.roc` it uses a `roc` on `PATH` when that is exactly the
-nightly the binary was built with; otherwise it fetches that nightly itself from
-a roc-overlay revision pinned inside the binary. The `ROC` environment variable
-overrides this choice and must name that same nightly.
+The binary needs neither Python nor Roc installed. Blueprint 0.6 downloads its
+fixed configuration compiler into its own store and verifies the recorded hash.
+It uses a matching host `roc` when available. Earlier releases bootstrap through
+Nix instead. The advanced `ROC` override must name the exact compiler required
+by the Blueprint binary.
 
 This compiler is separate from `roc-stable` for a reason: Blueprint is written
 in Roc and must run before the environment it describes exists. See
@@ -125,7 +131,8 @@ xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint].
 
 == Work locally
 
-A contributor needs Nix, the `blueprint` command, and a current nightly installed
+A contributor needs `blueprint`, Nix when their selected tools/builds use it,
+and a current nightly installed
 as `roc`, the way Roc is normally installed. Nothing else has to be set up.
 
 [source,sh]
@@ -146,7 +153,7 @@ contributor's own `roc` remains visible for package work.
 Every job that runs repository scripts sets up Blueprint first, then installs
 the latest nightly, then calls a task:
 
-. Set up Nix and the verified `blueprint` binary with
+. Set up the verified `blueprint` binary, requesting Nix when needed, with
   xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`].
 . Install the latest nightly as `roc` with the official `roc-lang/setup-roc`
   action; see xref:actions.adoc#install-the-nightly-compiler[Install the nightly compiler].

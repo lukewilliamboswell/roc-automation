@@ -33,7 +33,7 @@ CodeHighlight :: [].{
 				}
 				$spans = add($spans, token.start, token.end, category)
 			}
-			return if $cursor == lexed.source.len() $spans else plain(source)
+			return if ($cursor == lexed.source.len()) $spans else plain(source)
 		}
 		shell = ["sh", "bash", "shell", "zsh"].contains(language)
 		if !shell and language != "json" and language != "diff" and language != "patch" {
@@ -44,7 +44,7 @@ CodeHighlight :: [].{
 		for line in source.split_on("\n") {
 			bytes = line.to_utf8()
 			if language == "diff" or language == "patch" {
-				category = if line.starts_with("@@") or line.starts_with("diff ") Name else if line.starts_with("+") StringText else if line.starts_with("-") InvalidText else Trivia
+				category = if (line.starts_with("@@") or line.starts_with("diff ")) Name else if (line.starts_with("+")) StringText else if (line.starts_with("-")) InvalidText else Trivia
 				$result = add($result, $offset, $offset + bytes.len(), category)
 			} else {
 				var $cursor = 0.U64
@@ -78,7 +78,7 @@ CodeHighlight :: [].{
 							$cursor = $cursor + 1
 						}
 						value = Str.from_utf8_lossy(bytes.sublist({ start, len: $cursor - start }))
-						$category = if (shell and ["if", "then", "else", "elif", "fi", "for", "in", "do", "done", "case", "esac", "while", "export", "set"].contains(value)) or (!shell and ["true", "false", "null"].contains(value)) ReservedWord else if F64.from_str(value).is_ok() NumericLiteral else Name
+						$category = if ((shell and ["if", "then", "else", "elif", "fi", "for", "in", "do", "done", "case", "esac", "while", "export", "set"].contains(value)) or (!shell and ["true", "false", "null"].contains(value))) ReservedWord else if (F64.from_str(value).is_ok()) NumericLiteral else Name
 					}
 					$result = add($result, $offset + start, $offset + $cursor, $category)
 				}
@@ -93,13 +93,13 @@ CodeHighlight :: [].{
 	}
 }
 
-plain = |source| if source.is_empty() [] else [{ start: 0, end: source.to_utf8().len(), category: Trivia }]
+plain = |source| if (source.is_empty()) [] else [{ start: 0, end: source.to_utf8().len(), category: Trivia }]
 
 at = |bytes, index| bytes.get(index) ?? 0
 
 whitespace = |byte| byte == ' ' or byte == '\t' or byte == '\r'
 
-punctuation = |byte, shell| if shell [124, 38, 59, 40, 41, 60, 62, 61].contains(byte) else [91, 93, 123, 125, 44, 58].contains(byte)
+punctuation = |byte, shell| if (shell) [124, 38, 59, 40, 41, 60, 62, 61].contains(byte) else [91, 93, 123, 125, 44, 58].contains(byte)
 
 key_follows = |bytes, index| {
 	var $next = index

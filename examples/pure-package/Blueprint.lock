@@ -1,0 +1,48 @@
+(
+	(fetched ((
+		(name "roc-docs")
+		(obtained Published)
+		(sha256 "969b94deb3158e9df231b989985e87225578879e9b6f7fb9f4ab46b28af4d586")
+		(size 21383904)
+		(system "x86_64-linux")
+		(urls ("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.1.0-rc.1/roc-docs-x86_64-linux"))) (
+		(name "roc-docs")
+		(obtained Published)
+		(sha256 "008438ab3fce377cd7c3b572da72d02b3f72fe79345bc171d221bc0f054a70b2")
+		(size 17373808)
+		(system "aarch64-linux")
+		(urls ("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.1.0-rc.1/roc-docs-aarch64-linux"))) (
+		(name "roc-docs")
+		(obtained Both)
+		(sha256 "8068974f7f2c22033f12ca537e2bf5658afb4554ee2f51b75d2e0e4376495a1a")
+		(size 17261216)
+		(system "aarch64-darwin")
+		(urls ("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.1.0-rc.1/roc-docs-aarch64-darwin"))) (
+		(name "roc-stable")
+		(obtained Published)
+		(sha256 "0821ea1a9772f921f0b4eb1cd400238abb59b0247db2810f0ea865426f782e9d")
+		(size 71984136)
+		(system "x86_64-linux")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-10-18-1df370f/roc_nightly-linux_x86_64-2026-10-18-1df370f.tar.gz"))) (
+		(name "roc-stable")
+		(obtained Published)
+		(sha256 "50058449e786bf9bded19ca3b851a1c030fea7fc8ac8aebed2c7c12a37505ac4")
+		(size 69048229)
+		(system "aarch64-linux")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-10-18-1df370f/roc_nightly-linux_arm64-2026-10-18-1df370f.tar.gz"))) (
+		(name "roc-stable")
+		(obtained Both)
+		(sha256 "0f5fe1d12714bf5fcc906dd5b00fd0ccd31dfb96bb82737b9d6f6ccc0e93c147")
+		(size 69262825)
+		(system "aarch64-darwin")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-10-18-1df370f/roc_nightly-macos_apple_silicon-2026-10-18-1df370f.tar.gz")))))
+	(format (
+		(major 1)
+		(minor 1)))
+	(hints ())
+	(intent (
+		(build_sources ())
+		(inputs ())
+		(overlays ())
+		(sources ())))
+	(sources ()))

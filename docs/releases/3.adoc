@@ -135,3 +135,13 @@ source-preserving tokenizer; shell, JSON and diff examples also retain syntax
 colouring. Prepared SVG companions keep website diagrams sharp when zoomed,
 with PNG fallback and the existing PNG path for PDF. The HTML theme retains
 bundled reading fonts and supports light and dark colour schemes.
+
+== Nix-free utility adoption
+
+The shared Blueprint setup admits `0.6.0-rc1`, installs Nix only when requested,
+and can cache verified download artifacts by locked logical tool set. A complete
+pure-package example keeps the package nightly floating and declares fixed
+tooling and released utilities through `Programs`/`Fetch`. The shared
+`blueprint-tool` handoff resolves persistent paths and optionally reports
+provisioning time, command time/RSS and output sizes. Cold/warm CI fixtures
+exercise different tool subsets on fresh runners.

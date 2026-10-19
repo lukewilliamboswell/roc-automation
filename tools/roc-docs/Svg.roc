@@ -58,7 +58,7 @@ check = |node, depth| {
 }
 
 safe_css = |value| {
-	lower = Str.from_utf8_lossy(value.to_utf8().map(|b| if b >= 'A' and b <= 'Z' b + 32 else b))
+	lower = Str.from_utf8_lossy(value.to_utf8().map(|b| if (b >= 'A' and b <= 'Z') b + 32 else b))
 	if lower.contains("://") or lower.contains("//") or lower.contains("\\") or lower.contains("/*") or lower.contains("@import") or lower.contains("expression(") or lower.contains("-moz-binding") or lower.contains("behavior:") {
 		return False
 	}

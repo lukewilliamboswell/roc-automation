@@ -76,7 +76,7 @@ Png :: [].{
 		if byte($header, 8) != 8 or (color != 2 and color != 6) or byte($header, 10) != 0 or byte($header, 11) != 0 or byte($header, 12) != 0 {
 			return Err("PNG requires non - interlaced RGB/RGBA8")
 		}
-		channels = if color == 2 3.U64 else 4.U64
+		channels = if (color == 2) 3.U64 else 4.U64
 		stride = width * channels
 		expected = height * (stride + 1)
 		if $compressed.len() < 6 {
@@ -101,9 +101,9 @@ Png :: [].{
 			var $scan = []
 			for x in 0..<stride {
 				encoded = byte(raw, y * (stride + 1) + 1 + x).to_u64()
-				left = if x >= channels byte($scan, x - channels).to_u64() else 0
+				left = if (x >= channels) byte($scan, x - channels).to_u64() else 0
 				up = byte($previous, x).to_u64()
-				corner = if x >= channels byte($previous, x - channels).to_u64() else 0
+				corner = if (x >= channels) byte($previous, x - channels).to_u64() else 0
 				predictor = match method {
 					0 => 0
 					1 => left
@@ -139,7 +139,7 @@ crc = |data| {
 	for item in data {
 		$crc = $crc.bitwise_xor(item.to_u32())
 		for _bit in 0..<8.U64 {
-			$crc = if $crc.bitwise_and(1) == 1 $crc.shr_zf_wrap(1).bitwise_xor(0xEDB88320) else $crc.shr_zf_wrap(1)
+			$crc = if ($crc.bitwise_and(1) == 1) $crc.shr_zf_wrap(1).bitwise_xor(0xEDB88320) else $crc.shr_zf_wrap(1)
 		}
 	}
 	$crc.bitwise_xor(0xFFFFFFFF)
@@ -160,8 +160,8 @@ paeth = |left, up, corner| {
 	a = p - left.to_i64_wrap()
 	b = p - up.to_i64_wrap()
 	c = p - corner.to_i64_wrap()
-	da = if a < 0 0 - a else a
-	db = if b < 0 0 - b else b
-	dc = if c < 0 0 - c else c
-	if da <= db and da <= dc left else if db <= dc up else corner
+	da = if (a < 0) 0 - a else a
+	db = if (b < 0) 0 - b else b
+	dc = if (c < 0) 0 - c else c
+	if (da <= db and da <= dc) left else if (db <= dc) up else corner
 }

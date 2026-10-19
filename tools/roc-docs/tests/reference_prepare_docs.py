@@ -7,6 +7,8 @@ import argparse
 import hashlib
 import json
 import re
+import os
+import textwrap
 import struct
 import zlib
 from dataclasses import dataclass
@@ -56,8 +58,9 @@ class Line:
 
 
 class Converter:
-    def __init__(self, docs, backend, pdf_filename, version, diagrams=None):
+    def __init__(self, docs, backend, pdf_filename, version, diagrams=None, workspace=None):
         self.docs = docs
+        self.workspace = (workspace or docs.parent).resolve()
         self.backend = backend
         self.pdf_filename = pdf_filename
         self.version = version
@@ -74,6 +77,38 @@ class Converter:
         self.targets = {}
         self.routes = {}
         self.expanded_input_bytes = 0
+
+    def listing_include(self, directive, document, number, offset):
+        match = re.fullmatch(r'include::([^\[]+)\[([^\]]*)\]', directive)
+        if not match or ':' in match[1] or '{' in match[1] or Path(match[1]).is_absolute():
+            raise ValueError(f'Invalid local listing include {document}:{number}')
+        target = Path(os.path.abspath(self.docs / Path(document).parent / match[1]))
+        try:
+            relative = target.relative_to(self.workspace)
+        except ValueError as error:
+            raise ValueError('Listing include escapes workspace') from error
+        data = read(safe(self.workspace, relative))
+        self.expanded_input_bytes += len(data)
+        if len(data) > 1024*1024 or self.expanded_input_bytes > 32*1024*1024 or b'\r' in data:
+            raise ValueError('Listing include exceeds byte/line-ending limits')
+        body = data.decode('utf-8')
+        settings = {}
+        for part in filter(None, map(str.strip, match[2].split(','))):
+            key, separator, value = part.partition('=')
+            if not separator or key in settings or key not in ('tag','indent'):
+                raise ValueError('Unsupported listing include option')
+            settings[key] = value
+        if 'tag' in settings:
+            tag = re.escape(settings['tag'])
+            regions = re.findall(r'(?ms)^[^\n]*tag::'+tag+r'\[\]\n(.*?)^[^\n]*end::'+tag+r'\[\](?:\n|$)', body)
+            if len(regions) != 1:
+                raise ValueError('Missing or ambiguous listing tag')
+            body = regions[0]
+        if 'indent' in settings:
+            if settings['indent'] != '0': raise ValueError('Only indent=0 is supported')
+            body = textwrap.dedent(body)
+        self.sources['workspace:'+relative.as_posix()] = sha(data)
+        return [Line(line, document, number, offset) for line in body.removesuffix('\n').split('\n')]
 
     def expand(self, name, offset=0, stack=()):
         if len(stack) > 32 or name in stack:
@@ -92,7 +127,10 @@ class Converter:
         for n, line in enumerate(text.split('\n'), 1):
             if delimiter:
                 if all(conditional):
-                    lines.append(Line(line, name, n, offset))
+                    if line.startswith('include::'):
+                        lines.extend(self.listing_include(line, name, n, offset))
+                    else:
+                        lines.append(Line(line, name, n, offset))
                 if line == delimiter:
                     delimiter = None
                 continue
@@ -414,7 +452,7 @@ def prepare_docs(workspace, docs_directory='docs', entrypoint='index.adoc', outp
             raise ValueError('Unsupported prepared diagram registry schema')
         for d in local['diagrams']:
             diagrams[d['source_sha256']] = {**d, '_root': docs}
-    converter = Converter(docs, 'pdf', pdf_filename, docs_version, diagrams)
+    converter = Converter(docs, 'pdf', pdf_filename, docs_version, diagrams, workspace)
     markdown_mode = Path(entrypoint).suffix == '.md'
     if markdown_mode:
         original = read(safe(docs, entrypoint))
@@ -434,7 +472,7 @@ def prepare_docs(workspace, docs_directory='docs', entrypoint='index.adoc', outp
     page_catalog = []
     routes = {}
     for source in sorted(docs.glob('*.md' if markdown_mode else '*.adoc')):
-        page = Converter(docs, 'html5', pdf_filename, docs_version, diagrams)
+        page = Converter(docs, 'html5', pdf_filename, docs_version, diagrams, workspace)
         if markdown_mode:
             data = read(safe(docs, source.name))
             page.sources[source.name] = sha(data)

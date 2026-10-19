@@ -38,6 +38,14 @@ class PrepareTests(unittest.TestCase):
     def prepare(self):
         return prep.prepare_docs(self.root, output_directory='prepared', docs_version='3', pdf_filename='project-3.pdf')
 
+    def test_checked_listing_include_preserves_source_independently(self):
+        self.write('index.adoc', '= Manual\n\n[source,roc]\n----\ninclude::../example.roc[tag=sample,indent=0]\n----\n')
+        source = '# tag::sample[]\n    message = "hello"  \n# end::sample[]\n'
+        (self.root/'example.roc').write_text(source)
+        manifest = self.prepare()
+        self.assertIn('```roc\nmessage = "hello"  \n```', (self.root/'prepared/manual.md').read_text())
+        self.assertIn('workspace:example.roc', manifest['coverage']['sources'])
+
     def test_native_markdown_sibling_symlink_rejected(self):
         self.write('index.md', '# Manual\n')
         outside = self.root / 'outside.md'; outside.write_text('# Outside\n')
