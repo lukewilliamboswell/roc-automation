@@ -251,23 +251,21 @@ a release must be published before downstream consumers can install those assets
 | `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
 | `api-entrypoint` | empty | Roc package or platform root for the generated API reference
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
-| `backend` | `roc` | `roc` for the precompiled renderer; `legacy` for Docker and Asciidoctor
 | `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
 | `title`, `author`, `language` | empty | Optional overrides for document metadata
 | `pdf-image-dpi` | `144` | PDF raster resolution limit, from 72 to 300; original website images are retained
-| `theme-directory` | empty | Legacy backend only: replacement Asciidoctor theme directory
 |===
 
 Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
-The default backend needs only the renderer binary and the action runner's
+The action needs only the renderer binary and the action runner's
 shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.3, decodes
 PNG assets and renders both formats in Roc. It needs no Python, Docker or Roc
 compiler. Generating the optional API reference requires an explicitly supplied
 Roc compiler. The same binary can build a repository locally with
 `roc-docs build --workspace .`.
 
-The native backend supports the manual's documented source subset. Unsupported
+The renderer supports the manual's documented source subset. Unsupported
 constructs fail rather than silently disappearing. Mermaid diagrams need prepared
 PNG assets whose hashes match their source; see
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
@@ -277,11 +275,11 @@ page numbers or chapter-aware running headers. PDF raster images default to a
 Large documents or high resolutions can exceed the PDF package's bounded
 resource budget and fail before publication.
 
-Set `backend: legacy` to retain Docker/Asciidoctor rendering during migration,
-including custom Asciidoctor themes. A legacy theme directory must contain
-`docs.css`, `docs-theme.yml`, `mermaid-config.json` and `fonts/`. Native rendering
-rejects that input explicitly. Both backends stage the full publication and
-preserve the previous output if conversion, rendering or API generation fails.
+The action uses one shared renderer and built-in theme. It stages the full
+publication and preserves the previous output if conversion, rendering or API
+generation fails. Repositories pinned to older action SHAs keep the behavior
+of those revisions; adopting this action removes the Docker backend and the
+`backend` and `theme-directory` inputs.
 
 [#publish-release]
 == `actions/publish-release`

@@ -116,16 +116,17 @@ Schema 1 remains supported.
 
 `roc-docs` renders HTML and PDF with embedded fonts and Roc highlighting, before
 any Roc compiler is installed downstream. The shared documentation action now
-uses a supplied renderer binary by default. AsciiDoc parsing, PNG preparation,
+uses a supplied renderer binary. AsciiDoc parsing, PNG preparation,
 HTML and PDF rendering all run inside that binary, using roc-parser 2.1.0-rc.3.
-The default action path needs no Python; the renderer also accepts Markdown.
+The action needs no Python; the renderer also accepts Markdown.
 The tools pipeline builds and tests three native targets, alongside `roc-policy`.
 
 The initial native theme replaces our manual's Docker build. Prepared Mermaid
 images retain source and image digests; changed diagrams require regeneration.
-Custom Asciidoctor themes remain available through `backend: legacy`. Native
-rendering rejects unsupported input and stages output before replacing a prior
-publication. It does not implement every Asciidoctor extension or PDF theme option.
+The Docker backend, custom Asciidoctor themes and the `backend` and
+`theme-directory` inputs have been removed. Consumers pinned to earlier SHAs
+retain their existing behavior. Rendering rejects unsupported input and stages
+output before replacing a prior publication. It does not implement every Asciidoctor extension or PDF theme option.
 
 HTML retains a hierarchical desktop contents sidebar and an expandable mobile
 contents list, section numbering, heading links, description lists, boxed

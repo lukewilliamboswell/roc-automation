@@ -101,8 +101,7 @@ image SHA-256 in `docs/prepared-diagrams.json`. The native preparation step
 checks both digests and fails on an unknown or changed source. The schema and
 bundled examples are in `tools/roc-docs/README.adoc` and
 `tools/roc-docs/prepared-diagrams/manifest.json`. Rendering a publication does
-not run Mermaid or download assets. The explicit legacy backend can still
-render Mermaid through Docker.
+not run Mermaid or download assets.
 
 Use syntax-highlighted source blocks for commands, configuration, source code,
 schemas, reports, and output. Name the language explicitly and keep examples
