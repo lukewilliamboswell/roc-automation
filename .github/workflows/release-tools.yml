@@ -115,11 +115,12 @@ jobs:
           pattern: docs-tool-*
           merge-multiple: true
           path: dist
-      - name: Include documentation renderer font notices and source-free tests
+      - name: Include documentation renderer font notices and standalone tests
         run: |
           mkdir -p docs-tests
           cp tools/roc-docs/tests/test_cli.py docs-tests/test_cli.py
           cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
+          cp -R tools/roc-docs/tests/fixtures docs-tests/
           cat LICENSE \
             tools/roc-docs/fonts/NotoSans-OFL.txt \
             tools/roc-docs/fonts/NotoSans-Italic-OFL.txt \
@@ -175,8 +176,7 @@ jobs:
             dist/
             release-notes.md
             policy-tests/test_cli.py
-            docs-tests/test_cli.py
-            docs-tests/test_build.py
+            docs-tests/
 
   # The exact files that would be published, on a runner with no checkout, no
   # Nix and no compiler: what a calling job has when an action runs one.
