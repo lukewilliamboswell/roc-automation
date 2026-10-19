@@ -128,7 +128,7 @@ Html :: [].{
 			CodeHighlight.highlight(language, source).map(
 				|span| {
 					text = escape(SyntaxHighlight.text(source, span))
-					if span.category == Trivia text else "<span class=\"syntax-${SyntaxHighlight.name(span.category)}\">${text}</span>"
+					if (span.category == Trivia) text else "<span class=\"syntax-${SyntaxHighlight.name(span.category)}\">${text}</span>"
 				},
 			),
 			"",
@@ -207,13 +207,13 @@ Html :: [].{
 			},
 		)
 		omit_title = headings.keep_if(|h| h.level == 1).len() == 1 and (headings.first().map_ok(|h| h.level == 1) ?? False)
-		selected = if omit_title headings.drop_first(1) else headings
-		base = selected.fold(6.U64, |lowest, h| if h.level < lowest h.level else lowest)
+		selected = if (omit_title) headings.drop_first(1) else headings
+		base = selected.fold(6.U64, |lowest, h| if (h.level < lowest) h.level else lowest)
 		var $counts = List.repeat(0.U64, 6)
 		var $entries = []
 		for h in selected {
-			$counts = $counts.map_with_index(|value, index| if index + 1 > h.level 0 else if index + 1 == h.level value + 1 else value)
-			number = if numbered Str.join_with($counts.drop_first(base - 1).take_first(h.level - base + 1).map(U64.to_str), ".").concat(". ") else ""
+			$counts = $counts.map_with_index(|value, index| if (index + 1 > h.level) 0 else if (index + 1 == h.level) value + 1 else value)
+			number = if (numbered) Str.join_with($counts.drop_first(base - 1).take_first(h.level - base + 1).map(U64.to_str), ".").concat(". ") else ""
 			info = heading(h.content)
 			$entries = $entries.append({ level: h.level, id: info.id, label: info.label, number })
 		}
@@ -233,7 +233,7 @@ Html :: [].{
 			}
 			children = $rest.drop_first(1).take_first($length - 1)
 			$rest = $rest.drop_first($length)
-			nested = if children.is_empty() "" else "<ul>${toc(children)}</ul>"
+			nested = if (children.is_empty()) "" else "<ul>${toc(children)}</ul>"
 			$result = "${$result}<li><a href=\"#${escape(first.id)}\">${escape(first.number)}${escape(first.label)}</a>${nested}</li>"
 		}
 		$result
@@ -241,7 +241,7 @@ Html :: [].{
 
 	document = |body, input, metadata, numbered, toc_depth, remark| {
 		items = entries(input, numbered)
-		base = items.fold(6.U64, |lowest, e| if e.level < lowest e.level else lowest)
+		base = items.fold(6.U64, |lowest, e| if (e.level < lowest) e.level else lowest)
 		selected = items.keep_if(|e| e.level < base + toc_depth)
 		var $body = body
 		for entry in items {
@@ -257,7 +257,7 @@ Html :: [].{
 		match input.first() {
 			Ok(Heading({ level: One, content })) => {
 				h = heading(content)
-				$page_title = if h.label == metadata.title h.label else "${h.label} — ${metadata.title}"
+				$page_title = if (h.label == metadata.title) h.label else "${h.label} — ${metadata.title}"
 				candidate = heading_html(1.U64, h.id, inlines(clean_heading(content), []) ?? escape(h.label))
 				if $body.starts_with(candidate) {
 					$title = candidate
@@ -288,11 +288,11 @@ Html :: [].{
 				}
 			}
 		}
-		version = if metadata.version.is_empty() "" else "<span id=\"${version_id}\">${escape(metadata.version)}</span>"
-		author = if metadata.author.is_empty() "" else "<span id=\"${author_id}\">${escape(metadata.author)}</span>"
-		description = if remark == "" "" else "<span id=\"${remark_id}\">${escape(remark)}</span>"
-		navigation = if selected.is_empty() "" else "<nav id=\"${toc_id}\" class=\"toc\" aria-label=\"Contents\"><details open><summary id=\"${toc_title_id}\">Contents</summary><ul>${toc(selected)}</ul></details></nav>"
-		"<!doctype html><html lang=\"${escape(metadata.language)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${escape($page_title)}</title><style>${stylesheet}${highlight_styles()}</style></head><body class=\"${if selected.is_empty() "no-toc" else "with-toc"}\"><a class=\"skip-link\" href=\"#${main_id}\">Skip to content</a><header id=\"${header_id}\">${$title}<div class=\"metadata\">${author}${version}${description}<a href=\"${escape(metadata.pdf_filename)}\">Download PDF</a></div></header>${navigation}<main id=\"${main_id}\" tabindex=\"-1\">${$body}</main><footer id=\"${footer_id}\"><span id=\"${footer_text_id}\">${escape(metadata.author)}</span></footer><script>${behavior}</script></body></html>"
+		version = if (metadata.version.is_empty()) "" else "<span id=\"${version_id}\">${escape(metadata.version)}</span>"
+		author = if (metadata.author.is_empty()) "" else "<span id=\"${author_id}\">${escape(metadata.author)}</span>"
+		description = if (remark == "") "" else "<span id=\"${remark_id}\">${escape(remark)}</span>"
+		navigation = if (selected.is_empty()) "" else "<nav id=\"${toc_id}\" class=\"toc\" aria-label=\"Contents\"><details open><summary id=\"${toc_title_id}\">Contents</summary><ul>${toc(selected)}</ul></details></nav>"
+		"<!doctype html><html lang=\"${escape(metadata.language)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${escape($page_title)}</title><style>${stylesheet}${highlight_styles()}</style></head><body class=\"${if (selected.is_empty()) "no-toc" else "with-toc"}\"><a class=\"skip-link\" href=\"#${main_id}\">Skip to content</a><header id=\"${header_id}\">${$title}<div class=\"metadata\">${author}${version}${description}<a href=\"${escape(metadata.pdf_filename)}\">Download PDF</a></div></header>${navigation}<main id=\"${main_id}\" tabindex=\"-1\">${$body}</main><footer id=\"${footer_id}\"><span id=\"${footer_text_id}\">${escape(metadata.author)}</span></footer><script>${behavior}</script></body></html>"
 	}
 
 	## Prefer a separately validated vector image; retain the original PNG as

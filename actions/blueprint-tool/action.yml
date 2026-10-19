@@ -1,0 +1,53 @@
+name: Locate a Blueprint utility
+description: Run a repository task that prints a persistent executable path, report its identity and optionally measure calls to it. Use in read-only build jobs.
+inputs:
+  task:
+    description: Blueprint task that prints only a realpath-resolved executable path
+    required: true
+  blueprint-binary:
+    description: Installed Blueprint executable, otherwise blueprint on PATH
+    default: ''
+  label:
+    description: Diagnostic label, for example roc-docs tools-0.1.0-rc.1; the lock remains authoritative
+    default: ''
+  measure:
+    description: Return a host-side measurement wrapper that records command elapsed time and maximum child RSS
+    default: 'false'
+  output-directory:
+    description: Optional output path relative to the workspace whose file count and bytes are measured after each command
+    default: ''
+outputs:
+  binary:
+    description: Persistent executable path, or optional measurement wrapper, usable by the next action in this job
+    value: ${{ steps.tool.outputs.binary }}
+  executable-path:
+    description: Resolved executable selected by the repository task
+    value: ${{ steps.tool.outputs.executable-path }}
+  sha256:
+    description: SHA-256 of the actual resolved executable
+    value: ${{ steps.tool.outputs.sha256 }}
+  bytes:
+    description: Executable size
+    value: ${{ steps.tool.outputs.bytes }}
+  provision-seconds:
+    description: Task duration including Blueprint verification and any downloads
+    value: ${{ steps.tool.outputs.provision-seconds }}
+  metrics-path:
+    description: JSON measurement file written when the optional wrapper runs
+    value: ${{ steps.tool.outputs.metrics-path }}
+  measure-script:
+    description: Host-side measurement script for separately labelled preparation or API stages
+    value: ${{ steps.tool.outputs.measure-script }}
+runs:
+  using: composite
+  steps:
+    - id: tool
+      shell: bash
+      env:
+        INPUT_TASK: ${{ inputs.task }}
+        INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
+        INPUT_LABEL: ${{ inputs.label }}
+        INPUT_MEASURE: ${{ inputs.measure }}
+        INPUT_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        TOOL_SCRIPT: ${{ github.action_path }}/blueprint_tool.py
+      run: python3 "$TOOL_SCRIPT"

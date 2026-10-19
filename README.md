@@ -14,14 +14,16 @@ build inputs, and the trust model behind the shared actions.
 
 | Action | Purpose |
 | --- | --- |
-| `actions/setup-blueprint` | Install Nix and the verified `blueprint` binary |
+| `actions/setup-blueprint` | Install verified Blueprint, with optional Nix and artifact caching |
 | `actions/nightly-report` | Keep the one tracking issue of a nightly compatibility workflow |
+| `actions/blueprint-tool` | Hand off a persistent Blueprint utility path with optional process diagnostics |
 | `actions/build-docs` | Render AsciiDoc or Markdown as an HTML site and PDF using a supplied Roc binary |
 | `actions/publish-release` | Stage a draft release, verify every asset against the tested file, then publish |
 | `actions/publish-build-inputs` | Publish linker inputs built on a pull request, and commit only their lock |
 
 See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions.html)
-for how to use them.
+for how to use them. Pure Roc packages can start with the complete
+[Nix-free adoption guide](https://lukewilliamboswell.github.io/roc-automation/pure-package.html).
 
 ## Contributing
 

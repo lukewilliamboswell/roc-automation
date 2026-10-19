@@ -102,7 +102,7 @@ walk! = |root, current, depth, found| {
 compare_text = |a, b| {
 	left = a.to_utf8()
 	right = b.to_utf8()
-	for i in 0..<(if left.len() < right.len() left.len() else right.len()) {
+	for i in 0..<(if (left.len() < right.len()) left.len() else right.len()) {
 		l = left.get(i) ?? 0
 		r = right.get(i) ?? 0
 		if l < r {
@@ -112,5 +112,5 @@ compare_text = |a, b| {
 			return After
 		}
 	}
-	if left.len() < right.len() Before else if left.len() > right.len() After else Same
+	if (left.len() < right.len()) Before else if (left.len() > right.len()) After else Same
 }

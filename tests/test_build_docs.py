@@ -42,7 +42,7 @@ class NativeActionShellTests(unittest.TestCase):
             "--pdf-filename", "manual.pdf", "--docs-version", "v1",
             "--pdf-image-dpi", "144", "--title", "Title $(touch sentinel)",
             "--author", "Author", "--language", "en", "--api-entrypoint", "",
-            "--roc-command", "roc",
+            "--roc-command", "roc", "--site-url", "https://example.com/manual/",
         ]
         result = self.invoke(*arguments)
         self.assertEqual(result.returncode, 0, result.stderr)

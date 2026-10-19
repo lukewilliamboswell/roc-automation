@@ -50,6 +50,8 @@ include::overview.adoc[leveloffset=+1]
 
 include::environment.adoc[leveloffset=+1]
 
+include::pure-package.adoc[leveloffset=+1]
+
 include::repository.adoc[leveloffset=+1]
 
 include::examples.adoc[leveloffset=+1]

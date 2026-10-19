@@ -54,10 +54,10 @@ absolute URLs or destinations present in that PDF entrypoint.
 
 Supported rendering blocks include headings, paragraphs, fenced source,
 ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported
-rendering nodes reject explicitly. PDF quote content is retained as body
-paragraphs; the initial PDF theme does not reproduce HTML quote indentation.
-Printed PDF contents page numbers, PDF table column weights and chapter-aware
-running headers are not implemented. Existing Asciidoctor YAML themes are
+rendering nodes reject explicitly. PDF quotes, sidebars and admonitions use
+splittable callouts; rich lists retain attached source, figures and tables.
+The PDF uses rc6 destination page references and chapter-aware running headers.
+PDF table column weights remain unimplemented. Existing Asciidoctor YAML themes are
 incompatible and reject on the native backend; the initial native theme is
 built in. These are explicit experimental authoring/presentation boundaries,
 not a claim of complete Asciidoctor compatibility.
@@ -65,7 +65,13 @@ not a claim of complete Asciidoctor compatibility.
 The printed PDF contents uses nested linked lists with bold chapter entries
 and three levels of heading ancestry. A leading heading matching the book
 title is omitted from the contents, and wrapped titles keep their item's
-indentation.
+indentation. Printed page numbers resolve to the final physical destination pages.
+
+Use `--site-url https://example.com/project/` (or the action's `site-url` input)
+for PDF links to website-only chapters, API routes and downloads. The utility
+keeps manual chapter references internal and preserves other download filenames.
+Local listing includes can select `tag=name` and `indent=0` from checked files
+inside the workspace; consumers still compile/test their examples separately.
 
 HTML and PDF share the same language-aware source highlighter and original
 UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
@@ -158,12 +164,12 @@ publishes through a sibling staging directory.
 
 == Build and verify
 
-Use compiler `nightly-2026-10-15-38e6c42` and its normal cache. Immutable package
+Use compiler `nightly-2026-10-18-1df370f` and its normal cache. Immutable package
 URLs pin basic-cli, roc-parser, roc-pdf and roc-deflate. Release builds use the
 validated `--opt=speed` configuration; compilation has substantial RAM cost,
 separate from native rendering. Keep Roc commands sharing a cache sequential on
 this pin: its
-https://github.com/roc-lang/roc/blob/38e6c42c889cc7ffd97beea9199186790cc848f5/src/compile/cache_cleanup.zig#L130-L162[scratch cleanup]
+https://github.com/roc-lang/roc/blob/1df370f0660e2086db08e6370b77689594db8928/src/compile/cache_cleanup.zig#L130-L162[scratch cleanup]
 can remove another build's active scratch directory once it is five minutes old.
 
 [source,sh]
@@ -173,16 +179,16 @@ ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
   python3 tools/roc-docs/tests/test_cli.py
 ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
   python3 tools/roc-docs/tests/test_build.py
-roc test tools/roc-docs/test_highlight.roc
-roc test tools/roc-docs/test_html.roc
-roc test tools/roc-docs/test_assets.roc
-roc test tools/roc-docs/test_png.roc
-roc test tools/roc-docs/test_preparation.roc
-roc test tools/roc-docs/test_build_options.roc
+python3 tools/roc-docs/tests/run_roc_tests.py
 ----
 
-Python is used only by the test harness and independent reference adapter under
-`tests/`. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
+The suite runner requires a passing test summary. On the pinned compiler it
+accepts warning status 2 only for unreachable-code warnings in the four pinned
+dependencies; warnings in local code, other diagnostics and failed tests reject.
+
+Python is used by the upstream build/test harness and independent reference
+adapter under `tests/`. The build wrapper applies the same pinned-dependency
+warning allowance and requires a zero-error successful-build summary. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
 exercise the actual compiled pipeline. Optional Poppler tools on the test host
 check PDF tags, destinations, text and actual token colours. This is not an
 independent PDF/A or PDF/UA compliance claim.

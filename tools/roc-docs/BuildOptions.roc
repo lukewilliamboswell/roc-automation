@@ -1,8 +1,8 @@
 ## Native repository-publication options. All filesystem authority is explicit.
 BuildOptions :: [].{
-	Options : { mode : [Build, Prepare], workspace : Str, docs_directory : Str, entrypoint : Str, output_directory : Str, pdf_filename : Str, docs_version : Str, pdf_image_dpi : U64, title : Str, author : Str, language : Str, api_entrypoint : Str, roc_command : Str }
+	Options : { mode : [Build, Prepare], workspace : Str, docs_directory : Str, entrypoint : Str, output_directory : Str, pdf_filename : Str, docs_version : Str, pdf_image_dpi : U64, title : Str, author : Str, language : Str, api_entrypoint : Str, roc_command : Str, site_url : Str }
 	usage : Str
-	usage = "roc-docs build|prepare --workspace DIRECTORY [--docs-directory docs] [--entrypoint index.adoc] [--output-directory .docs-out] [--pdf-filename manual.pdf] [--docs-version VERSION] [--pdf-image-dpi 72..300] [--title TITLE] [--author AUTHOR] [--language TAG] [--api-entrypoint FILE] [--roc-command EXECUTABLE]"
+	usage = "roc-docs build|prepare --workspace DIRECTORY [--docs-directory docs] [--entrypoint index.adoc] [--output-directory .docs-out] [--pdf-filename manual.pdf] [--docs-version VERSION] [--pdf-image-dpi 72..300] [--title TITLE] [--author AUTHOR] [--language TAG] [--api-entrypoint FILE] [--roc-command EXECUTABLE] [--site-url HTTPS_URL]"
 
 	parse : List(Str) -> Try(Options, Str)
 	parse = |args| {
@@ -12,7 +12,7 @@ BuildOptions :: [].{
 			_ => return Err(usage)
 		}
 		initial : Options
-		initial = { mode, workspace: ".", docs_directory: "docs", entrypoint: "index.adoc", output_directory: if mode == Prepare ".docs-prepared" else ".docs-out", pdf_filename: "manual.pdf", docs_version: "unreleased", pdf_image_dpi: 144, title: "", author: "", language: "", api_entrypoint: "", roc_command: "roc" }
+		initial = { mode, workspace: ".", docs_directory: "docs", entrypoint: "index.adoc", output_directory: if (mode == Prepare) ".docs-prepared" else ".docs-out", pdf_filename: "manual.pdf", docs_version: "unreleased", pdf_image_dpi: 144, title: "", author: "", language: "", api_entrypoint: "", roc_command: "roc", site_url: "" }
 		var $options = initial
 		var $rest = remaining
 		var $seen = []
@@ -35,6 +35,7 @@ BuildOptions :: [].{
 						"--author" => { ..$options, author: value }
 						"--language" => { ..$options, language: value }
 						"--api-entrypoint" => { ..$options, api_entrypoint: value }
+						"--site-url" => { ..$options, site_url: value }
 						"--roc-command" => { ..$options, roc_command: value }
 						_ => return Err("unknown option: ${key}")
 					}
@@ -44,6 +45,9 @@ BuildOptions :: [].{
 			}
 		}
 		options = $options
+		if options.site_url != "" and (!options.site_url.starts_with("https://") or (options.site_url.drop_prefix("https://").split_on("/").first() ?? "") == "" or options.site_url.contains("@") or !safe_text(options.site_url) or options.site_url.contains("#") or options.site_url.contains("?") or options.site_url.contains(" ") or options.site_url.contains("\\")) {
+			return Err("site-url must be an absolute HTTPS publication directory without query or fragment")
+		}
 		if options.workspace.is_empty() or !safe_text(options.workspace) {
 			return Err("workspace must be a non-empty path")
 		}

@@ -50,7 +50,7 @@ expect {
 }
 expect {
 	files = [{ path: "index.adoc", source: "= Guide\n:sectnums:\n:toclevels: 2\n\n== Start\n\n.How to use it\n****\nTerm:: Definition with `code`.\n****\n\n[cols=\"1,3\",options=\"header\"]\n|===\n| A | B\n| one | two\n|===\n\nNOTE: Read this.\n" }]
-	match Preparation.prepare(files, { entrypoint: "index.adoc", version: "1", pdf_filename: "manual.pdf", diagrams: [] }) {
+	match Preparation.prepare(files, { entrypoint: "index.adoc", version: "1", pdf_filename: "manual.pdf", diagrams: [], site_url: "" }) {
 		Ok({ pages: [{ html: Prepared(p), .. }], .. }) => p.numbered and p.toc_depth == 2 and p.body.contains("<aside class=\"sidebar") and p.body.contains("<dt>Term</dt><dd>") and p.body.contains("width:25.00%") and p.body.contains("width:75.00%") and p.body.contains("admonition")
 		_ => False
 	}
@@ -62,10 +62,10 @@ expect {
 		{ path: "a.adoc", source: "= First\n\n== Shared\n\nxref:b.adoc#shared[Other chapter]\n" },
 		{ path: "b.adoc", source: "= Second\n\n== Shared\n\n<<shared,Own section>>\n" },
 	]
-	match Preparation.prepare(files, { entrypoint: "index.adoc", version: "1", pdf_filename: "manual.pdf", diagrams: [] }) {
+	match Preparation.prepare(files, { entrypoint: "index.adoc", version: "1", pdf_filename: "manual.pdf", diagrams: [], site_url: "" }) {
 		Ok(result) => result.pages.all(
 			|page| match page.html {
-				Prepared(p) => if page.route == "index.html" p.body.contains("href=\"#b-shared\">Other chapter") and p.body.contains("href=\"#b-shared\">Own section") else if page.route == "a.html" p.body.contains("href=\"b.html#shared\">Other chapter") else p.body.contains("href=\"#shared\">Own section")
+				Prepared(p) => if (page.route == "index.html") p.body.contains("href=\"#b-shared\">Other chapter") and p.body.contains("href=\"#b-shared\">Own section") else if (page.route == "a.html") p.body.contains("href=\"b.html#shared\">Other chapter") else p.body.contains("href=\"#shared\">Own section")
 				_ => False
 			},
 		)
@@ -80,7 +80,7 @@ expect Svg.validate("<svg/>".to_utf8()).is_err()
 
 expect {
 	files = [{ path: "index.adoc", source: "= Notes\n\nWARNING: Read this first.\n\n.Matrix\n[cols=\"1,1\",options=\"header\"]\n|===\n| A | B\n| one | two\n|===\n" }]
-	match Preparation.prepare(files, { entrypoint: "index.adoc", version: "1", pdf_filename: "manual.pdf", diagrams: [] }) {
+	match Preparation.prepare(files, { entrypoint: "index.adoc", version: "1", pdf_filename: "manual.pdf", diagrams: [], site_url: "" }) {
 		Ok({ pages: [{ html: Prepared(p), .. }], .. }) => p.body.contains("class=\"admonition warning\"") and p.body.contains(">Warning</div>") and p.body.contains("<caption>Table 1. Matrix</caption>")
 		_ => False
 	}

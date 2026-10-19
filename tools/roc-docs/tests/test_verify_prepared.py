@@ -23,6 +23,11 @@ class AcceptanceTests(unittest.TestCase):
         self.html='<h1 id="title">Title</h1><pre><code>x = 1\n</code></pre><a href="#title">Title</a>'
         (self.site/'index.html').write_text(self.html)
 
+    def test_chapter_furniture_does_not_interrupt_code_across_pages(self):
+        metadata = {'title':'Manual','version':'3','author':'Authors'}
+        text = 'Chapter\n\nvalue = 1\nAuthors 1 / 2\n\fChapter\nnext = 2\nChapter\nAuthors 2 / 2\n'
+        self.assertEqual(verify.compact_pdf_text(text, metadata, ['Chapter']), 'value=1next=2Chapter')
+
     def test_reader_text_removes_only_edge_furniture(self):
         metadata={'title':'Manual','author':'Contributors','version':'3'}
         text='Manual   3\nvalue = 1\nContributors  1 / 2\fManual  3\nnext = 2\nContributors  2 / 2\f'

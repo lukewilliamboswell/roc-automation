@@ -169,6 +169,39 @@ class RendererTests(unittest.TestCase):
         html, _ = self.run_doc('# Heading\n', '--html-only', name='html'); pdf, _ = self.run_doc('# Heading\n', '--pdf-only', name='pdf')
         self.assertTrue((html / 'index.html').is_file()); self.assertFalse((html / 'manual.pdf').exists())
         self.assertTrue((pdf / 'manual.pdf').is_file()); self.assertFalse((pdf / 'index.html').exists())
+    @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo'), 'Poppler independent reader')
+    def test_rc6_page_references_chapter_headers_callouts_and_rich_lists(self):
+        paragraphs = '\n> \n'.join('> CalloutParagraph%02d ' % n + 'continuing note text ' * 22 for n in range(22))
+        source = '# Manual\n\n## ChapterAlpha {#alpha}\n\n' + paragraphs + '\n\n1. InstructionMarker\n\n   ```roc\n   value = 42\n   ```\n\n## ChapterOmega {#omega}\n\nLast chapter.\n'
+        output, _ = self.run_doc(source, '--title', 'Manual', '--pdf-only')
+        pdf = output/'manual.pdf'
+        pages = subprocess.check_output(['pdftotext', '-layout', str(pdf), '-'], text=True).split('\f')
+        destinations = subprocess.check_output(['pdfinfo', '-dests', str(pdf)], text=True)
+        targets = {name: int(page) for page, name in re.findall(r'^\s*(\d+) .*"([^"]+)"$', destinations, re.M)}
+        for label, name in [('ChapterAlpha', 'alpha'), ('ChapterOmega', 'omega')]:
+            toc = re.search(label + r'\s+(\d+)', pages[0])
+            self.assertIsNotNone(toc, pages[0])
+            self.assertEqual(int(toc.group(1)), targets[name])
+            self.assertIn(label, pages[targets[name]-1])
+        self.assertGreater(targets['omega']-targets['alpha'], 1)
+        self.assertIn('ChapterAlpha', pages[targets['alpha']])  # continuation header
+        text = ''.join(pages)
+        for n in range(22): self.assertEqual(text.count('CalloutParagraph%02d' % n), 1)
+        self.assertEqual(text.count('InstructionMarker'), 1)
+        self.assertEqual(text.count('value = 42'), 1)
+        structure = subprocess.run(['pdfinfo', '-struct-text', str(pdf)], capture_output=True, text=True, check=True).stdout
+        self.assertIn('LI (block)', structure)
+        self.assertIn('InstructionMarker', structure)
+        self.assertIn('value', structure)
+
+    @unittest.skipUnless(shutil.which('pdfinfo'), 'Poppler independent reader')
+    def test_unicode_pdf_destinations_are_encoded_consistently(self):
+        source = '# Unicode\n\n## Café {#café}\n\n[Visit](#café)\n\n## Résumé {#résumé}\n\n[Résumé](#résumé)\n'
+        output, _ = self.run_doc(source, '--title', 'Unicode', '--pdf-only')
+        destinations = subprocess.check_output(['pdfinfo', '-dests', str(output/'manual.pdf')], text=True)
+        self.assertIn('"caf%C3%A9"', destinations)
+        self.assertIn('"r%C3%A9sum%C3%A9"', destinations)
+
     @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler optional independent reader')
     def test_pdf_contents_preserves_heading_hierarchy_and_wrapping(self):
         section = 'SectionBeta ' + 'wrapping text ' * 18 + 'WrappedMarker'

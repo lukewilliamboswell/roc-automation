@@ -26,12 +26,12 @@ runs:
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: dist/roc-docs-${{ steps.target.outputs.system }}
-        key: roc-docs-speed-${{ steps.target.outputs.system }}-nightly-2026-10-15-38e6c42-${{ hashFiles('tools/roc-docs/**/*.roc', 'tools/roc-docs/*.css', 'tools/roc-docs/*.js', 'tools/roc-docs/fonts/**', 'tools/roc-docs/prepared-diagrams/**', 'tools/roc-docs/vendor/**') }}
+        key: roc-docs-speed-${{ steps.target.outputs.system }}-nightly-2026-10-18-1df370f-${{ hashFiles('tools/roc-docs/**/*.roc', 'tools/roc-docs/*.css', 'tools/roc-docs/*.js', 'tools/roc-docs/fonts/**', 'tools/roc-docs/prepared-diagrams/**', 'tools/roc-docs/vendor/**') }}
     - if: steps.cache.outputs.cache-hit != 'true'
       uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
       with:
         version: nightly-new-compiler
-        nightly-tag: nightly-2026-10-15-38e6c42
+        nightly-tag: nightly-2026-10-18-1df370f
     - if: steps.cache.outputs.cache-hit != 'true'
       name: Build the optimized native renderer once
       shell: bash
@@ -40,12 +40,7 @@ runs:
       run: |
         set -euo pipefail
         roc fmt --check tools/roc-docs
-        roc test tools/roc-docs/test_highlight.roc
-        roc test tools/roc-docs/test_html.roc
-        roc test tools/roc-docs/test_assets.roc
-        roc test tools/roc-docs/test_png.roc
-        roc test tools/roc-docs/test_preparation.roc
-        roc test tools/roc-docs/test_build_options.roc
+        python3 tools/roc-docs/tests/run_roc_tests.py
         ROC="$(command -v roc)" roc tools/roc-docs/build.roc -- "$SYSTEM"
     - name: Test the exact renderer without a compiler on its PATH
       shell: bash

@@ -27,3 +27,5 @@ expect BuildOptions.parse(["build", "--language", "en-AU"]).is_ok()
 expect BuildOptions.parse(["build", "--author", "bad\nvalue"]).is_err()
 
 expect BuildFiles.parent_path(Path.utf8("/project/out")) == Path.utf8("/project")
+expect BuildOptions.parse(["build", "--site-url", "https://example.com/manual/"]).is_ok()
+expect ["http://example.com/", "javascript:alert(1)", "https://example.com/#fragment", "https://example.com/?query", "https://example.com/ bad"].all(|url| BuildOptions.parse(["build", "--site-url", url]).is_err())

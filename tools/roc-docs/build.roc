@@ -1,6 +1,6 @@
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
-	roc: "nightly-2026-10-15-38e6c42",
+	roc: "nightly-2026-10-18-1df370f",
 }
 
 import cli.Cmd
@@ -34,8 +34,11 @@ main! = |args| {
 	for target in selected {
 		output = "dist/roc-docs-${target.system}"
 		Stdout.line!("Building ${output}")?
-		Cmd.new(OsStr.from_str(compiler)).args(
+		Cmd.new(OsStr.from_str("python3")).args(
 			[
+				"tools/roc-docs/tests/run_roc_tests.py",
+				"--build",
+				compiler,
 				"build",
 				"tools/roc-docs/main.roc",
 				"--opt=speed",

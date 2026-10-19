@@ -14,7 +14,7 @@ while (( $# )); do
             if [[ -n "$2" ]]; then renderer=$2; fi
             shift 2
             ;;
-        --workspace|--docs-directory|--entrypoint|--output-directory|--pdf-filename|--docs-version|--pdf-image-dpi|--api-entrypoint|--roc-command|--title|--author|--language)
+        --site-url|--workspace|--docs-directory|--entrypoint|--output-directory|--pdf-filename|--docs-version|--pdf-image-dpi|--api-entrypoint|--roc-command|--title|--author|--language)
             if (( $# < 2 )); then
                 printf 'build-docs: %s requires a value\n' "$1" >&2
                 exit 2

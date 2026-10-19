@@ -1,0 +1,12 @@
+= A pure Roc package
+
+This example renders its manual using a released native utility. Package checks
+use the latest nightly supplied by CI; the documentation renderer and fixed
+repository tooling are separate locked programs.
+
+== Use the package
+
+[source,roc]
+----
+greeting = "Hello from a pure Roc package"
+----

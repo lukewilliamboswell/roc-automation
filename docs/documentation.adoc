@@ -167,15 +167,16 @@ configuration is not yet read from a separate `Blueprint.roc` record.
 
 Use the book and chapter structure above, unique chapter titles and stable ASCII
 anchors. Use simple PSV tables with header rows and explicit columns; keep cell
-separators on lines beginning with `|`. Wrapped separators, spans and nested cell
-blocks are outside this candidate's supported profile. Preserve existing public
+separators in plain PSV cells. Wrapped cells may continue onto lines containing
+subsequent separators. Spans, cell styles and nested cell blocks remain unsupported. Preserve existing public
 URLs and anchors deliberately when replacing a site.
 
-Includes are bounded local `.adoc` or `.md` sources. Direct checked `.roc` and
-`.expected` includes, ambiguous chapter provenance and included/tagged listings
-remain migration gaps. A temporary generated documentation fragment must retain
-the original example's compile/test checks and source-fidelity verification.
-Do not silently substitute unchecked examples.
+Chapter includes are bounded local `.adoc` or `.md` sources. Listings may include
+checked source and `.expected` files anywhere inside the workspace. Single
+`tag=name` selections and `indent=0` are supported; escaping paths, symlinks,
+missing tags and output overlap reject. Keep the original examples in compile/test
+checks: rendering reads their bytes and does not execute or verify their behavior.
+Ambiguous chapter provenance still rejects.
 
 Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared
 Mermaid registrations. An optional validated SVG companion improves the website;
@@ -187,12 +188,13 @@ or generate them in a read-only build job. The utility does not fetch remote
 images or run converters.
 
 Raw HTML, Asciidoctor extensions and custom YAML themes are unsupported. PDF
-links need absolute URLs or destinations within the combined manual. API routes,
-downloads and legacy underscore anchors require explicit migration review.
+links use destinations within the combined manual, absolute URLs, or the
+`site-url` publication directory for website-only chapters, API routes and
+downloads. Legacy underscore anchors require explicit migration review.
 Markdown remains available, but its PDF uses only the selected entrypoint and
 does not rewrite links between pages. The bundled fonts have finite coverage;
-unsupported glyphs reject. Printed contents page numbers, chapter-specific
-running headers and PDF table proportions are not yet integrated. Inputs and
+unsupported glyphs reject. The PDF prints destination page numbers in its hierarchical contents and uses
+chapter-specific continuation headers. PDF table proportions remain unimplemented. Inputs and
 PDF preparation have resource limits; no PDF/UA compliance is claimed.
 
 Keep release-snippet generation, compiler-generated API documentation, historical

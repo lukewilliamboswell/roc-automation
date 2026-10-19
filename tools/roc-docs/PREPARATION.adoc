@@ -64,20 +64,35 @@ contents list on mobile. AsciiDoc section numbering and contents depth are
 preserved, including legacy duplicate-heading aliases.
 
 PDF presentation remains different from Asciidoctor: description lists use bold
-labels and sidebar/caption content remains ordinary document content. Header PSV
+labels, sidebars use splittable callouts, and captions remain ordinary document
+content. Header PSV
 table content is preserved, but PDF column weights and advanced table spans/styles
 are not implemented.
 
-HTML retains nested list structure, including attached code blocks. Roc-pdf's
-current list item model accepts only paragraphs and nested lists. PDF lists that
-contain source blocks, figures or tables therefore retain visible item markers
-and all content as body flow blocks. Such complex PDF lists lack the original
-list-container semantics; source still uses searchable native code blocks and
-retains syntax colours. Ordinary PDF lists retain native list semantics.
+HTML and PDF retain nested list structure, including attached source blocks,
+figures, tables and callouts. PDF uses roc-pdf rc6 rich list items and splittable
+callouts instead of flattening their content into unrelated body blocks.
 
-Printed contents page numbers, chapter-aware running headers and Asciidoctor
-YAML theme compatibility are not implemented. Font/shape limits come from the
-pinned PDF engine and embedded faces; unsupported requests fail explicitly.
+The PDF contents retains heading hierarchy and prints linked physical destination
+page numbers. Chapters use rc6 page scopes, opening pages and chapter-labelled
+continuation headers. Unicode destination IDs are encoded consistently for the
+PDF engine's printable-ASCII name contract; website anchors remain authored IDs.
+Custom Asciidoctor YAML themes remain unsupported.
+
+Listing includes are read as inert UTF-8 files, with workspace containment,
+symlink checks, per-file and aggregate limits, and output-overlap rejection.
+Single positive `tag` selections and `indent=0` are supported. Missing/unbalanced
+tags, nested include directives and delimiter injection reject. The preparation manifest records each include's document line, workspace path,
+selection options, original digest and selected-text digest. Example compilation
+and test execution remain the consumer's explicit CI stages.
+
+`--site-url` supplies an HTTPS publication directory for PDF links to website-only
+chapters, API routes and downloads. Included manual chapters use internal PDF
+destinations; HTML retains local publication routes. Other PDFs keep their own
+filenames. Without a publication URL, unresolved relative PDF links reject.
+Table diagnostics include source paths and table locations where unambiguous;
+wrapped PSV cells may contain subsequent cell separators on continuation lines.
+Font/shape limits remain those of the pinned engine and embedded faces.
 
 == Images and diagrams
 

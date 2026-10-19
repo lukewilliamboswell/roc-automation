@@ -5,7 +5,7 @@ app [main!] {
 import Preparation
 main! = |_| Ok({})
 
-options = { entrypoint: "index.adoc", version: "3", pdf_filename: "manual.pdf", diagrams: [] }
+options = { entrypoint: "index.adoc", version: "3", pdf_filename: "manual.pdf", diagrams: [], site_url: "" }
 expect Preparation.prepare([{ path: "index.adoc", source: "= Manual\n\nHello.\n" }], options).is_ok()
 
 source = |s| [{ path: "index.adoc", source: s }]
@@ -51,3 +51,8 @@ expect Preparation.prepare(
 	],
 	options,
 ).is_err()
+
+expect manual("= Manual\n\n[cols=\"1,2\",options=\"header\"]\n|===\n| A | B\n| long\ncontinued | value\n|===\n").map_ok(|s| s.contains("| long continued | value |")) == Ok(True)
+expect Preparation.prepare(source("= Manual\n\nlink:api/index.html[API]\n"), { ..options, site_url: "https://example.com/project/" }).map_ok(|r| r.manual.contains("https://example.com/project/api/index.html")) == Ok(True)
+
+expect manual("= Manual\n\n[cols=\",,\",options=\"header\"]\n|===\n| A | B | C\n| x | y | z\n|===\n").map_ok(|s| s.contains("| A | B | C |")) == Ok(True)

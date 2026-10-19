@@ -1,0 +1,104 @@
+name: Blueprint adoption
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cold:
+    name: Cold ${{ matrix.workload }} artifacts
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        workload: [docs, fixed-tools]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use the complete adoption fixture and refuse Nix
+        shell: bash
+        run: |
+          cp examples/pure-package/Blueprint.roc Blueprint.roc
+          cp examples/pure-package/Blueprint.lock Blueprint.lock
+          mkdir -p "$RUNNER_TEMP/no-nix"
+          cat > "$RUNNER_TEMP/no-nix/nix" <<'SH'
+          #!/bin/sh
+          printf 'unexpected Nix invocation\n' > "$NIX_PROBE_MARKER"
+          exit 97
+          SH
+          chmod +x "$RUNNER_TEMP/no-nix/nix"
+          printf '%s\n' "$RUNNER_TEMP/no-nix" >> "$GITHUB_PATH"
+          printf 'NIX_PROBE_MARKER=%s\n' "$RUNNER_TEMP/nix-was-run" >> "$GITHUB_ENV"
+      - id: blueprint
+        uses: ./actions/setup-blueprint
+        with:
+          cache: 'true'
+          cache-workload: adoption-${{ matrix.workload }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Require a cold cache
+        env:
+          CACHE_HIT: ${{ steps.blueprint.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = false
+      - name: Provision, hand off and run the locked utility
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: python3 tests/check_blueprint_adoption.py --workload "$WORKLOAD"
+  warm:
+    name: Fresh runner with warm ${{ matrix.workload }} artifacts
+    needs: cold
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        workload: [docs, fixed-tools]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use the same lock on a fresh runner and refuse Nix
+        shell: bash
+        run: |
+          cp examples/pure-package/Blueprint.roc Blueprint.roc
+          cp examples/pure-package/Blueprint.lock Blueprint.lock
+          mkdir -p "$RUNNER_TEMP/no-nix"
+          cat > "$RUNNER_TEMP/no-nix/nix" <<'SH'
+          #!/bin/sh
+          printf 'unexpected Nix invocation\n' > "$NIX_PROBE_MARKER"
+          exit 97
+          SH
+          chmod +x "$RUNNER_TEMP/no-nix/nix"
+          printf '%s\n' "$RUNNER_TEMP/no-nix" >> "$GITHUB_PATH"
+          printf 'NIX_PROBE_MARKER=%s\n' "$RUNNER_TEMP/nix-was-run" >> "$GITHUB_ENV"
+      - id: blueprint
+        uses: ./actions/setup-blueprint
+        with:
+          cache: 'true'
+          cache-workload: adoption-${{ matrix.workload }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Require the exact workload cache
+        env:
+          CACHE_HIT: ${{ steps.blueprint.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+      - name: Reverify restored bytes, rebuild trees and run without refetching utilities
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: python3 tests/check_blueprint_adoption.py --workload "$WORKLOAD" --warm
+
+  package-nightly:
+    name: Package checks use the floating nightly
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the pure-package fixture
+        run: |
+          cp examples/pure-package/Blueprint.roc Blueprint.roc
+          cp examples/pure-package/Blueprint.lock Blueprint.lock
+      - uses: ./actions/setup-blueprint
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+      - run: blueprint run check-package
+        working-directory: examples/pure-package

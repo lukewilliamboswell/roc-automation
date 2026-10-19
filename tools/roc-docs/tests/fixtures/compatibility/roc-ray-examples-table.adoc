@@ -1,0 +1,9 @@
+= Examples
+:src: https://github.com/lukewilliamboswell/roc-ray/blob/main
+
+[cols="2,3,4",options="header"]
+|===
+|Example |What it is |Patterns to reuse
+|{src}/examples/hello_world/main.roc[Hello World] +
+`hello_world` |A polished minimal interactive scene |App lifecycle, prepared text, pointer input
+|===

@@ -1,0 +1,199 @@
+= Adopt a pure package without Nix
+
+A pure Roc package can run its checks and publish a website and PDF using
+released executables. Blueprint owns the fixed downloads and their reviewed
+lock. The package compiler remains the latest nightly supplied by CI. No local
+installer, renderer build or Nix environment is needed for this path.
+
+The working example is in `examples/pure-package/`. It uses Blueprint
+`0.6.0-rc1`, the matching platform URL and the published experimental
+`tools-0.1.0-rc.1` renderer. Upgrade a utility by changing its recipe and reviewing
+its new lock entries. The utility release and fixed tooling compiler do not
+control which nightly tests the package.
+
+== Declare the utility and tasks
+
+Copy the example's structure and choose your package name and PDF filename.
+The renderer recipe names one release; `{system}` selects the release asset
+for each declared system. `roc-stable` is a separately fetched fixed tool.
+Bare `roc` is expected from the host and is never supplied by that recipe.
+
+[source,roc]
+----
+include::../examples/pure-package/Blueprint.roc[]
+----
+
+`Expect` declares `sh` and `realpath`, which the handoff tasks use, and the
+package compiler, which CI supplies. Blueprint's own archive/store operations
+also use the host's `tar`, `ln` and `chmod`. GitHub's supported Linux and macOS
+runners supply these. The shared setup and optional diagnostic actions use
+Python 3.10 or later on the runner; the renderer executable uses none of these
+tools to parse or render documents.
+
+Install the release binary matching the platform URL, following
+https://github.com/lukewilliamboswell/roc-blueprint/blob/0.6.0-rc1/docs/getting-started.adoc[Blueprint's installation instructions].
+Then run these commands from the example directory, or from your repository
+after adopting its files:
+
+[source,sh]
+----
+blueprint --version
+blueprint update
+blueprint check
+blueprint run docs
+blueprint run tooling-version
+----
+
+Review and commit `Blueprint.roc` and `Blueprint.lock`. Check every utility URL,
+per-system SHA-256, length and newly admitted download host. On an update,
+compare the utility's entries with the upstream release manifest. The setup
+action's full SHA fixes its reviewed Blueprint installer and checksum registry;
+it reads the Blueprint release from the platform URL rather than another
+workflow version pin.
+
+Blueprint can fetch its own fixed configuration compiler into its verified
+store before any Roc CLI is installed globally. This bootstrap download is
+separate from the renderer and from the floating package compiler. Its cost is
+part of cold provisioning. Roc package bundles occupy Roc's package cache and
+are not covered by the artifact cache below.
+
+== Restore downloads before the first task
+
+In a read-only build job, call the shared setup action after checkout:
+
+[source,yaml]
+----
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  with:
+    persist-credentials: false
+- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
+  with:
+    cache: 'true'
+    cache-workload: docs
+- run: blueprint run docs
+- uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+  with:
+    name: website-and-manual
+    path: .docs-out/site
+    if-no-files-found: error
+----
+
+The setup action installs a verified Blueprint binary without Nix by default.
+Set `install-nix: 'true'` when a selected environment takes tools from a Nix
+source or a sandboxed native build needs it. Existing 0.5 configurations need
+migration before using the pure 0.6 path; retain Nix while they still depend on
+it. The privileged report/publisher actions retain their own reviewed tooling
+and do not run this candidate repository configuration.
+
+The cache contains only
+`${XDG_CACHE_HOME:-$HOME/.cache}/blueprint/v1/artifacts`. It is restored before
+tasks and saved by the cache action's post step after a successful job.
+It does not include `v1/trees`, `.blueprint/run`, compiler build outputs or
+Roc's package cache. Each restored artifact is rehashed by Blueprint before it
+is used; its length and identity must match the lock. A damaged artifact and
+its derived trees are removed and the release bytes are downloaded again.
+An unavailable or mismatching replacement cannot become a usable tool.
+
+An exact cache hit is a transfer optimization, not verification. Restoring it
+still transfers cache bytes from GitHub. The Blueprint installer itself is a
+separate verified download. Ordinary GitHub branch and pull-request cache
+visibility applies: a PR can restore an eligible default-branch cache and its
+new cache is scoped to that PR; a failed job does not save a successful cache.
+
+Cache keys include system, Blueprint release, installer/registry identity,
+workflow, logical tool set and lock digest. `cache-workload` is required when
+caching is enabled. Give different tool subsets different names, including
+matrix variants that fetch different programs. For example, a docs job uses
+`docs` and a tooling-check job uses `fixed-tools`. Jobs intentionally sharing
+the same complete tool set may share that name. GitHub caches are immutable:
+a compiler-only job must not claim the key intended to contain the renderer.
+A changed lock or installer produces a new key.
+
+The repository's `Blueprint adoption` workflow tests cold docs and fixed-tool
+jobs, then restores each exact cache on another fresh runner. It compares actual
+executables with the lock and checks that warm tasks do not refetch utility or
+fixed compiler archives. A Nix sentinel fails any accidental Nix invocation.
+See
+https://github.com/lukewilliamboswell/roc-blueprint/blob/0.6.0-rc1/docs/without-nix.adoc#the-store-of-downloads[Blueprint's store rules]
+for the detailed verification and rebuilding contract.
+
+== Pass an executable to a shared action
+
+Running `blueprint run docs` keeps the renderer's options in the repository's
+task and needs no executable handoff. For a workflow using `actions/build-docs`,
+use the example's `docs-path` task and the shared handoff action:
+
+[source,yaml]
+----
+- id: renderer
+  uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
+  with:
+    task: docs-path
+    label: roc-docs tools-0.1.0-rc.1
+    measure: 'true'
+    output-directory: .docs-out
+- uses: lukewilliamboswell/roc-automation/actions/build-docs@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
+  with:
+    renderer-binary: ${{ steps.renderer.outputs.binary }}
+    pdf-filename: example.pdf
+----
+
+The task must print exactly one absolute executable path. `command -v` alone
+returns a temporary link removed when the Blueprint step ends. Resolve it with
+`realpath` inside the task, as the example does. The resolved store path and the
+optional wrapper remain usable within that job. A new job restores artifact
+bytes and runs the task again; it does not restore or reuse the old task link.
+Blueprint has no stable tool-path output API in this release; this shared
+action implements the handoff around the explicit repository task.
+
+The handoff reports the actual executable's SHA-256, length and provisioning
+time. Blueprint's successful `Fetch` task supplies lock verification; the
+reported label is descriptive and is not another admission pin. The action
+exports `executable-path` for the real file and `binary` for the optional
+measurement wrapper. Renderer options remain task arguments or action inputs;
+the handoff does not infer them from the task.
+
+== Measure stages and retain acceptance checks
+
+Optional measurements record wall time, maximum child-process RSS in KiB,
+exit status, and output file count/bytes in JSON. Provisioning includes
+verification and any downloads. The measured renderer command excludes the
+host Python wrapper's RSS and output-directory scanning time. If the command
+starts an API compiler, its children contribute to the reported command cost.
+
+Measure generated-input preparation and API generation as separately labelled
+commands when comparing renderer costs. `blueprint-tool` exports
+`measure-script` for these stages; invoke it with the host Python interpreter:
+
+[source,sh]
+----
+python3 "$MEASURE_SCRIPT" --label preparation --metrics "$RUNNER_TEMP/preparation.json" -- blueprint run prepare-docs
+python3 "$MEASURE_SCRIPT" --label api --metrics "$RUNNER_TEMP/api.json" -- blueprint run api-docs
+----
+
+These task names are repository-defined stages, not built-in Blueprint APIs.
+Keep browser and independent PDF-reader acceptance outside the measurement.
+Review stable routes and anchors, exact source blocks, tables, figures,
+release-specific PDF filenames and API assembly before changing publication.
+Deploy jobs consume only the accepted site artifact and keep their write tokens
+separate from all repository tasks.
+
+== Keep the package nightly floating
+
+The package-check job installs the latest nightly with the official setup action
+and then runs `blueprint run check-package`. It does not fetch a program called
+`roc` from the fixed-tooling environment:
+
+[source,yaml]
+----
+- uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+  with:
+    version: nightly-new-compiler
+- run: blueprint run check-package
+----
+
+For multiple package-test jobs, resolve the moving tag once and pass it through,
+as xref:workflows.adoc#nightly-compatibility[the nightly workflow] describes.
+Caching fixed tooling and released utilities never delays package-nightly
+updates. Native platforms can retain Nix toolchains and sandboxed build inputs
+while using the same released documentation utility and artifact deployment.
