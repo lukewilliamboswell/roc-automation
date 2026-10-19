@@ -8,6 +8,15 @@ runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
 
 class CompilerWarningsTests(unittest.TestCase):
+    def test_build_requires_success_summary_and_only_known_dependency_warnings(self):
+        diagnostic = '── ● unreachable code ─ ../../.cache/roc/packages/'+next(iter(runner.PACKAGES))+'/Module.roc:1:1\n'
+        output = diagnostic+'0 errors and 19 warnings found in 5m while successfully building:\n'
+        self.assertTrue(runner.build_with_known_warnings(2, output))
+        self.assertFalse(runner.build_with_known_warnings(1, output))
+        self.assertFalse(runner.build_with_known_warnings(2, output.replace('0 errors','1 errors')))
+        self.assertFalse(runner.build_with_known_warnings(2, diagnostic))
+        self.assertFalse(runner.build_with_known_warnings(2, output.replace('unreachable code','unused variable')))
+
     def test_only_passing_tests_with_pinned_dependency_warning_are_accepted(self):
         diagnostic = '── ● unreachable code ─ ../../.cache/roc/packages/'+next(iter(runner.PACKAGES))+'/Module.roc:1:1\n'
         passing = diagnostic+'All (34) tests passed in 100 ms.\n'

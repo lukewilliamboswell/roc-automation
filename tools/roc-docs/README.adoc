@@ -186,8 +186,9 @@ The suite runner requires a passing test summary. On the pinned compiler it
 accepts warning status 2 only for unreachable-code warnings in the four pinned
 dependencies; warnings in local code, other diagnostics and failed tests reject.
 
-Python is used only by the test harness and independent reference adapter under
-`tests/`. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
+Python is used by the upstream build/test harness and independent reference
+adapter under `tests/`. The build wrapper applies the same pinned-dependency
+warning allowance and requires a zero-error successful-build summary. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
 exercise the actual compiled pipeline. Optional Poppler tools on the test host
 check PDF tags, destinations, text and actual token colours. This is not an
 independent PDF/A or PDF/UA compliance claim.

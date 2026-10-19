@@ -34,8 +34,11 @@ main! = |args| {
 	for target in selected {
 		output = "dist/roc-docs-${target.system}"
 		Stdout.line!("Building ${output}")?
-		Cmd.new(OsStr.from_str(compiler)).args(
+		Cmd.new(OsStr.from_str("python3")).args(
 			[
+				"tools/roc-docs/tests/run_roc_tests.py",
+				"--build",
+				compiler,
 				"build",
 				"tools/roc-docs/main.roc",
 				"--opt=speed",
