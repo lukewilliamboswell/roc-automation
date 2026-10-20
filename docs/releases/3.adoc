@@ -210,7 +210,7 @@ bundled reading fonts and supports light and dark colour schemes.
 
 == Nix-free utility adoption
 
-The shared Blueprint setup admits `0.6.0-rc1`, installs Nix only when requested,
+The shared Blueprint setup admits `0.6.0-rc1` and `0.6.0`, installs Nix only when requested,
 and can cache verified download artifacts by locked logical tool set. A complete
 pure-package example keeps the package nightly floating and declares fixed
 tooling and released utilities through `Programs`/`Fetch`. The shared
