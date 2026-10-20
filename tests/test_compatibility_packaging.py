@@ -28,8 +28,17 @@ class CompatibilityPackagingTests(unittest.TestCase):
                 shutil.copy(ROOT / relative, destination)
             (staging / "dist").mkdir()
             shutil.copy(ROOT / "actions/release-compatibility/archive.py", staging / "dist/release-compatibility-archive.py")
-            packaged = subprocess.run(["bash", "-euc", commands], cwd=staging, capture_output=True, text=True)
-            self.assertEqual(packaged.returncode, 0, packaged.stderr)
+            bash = shutil.which("bash")
+            if os.name == "nt":
+                # Actions' bash shell is Git Bash. A bare subprocess lookup can
+                # select System32\\bash.exe (the unrelated WSL launcher).
+                git = Path(shutil.which("git")).resolve()
+                candidates = [git.parent / "bash.exe", git.parent.parent / "bin/bash.exe",
+                              git.parent.parent.parent / "bin/bash.exe"]
+                bash = next((str(candidate) for candidate in candidates if candidate.is_file()), None)
+            self.assertIsNotNone(bash, "the release packaging simulation requires Git Bash")
+            packaged = subprocess.run([bash, "-euc", commands], cwd=staging, capture_output=True, text=True)
+            self.assertEqual(packaged.returncode, 0, packaged.stdout + packaged.stderr)
             artifact = Path(temporary) / "downloaded-artifact"
             artifact.mkdir()
             shutil.move(staging / "compatibility-tests", artifact / "compatibility-tests")

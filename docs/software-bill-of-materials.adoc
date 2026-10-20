@@ -12,6 +12,31 @@ supplied files as inert bytes.
 A checksum file, Blueprint lock or GitHub dependency submission alone does not
 meet this contract.
 
+== Share generation, validation and publication responsibilities
+
+Blueprint owns the reusable generation capability. It exposes resolved component
+identities, build relationships and final artifact identities, and combines them
+with reviewed repository metadata to produce the standard document. A repository
+declares its deliverables and supplements missing licenses, vendored components,
+native libraries and composition information. Selecting a tool in an environment
+does not establish that the tool or its dependencies ship in the output.
+Separate inventory inspection from final artifact binding: inspect the committed
+resolved specification and lock without provisioning inputs, then hash and bind
+the delivered files in the release task after the build. Missing metadata is an
+explicit gap rather than a reason for an inspector to fetch, build or scan an
+unrelated store tree.
+
+roc-automation owns independent local validation and integration with its existing
+publication actions. Keep the validator separate from the generator so the same
+policy checks an SBOM supplied by Blueprint or another producer. The validator
+reads data; it never evaluates a Blueprint file, imports candidate modules,
+executes an artifact or regenerates an SBOM to make invalid input pass.
+
+Use one generation task and one shared validation policy across release dry runs,
+publication and downstream admission. Signing and publishing retain separate
+authority from both. Vulnerability correlation is another consumer of the
+inventory and belongs in scheduled or manually requested analysis.
+
 == Declare what the inventory covers
 
 Give each deliverable an explicit subject: release URL, filename, version,
@@ -59,8 +84,9 @@ not an unsuccessful scan.
 Publish JSON in SPDX or CycloneDX, using a maintained schema version supported
 by the producer and intended consumers. Record the format and version in the
 document and pin the generator and validator through the reviewed tooling
-environment. One supported format is sufficient for a producer; downstream
-ingestion should accept both rather than require a repository-specific format.
+environment. One supported format is sufficient for an initial shared
+implementation. Use a versioned format adapter so support for the other standard
+can be added without inventing a repository-specific component inventory.
 If generating both, derive them from the same inventory and check that subject
 identities, component coverage and relationships agree.
 
@@ -133,6 +159,91 @@ it discovers Roc imports, bundled platform/native code or vendored inputs.
 Pin and cache generators like other tools. Routine validation uses local
 schemas and metadata; remote vulnerability queries and full advisory rescans
 belong in a separate scheduled/manual analysis job so they do not delay PR CI.
+
+=== Validate a declared release inventory
+
+Give the shared validator three explicit inputs: the final release files, their
+declared SBOM-to-subject mapping, and the resolved component/coverage inventory
+from the build. Each mapping identifies the SBOM filename, format/version and
+SHA-256, plus each subject's filename, size, SHA-256 and target. Also bind the
+inputs to the source repository, commit and producing workflow run/attempt.
+Use a deliberate target-independent identity for source-only subjects rather
+than silently substituting the validator host's target.
+
+This mapping is a release envelope, not a second SBOM format. Component records,
+dependency relationships and coverage statements remain in the standard
+document. The resolved inventory is evidence to compare, not authority to invent
+missing component identities or declare that environment tools are contained.
+Checking one producer's records against each other detects inconsistency; it
+cannot establish that the producer discovered every component.
+
+The validator applies the following checks locally:
+
+* Read a bounded set of regular files within the selected artifact directory;
+reject symlinks, duplicate JSON keys, duplicate names and undeclared files.
+* Validate against the reviewed schema and semantic rules for the declared
+format/version. Bundle schemas and their references with the pinned validator;
+do not fetch schemas, component URLs or external references while validating.
+* Recompute every declared file hash and size, and require each SBOM subject
+and target mapping to agree with the exact delivered bytes. An SBOM hash does
+not substitute for its subject's hash.
+* Reject duplicate element identifiers, conflicting identities and unresolved
+relationship references. External document references must resolve to supplied,
+hash-verified records or be recorded as an explicit coverage gap. Respect the
+standard's relationship direction and distinguish containment, runtime
+dependencies, build dependencies and test dependencies.
+* Compare the component graph with the resolved inventory and reviewed metadata.
+Reject missing required subjects, unexplained component omissions and coverage
+claims stronger than the supporting evidence. Preserve legitimate distinct
+instances of a component when their target, revision or patch differs.
+* Report known gaps separately from successful checks. Explicit unknown metadata
+is useful information; it is not evidence of complete coverage. Required scope
+with unresolved gaps blocks release admission until policy accepts a reviewed,
+bounded exception or the inventory is corrected.
+
+Emit a deterministic machine-readable validation report with the validator and
+policy version, schema identity, input digests, subject mappings, stable
+diagnostic codes and coverage findings. A nonzero exit status prevents release
+admission. Keep the report's input order and diagnostics stable, and exclude
+host paths and current-time values from its identity. A report supplied by the
+candidate is diagnostic evidence: the trusted admission job independently
+rechecks its bindings and required local validation with pinned reviewed code.
+
+Test malformed documents and query behavior as well as valid examples. Include
+wrong-target and swapped-subject hashes, duplicate and dangling references,
+unreachable transitive components, conflicting component instances, an empty
+scan presented as complete, and a build-only compiler incorrectly claimed as
+shipped. Verify that disconnected build-only records do not make an affected
+binary appear to contain that tool, and that declared incomplete coverage never
+turns an absent query result into proof of absence.
+
+=== Reuse the existing publication paths
+
+For ordinary product and tool releases, use `actions/publish-release` to transfer
+the complete declared asset set, including the validated SBOM sidecars and
+retained evidence. Its name, size and download/hash verification preserves the
+exact tested bytes; that transfer check is separate from SBOM validation.
+Choose the asset set explicitly so a missing required sidecar cannot be hidden
+by a successful wildcard match for unrelated release files.
+
+For linker-input releases, use `actions/publish-build-inputs` and its versioned
+release manifest. Declare every SBOM sidecar and evidence file with its size,
+digest and subject/target mapping. Extend the manifest schema deliberately when
+adding these records; never admit arbitrary extra files or treat them as target
+archives. Attestation checks, upload, download verification, draft recovery and
+immutable-release verification cover the complete declared file set. The lock
+retains the selected manifest identity so the mapping remains bound to the same
+source and artifact identities. See
+xref:linker-input-releases.adoc#trusted-publisher-contract[the linker-input publisher contract].
+
+The attestation job checks the selected run, source and complete mapping before
+signing. A build-provenance statement about an SBOM file and an SBOM statement
+about a software artifact have different subjects and predicates; preserve both
+identities where both are produced. Do not attribute a candidate build to the
+publisher's own source revision. Publish retained bundles alongside the
+inventory, and verify them during adoption rather than ordinary cache reuse.
+These responsibilities extend the existing publisher and admission boundaries;
+they do not require another independent SBOM publisher.
 
 Provenance and an SBOM provide different evidence: provenance describes the
 producer and build context, while an SBOM describes composition. A signed SBOM
