@@ -1,6 +1,6 @@
 ## Read-only downstream inventory. A SHA is a shared-code version; tool release
 ## tags are a separate version scheme. Unknown evidence never becomes current.
-Downstreams := [].{
+DownstreamStatus := [].{
 	Reference : { file : Str, target : Str, revision : Str }
 	Snapshot : { repository : Str, head : Str, references : List(Reference), problem : Str }
 
@@ -133,27 +133,27 @@ older = Str.repeat("b", 40)
 
 sample = { repository: "o/r", head: older, references: [{ file: ".github/workflows/ci.yml", target: "lukewilliamboswell/roc-automation/actions/setup-blueprint", revision: current }], problem: "" }
 
-expect Downstreams.status(sample, current).color == "brightgreen"
-expect Downstreams.status({ ..sample, references: sample.references.append({ file: "f", target: "t", revision: older }) }, current).message == "aaaaaaa, bbbbbbb (upgrade available)"
-expect Downstreams.status({ ..sample, problem: "HTTP 403" }, current).message == "unknown"
-expect Downstreams.status(sample, "").message == "unknown"
-expect Downstreams.status({ ..sample, references: [] }, current).message == "not configured"
-expect Downstreams.status({ ..sample, references: [{ file: "f", target: "t", revision: "main" }] }, current).message == "unpinned reference"
-expect !Downstreams.sha("abc1234") and !Downstreams.sha(Str.repeat("g", 40))
-expect Downstreams.references("ci.yml", "# uses: lukewilliamboswell/roc-automation/a@main\n- uses: 'lukewilliamboswell/roc-automation/actions/setup-blueprint@${current}' # reviewed\r\n") == Ok([{ file: "ci.yml", target: "lukewilliamboswell/roc-automation/actions/setup-blueprint", revision: current }])
-expect Downstreams.references("f", "uses: actions/checkout@abc # lukewilliamboswell/roc-automation/a@main") == Ok([])
-expect Downstreams.references("f", "- {uses: lukewilliamboswell/roc-automation/a@main}").is_err()
-expect Downstreams.references("f", "uses: lukewilliamboswell/roc-automation/a").is_err()
-expect Downstreams.references("f", Str.concat("uses: lukewilliamboswell/roc-automation/a@$", "{{ inputs.ref }}")).is_err()
-expect !Downstreams.safe_path("../secret") and !Downstreams.safe_path("a?ref=main") and !Downstreams.safe_path("a//b")
-expect Downstreams.source_file(".github/workflows/ci.yaml") and Downstreams.source_file("actions/test/action.yml") and !Downstreams.source_file("src/main.roc")
-expect Downstreams.html("<script>&\"'") == "&lt;script&gt;&amp;&quot;&#39;"
-expect Downstreams.badge(sample, current, "2026-10-21").contains("2026-10-21")
-expect Downstreams.source_paths("{\"truncated\":true,\"tree\":[]}").is_err()
-expect Downstreams.source_paths("{\"tree\":[]}").is_err()
-expect Downstreams.source_paths("not JSON").is_err()
-expect Downstreams.source_paths("{\"truncated\":false,\"tree\":[]}") == Ok([])
-expect Downstreams.source_paths("{\"truncated\":false,\"tree\":[{\"path\":\".github/workflows/ci.yml\",\"type\":\"blob\",\"mode\":\"120000\"}]}").is_err()
-expect Downstreams.references("f", "uses: LukeWilliamBoswell/roc-automation/actions/setup-blueprint@${current}").is_ok()
-expect Downstreams.get_args("repos/o/r", "application/json", "") == ["api", "--method", "GET", "-H", "Accept: application/json", "repos/o/r"]
-expect Downstreams.get_args("repos/o/r", "application/json", ".sha") == ["api", "--method", "GET", "-H", "Accept: application/json", "repos/o/r", "--jq", ".sha"]
+expect DownstreamStatus.status(sample, current).color == "brightgreen"
+expect DownstreamStatus.status({ ..sample, references: sample.references.append({ file: "f", target: "t", revision: older }) }, current).message == "aaaaaaa, bbbbbbb (upgrade available)"
+expect DownstreamStatus.status({ ..sample, problem: "HTTP 403" }, current).message == "unknown"
+expect DownstreamStatus.status(sample, "").message == "unknown"
+expect DownstreamStatus.status({ ..sample, references: [] }, current).message == "not configured"
+expect DownstreamStatus.status({ ..sample, references: [{ file: "f", target: "t", revision: "main" }] }, current).message == "unpinned reference"
+expect !DownstreamStatus.sha("abc1234") and !DownstreamStatus.sha(Str.repeat("g", 40))
+expect DownstreamStatus.references("ci.yml", "# uses: lukewilliamboswell/roc-automation/a@main\n- uses: 'lukewilliamboswell/roc-automation/actions/setup-blueprint@${current}' # reviewed\r\n") == Ok([{ file: "ci.yml", target: "lukewilliamboswell/roc-automation/actions/setup-blueprint", revision: current }])
+expect DownstreamStatus.references("f", "uses: actions/checkout@abc # lukewilliamboswell/roc-automation/a@main") == Ok([])
+expect DownstreamStatus.references("f", "- {uses: lukewilliamboswell/roc-automation/a@main}").is_err()
+expect DownstreamStatus.references("f", "uses: lukewilliamboswell/roc-automation/a").is_err()
+expect DownstreamStatus.references("f", Str.concat("uses: lukewilliamboswell/roc-automation/a@$", "{{ inputs.ref }}")).is_err()
+expect !DownstreamStatus.safe_path("../secret") and !DownstreamStatus.safe_path("a?ref=main") and !DownstreamStatus.safe_path("a//b")
+expect DownstreamStatus.source_file(".github/workflows/ci.yaml") and DownstreamStatus.source_file("actions/test/action.yml") and !DownstreamStatus.source_file("src/main.roc")
+expect DownstreamStatus.html("<script>&\"'") == "&lt;script&gt;&amp;&quot;&#39;"
+expect DownstreamStatus.badge(sample, current, "2026-10-21").contains("2026-10-21")
+expect DownstreamStatus.source_paths("{\"truncated\":true,\"tree\":[]}").is_err()
+expect DownstreamStatus.source_paths("{\"tree\":[]}").is_err()
+expect DownstreamStatus.source_paths("not JSON").is_err()
+expect DownstreamStatus.source_paths("{\"truncated\":false,\"tree\":[]}") == Ok([])
+expect DownstreamStatus.source_paths("{\"truncated\":false,\"tree\":[{\"path\":\".github/workflows/ci.yml\",\"type\":\"blob\",\"mode\":\"120000\"}]}").is_err()
+expect DownstreamStatus.references("f", "uses: LukeWilliamBoswell/roc-automation/actions/setup-blueprint@${current}").is_ok()
+expect DownstreamStatus.get_args("repos/o/r", "application/json", "") == ["api", "--method", "GET", "-H", "Accept: application/json", "repos/o/r"]
+expect DownstreamStatus.get_args("repos/o/r", "application/json", ".sha") == ["api", "--method", "GET", "-H", "Accept: application/json", "repos/o/r", "--jq", ".sha"]
