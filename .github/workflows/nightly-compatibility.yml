@@ -1,0 +1,196 @@
+name: Published release on the Roc nightly
+on:
+  workflow_call:
+    inputs:
+      nightly-tag:
+        description: Exact nightly for a diagnostic rerun; empty resolves latest
+        type: string
+        default: ''
+      release-tag:
+        description: Exact final product release for a diagnostic rerun; empty resolves latest
+        type: string
+        default: ''
+      package-name:
+        description: Examples ZIP prefix; empty uses repository name
+        type: string
+        default: ''
+      runners:
+        description: Every supported release target, as a JSON array
+        type: string
+        default: '["ubuntu-24.04"]'
+      setup-command:
+        description: Optional JSON argv array for native prerequisites
+        type: string
+        default: '[]'
+      install-blueprint:
+        type: boolean
+        default: false
+      install-nix:
+        type: boolean
+        default: false
+      case-timeout-ms:
+        type: string
+        default: '10000'
+      test-environment:
+        type: string
+        default: '[]'
+      report-issue:
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: shared-release-compatibility-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  select:
+    name: Select one release and compiler
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ready: ${{ steps.select.outputs.ready }}
+      nightly: ${{ steps.select.outputs.nightly }}
+      release: ${{ steps.select.outputs.release }}
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      # No consumer checkout or code in the selection job.
+      - id: select
+        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@7c7f4d2972808ce6fe5a0e10d679571f6bed5a11
+        with:
+          phase: select
+          nightly-tag: ${{ inputs.nightly-tag }}
+          release-tag: ${{ inputs.release-tag }}
+          package-name: ${{ inputs.package-name }}
+          runners: ${{ inputs.runners }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nightly-selection
+          path: ${{ steps.select.outputs.directory }}/selection.json
+          if-no-files-found: error
+          overwrite: true
+
+  test:
+    name: Published examples (${{ matrix.runner }})
+    needs: select
+    if: needs.select.outputs.ready == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: nightly-selection
+          path: ${{ runner.temp }}/nightly-selection
+      - id: test
+        name: Check, build and run the published suite
+        continue-on-error: true
+        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@7c7f4d2972808ce6fe5a0e10d679571f6bed5a11
+        with:
+          phase: test
+          nightly-tag: ${{ needs.select.outputs.nightly }}
+          selection: ${{ runner.temp }}/nightly-selection/selection.json
+          runner: ${{ matrix.runner }}
+          setup-command: ${{ inputs.setup-command }}
+          install-blueprint: ${{ inputs.install-blueprint }}
+          install-nix: ${{ inputs.install-nix }}
+          case-timeout-ms: ${{ inputs.case-timeout-ms }}
+          test-environment: ${{ inputs.test-environment }}
+      - name: Preserve raw diagnostics, including after success or failure
+        if: always() && steps.test.outputs.directory != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: compatibility-${{ matrix.runner }}
+          path: |
+            ${{ steps.test.outputs.directory }}/result.json
+            ${{ steps.test.outputs.directory }}/*-command.json
+            ${{ steps.test.outputs.directory }}/*-stdout.log
+            ${{ steps.test.outputs.directory }}/*-stderr.log
+            ${{ steps.test.outputs.directory }}/*-listing.log
+            ${{ steps.test.outputs.directory }}/*-expected.json
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Keep failed tests red after preserving their evidence
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        run: test "$TEST_OUTCOME" = success
+
+  aggregate:
+    name: Compatibility verdict
+    needs: [select, test]
+    if: always() && github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.aggregate.outputs.report }}
+    steps:
+      # Artifacts are inert files in a read-only job. No matrix job output can
+      # overwrite another target's result; missing/stale targets cannot pass.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: nightly-selection
+          path: ${{ runner.temp }}/nightly-selection
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: compatibility-*
+          path: ${{ runner.temp }}/nightly-evidence
+      - id: aggregate
+        name: Classify target evidence
+        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@7c7f4d2972808ce6fe5a0e10d679571f6bed5a11
+        with:
+          phase: aggregate
+          selection: ${{ runner.temp }}/nightly-selection/selection.json
+          artifacts: ${{ runner.temp }}/nightly-evidence
+          test-result: ${{ needs.test.result }}
+      - name: Preserve the machine-readable compatibility summary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nightly-compatibility-summary-${{ github.run_attempt }}
+          path: ${{ steps.aggregate.outputs.directory }}/summary.json
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      # These fixed step names form the read-only dashboard evidence contract.
+      - name: All published examples passed
+        if: steps.aggregate.outputs.outcome == 'compatible'
+        run: echo 'Every target passed; no compatibility action required.'
+      - name: Published examples failed
+        if: steps.aggregate.outputs.outcome == 'incompatible'
+        run: |
+          echo '::error::Published examples failed. Inspect diagnostics and prepare a compatible patch release.'
+          exit 1
+      - name: Compatibility evidence incomplete
+        if: steps.aggregate.outputs.outcome != 'compatible' && steps.aggregate.outputs.outcome != 'incompatible'
+        run: |
+          echo '::error::Compatibility was not established. Inspect setup, skipped cases, timeouts and missing target evidence; then rerun all jobs.'
+          exit 1
+
+  report:
+    name: Track release compatibility
+    needs: [select, aggregate]
+    # Historical/manual probes never close an issue about the latest pair.
+    if: always() && inputs.report-issue && inputs.nightly-tag == '' && inputs.release-tag == '' && (needs.aggregate.outputs.report == 'success' || needs.aggregate.outputs.report == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      # No checkout, diagnostics, setup command or consumer code in this job.
+      - uses: lukewilliamboswell/roc-automation/actions/nightly-report@7b1f87cded465a7bd280c1370b63d93bccfe4c3e
+        with:
+          outcome: ${{ needs.aggregate.outputs.report }}
+          nightly-tag: ${{ needs.select.outputs.nightly }}
+          release-tag: ${{ needs.select.outputs.release }}
