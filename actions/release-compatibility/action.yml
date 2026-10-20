@@ -1,0 +1,108 @@
+name: Published release compatibility
+description: Resolve, test or aggregate an immutable published examples suite; preserve successful compiler diagnostics and fail closed on missing evidence.
+inputs:
+  phase:
+    description: select, test or aggregate
+    required: true
+  nightly-tag:
+    description: Exact nightly tag; select resolves the latest when empty
+    default: ''
+  release-tag:
+    description: Exact final product tag; select resolves the most recently published final numeric product release when empty
+    default: ''
+  package-name:
+    description: Prefix of the canonical examples ZIP; defaults to the repository name
+    default: ''
+  runners:
+    description: JSON array of supported hosted runner labels
+    default: '["ubuntu-24.04"]'
+  selection:
+    description: Absolute path to selection.json from this run
+    default: ''
+  runner:
+    description: This matrix target's runner label
+    default: ''
+  artifacts:
+    description: Directory containing downloaded per-target artifacts for aggregate
+    default: ''
+  setup-command:
+    description: Optional JSON argv array for native prerequisites; runs only in the read-only test job
+    default: '[]'
+  case-timeout-ms:
+    description: Per-example deadline, 1–120000 milliseconds
+    default: '10000'
+  install-blueprint:
+    description: Install the caller's verified Blueprint for its optional prerequisite command
+    default: 'false'
+  install-nix:
+    description: Explicitly install Nix for prerequisite environments that need it
+    default: 'false'
+outputs:
+  directory:
+    description: Private result/diagnostic directory, including on a failed test
+    value: ${{ steps.build.outputs.directory }}
+  ready:
+    value: ${{ steps.run.outputs.ready }}
+    description: Whether selection completed
+  nightly:
+    value: ${{ steps.run.outputs.nightly }}
+    description: Resolved nightly tag
+  release:
+    value: ${{ steps.run.outputs.release }}
+    description: Resolved final product release tag
+  matrix:
+    value: ${{ steps.run.outputs.matrix }}
+    description: Validated hosted runner matrix
+  outcome:
+    value: ${{ steps.run.outputs.outcome }}
+    description: Aggregate compatibility or infrastructure outcome
+  report:
+    value: ${{ steps.run.outputs.report }}
+    description: success, failure or none; only the first two may reach the issue reporter
+runs:
+  using: composite
+  steps:
+    # Build the controller with its fixed tooling compiler before installing the
+    # package compiler. No consumer Blueprint, Nix environment or code is needed.
+    - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      with:
+        version: nightly-new-compiler
+        nightly-tag: nightly-2026-10-09-258ab27
+    - id: build
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        directory=$(mktemp -d "$RUNNER_TEMP/roc-compatibility.XXXXXXXX")
+        echo "directory=$directory" >> "$GITHUB_OUTPUT"
+        roc build "$ACTION_PATH/../../scripts/release_compatibility.roc" --output="$directory/runner"
+    - if: inputs.phase == 'test'
+      uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      with:
+        version: nightly-new-compiler
+        nightly-tag: ${{ inputs.nightly-tag }}
+    - if: inputs.phase == 'test' && inputs.install-blueprint == 'true'
+      uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7b1f87cded465a7bd280c1370b63d93bccfe4c3e
+      with:
+        install-nix: ${{ inputs.install-nix }}
+    - id: run
+      shell: bash
+      env:
+        RA_PHASE: ${{ inputs.phase }}
+        RA_DIRECTORY: ${{ steps.build.outputs.directory }}
+        RA_NIGHTLY: ${{ inputs.nightly-tag }}
+        RA_RELEASE: ${{ inputs.release-tag }}
+        RA_PACKAGE_INPUT: ${{ inputs.package-name }}
+        RA_RUNNERS: ${{ inputs.runners }}
+        RA_SELECTION: ${{ inputs.selection }}
+        RA_RUNNER: ${{ inputs.runner }}
+        RA_ARTIFACTS: ${{ inputs.artifacts }}
+        RA_SETUP: ${{ inputs.setup-command }}
+        RA_CASE_TIMEOUT_MS: ${{ inputs.case-timeout-ms }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        export RA_PACKAGE="${RA_PACKAGE_INPUT:-${GITHUB_REPOSITORY#*/}}"
+        export RA_COMPILER="$(command -v roc)"
+        "$RA_DIRECTORY/runner" "$RA_PHASE"

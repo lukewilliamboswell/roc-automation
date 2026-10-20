@@ -121,6 +121,8 @@ jobs:
           cp tools/roc-docs/tests/test_cli.py docs-tests/test_cli.py
           cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
           cp -R tools/roc-docs/tests/fixtures docs-tests/
+          mkdir -p compatibility-tests
+          cp tests/test_release_compatibility.py compatibility-tests/
           cat LICENSE \
             tools/roc-docs/fonts/NotoSans-OFL.txt \
             tools/roc-docs/fonts/NotoSans-Italic-OFL.txt \
@@ -177,6 +179,7 @@ jobs:
             release-notes.md
             policy-tests/test_cli.py
             docs-tests/
+            compatibility-tests/
 
   # The exact files that would be published, on a runner with no checkout, no
   # Nix and no compiler: what a calling job has when an action runs one.
@@ -240,6 +243,10 @@ jobs:
           if tools/dist/publish-release-"$SYSTEM" 2> error.txt; then exit 1; fi
           cat error.txt
           grep -q 'prerelease' error.txt
+      - name: Test the exact published compatibility utility
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ github.workspace }}/tools/dist/release-compatibility-${{ matrix.system }}
+        run: python3 tools/compatibility-tests/test_release_compatibility.py -v
 
   policy-test:
     name: Test exact policy artifact (${{ matrix.system }})

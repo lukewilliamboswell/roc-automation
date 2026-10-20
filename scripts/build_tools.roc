@@ -31,6 +31,7 @@ main! = |_args| {
 tools = [
 	{ name: "nightly-report", script: "nightly_report" },
 	{ name: "publish-release", script: "publish_release" },
+	{ name: "release-compatibility", script: "release_compatibility" },
 ]
 
 # Both are built on one machine: the musl systems link statically and need no

@@ -7,6 +7,23 @@ on:
 permissions:
   contents: read
 jobs:
+  release-compatibility:
+    name: Published release compatibility regressions
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-09-258ab27
+      - name: Build the shared runner
+        run: roc build scripts/release_compatibility.roc --output="$RUNNER_TEMP/release-compatibility"
+      - name: Exercise diagnostics, immutable archives and unhappy paths
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ runner.temp }}/release-compatibility
+        run: python3 -m unittest discover -s tests -p test_release_compatibility.py -v
   controller-tests:
     runs-on: ubuntu-24.04
     steps:

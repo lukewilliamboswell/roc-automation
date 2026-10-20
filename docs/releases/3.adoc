@@ -5,6 +5,21 @@ removes repeated values from every workflow, adds two shared actions for steps
 that each repository had written differently, and says what the model asks of
 the simplest kind of repository.
 
+== Shared published-release compatibility runner
+
+`actions/release-compatibility` and the `release-compatibility` utility define a
+single versioned contract for published examples. The runner resolves one final
+product release and one nightly, verifies the selected examples ZIP by its asset
+identity and SHA-256, validates its paths and test specification, and checks,
+builds and runs the archived applications without changing their dependencies.
+Successful compiler stdout and stderr remain visible and are preserved as raw
+diagnostic artifacts. Warnings are nonfatal; test failures, infrastructure
+failures, skipped cases, timeouts and incomplete target evidence stay distinct.
+Only a complete, matching pass on every target can close a compatibility issue.
+
+Compiler pins are changed manually during downstream development. This runner
+does not update pins, open upgrade pull requests or merge downstream changes.
+
 == Downstream status in the README
 
 The README again lists scheduled downstream CI results, alongside the exact
