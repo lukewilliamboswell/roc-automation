@@ -185,26 +185,12 @@ execute! = |selected, initial, directory| {
 		return Err("examples asset download failed or length changed")
 	}
 	Path.write_bytes!(asset, download.stdout_bytes).map_err(|_| "cannot save examples archive")?
-	hashed = command!(["shasum", "-a", "256", Path.display(asset)], directory, cache, [], 30_000)?
-	if hashed.code != 0 or !Str.from_utf8_lossy(hashed.stdout).starts_with(selected.asset.digest.drop_prefix("sha256:")) {
-		return Err("examples archive SHA-256 changed")
-	}
 	root_name = selected.asset.name.drop_suffix(".zip")
-	listed = command!(["unzip", "-Z", "-l", Path.display(asset)], directory, cache, [], 30_000)?
-	Path.write_bytes!(Path.join(directory, "archive-listing.log"), listed.stdout).map_err(|_| "cannot preserve ZIP inventory")?
-	if listed.code != 0 {
-		return Err("cannot inspect examples ZIP")
-	}
-	metadata_names = Compatibility.archive(root_name, Str.from_utf8_lossy(listed.stdout))?
-	names = command!(["unzip", "-Z1", Path.display(asset)], directory, cache, [], 30_000)?
-	if names.code != 0 or !Compatibility.archive_names(metadata_names, Str.from_utf8_lossy(names.stdout)) {
-		return Err("ZIP names disagree with metadata or contain unsafe characters")
-	}
 	unpacked = Path.join(directory, "unpacked")
-	mkdir!(unpacked)?
-	extracted = command!(["unzip", "-q", Path.display(asset), "-d", Path.display(unpacked)], directory, cache, [], 30_000)?
-	if extracted.code != 0 {
-		return Err("cannot extract examples ZIP")
+	prepared = command!([env!("RA_PYTHON")?, env!("RA_ARCHIVE_HELPER")?, Path.display(asset), selected.asset.digest, root_name, Path.display(unpacked)], directory, cache, [], 30_000)?
+	Path.write_bytes!(Path.join(directory, "archive-listing.log"), prepared.stdout.concat(prepared.stderr)).map_err(|_| "cannot preserve ZIP inventory")?
+	if prepared.code != 0 {
+		return Err("examples ZIP verification or extraction failed; see archive-listing.log")
 	}
 	root = Path.join(unpacked, root_name)
 	suite = Compatibility.suite(read!(Path.join(root, "spec.json"))?, selected)?
@@ -224,7 +210,7 @@ execute! = |selected, initial, directory| {
 			return Err("example must directly reference the declared published bundle and must not pin its compiler")
 		}
 		target = example.target ?? "native"
-		executable = Path.join(directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else ""}")
+		executable = Path.join(directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else if initial.runner.starts_with("windows-") ".exe" else ""}")
 		build_target = if target == "native" [] else ["--target=${target}"]
 		var $built = Bool.True
 		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${Path.display(executable)}"].concat(build_target)] {

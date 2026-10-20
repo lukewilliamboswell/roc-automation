@@ -121,8 +121,6 @@ jobs:
           cp tools/roc-docs/tests/test_cli.py docs-tests/test_cli.py
           cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
           cp -R tools/roc-docs/tests/fixtures docs-tests/
-          mkdir -p compatibility-tests
-          cp tests/test_release_compatibility.py compatibility-tests/
           cat LICENSE \
             tools/roc-docs/fonts/NotoSans-OFL.txt \
             tools/roc-docs/fonts/NotoSans-Italic-OFL.txt \
@@ -131,6 +129,12 @@ jobs:
             tools/roc-docs/fonts/web/PLUS-JAKARTA-SANS-OFL.txt \
             tools/roc-docs/vendor/roc-deflate-LICENSE \
             tools/roc-docs/vendor/NOTICE.adoc > dist/roc-docs-LICENSES.txt
+      - name: Include the compatibility utility standalone regression harness
+        run: |
+          mkdir -p compatibility-tests/tests/fixtures
+          cp tests/test_release_compatibility.py tests/test_compatibility_archive.py compatibility-tests/tests/
+          cp tests/fixtures/compatibility_example.py tests/fixtures/compatibility_launcher.c compatibility-tests/tests/fixtures/
+          test -s dist/release-compatibility-archive.py
       - name: Include the policy dictionary permission notice
         run: cp tools/roc-policy/vendor/typos/LICENSE-MIT dist/roc-policy-dictionary-LICENSE-MIT.txt
       - name: Include the source-free policy test harness
@@ -246,7 +250,8 @@ jobs:
       - name: Test the exact published compatibility utility
         env:
           ROC_COMPATIBILITY_BINARY: ${{ github.workspace }}/tools/dist/release-compatibility-${{ matrix.system }}
-        run: python3 tools/compatibility-tests/test_release_compatibility.py -v
+          ROC_COMPATIBILITY_ARCHIVE_HELPER: ${{ github.workspace }}/tools/dist/release-compatibility-archive.py
+        run: python3 -m unittest discover -s tools/compatibility-tests/tests -v
 
   policy-test:
     name: Test exact policy artifact (${{ matrix.system }})

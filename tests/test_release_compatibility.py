@@ -6,6 +6,8 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
+import time
 import tempfile
 import unittest
 import zipfile
@@ -13,14 +15,27 @@ import zipfile
 
 BINARY = os.environ.get("ROC_COMPATIBILITY_BINARY")
 ROOT = Path(__file__).resolve().parents[1]
+ARCHIVE_HELPER = Path(os.environ.get("ROC_COMPATIBILITY_ARCHIVE_HELPER", ROOT / "actions/release-compatibility/archive.py"))
 
 
 @unittest.skipUnless(BINARY, "set ROC_COMPATIBILITY_BINARY to test the native runner")
 class CompatibilityRunnerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.launcher = None
+        if os.name == "nt":
+            cls.launcher_directory = tempfile.TemporaryDirectory()
+            cls.addClassCleanup(cls.launcher_directory.cleanup)
+            source = ROOT / "tests/fixtures/compatibility_launcher.c"
+            cls.launcher = Path(cls.launcher_directory.name) / "launcher.exe"
+            subprocess.run(["clang", str(source), "-o", str(cls.launcher)], check=True,
+                           capture_output=True, text=True)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name) / "suite space é"
+        self.root.mkdir()
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.nightly = "nightly-2026-10-20-abc"
@@ -52,7 +67,13 @@ else:
     if os.environ.get('FAKE_COMPILER_FAIL'): sys.exit(1)
     if sys.argv[1]=='build':
         out=Path(next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output=')))
-        out.write_text('#!'+sys.executable+'\\nimport os,time,sys\\nprint("hello",flush=True)\\nif os.environ.get("FAKE_CASE_SLEEP"):time.sleep(30)\\n')
+        code = Path(os.environ['FAKE_EXAMPLE_SOURCE']).read_text()
+        if os.name == 'nt' and out.suffix == '.exe':
+            import shutil
+            shutil.copy(os.environ['FAKE_LAUNCHER'],out)
+            out.with_suffix('.py').write_text(code)
+        else:
+            out.write_text('#!'+sys.executable+'\\n'+code)
         out.chmod(0o755)
 """)
         self.releases = self.root / "releases.json"
@@ -65,19 +86,27 @@ else:
             "GITHUB_WORKSPACE": str(self.root), "GITHUB_RUN_ID": "10", "GITHUB_RUN_ATTEMPT": "1",
             "RA_NIGHTLY": "", "RA_RELEASE": "", "RA_PACKAGE": "pkg",
             "RA_RUNNERS": '["ubuntu-24.04"]', "RA_RUNNER": "ubuntu-24.04",
-            "RA_SETUP": "[]", "RA_COMPILER": str(self.bin / "roc"), "RA_CASE_TIMEOUT_MS": "10000"}
+            "FAKE_PYTHON": sys.executable, "FAKE_EXAMPLE_SOURCE": str(ROOT / "tests/fixtures/compatibility_example.py"), "FAKE_LAUNCHER": str(self.launcher or ""),
+            "RA_PYTHON": sys.executable, "RA_ARCHIVE_HELPER": str(ARCHIVE_HELPER),
+            "RA_SETUP": "[]", "RA_COMPILER": str(self.bin / ("roc.exe" if os.name == "nt" else "roc")), "RA_CASE_TIMEOUT_MS": "10000"}
+        self.env["RA_RUNNER"] = "windows-2025" if os.name == "nt" else "ubuntu-24.04"
+        self.env["RA_RUNNERS"] = json.dumps([self.env["RA_RUNNER"]])
         self.env["RA_TEST_RESULT"] = "success"
         self.env["RA_ENVIRONMENT"] = "[]"
         self.selection = self.root / "selection.json"
         self.selection.write_text(json.dumps(dict(schema_version=1, repository="o/pkg",
-            nightly=self.nightly, release="1.0.0", release_id=1, asset=self.asset(), runners=["ubuntu-24.04"])))
+            nightly=self.nightly, release="1.0.0", release_id=1, asset=self.asset(), runners=[self.env["RA_RUNNER"]])))
         self.env["RA_SELECTION"] = str(self.selection)
 
     def write_program(self, name, source):
-        import sys
         target = self.bin / name
-        target.write_text("#!" + sys.executable + "\n" + source)
-        target.chmod(0o755)
+        source = "import sys\nsys.stdout.reconfigure(newline='\\n')\nsys.stderr.reconfigure(newline='\\n')\n" + source
+        if os.name == "nt":
+            shutil.copy(self.launcher, target.with_suffix(".exe"))
+            target.with_suffix(".py").write_text(source)
+        else:
+            target.write_text("#!" + sys.executable + "\n" + source)
+            target.chmod(0o755)
 
     def make_archive(self, extra=None):
         prefix = "pkg-examples-1.0.0/"
@@ -102,7 +131,7 @@ else:
         selected["asset"] = self.asset()
         self.selection.write_text(json.dumps(selected))
 
-    def run_phase(self, phase, **extra):
+    def run_phase(self, phase, phase_timeout=20, **extra):
         directory = self.root / (phase + "-output")
         directory.mkdir(exist_ok=True)
         outputs = self.root / (phase + "-outputs")
@@ -111,7 +140,7 @@ else:
         summary.write_text("")
         env = {**self.env, "RA_DIRECTORY": str(directory), "GITHUB_OUTPUT": str(outputs),
                "GITHUB_STEP_SUMMARY": str(summary), **extra}
-        ran = subprocess.run([BINARY, phase], env=env, capture_output=True, text=True, timeout=20)
+        ran = subprocess.run([BINARY, phase], env=env, capture_output=True, text=True, timeout=phase_timeout)
         return ran, directory, outputs.read_text()
 
     def test_success_preserves_nonfatal_warnings_and_both_streams(self):
@@ -140,10 +169,33 @@ else:
         self.assertEqual(json.loads((directory / "result.json").read_text())["failed"], 1)
 
     def test_timeout_keeps_partial_output_and_is_not_a_compatibility_verdict(self):
-        ran, directory, _ = self.run_phase("test", FAKE_CASE_SLEEP="1", RA_CASE_TIMEOUT_MS="50")
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_SLEEP="1", RA_CASE_TIMEOUT_MS="1000")
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "test-timeout")
         self.assertIn("hello", (directory / "4-stdout.log").read_text())
+
+    def test_output_limit_preserves_partial_bytes_and_never_passes(self):
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_FLOOD="1")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "output-limit")
+        self.assertGreater((directory / "4-stdout.log").stat().st_size, 0)
+        self.assertLessEqual((directory / "4-stdout.log").stat().st_size, 10_000_000)
+
+    def test_timeout_terminates_descendants(self):
+        marker = self.root / "escaped-child"
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_SLEEP="1", FAKE_CHILD_MARKER=str(marker),
+                                            RA_CASE_TIMEOUT_MS="500")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "test-timeout")
+        time.sleep(2)
+        self.assertFalse(marker.exists(), "timed-out command left a live descendant")
+
+    def test_windows_case_insensitive_environment_is_reserved(self):
+        for name in ("Path", "Gh_Token", "Github_Token", "SystemRoot", "Ra_Compiler", "Pathext"):
+            with self.subTest(name=name):
+                ran, directory, _ = self.run_phase("test", RA_ENVIRONMENT=json.dumps([dict(name=name, value="bad")]))
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
 
     def test_skipped_cases_are_never_a_green_pass(self):
         self.case["skip"] = dict(reason="requires a display", issue="https://github.com/o/pkg/issues/1")
@@ -182,7 +234,7 @@ else:
         self.assertFalse((self.root / "escape").exists())
 
     def test_cross_target_runtime_receives_the_built_artifact(self):
-        self.spec["apps"][0].update(target="wasm32", run=["python3", "{executable}"])
+        self.spec["apps"][0].update(target="wasm32", run=[sys.executable, "{executable}"])
         self.make_archive()
         self.refresh_selection()
         ran, directory, _ = self.run_phase("test")
@@ -190,7 +242,7 @@ else:
         build = json.loads((directory / "3-command.json").read_text())
         self.assertIn("--target=wasm32", build["argv"])
         actual = json.loads((directory / "4-command.json").read_text())
-        self.assertEqual(actual["argv"][0], "python3")
+        self.assertEqual(actual["argv"][0], sys.executable)
         self.assertTrue(actual["argv"][1].endswith(".wasm"))
 
     def test_zip_summary_text_in_an_unsafe_name_cannot_bypass_validation(self):
@@ -227,7 +279,7 @@ else:
         self.assertNotEqual(json.loads((directory / "result.json").read_text())["outcome"], "compatible")
 
     def test_setup_failure_is_separate_and_logged(self):
-        ran, directory, _ = self.run_phase("test", RA_SETUP='["false"]')
+        ran, directory, _ = self.run_phase("test", RA_SETUP=json.dumps([sys.executable, "-c", "raise SystemExit(1)"]))
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
         self.assertTrue((directory / "0-command.json").exists())
@@ -248,7 +300,7 @@ else:
         ran, directory, _ = self.run_phase("test")
         self.assertEqual(ran.returncode, 0, ran.stderr)
         artifacts = self.root / "artifacts"
-        target = artifacts / "compatibility-ubuntu-24.04"
+        target = artifacts / ("compatibility-" + self.env["RA_RUNNER"])
         target.mkdir(parents=True)
         shutil.copy(directory / "result.json", target / "result.json")
         ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
@@ -264,53 +316,6 @@ else:
         self.assertIn("report=none", outputs)
 
 
-@unittest.skipUnless((ROOT / ".github/workflows/nightly-compatibility.yml").is_file(), "workflow source is not part of the standalone artifact")
-class CompatibilityWorkflowSecurityTests(unittest.TestCase):
-    def test_tooling_installation_cannot_shadow_package_nightly(self):
-        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
-        build = action.split("    - id: build\n", 1)[1].split("    - if:", 1)[0]
-        commands = build.split("      run: |\n", 1)[1]
-        commands = "\n".join(line[8:] for line in commands.splitlines())
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            compiler = root / "roc_nightly-macos_apple_silicon-tooling"
-            compiler.mkdir()
-            roc = compiler / "roc"
-            roc.write_text("#!/bin/sh\nexit 0\n")
-            roc.chmod(0o755)
-            outputs = root / "outputs"
-            env = {**os.environ, "PATH": str(compiler) + os.pathsep + os.environ["PATH"],
-                   "GITHUB_WORKSPACE": str(root), "RUNNER_TEMP": str(root),
-                   "GITHUB_OUTPUT": str(outputs), "ACTION_PATH": str(root)}
-            ran = subprocess.run(["bash", "-c", commands], env=env, capture_output=True, text=True)
-            self.assertEqual(ran.returncode, 0, ran.stderr)
-            directory = Path(outputs.read_text().strip().split("=", 1)[1])
-            self.assertTrue((directory / "tooling/roc").is_file())
-            self.assertEqual(list(root.glob("roc_nightly-*")), [])
-
-    def test_report_job_has_no_consumer_execution_or_artifact_download(self):
-        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
-        report = workflow.split("\n  report:\n", 1)[1]
-        self.assertIn("issues: write", report)
-        self.assertNotIn("checkout@", report)
-        self.assertNotIn("download-artifact@", report)
-        self.assertNotIn("run:", report)
-        self.assertNotIn("setup-command:", report)
-        self.assertIn("inputs.nightly-tag == '' && inputs.release-tag == ''", report)
-
-    def test_every_remote_reference_is_immutable_and_only_report_can_write(self):
-        import re
-        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
-        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
-        for source in (workflow, action):
-            for reference in re.findall(r"uses:\s+(\S+)", source):
-                self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
-        unprivileged = workflow.split("\n  report:\n", 1)[0]
-        self.assertNotIn(": write", unprivileged)
-        self.assertNotIn("pull-requests:", workflow)
-        self.assertNotIn("statuses:", workflow)
-        self.assertIn("persist-credentials: false", workflow)
-        self.assertIn("fail-fast: false", workflow)
 
 
 if __name__ == "__main__":

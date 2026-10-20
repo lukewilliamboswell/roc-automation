@@ -109,6 +109,13 @@ xref:workflows.adoc#nightly-compatibility[nightly compatibility], which is why
 it carries its own expected output: the default branch's specification describes
 the default branch, not the release.
 
+Examples of expensive work, such as fuzzing or benchmarking, expose a small,
+bounded mode suitable for routine checks. Archive cases use that mode to verify
+the published API and executable behavior; they do not launch sustained searches
+or produce performance comparisons. Keep campaigns in
+xref:optional-workflows.adoc#fuzzing[their own scheduled workflow], outside both
+PR dry runs and the shared published-release compatibility verdict.
+
 == Build and test the exact archive
 
 The archive that is tested is the archive that is published. Nothing is rebuilt

@@ -31,10 +31,10 @@ tests are organised.
 | The cases that record an allocation ceiling, on a test platform that counts allocations
 
 | Benchmarks
-| A smoke run: each benchmark builds and completes one small iteration
+| A smoke run: each benchmark builds and completes a small, bounded iteration
 
 | Fuzz targets
-| A smoke run: each target builds and replays its committed corpus
+| A smoke run: each target builds and replays a small committed corpus
 
 | Scripts
 | The `expect` tests of the modules under `scripts/src/`
@@ -45,18 +45,42 @@ The `check` task runs all of these, so a contributor runs the same set with
 
 == Heavy runs stay out of pull-request CI
 
-A long fuzzing campaign or a full benchmark run never runs on a pull request.
-They take too long, their results vary from run to run, and a pull request
-should not wait on them or fail because of noise. They run on a schedule or on
-request, as described in
+A long fuzzing campaign or a full benchmark run never runs on a pull request,
+including a release dry run. They run in separate scheduled or manually
+dispatched jobs, as described in
 xref:optional-workflows.adoc#fuzzing[Fuzzing] and
 xref:optional-workflows.adoc#benchmarks[Benchmarks].
 
 What pull-request CI owes them is a smoke run. A benchmark that has not been
 built since the API it measures changed will not run on the night it is
-scheduled. A few seconds per target on every pull request keeps each of them
-building and running, so the scheduled job measures and searches instead of
-discovering that it is broken.
+scheduled. Give each benchmark and fuzz target an explicit smoke mode, with a
+small input or iteration count and at most one second of workload execution per
+target. This budget excludes provisioning and compilation; it is not a
+one-second limit for the whole CI job. Keep the committed smoke corpus small
+enough to replay within that budget. Build once and reuse the executable across
+cases.
+
+The smoke mode exercises startup and the real operation or property, then exits
+normally. A benchmark smoke run checks execution, not performance: it produces
+no baseline comparison or performance regression verdict. A fuzz smoke run
+replays known inputs; where the engine itself needs exercising, add a tiny,
+bounded run without turning the check into a campaign. A passing smoke run
+makes no claim about sustained search coverage.
+
+Workload bounds and safety deadlines serve different purposes. Set a small
+iteration/input budget so normal execution completes within the smoke budget,
+and give the driver a separate hard deadline to stop hangs and child processes.
+A crash, wrong result or exceeded deadline fails the smoke check; stopping a
+process at the deadline does not establish success. Preserve compiler and
+workload diagnostics even on successful commands, with warnings nonfatal by
+default. Print explicit skips with reasons; skipped work is not passing
+compatibility evidence.
+
+Keep the long-running task out of `blueprint run check` and every PR release
+dry-run path. Moving it into another job is insufficient if that job still
+runs on every pull request: use schedule/manual triggers and explicit event
+guards. The routine PR aggregate requires the build and smoke jobs, not a
+skipped campaign job.
 
 == Build with `--opt=dev`
 

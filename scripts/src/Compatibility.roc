@@ -12,11 +12,17 @@ Compatibility := [].{
 	Result : { schema_version : U64, repository : Str, nightly : Str, release : Str, asset_digest : Str, runner : Str, run_id : Str, run_attempt : Str, outcome : Str, tested : U64, failed : U64, skipped : U64, diagnostic_commands : U64, detail : Str }
 	Environment : { name : Str, value : Str }
 	valid_environment : List(Environment) -> Bool
-	valid_environment = |values| unique(values.map(|entry| entry.name)).len() == values.len() and values.all(|entry| GitHub.is_plain(entry.name, "_") and !["PATH", "ROC", "ROC_CACHE_DIR", "NO_COLOR", "XDG_CACHE_HOME"].contains(entry.name) and !entry.name.starts_with("GITHUB_") and !entry.name.starts_with("GH_") and !entry.name.starts_with("RA_"))
+	valid_environment = |values| unique(values.map(|entry| upper(entry.name))).len() == values.len() and values.all(
+		|entry| {
+			name = upper(entry.name)
+			GitHub.is_plain(entry.name, "_") and !["PATH", "PATHEXT", "SYSTEMROOT", "COMSPEC", "ROC", "ROC_CACHE_DIR", "NO_COLOR", "XDG_CACHE_HOME"].contains(name) and !name.starts_with("GITHUB_") and !name.starts_with("GH_") and !name.starts_with("RA_")
+		},
+	)
+	upper = |value| Str.from_utf8_lossy(Str.to_utf8(value).map(|byte| if byte >= 'a' and byte <= 'z' byte - 32 else byte))
 	valid_repository = GitHub.valid_repository
 
-	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26"]
-	valid_runners = |values| !values.is_empty() and values.len() <= 5 and values.all(|value| runners.contains(value)) and unique(values).len() == values.len()
+	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26", "windows-2022", "windows-2025"]
+	valid_runners = |values| !values.is_empty() and values.len() <= 7 and values.all(|value| runners.contains(value)) and unique(values).len() == values.len()
 	tag = |value| value != "" and Str.to_utf8(value).len() <= 100 and GitHub.is_plain(value, "-._+") and !value.starts_with("-")
 	version = |value| match Str.split_on(value.drop_prefix("v"), ".") {
 		[a, b, c] => [a, b, c].all(GitHub.is_digits)
@@ -46,56 +52,6 @@ Compatibility := [].{
 			_ => return Err("latest product release must have one examples ZIP with a SHA-256 digest (at most 50 MB)")
 		}
 		Ok({ schema_version: 1, repository, nightly, release: selected.tag_name, release_id: selected.id, asset, runners: runner_names })
-	}
-
-	## ZIP metadata is inspected before extraction. Only ordinary Unix files and
-	## directories with canonical paths are admitted; links, duplicates, traversal,
-	## encryption and expansion beyond 100 MB fail closed.
-	archive : Str, Str -> Try(List(Str), Str)
-	archive = |root, listing| {
-		var $names = []
-		var $files = []
-		var $bytes = 0
-		for line in Str.split_on(listing, "\n").keep_if(|line| !line.starts_with("Archive:") and !line.starts_with("Zip file size:") and line.trim() != "" and !zip_summary(line)) {
-			parts = Str.split_on(line.trim(), " ").keep_if(|part| part != "")
-			match parts {
-				[mode, _, "unx", size, flags, _, _, _, _, name] if mode.starts_with("-") or mode.starts_with("d") => {
-					plain_name = name.drop_suffix("/")
-					if !path(plain_name) or (plain_name != root and !plain_name.starts_with("${root}/")) or $names.contains(plain_name) or flags != "b-" and flags != "tx" and flags != "t-" {
-						return Err("unsafe, encrypted or duplicate ZIP member")
-					}
-					length = match U64.from_str(size) {
-						Ok(n) if n <= 100_000_000 => n
-						_ => return Err("invalid ZIP member size")
-					}
-					$bytes = $bytes + length
-					if $bytes > 100_000_000 or $names.len() >= 10_000 {
-						return Err("examples archive exceeds extraction limits")
-					}
-					$names = $names.append(plain_name)
-					if mode.starts_with("-") {
-						$files = $files.append(plain_name)
-					}
-				}
-				_ => return Err("unsupported ZIP metadata or file type")
-			}
-		}
-		if !$files.contains("${root}/spec.json") or $names.any(|name| $files.any(|file| name.starts_with("${file}/"))) {
-			Err("archive lacks spec.json or has file/directory collisions")
-		} else {
-			Ok($names)
-		}
-	}
-
-	zip_summary = |line| match Str.to_utf8(line) {
-		[first, ..] if first >= '0' and first <= '9' => line.contains(" bytes uncompressed,") and !line.contains("/") and !line.contains("\\")
-		_ => Bool.False
-	}
-
-	archive_names : List(Str), Str -> Bool
-	archive_names = |metadata, listing| {
-		names = Str.split_on(listing, "\n").keep_if(|name| name != "").map(|name| name.drop_suffix("/"))
-		names.len() == metadata.len() and names.all(path) and GitHub.sort(names) == GitHub.sort(metadata)
 	}
 
 	suite : Str, Selection -> Try(Suite, Str)
@@ -182,20 +138,12 @@ selection = { schema_version: 1, repository: "o/pkg", nightly: "nightly-2026-10-
 
 result = { schema_version: 1, repository: "o/pkg", nightly: selection.nightly, release: "1.0.0", asset_digest: asset.digest, runner: "ubuntu-24.04", run_id: "10", run_attempt: "1", outcome: "compatible", tested: 1, failed: 0, skipped: 0, diagnostic_commands: 2, detail: "" }
 
-listing = "Archive: x\nZip file size: 100 bytes, number of entries: 1\n-rw-r--r--  2.0 unx 10 b- 10 stor 26-Oct-20 09:25 root/spec.json\n1 file, 10 bytes uncompressed, 10 bytes compressed: 0%\n"
-
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["ubuntu-24.04"], [release]) == Ok(selection)
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["ubuntu-24.04"], [{ ..release, tag_name: "runtime-v2.0.0" }, release]) == Ok(selection)
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["ubuntu-24.04"], [{ ..release, tag_name: "2.0.0", published_at: "2026-10-21", assets: [] }, release]).is_err()
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["ubuntu-24.04"], [{ ..release, prerelease: Bool.True }]).is_err()
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["self-hosted"], [release]).is_err()
 expect !Compatibility.valid_runners(["ubuntu-24.04", "ubuntu-24.04"])
-expect Compatibility.archive("root", listing) == Ok(["root/spec.json"])
-expect Compatibility.archive("root", listing.replace_each("root/spec.json", "root/../spec.json")).is_err()
-expect Compatibility.archive("root", listing.replace_each("-rw-r--r--", "lrwxrwxrwx")).is_err()
-expect Compatibility.archive("root", listing.replace_each(" b- ", " BX ")).is_err()
-expect Compatibility.archive("root", listing.replace_each(" 10 b-", " 100000001 b-")).is_err()
-expect Compatibility.archive("root", "").is_err()
 expect Compatibility.console("::error::bad\r\n\u(001b)[31mwarning") == ": :error: :bad\\r\n\\e[31mwarning"
 expect Compatibility.classify(0, 0, 0) == "not-tested" and Compatibility.classify(1, 0, 1) == "not-tested"
 expect Compatibility.classify(1, 1, 0) == "incompatible" and Compatibility.classify(1, 0, 0) == "compatible"
@@ -216,3 +164,9 @@ expect !Compatibility.valid_environment([{ name: "DISPLAY", value: ":99" }, { na
 expect !Compatibility.app_source("app [main!] { roc : \"old\", pf: platform \"url\" }", ["url"])
 expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "test-timeout" }]) == { outcome: "test-timeout", report: "none" }
 expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "output-limit" }]) == { outcome: "output-limit", report: "none" }
+
+expect Compatibility.valid_runners(["windows-2022", "windows-2025"])
+expect !Compatibility.valid_environment([{ name: "Path", value: "x" }])
+expect !Compatibility.valid_environment([{ name: "gh_token", value: "x" }])
+expect !Compatibility.valid_environment([{ name: "Display", value: "x" }, { name: "DISPLAY", value: "y" }])
+expect !Compatibility.valid_environment([{ name: "SystemRoot", value: "x" }])

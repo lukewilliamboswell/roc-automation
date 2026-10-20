@@ -51,6 +51,12 @@ xref:optional-workflows.adoc#optional-workflows[Optional workflows].
 xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
 lists what the `check` task covers.
 
+Keep routine CI and release dry runs fast: benchmark and fuzz programs build
+and run their explicit smoke mode, with at most one second of workload execution
+per target. Compilation has its own budget. Sustained searches and measured
+benchmarks run only in schedule/manual jobs with explicit event guards; see
+xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[Heavy runs stay out of pull-request CI].
+
 A xref:overview.adoc#a-pure-roc-package[pure Roc package] runs this as one job
 on `ubuntu-latest`, and that job's name is the required status check.
 
@@ -96,8 +102,11 @@ One immutable GitHub release per version holds:
 | Release notes
 | An authored account of what changed, with the real bundle URLs and the compiler versions used.
 
-| SBOM and build-provenance attestations
-| Where the repository produces them.
+| `<asset-name>.spdx.json` or `<asset-name>.cdx.json`
+| Machine-processable component inventory bound to each deliverable's digest, with target-specific relationships and declared coverage. See xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[the SBOM contract].
+
+| Signature/attestation evidence
+| Authenticated SBOM statements and build provenance, with expected signer, source and subject identities. These establish different evidence.
 |===
 
 Managing releases carefully is a large part of what makes a package dependable.
@@ -219,7 +228,8 @@ flowchart TD
 . *Check.* Run `blueprint run check` on that commit.
 . *Build.* Build the bundle with the latest nightly, then the examples archive
   with the real release URL, the documentation archive, and the manual.
-  Render the release notes with the real bundle URLs.
+  Generate and locally validate the SBOM sidecars from the resolved build and
+  final artifacts. Render the release notes with the real bundle and SBOM URLs.
   Upload them as workflow artifacts.
 . *Test.* On every supported target, download those artifacts and test them as
   described in
@@ -238,6 +248,11 @@ flowchart TD
 
 The publish job consumes the artifacts of its own run. It never rebuilds, and
 never resolves a moving branch.
+SBOM generation and validation belong to the read-only build task and its PR
+dry run. The shared publication action does not implement those steps; it
+uploads the supplied SBOM files as inert assets and verifies their transferred
+bytes. A repository implements and tests its generator before claiming SBOM
+coverage. Remote advisory rescans run separately from routine PR checks.
 
 Enable immutable releases in the repository, so that a published release cannot
 gain, lose or replace an asset. Hash checks remain necessary even with immutable

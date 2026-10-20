@@ -1,0 +1,201 @@
+= Publish and consume software bills of materials
+
+An SBOM gives a downstream user a machine-processable inventory of the
+components in a specific release, their identities and their relationships.
+Generate it from the resolved build and the delivered files, and distribute it
+with the release. Include first-party, open-source and proprietary components;
+a private component is still a component.
+
+This chapter defines the release practice repositories should implement. The
+shared publisher transfers and verifies supplied files; it does not discover
+components, generate an SBOM, validate its schema or establish its completeness.
+A checksum file, Blueprint lock or GitHub dependency submission alone does not
+meet this contract.
+
+== Declare what the inventory covers
+
+Give each deliverable an explicit subject: release URL, filename, version,
+target where applicable, and SHA-256 of its final bytes. Generate a separate
+SBOM for each distinct target artifact, or describe every subject and its own
+component graph in one document. A release-wide list with no mapping to the
+individual files cannot answer which binary contains a component.
+
+[cols="2,3",options="header"]
+|===
+| Inventory | Required scope
+
+| Roc source bundle
+| Source actually shipped, vendored code, and direct and transitive package or platform dependencies required by that source. Distinguish included code from dependencies fetched later by the compiler.
+
+| Native executable or linker-input archive
+| First-party code, included libraries and runtime code, including static linker inputs and generated or embedded code. Record externally provided runtime dependencies separately from the components contained in the file.
+
+| Examples or documentation archive
+| Code, scripts, fonts and other third-party material distributed in that archive. Record example dependencies without claiming they are part of a sibling binary.
+
+| Build inputs and tooling
+| Compiler, platform used by tooling, build tools and test dependencies with their versions and identities. Describe their build/test relationships in a separate inventory or explicit relationships; their use during a build does not establish that they ship inside its output.
+|===
+
+For example, a statically linked tool can contain code from its Roc platform and
+native libraries even when a binary scanner cannot identify them. Use the
+resolved build inputs to account for those components. Conversely, the compiler
+used to build that tool is a build input unless compiler code is actually
+included. Source inventories cannot by themselves establish the composition of
+an optimized executable. The
+https://www.cyclonedx.org/guides/OWASP_CycloneDX-Authoritative-Guide-to-SBOM-en.pdf[CycloneDX SBOM guide]
+discusses generation at different stages of the build lifecycle.
+
+State the generation context, targets, inspected inputs, exclusions and known
+gaps inside the machine-processable record using the chosen format's fields,
+annotations or properties. Include transitive components or link to their
+accessible, immutable SBOMs with verified identities. Do not silently stop at
+the first dependency layer. Unknown or withheld information is explicit, with
+a contact for resolving gaps. An empty dependency list means verified absence,
+not an unsuccessful scan.
+
+== Choose an interoperable format
+
+Publish JSON in SPDX or CycloneDX, using a maintained schema version supported
+by the producer and intended consumers. Record the format and version in the
+document and pin the generator and validator through the reviewed tooling
+environment. One supported format is sufficient for a producer; downstream
+ingestion should accept both rather than require a repository-specific format.
+If generating both, derive them from the same inventory and check that subject
+identities, component coverage and relationships agree.
+
+Use a unique document identity, revision, creation/update timestamp, authoring
+organization and generator name/version. These identify the SBOM separately
+from the software version. Record the component producer separately from the
+SBOM author when they differ. Keep the metadata and relationships in the
+standard document rather than in a README table that tools cannot ingest.
+The https://spdx.github.io/spdx-spec/v2.3.1/document-creation-information/[SPDX document specification]
+defines its document metadata.
+
+Each component record must let a recipient distinguish it from similarly named
+projects and different builds of the same project:
+
+* producer, canonical name and exact version or source revision;
+* a stable machine identifier, using an ecosystem Package URL where applicable;
+otherwise a documented source/revision identity or organization-owned identifier;
+* immutable source/download location, and artifact SHA-256 when those bytes are
+available, distinguishing source archive hashes from binary hashes;
+* declared license expression or identified proprietary terms and their location;
+mark unavailable license information explicitly; and
+* explicit relationships to the subject and other components, including direct
+and transitive dependencies, containment and build/test use where represented.
+
+Use actual upstream identifiers; do not invent CPE names or ecosystem package
+identifiers to obtain a vulnerability match. A patched or vendored component
+retains its upstream identity and records its own revision, modifications and
+content identity. Preserve separate instances when targets or patches differ.
+The https://spdx.github.io/spdx-spec/v2.3.1/package-information/[SPDX package specification]
+defines package versions, checksums, licenses and external identifiers.
+
+In SPDX, connect the document to its subject with `DESCRIBES` and use the
+appropriate `CONTAINS`, `DEPENDS_ON`, build or test relationships between
+identified elements. In CycloneDX, give each component a unique `bom-ref` and
+connect it in the dependency graph; use compositions to express incomplete
+coverage. A flat component array with no subject relationships is insufficient.
+See the
+https://spdx.github.io/spdx-spec/v2.3/relationships-between-SPDX-elements/[SPDX relationships],
+https://cyclonedx.org/use-cases/software-dependencies/[CycloneDX dependency graph]
+and https://www.cyclonedx.org/use-cases/compositions-dependencies/[CycloneDX coverage guidance].
+
+== Generate and validate during the release build
+
+The repository's read-only build task owns generation. It combines resolved
+package metadata and the final artifact inventory with reviewed supplemental
+metadata for components the generator cannot discover. Supplementary metadata
+belongs with the build recipe and changes through review, rather than an
+untracked manual edit to a generated SBOM.
+
+Implement the following sequence in the release task and its pull-request dry
+run:
+
+. Build and test the exact deliverables, then calculate their final hashes.
+. Generate the SBOMs for those files, including the subject hashes. Keep them
+as sidecar assets to avoid a self-referential archive checksum.
+. Validate JSON against the pinned standard schema locally. Reject duplicate
+identifiers, unresolved relationship references, missing subjects, mismatched
+target identities or subject hashes, and unexplained omissions from the known
+resolved component inventory. Schema validity alone does not prove completeness.
+. Test useful queries: locate a known transitive dependency and its source,
+trace it to each affected subject, and distinguish a build-only tool from a
+shipped library. Include proprietary/vendored fixtures where applicable.
+. Upload the tested artifacts and their validated SBOMs from this same run.
+The publisher transfers them as inert bytes, verifies their names, sizes and
+hashes after upload, and publishes them together without rebuilding.
+
+The repository chooses a generator with demonstrated support for its actual
+inputs. A tool that recognizes other package ecosystems is not evidence that
+it discovers Roc imports, bundled platform/native code or vendored inputs.
+Pin and cache generators like other tools. Routine validation uses local
+schemas and metadata; remote vulnerability queries and full advisory rescans
+belong in a separate scheduled/manual analysis job so they do not delay PR CI.
+
+Provenance and an SBOM provide different evidence: provenance describes the
+producer and build context, while an SBOM describes composition. A signed SBOM
+attestation can bind the document to the exact artifact digest. Sign or attest
+the SBOM using reviewed signing infrastructure, retain the signature or bundle,
+and document the expected signer/workflow and verification command. A signature
+establishes an authenticated statement, not the accuracy of its inventory.
+
+Keep write authority out of generation. GitHub attestations require dedicated
+attestation/OIDC permissions; if used, a separate job runs pinned reviewed code
+without checking out or executing candidate sources. It signs only inert bytes
+from the selected build run, bound to that run's exact source and subjects.
+Do not grant these permissions to a job running PR code. See
+https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations[GitHub's SBOM attestation guidance]
+and xref:artifact-verification.adoc#separate-admission-from-routine-use[artifact admission].
+
+== Distribute and retain the evidence
+
+Publish sidecars such as `<asset-name>.spdx.json` or `<asset-name>.cdx.json`
+alongside the corresponding immutable release assets. Release notes identify
+the mapping, format, scope and documented gaps and link to the SBOM and its
+signature/attestation evidence. Workflow artifacts with short retention are
+not the downstream distribution channel.
+
+Retain the documents and all referenced component SBOMs for supported releases.
+For restricted components, provide authorized recipients access to sufficient
+identity and relationship data and a documented contact; do not silently omit
+them. Public metadata must exclude secrets, internal credentials and absolute
+developer paths.
+
+An SBOM correction increments its document revision and retains the original.
+Publish corrections at a new immutable location, still bound to the unchanged
+subject digest, and cross-link the revision history from the advisory or
+documentation. Never replace a published asset or mutate an immutable release
+to correct its inventory. Changed software bytes require a new software release.
+
+== Consume and act on the inventory
+
+At release adoption, download the SBOM for the exact selected artifact, validate
+its format and subject SHA-256, verify the expected signature/attestation, and
+retain the admitted record with the artifact identity. Preserve upstream
+identities and relationships when incorporating components into your own SBOM;
+make referenced documents available to your recipients too.
+
+Index component identifiers, versions, revisions and hashes for supported
+releases. Scheduled analysis or a new advisory can then query that inventory,
+produce the affected release/target list and trace the relationship to the
+component. A maintainer reviews candidate matches, local patches and actual
+usage, records the decision and any fix/advisory, and publishes an updated
+release when needed. An SBOM is not a vulnerability verdict: a database match
+may need investigation, and no matches do not establish absence of risk.
+Absence from an incomplete inventory is not evidence that a component is absent.
+
+GitHub can
+https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/export-dependencies-as-sbom[export its repository dependency graph as SPDX].
+That is useful input, but it reflects the graph GitHub knows. Establish the
+exact release subject, target-specific composition and unsupported dependencies
+before using it as a delivered-artifact SBOM. Dependency submission, lockfiles,
+provenance attestations and hash inventories retain their separate purposes.
+
+The
+https://www.cyber.gov.au/publication/2026-minimum-elements-for-a-software-bill-of-materials-sbom[2026 joint SBOM minimum-elements guidance]
+covers machine-processable formats, metadata, component identity, sharing and
+updates. This chapter applies those concerns to our release process; checking
+in configuration or producing a syntactically valid document does not establish
+compliance with that guidance.

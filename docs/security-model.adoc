@@ -242,7 +242,12 @@ Selection, per-target tests and aggregation have only `contents: read`.
 Selection resolves a release and compiler once; every target receives those
 identities and verifies the selected ZIP's asset ID, length and SHA-256. The
 archive is inspected for regular file types, canonical paths, duplicates,
-collisions and extraction limits before it is unpacked. Archived code and native
+collisions and extraction limits before it is unpacked. The reviewed Python
+standard-library helper enforces the same checks on every OS, including Windows
+device names, trailing-dot aliases and case-insensitive implicit-directory
+collisions. It never imports archive code. Child deadlines manage Windows Job
+Objects or Unix process groups, and public environment overrides cannot replace
+reserved variables under any spelling of their case. Archived code and native
 prerequisite code run only in the read-only test job, with checkout credentials
 disabled and compiler/example child tokens cleared. Successful diagnostics are
 preserved; console workflow-command markers are escaped rather than interpreted.

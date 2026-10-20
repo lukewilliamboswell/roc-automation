@@ -68,6 +68,16 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Validate native prerequisite support
+      shell: bash
+      env:
+        INSTALL_BLUEPRINT: ${{ inputs.install-blueprint }}
+        INSTALL_NIX: ${{ inputs.install-nix }}
+      run: |
+        if [[ "$RUNNER_OS" == Windows && ( "$INSTALL_BLUEPRINT" == true || "$INSTALL_NIX" == true ) ]]; then
+          echo '::error::Windows prerequisites must use native setup-command tools; Blueprint and Nix have no supported Windows installer.'
+          exit 1
+        fi
     # Build the controller with its fixed tooling compiler before installing the
     # package compiler. No consumer Blueprint, Nix environment or code is needed.
     - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
@@ -80,17 +90,11 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        directory=$(mktemp -d "$RUNNER_TEMP/roc-compatibility.XXXXXXXX")
-        echo "directory=$directory" >> "$GITHUB_OUTPUT"
-        roc build "$ACTION_PATH/../../scripts/release_compatibility.roc" --output="$directory/runner"
-        # setup-roc discovers extracted compilers in the workspace. Move the
-        # tooling installation aside so its second invocation selects the
-        # package nightly rather than reusing the tooling compiler.
-        tooling_directory=$(dirname "$(command -v roc)")
-        case "$tooling_directory" in
-          "$GITHUB_WORKSPACE"/roc_nightly-*) mv "$tooling_directory" "$directory/tooling" ;;
-          *) echo 'Unexpected tooling compiler directory' >&2; exit 1 ;;
-        esac
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          python "$ACTION_PATH/bootstrap.py"
+        else
+          python3 "$ACTION_PATH/bootstrap.py"
+        fi
     - if: inputs.phase == 'test'
       uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
       with:
@@ -103,6 +107,8 @@ runs:
     - id: run
       shell: bash
       env:
+        RA_PYTHON: ${{ steps.build.outputs.python }}
+        RA_ARCHIVE_HELPER: ${{ steps.build.outputs.archive-helper }}
         RA_PHASE: ${{ inputs.phase }}
         RA_DIRECTORY: ${{ steps.build.outputs.directory }}
         RA_NIGHTLY: ${{ inputs.nightly-tag }}
@@ -120,5 +126,9 @@ runs:
       run: |
         set -euo pipefail
         export RA_PACKAGE="${RA_PACKAGE_INPUT:-${GITHUB_REPOSITORY#*/}}"
-        export RA_COMPILER="$(command -v roc)"
-        "$RA_DIRECTORY/runner" "$RA_PHASE"
+        export RA_COMPILER="$("$RA_PYTHON" -c 'import shutil; print(shutil.which("roc") or "")')"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          "$RA_DIRECTORY/runner.exe" "$RA_PHASE"
+        else
+          "$RA_DIRECTORY/runner" "$RA_PHASE"
+        fi

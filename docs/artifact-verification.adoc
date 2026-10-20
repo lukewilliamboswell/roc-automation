@@ -15,7 +15,8 @@ exact bytes that were reviewed. These checks belong at different stages:
 . *Publish:* produce the artifact, checksum, provenance attestation, SBOM, and
 immutable release metadata.
 . *Adopt:* review the release, verify its attestation and source identity, test
-the artifact, and commit its content hash and URL in a reviewed change.
+the artifact, admit its subject-bound SBOM, and commit its content hash and URL
+in a reviewed change.
 . *Consume:* download or load the artifact, calculate its hash locally, and
 compare it with the reviewed pin before extraction or execution.
 . *Reuse:* recheck cached bytes against the same pin. A cache is storage, not
@@ -29,6 +30,14 @@ Admission asks whether the producer identity and source are acceptable; routine
 use asks whether storage returned those admitted bytes. Keeping those questions
 separate avoids turning every build into an online provenance-policy decision
 while still detecting corrupted or substituted downloads and cache entries.
+
+The SBOM records component composition and relationships; provenance records
+the producer and build context. Neither replaces the other or the artifact's
+content hash. Follow
+xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[Publish and consume software bills of materials]
+for generation, exact-artifact scope, validation, distribution and corrections.
+The shared publisher verifies the files it transfers, not the accuracy of an
+SBOM's component inventory.
 
 == Routine CI policy
 
@@ -71,6 +80,8 @@ Before adopting a released artifact, record evidence that:
 * the release and tag are immutable and identify the intended source revision;
 * the producing workflow and runner policy are acceptable;
 * the attestation subject digest equals the downloaded artifact digest;
+* the SBOM describes that exact artifact and target, identifies its component
+relationships and records any coverage gaps;
 * the artifact passed its consumer-facing tests;
 * the reviewed lock contains the exact URL, filename, release, and SHA-256; and
 * routine CI verifies that SHA-256 without contacting the attestation service.

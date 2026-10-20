@@ -51,11 +51,11 @@ on the actual default branch. The shared concurrency group serializes runs, so
 an older failure cannot race a newer passing report.
 
 `runners` accepts a unique, non-empty JSON array drawn from `ubuntu-22.04`,
-`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15` and `macos-26`. Name the complete
-release matrix, not just the most convenient target. Windows is outside this
-runner's current executable and ZIP-tool contract; do not claim that a smaller
-matrix establishes compatibility for a Windows release. Add and validate a
-Windows implementation before making that claim.
+`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, `macos-26`, `windows-2022` and
+`windows-2025`. The Windows labels run native x64 executables. Name the complete
+release matrix. Windows uses the same archive admission, compiler diagnostics,
+case deadlines and aggregate evidence contract as Linux and macOS; the runner
+adds the native `.exe` suffix automatically.
 
 For native prerequisites, `setup-command` is a JSON argv array, for example
 `["blueprint", "run", "nightly-prerequisites"]`. It runs from the event commit's
@@ -63,11 +63,19 @@ checkout in the read-only test job; it must provision dependencies, not rebuild
 the package or replace archived examples. `install-blueprint: true` installs the
 consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
 an environment that needs it. Leave both false for a runner that needs neither.
-Toolchain installation precedes the prerequisite command.
+Toolchain installation precedes the prerequisite command. Windows prerequisites
+must use native tools through `setup-command`, such as a checked-in Python setup
+script. Blueprint has no released Windows binary, and Nix is not a Windows
+prerequisite backend: requesting either installer on Windows fails explicitly.
+For a mixed matrix, keep both installers disabled and let a portable setup script
+select the native provisioning steps for each operating system. A prerequisite
+failure is a setup failure, never a compatibility pass.
 
 `test-environment` is a JSON array of public name/value records, for example
 `[{"name":"DISPLAY","value":":99"}]`, for a headless native test environment.
-Reserved compiler, cache and Actions variables cannot be overridden. These
+Reserved compiler, cache and Actions variables cannot be overridden. Names and
+duplicates are checked without regard to case, including Windows `Path`,
+`PATHEXT`, `SystemRoot` and `COMSPEC`. These
 values are not secrets. Setup scripts must arrange any display server's
 lifetime and redirected output explicitly; exporting a variable inside the
 setup child does not change the runner's environment.
@@ -77,7 +85,31 @@ deadline and a default 10-second deadline per example case. `case-timeout-ms`
 can select 1–120000 milliseconds. The matrix job has a 60-minute overall limit.
 Each command has a 10 MB capture budget; timeout and output-limit results keep
 the partial bytes captured before cancellation and terminate child processes.
+On Windows, basic-cli manages the complete child tree in a Windows Job Object;
+on Unix, it manages a process group. CI tests that a timed-out example cannot
+leave a descendant running, alongside successful compilation and execution with
+the real compiler on both supported Windows images.
 The compiler and every example run without `GH_TOKEN` or `GITHUB_TOKEN`.
+
+== Keep compatibility cases bounded
+
+The archived cases verify published behavior and expected output. A package
+that demonstrates fuzzing or benchmarks supplies a small smoke mode for those
+examples, with at most one second of workload execution per target. That budget
+excludes compiler checks and builds. The runner's default ten-second case
+deadline is a safety limit for ordinary examples, not a recommended fuzzing
+duration or permission to put a campaign in the suite. An interrupted case is
+incomplete evidence, even if it ran for its allotted wall time.
+
+Routine PR CI verifies working-tree builds and smoke execution. This shared
+nightly verifies the published release on the selected compiler. Sustained fuzz
+searches and statistically meaningful benchmark runs belong in separate
+schedule/manual jobs, as
+xref:optional-workflows.adoc#fuzzing[Fuzzing] and
+xref:optional-workflows.adoc#benchmarks[Benchmarks] describe. Their failures
+remain visible in their own runs; they neither replace nor alter this runner's
+compatibility verdict. In particular, a daily search of Roc builtins can catch
+upstream regressions without making release examples run a ten-minute campaign.
 
 == Select one immutable pair
 
@@ -233,7 +265,10 @@ repository code.
 
 The README's compatibility column reads the fixed verdict gate of the latest
 scheduled shared workflow, checks its immutable caller still uses the configured
-pin, and links to the run. A green pass expires after 48 hours. Development CI,
+pin, and links to the run. Each snapshot marks passes older than 48 hours stale.
+This age check runs at publication time: if Documentation stops deploying,
+static badges retain their last colour. Check the snapshot date and investigate
+publication when it is over 48 hours old before relying on a green result. Development CI,
 pin-updater success and weekly floating-input checks are outside this contract.
 An adoption or infrastructure message means compatibility has not been verified,
 and states the follow-up. Manual historical probes do not replace scheduled
@@ -253,12 +288,22 @@ contract as `actions/release-compatibility/action.yml`. `RA_DIRECTORY` must be a
 new private directory for each invocation. `select` needs `GH_TOKEN`,
 `GITHUB_REPOSITORY`, `RA_NIGHTLY`, `RA_RELEASE`, `RA_PACKAGE` and `RA_RUNNERS`.
 `test` needs `RA_SELECTION`, `RA_RUNNER`, the actual `RA_COMPILER` executable,
-`RA_SETUP`, `RA_ENVIRONMENT`, `RA_CASE_TIMEOUT_MS`, `GITHUB_RUN_ID` and
+`RA_SETUP`, `RA_ENVIRONMENT`, `RA_CASE_TIMEOUT_MS`, `RA_PYTHON`,
+`RA_ARCHIVE_HELPER`, `GITHUB_RUN_ID` and
 `GITHUB_RUN_ATTEMPT`. `aggregate` needs `RA_SELECTION`, `RA_ARTIFACTS`,
 `RA_TEST_RESULT` and the same run identity. `GITHUB_OUTPUT` is an existing output
 file; aggregation also writes `GITHUB_STEP_SUMMARY`.
 
-The utility and action use `gh`, `unzip` and `shasum` on the supported Linux/macOS
-hosts. The action builds the utility with its fixed tooling compiler before
+The utility and action use `gh` and Python 3.10 or later on Linux, macOS and
+Windows. `RA_PYTHON` names the Python executable and `RA_ARCHIVE_HELPER` names
+the companion `release-compatibility-archive.py` artifact from the same tools
+release as the utility. Verify both files against that release's admitted
+checksums. When running from source, use `actions/release-compatibility/archive.py`
+from the same reviewed commit instead.
+The Python standard library verifies SHA-256, inspects ZIP metadata and extracts
+regular bytes, avoiding platform-dependent shell archive tools. Archive admission
+rejects Windows device names, alternate data streams, trailing dots and
+case-insensitive file or parent-directory collisions on every host. No archived
+code is imported by the helper. The action builds the utility with its fixed tooling compiler before
 installing the selected floating package compiler; consumer Blueprint evaluation
 is optional and limited to native prerequisite setup.

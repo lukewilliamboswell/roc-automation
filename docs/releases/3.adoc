@@ -40,9 +40,42 @@ full source-linked report with the manual. It adds no repository write permissio
 and makes no downstream changes. A version is latest only when every direct
 reference equals the observed upstream `main` commit; mixed revisions, unpinned
 references and unreadable evidence remain visible. An updater's green outcome
-does not count as compatibility evidence. Compatibility passes expire after
-48 hours; adoption, infrastructure and upgrade actions remain explicit. Neither
+does not count as compatibility evidence. Each publication marks passes over
+48 hours old stale. Static badges retain their last colour if publication stops;
+an old snapshot date requires investigation. Adoption, infrastructure and upgrade actions remain explicit. Neither
 column is a security-compliance claim.
+
+== Release software bills of materials
+
+The release guidance defines a machine-processable SPDX or CycloneDX SBOM for
+each deliverable, bound to its exact SHA-256 and target. It distinguishes
+shipped components from build/test tooling and source dependencies, includes
+transitive, vendored and proprietary components, and requires explicit identity,
+license, source and relationship information with declared coverage gaps.
+
+Repositories generate and validate sidecars in read-only release builds and PR
+dry runs, distribute them with signature evidence, retain them downstream and
+use them for advisory impact analysis. The manual separates component records
+from lockfiles, dependency submissions, checksums and provenance, and describes
+immutable corrections. These are repository implementation requirements; the
+shared publisher does not generate or validate an SBOM. The version-1
+linker-input publisher needs a reviewed contract extension before accepting
+subject-bound sidecar assets.
+
+== Fast PR checks and separate campaigns
+
+Benchmark and fuzz targets expose explicit smoke modes with at most one second
+of workload execution per target, excluding compilation and provisioning.
+Routine PR checks and release dry runs build and exercise those modes;
+benchmark smoke timings establish no performance baseline. Sustained fuzzing
+and measured benchmarks use separate schedule/manual jobs with explicit event
+guards, so moving work to another job cannot accidentally run it on every PR.
+
+The guidance includes a daily ten-minute total campaign over roc-fuzz's Roc
+builtin targets against the latest nightly, with compiler/source identities,
+bounded inputs and preserved reproducer artifacts. Campaign results remain
+separate from published-release compatibility; failures stay failures and
+interrupted or skipped work never establishes compatibility.
 
 == `actions/setup-blueprint` needs no inputs
 
@@ -93,8 +126,10 @@ steps. It keeps the one tracking issue, which is the open issue with the exact
 title whose author is a bot account, and it treats any outcome other than
 `success` or `failure` as a setup failure that leaves the issue alone.
 
-Pass it the outcome of the step that ran the examples, not the result of the
-test job; xref:workflows.adoc#reporting[Reporting] explains the difference.
+The shared runner passes only its constrained aggregate outcome after verifying
+matching evidence from every declared target. A failed job alone is not proof
+of incompatibility; xref:workflows.adoc#reporting[Reporting] explains the
+difference.
 
 == Repository settings are checked by a task
 
@@ -184,3 +219,14 @@ tooling and released utilities through `Programs`/`Fetch`. The shared
 `blueprint-tool` handoff resolves persistent paths and optionally reports
 provisioning time, command time/RSS and output sizes. Cold/warm CI fixtures
 exercise different tool subsets on fresh runners.
+
+== Native Windows compatibility runners
+
+The shared published-release compatibility runner supports native x64 tests on
+`windows-2022` and `windows-2025` alongside Linux and macOS. It preserves native
+paths and executable suffixes, validates archives with the same standard-library
+helper on every OS, rejects Windows path aliases and case-insensitive environment
+overrides, and bounds complete child process trees. CI runs real compiler
+check/build/execute smoke tests and unhappy-path regressions on both Windows
+images. Windows native prerequisites use `setup-command`; the runner rejects
+Blueprint or Nix installation there because those installers are unavailable.

@@ -70,8 +70,10 @@ Nested references inside pinned shared code are outside this inventory.
 
 Badges refresh through the daily Documentation deployment, with no daily README
 commits or PRs. The [status report](https://lukewilliamboswell.github.io/roc-automation/downstream-status/)
-records check time, run dates and the comparison SHA. If deployment stops, the
-check timestamp stays unchanged. Compiler-pin updates remain a manual downstream
+records check time, run dates and the comparison SHA. The 48-hour age check runs
+when this snapshot refreshes. If its check date is over 48 hours old, investigate
+the Documentation deployment before relying on a green badge: static badges
+retain their last colour when publication stops. Compiler-pin updates remain a manual downstream
 PR task; the shared nightly only tests published releases and reports results.
 
 ## Contributing

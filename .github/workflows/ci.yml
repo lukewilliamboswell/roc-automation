@@ -8,8 +8,18 @@ permissions:
   contents: read
 jobs:
   release-compatibility:
-    name: Published release compatibility regressions
-    runs-on: ubuntu-24.04
+    name: Published release compatibility (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15, windows-2022, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      PYTHON_COMMAND: ${{ startsWith(matrix.runner, 'windows-') && 'python' || 'python3' }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -18,12 +28,25 @@ jobs:
         with:
           version: nightly-new-compiler
           nightly-tag: nightly-2026-10-09-258ab27
-      - name: Build the shared runner
-        run: roc build scripts/release_compatibility.roc --output="$RUNNER_TEMP/release-compatibility"
-      - name: Exercise diagnostics, immutable archives and unhappy paths
+      - id: build
+        name: Build the shared runner using its native action bootstrap
+        run: '"$PYTHON_COMMAND" actions/release-compatibility/bootstrap.py'
+      - name: Exercise diagnostics, immutable archives, timeouts and process-tree cleanup
         env:
-          ROC_COMPATIBILITY_BINARY: ${{ runner.temp }}/release-compatibility
-        run: python3 -m unittest discover -s tests -p test_release_compatibility.py -v
+          ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_archive.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_compatibility.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_workflow.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_packaging.py -v
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-20-7a8a800
+      - name: Check, build and execute a real published-platform example
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
   controller-tests:
     runs-on: ubuntu-24.04
     steps:
