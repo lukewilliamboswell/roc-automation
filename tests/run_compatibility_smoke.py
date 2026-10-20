@@ -24,6 +24,10 @@ def main():
     CompatibilityRunnerTests.setUpClass()
     fixture = CompatibilityRunnerTests(methodName="test_success_preserves_nonfatal_warnings_and_both_streams")
     try:
+        # Match the hosted action's private RUNNER_TEMP directory. The separate
+        # native fixture suite exercises Unicode and spaces with real processes;
+        # this smoke validates compiler behavior in the production directory.
+        fixture.directory_name = "suite"
         fixture.setUp()
         dependency = "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst"
         suite = dict(schema_version=1, release="0.25.0", dependencies=[dependency],
@@ -45,6 +49,14 @@ def main():
         print(ran.stdout)
         print(ran.stderr, file=sys.stderr)
         if ran.returncode:
+            environment = {**fixture.env, "GH_TOKEN": "", "GITHUB_TOKEN": "", "NO_COLOR": "1",
+                           "XDG_CACHE_HOME": str(directory / "empty-cache"),
+                           "ROC_CACHE_DIR": str(directory / "empty-cache")}
+            verbose = subprocess.run([compiler, "check", "examples/main.roc", "--no-cache", "--verbose"],
+                                     cwd=directory / "unpacked/basic-cli-examples-0.25.0",
+                                     env=environment, capture_output=True, text=True, timeout=300)
+            print(verbose.stdout)
+            print(verbose.stderr, file=sys.stderr)
             raise RuntimeError("real compiler smoke failed")
         result = json.loads((directory / "result.json").read_text())
         assert result["outcome"] == "compatible" and result["tested"] == 1 and result["failed"] == 0, result
