@@ -25,12 +25,17 @@ class ArchiveAdmissionTests(unittest.TestCase):
     def make_archive(self, additional=(), dos=False):
         with zipfile.ZipFile(self.archive, "w") as archive:
             for name, content, mode in [("root/spec.json", b"{}", stat.S_IFREG | 0o644), *additional]:
-                entry = zipfile.ZipInfo(name.replace("\0", "!"))
+                # ZipInfo's constructor normalizes backslashes on Windows and
+                # truncates NUL. Write the exact malicious wire name instead.
+                entry = zipfile.ZipInfo("placeholder")
+                entry.filename = name
                 entry.create_system = 0 if dos else 3
                 entry.external_attr = 0x20 if dos else mode << 16
                 archive.writestr(entry, content)
-        if any("\0" in name for name, _, _ in additional):
-            self.archive.write_bytes(self.archive.read_bytes().replace(b"!", b"\0"))
+        with zipfile.ZipFile(self.archive) as archive:
+            self.assertEqual([entry.orig_filename for entry in archive.infolist()],
+                             ["root/spec.json", *(name for name, _, _ in additional)],
+                             "security fixtures must preserve the exact wire filename")
 
     def prepare(self):
         digest = "sha256:" + hashlib.sha256(self.archive.read_bytes()).hexdigest()
