@@ -32,6 +32,10 @@ main! = |args| {
 		return Err(Exit(1))
 	}
 	checked = Str.from_utf8_lossy(date.stdout_bytes).trim()
+	# GNU date in Blueprint, with a macOS fallback for the standalone utility.
+	cutoff_gnu = Cmd.new("date").args(["-u", "-d", "48 hours ago", "+%Y-%m-%dT%H:%M:%SZ"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).run!()?
+	cutoff_output = if cutoff_gnu.status == Exited(0) cutoff_gnu else Cmd.new("date").args(["-u", "-v-2d", "+%Y-%m-%dT%H:%M:%SZ"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).run!()?
+	cutoff = if cutoff_output.status == Exited(0) Str.from_utf8_lossy(cutoff_output.stdout_bytes).trim() else ""
 	var $snapshots = []
 	for name in DownstreamStatus.repositories {
 		repository = "${DownstreamStatus.owner}/${name}"
@@ -40,11 +44,56 @@ main! = |args| {
 			Ok(found) => found
 			Err(problem) => { ..initial, problem }
 		}
-		$snapshots = $snapshots.append(snapshot)
+		compatibility = compatibility!(snapshot, cutoff)?
+		$snapshots = $snapshots.append({ automation: snapshot, compatibility })
 		Path.write_utf8!(Path.join(output, "${name}.json"), DownstreamStatus.badge(snapshot, latest, checked))?
+		Path.write_utf8!(Path.join(output, "${name}-compatibility.json"), DownstreamStatus.compatibility_badge(compatibility, checked))?
 	}
 	Path.write_utf8!(Path.join(output, "index.html"), DownstreamStatus.report($snapshots, latest, checked))?
 	Path.write_utf8!(Path.join(output, "snapshot.json"), Json.to_str({ checked, latest, repositories: $snapshots }))
+}
+
+compatibility! = |snapshot, cutoff| {
+	fallback = DownstreamStatus.unknown(snapshot.repository, "Could not read complete shared-nightly evidence. Inspect the linked Actions page.")
+	if snapshot.problem != "" {
+		return Ok(fallback)
+	}
+	ref = match DownstreamStatus.caller(snapshot) {
+		Ok(value) => value
+		Err(reason) => return Ok({ ..fallback, message: reason, detail: "Adopt the pinned shared published-release nightly workflow. Pin updaters, development CI and weekly floating-input checks do not establish this compatibility result." })
+	}
+	runs_source = match get!("repos/${snapshot.repository}/actions/workflows/${ref.file.drop_prefix(".github/workflows/")}/runs?event=schedule&per_page=1", "application/vnd.github+json", "[.workflow_runs[] | {id, head_sha, head_branch, event, status, conclusion: (.conclusion // \"\"), updated_at}]")? {
+		Ok(source) => source
+		Err(_) => return Ok(fallback)
+	}
+	runs : Try(List(DownstreamStatus.Run), _)
+	runs = Json.parse(runs_source)
+	ran = match runs {
+		Ok([found]) if DownstreamStatus.sha(found.head_sha) => found
+		Ok([]) => return Ok({ ..fallback, message: "no scheduled result · run nightly" })
+		_ => return Ok(fallback)
+	}
+	default_branch = match get!("repos/${snapshot.repository}", "application/vnd.github+json", ".default_branch")? {
+		Ok(source) => source.trim()
+		Err(_) => return Ok(fallback)
+	}
+	if ran.head_branch != default_branch {
+		return Ok(fallback)
+	}
+	caller_source = match get!("repos/${snapshot.repository}/contents/${ref.file}?ref=${ran.head_sha}", "application/vnd.github.raw+json", "")? {
+		Ok(source) => source
+		Err(_) => return Ok(fallback)
+	}
+	jobs_source = match get!("repos/${snapshot.repository}/actions/runs/${ran.id.to_str()}/jobs?per_page=100", "application/vnd.github+json", "{total_count, jobs: [.jobs[] | {name, status, conclusion: (.conclusion // \"\"), steps: [(.steps // [])[] | {name, conclusion: (.conclusion // \"\")}]}]}")? {
+		Ok(source) => source
+		Err(_) => return Ok(fallback)
+	}
+	jobs : Try(DownstreamStatus.Jobs, _)
+	jobs = Json.parse(jobs_source)
+	match jobs {
+		Ok(found) => Ok(DownstreamStatus.compatibility(snapshot, ran, found, caller_source, cutoff))
+		Err(_) => Ok(fallback)
+	}
 }
 
 head! = |repository| {

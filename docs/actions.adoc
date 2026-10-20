@@ -17,6 +17,21 @@ installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
 The setup action builds nothing.
 
+The executable cache is enabled by default. Its exact identity includes the
+Blueprint release, runner system and reviewed SHA-256. Restored bytes are copied
+into a private file and rehashed before installation; a verified hit makes no
+GitHub Releases request. A version or digest change selects a new cache entry.
+`cache-binary: false` disables this cache. `binary-cache-hit` reports actual
+verified reuse, rather than trusting the cache service's hit flag.
+
+This is separate from the opt-in `cache: true` cache of Blueprint's
+`v1/artifacts` tool/package downloads. The existing `cache-hit` output describes
+that artifact store. Neither cache selects a newer Blueprint automatically:
+maintainers change its pin through a PR. Corrupt regular executable bytes are
+refetched and verified; symlink or nonregular entries fail closed. GitHub caches
+are immutable; delete a corrupt remote executable entry if it causes repeated
+safe fallback downloads.
+
 [source,yaml]
 ----
 - uses: actions/checkout@REVIEWED_FULL_SHA
@@ -37,6 +52,7 @@ workflow cannot disagree with it.
 | Input | Meaning
 
 | `install-nix` | Defaults to `false`. Enable for Nix-sourced tools, sandboxed builds or an older Blueprint environment requiring Nix.
+| `cache-binary` | Defaults to `true`. Reuse only executable bytes that match the selected release, system and reviewed digest.
 | `cache` | Defaults to `false`. Restore/save only Blueprint `v1/artifacts` bytes.
 | `cache-workload` | Required with caching: a logical tool-set name, distinct for jobs or matrix variants that provision different subsets.
 | `version` | The roc-blueprint release to install. Defaults to the release named by the platform URL in `Blueprint.roc` at the root of the workspace. Set it only in a job that has no checkout.
@@ -165,6 +181,15 @@ runners provide. On a runner with an empty Nix store, installing Nix and
 downloading the environment is most of the job's time: the environment is about
 a gigabyte once unpacked, so allow a minute or two. The script itself finishes
 in seconds.
+
+== `actions/release-compatibility`
+
+The shared read-only runner owns selection, archive checks, compiler diagnostics
+and execution of a versioned published examples suite. The
+`nightly-compatibility.yml` reusable workflow adds the complete target matrix,
+evidence aggregation and a separate issue reporter. See
+xref:nightly-compatibility.adoc#shared-published-release-compatibility[Shared published-release compatibility] for the
+canonical archive, caller, inputs, diagnostic artifacts and failure handling.
 
 [#nightly-report]
 == `actions/nightly-report`

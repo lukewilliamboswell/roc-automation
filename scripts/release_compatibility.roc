@@ -59,6 +59,14 @@ select! = || {
 	mkdir!(directory)?
 	repository = env!("GITHUB_REPOSITORY")?
 	requested = env!("RA_NIGHTLY")?
+	requested_release = env!("RA_RELEASE")?
+	package_name = env!("RA_PACKAGE")?
+	runner_names : Try(List(Str), _)
+	runner_names = Json.parse(env!("RA_RUNNERS")?)
+	chosen_runners = runner_names.map_err(|_| "invalid runner JSON")?
+	if !Compatibility.valid_repository(repository) or !Compatibility.path(package_name) or package_name.contains("/") or !Compatibility.valid_runners(chosen_runners) or (requested != "" and (!Compatibility.tag(requested) or !requested.starts_with("nightly-"))) or (requested_release != "" and !Compatibility.version(requested_release)) {
+		return Err("invalid selection inputs")
+	}
 	nightly = if requested == "" get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
 	var $releases = []
 	var $complete = Bool.False
@@ -80,9 +88,7 @@ select! = || {
 	if !$complete {
 		return Err("release listing exceeds 2000 entries; selection is incomplete")
 	}
-	runner_names : Try(List(Str), _)
-	runner_names = Json.parse(env!("RA_RUNNERS")?)
-	selected = Compatibility.select(repository, nightly, env!("RA_RELEASE")?, env!("RA_PACKAGE")?, runner_names.map_err(|_| "invalid runner JSON")?, $releases)?
+	selected = Compatibility.select(repository, nightly, requested_release, package_name, chosen_runners, $releases)?
 	write!(Path.join(directory, "selection.json"), Json.to_str(selected))?
 	output!("ready=true\nnightly=${selected.nightly}\nrelease=${selected.release}\nmatrix=${Json.to_str({ runner: selected.runners })}\n")
 }
@@ -91,7 +97,7 @@ selection! = || {
 	parsed : Try(Compatibility.Selection, _)
 	parsed = Json.parse(read!(Path.utf8(env!("RA_SELECTION")?))?)
 	match parsed {
-		Ok(value) if value.schema_version == 1 and Compatibility.valid_runners(value.runners) and Compatibility.tag(value.nightly) and value.nightly.starts_with("nightly-") and Compatibility.version(value.release) and Compatibility.digest(value.asset.digest) and Compatibility.path(value.asset.name) and value.asset.name.ends_with(".zip") and value.asset.size > 0 and value.asset.size <= 50_000_000 => Ok(value)
+		Ok(value) if value.schema_version == 1 and Compatibility.valid_repository(value.repository) and Compatibility.valid_runners(value.runners) and Compatibility.tag(value.nightly) and value.nightly.starts_with("nightly-") and Compatibility.version(value.release) and Compatibility.digest(value.asset.digest) and Compatibility.path(value.asset.name) and !value.asset.name.contains("/") and value.asset.name.ends_with(".zip") and value.asset.size > 0 and value.asset.size <= 50_000_000 => Ok(value)
 		_ => Err("invalid selection artifact")
 	}
 }
@@ -102,8 +108,15 @@ selection! = || {
 command! = |argv, cwd, cache, input, timeout| {
 	match argv {
 		[program, .. as arguments] => {
-			ran = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout_ms(timeout).output_limit(10_000_000).manage_tree(Bool.True)
-				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env_str("XDG_CACHE_HOME", Path.display(cache)).run!()
+			environment : Try(List(Compatibility.Environment), _)
+			environment = Json.parse(env!("RA_ENVIRONMENT")?)
+			entries = environment.map_err(|_| "test environment must be a JSON array of name/value records")?
+			if !Compatibility.valid_environment(entries) {
+				return Err("test environment overrides a reserved variable or repeats a name")
+			}
+			base = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout_ms(timeout).output_limit(10_000_000).manage_tree(Bool.True)
+				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env_str("XDG_CACHE_HOME", Path.display(cache)).env_str("ROC_CACHE_DIR", Path.display(cache))
+			ran = entries.fold(base, |command, entry| command.env_str(entry.name, entry.value)).run!()
 			Ok(
 				match ran {
 					Ok(value) => {
@@ -130,7 +143,7 @@ logged! : Path, U64, List(Str), Path, Path, List(U8), U64 => Try({ code : I32, s
 logged! = |directory, number, argv, cwd, cache, input, timeout| {
 	ran = command!(argv, cwd, cache, input, timeout)?
 	prefix = "${number.to_str()}"
-	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: Path.display(cwd), code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
+	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: Path.display(cwd), stdin: Str.from_utf8_lossy(input), environment: env!("RA_ENVIRONMENT")?, timeout_ms: timeout, code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
 	Path.write_bytes!(Path.join(directory, "${prefix}-stdout.log"), ran.stdout).map_err(|_| "cannot preserve stdout")?
 	Path.write_bytes!(Path.join(directory, "${prefix}-stderr.log"), ran.stderr).map_err(|_| "cannot preserve stderr")?
 	Stdout.line!("\n${Compatibility.console(Json.to_str(argv))} (exit ${ran.code.to_str()})\n${Compatibility.console(Str.from_utf8_lossy(ran.stdout))}${Compatibility.console(Str.from_utf8_lossy(ran.stderr))}").map_err(|_| "cannot display diagnostics")?
@@ -178,10 +191,15 @@ execute! = |selected, initial, directory| {
 	}
 	root_name = selected.asset.name.drop_suffix(".zip")
 	listed = command!(["unzip", "-Z", "-l", Path.display(asset)], directory, cache, [], 30_000)?
+	Path.write_bytes!(Path.join(directory, "archive-listing.log"), listed.stdout).map_err(|_| "cannot preserve ZIP inventory")?
 	if listed.code != 0 {
 		return Err("cannot inspect examples ZIP")
 	}
-	Compatibility.archive(root_name, Str.from_utf8_lossy(listed.stdout))?
+	metadata_names = Compatibility.archive(root_name, Str.from_utf8_lossy(listed.stdout))?
+	names = command!(["unzip", "-Z1", Path.display(asset)], directory, cache, [], 30_000)?
+	if names.code != 0 or !Compatibility.archive_names(metadata_names, Str.from_utf8_lossy(names.stdout)) {
+		return Err("ZIP names disagree with metadata or contain unsafe characters")
+	}
 	unpacked = Path.join(directory, "unpacked")
 	mkdir!(unpacked)?
 	extracted = command!(["unzip", "-q", Path.display(asset), "-d", Path.display(unpacked)], directory, cache, [], 30_000)?
@@ -205,9 +223,11 @@ execute! = |selected, initial, directory| {
 		if !Compatibility.app_source(read!(Path.join(root, example.path))?, suite.dependencies) {
 			return Err("example must directly reference the declared published bundle and must not pin its compiler")
 		}
-		executable = Path.join(directory, "example-${$number.to_str()}")
+		target = example.target ?? "native"
+		executable = Path.join(directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else ""}")
+		build_target = if target == "native" [] else ["--target=${target}"]
 		var $built = Bool.True
-		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${Path.display(executable)}"]] {
+		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${Path.display(executable)}"].concat(build_target)] {
 			$number = $number + 1
 			ran = logged!(directory, $number, argv, root, cache, [], 300_000)?
 			if ran.timed_out or ran.limited {
@@ -229,7 +249,11 @@ execute! = |selected, initial, directory| {
 				}
 				Err(Missing) if $built => {
 					$number = $number + 1
-					ran = logged!(directory, $number, [Path.display(executable)].concat(case.args), root, cache, Str.to_utf8(case.stdin), case_timeout)?
+					runtime = match example.run {
+						Ok(argv) if !argv.is_empty() => argv.map(|arg| arg.replace_each("{executable}", Path.display(executable)).replace_each("{suite}", Path.display(root)))
+						_ => [Path.display(executable)]
+					}
+					ran = logged!(directory, $number, runtime.concat(case.args), root, cache, Str.to_utf8(case.stdin), case_timeout)?
 					if ran.timed_out or ran.limited {
 						return Ok({ ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "example interrupted; inspect command ${$number.to_str()}" })
 					}
@@ -265,7 +289,8 @@ aggregate! = || {
 			Err(_) => {}
 		}
 	}
-	decision = Compatibility.aggregate(selected, env!("GITHUB_RUN_ID")?, env!("GITHUB_RUN_ATTEMPT")?, $results)
+	classified = Compatibility.aggregate(selected, env!("GITHUB_RUN_ID")?, env!("GITHUB_RUN_ATTEMPT")?, $results)
+	decision = if classified.report == "success" and env!("RA_TEST_RESULT")? != "success" { outcome: "setup-failed", report: "none" } else classified
 	write!(Path.join(directory, "summary.json"), Json.to_str({ selection: selected, results: $results, outcome: decision.outcome, report: decision.report }))?
 	output!("outcome=${decision.outcome}\nreport=${decision.report}\n")?
 	# No example output is copied into the job summary or privileged issue job.

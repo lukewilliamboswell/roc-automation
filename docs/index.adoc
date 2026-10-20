@@ -62,6 +62,8 @@ include::policy.adoc[leveloffset=+1]
 
 include::workflows.adoc[leveloffset=+1]
 
+include::nightly-compatibility.adoc[leveloffset=+1]
+
 include::optional-workflows.adoc[leveloffset=+1]
 
 include::platforms.adoc[leveloffset=+1]

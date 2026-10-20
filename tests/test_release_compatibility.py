@@ -66,6 +66,8 @@ else:
             "RA_NIGHTLY": "", "RA_RELEASE": "", "RA_PACKAGE": "pkg",
             "RA_RUNNERS": '["ubuntu-24.04"]', "RA_RUNNER": "ubuntu-24.04",
             "RA_SETUP": "[]", "RA_COMPILER": str(self.bin / "roc"), "RA_CASE_TIMEOUT_MS": "10000"}
+        self.env["RA_TEST_RESULT"] = "success"
+        self.env["RA_ENVIRONMENT"] = "[]"
         self.selection = self.root / "selection.json"
         self.selection.write_text(json.dumps(dict(schema_version=1, repository="o/pkg",
             nightly=self.nightly, release="1.0.0", release_id=1, asset=self.asset(), runners=["ubuntu-24.04"])))
@@ -168,6 +170,62 @@ else:
         self.assertNotEqual(ran.returncode, 0)
         self.assertFalse((directory / "unpacked").exists())
 
+    def test_traversal_is_rejected_before_extraction(self):
+        info = zipfile.ZipInfo("pkg-examples-1.0.0/../../escape")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        self.make_archive((info, "bad"))
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertFalse((directory / "unpacked").exists())
+        self.assertFalse((self.root / "escape").exists())
+
+    def test_cross_target_runtime_receives_the_built_artifact(self):
+        self.spec["apps"][0].update(target="wasm32", run=["python3", "{executable}"])
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        build = json.loads((directory / "3-command.json").read_text())
+        self.assertIn("--target=wasm32", build["argv"])
+        actual = json.loads((directory / "4-command.json").read_text())
+        self.assertEqual(actual["argv"][0], "python3")
+        self.assertTrue(actual["argv"][1].endswith(".wasm"))
+
+    def test_zip_summary_text_in_an_unsafe_name_cannot_bypass_validation(self):
+        info = zipfile.ZipInfo("pkg-examples-1.0.0/../../escape bytes uncompressed, bad")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        self.make_archive((info, "bad"))
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertFalse((directory / "unpacked").exists())
+
+    def test_newline_in_a_zip_name_cannot_create_fake_metadata(self):
+        info = zipfile.ZipInfo("pkg-examples-1.0.0/extra\n1 file, 10 bytes uncompressed, 10 bytes compressed: 0%")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        self.make_archive((info, "bad"))
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertFalse((directory / "unpacked").exists())
+
+    def test_reserved_environment_cannot_replace_compiler_or_cache(self):
+        ran, directory, _ = self.run_phase("test", RA_ENVIRONMENT='[{"name":"PATH","value":"/tmp"}]')
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+
+    def test_empty_suite_cannot_pass(self):
+        self.spec["apps"] = []
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertNotEqual(json.loads((directory / "result.json").read_text())["outcome"], "compatible")
+
     def test_setup_failure_is_separate_and_logged(self):
         ran, directory, _ = self.run_phase("test", RA_SETUP='["false"]')
         self.assertNotEqual(ran.returncode, 0)
@@ -196,10 +254,63 @@ else:
         ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
         self.assertEqual(ran.returncode, 0, ran.stderr)
         self.assertIn("report=success", outputs)
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts), RA_TEST_RESULT="cancelled")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("report=none", outputs)
+
         ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts), GITHUB_RUN_ATTEMPT="2")
         self.assertEqual(ran.returncode, 0, ran.stderr)
         self.assertIn("outcome=setup-failed", outputs)
         self.assertIn("report=none", outputs)
+
+
+@unittest.skipUnless((ROOT / ".github/workflows/nightly-compatibility.yml").is_file(), "workflow source is not part of the standalone artifact")
+class CompatibilityWorkflowSecurityTests(unittest.TestCase):
+    def test_tooling_installation_cannot_shadow_package_nightly(self):
+        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
+        build = action.split("    - id: build\n", 1)[1].split("    - if:", 1)[0]
+        commands = build.split("      run: |\n", 1)[1]
+        commands = "\n".join(line[8:] for line in commands.splitlines())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiler = root / "roc_nightly-macos_apple_silicon-tooling"
+            compiler.mkdir()
+            roc = compiler / "roc"
+            roc.write_text("#!/bin/sh\nexit 0\n")
+            roc.chmod(0o755)
+            outputs = root / "outputs"
+            env = {**os.environ, "PATH": str(compiler) + os.pathsep + os.environ["PATH"],
+                   "GITHUB_WORKSPACE": str(root), "RUNNER_TEMP": str(root),
+                   "GITHUB_OUTPUT": str(outputs), "ACTION_PATH": str(root)}
+            ran = subprocess.run(["bash", "-c", commands], env=env, capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 0, ran.stderr)
+            directory = Path(outputs.read_text().strip().split("=", 1)[1])
+            self.assertTrue((directory / "tooling/roc").is_file())
+            self.assertEqual(list(root.glob("roc_nightly-*")), [])
+
+    def test_report_job_has_no_consumer_execution_or_artifact_download(self):
+        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
+        report = workflow.split("\n  report:\n", 1)[1]
+        self.assertIn("issues: write", report)
+        self.assertNotIn("checkout@", report)
+        self.assertNotIn("download-artifact@", report)
+        self.assertNotIn("run:", report)
+        self.assertNotIn("setup-command:", report)
+        self.assertIn("inputs.nightly-tag == '' && inputs.release-tag == ''", report)
+
+    def test_every_remote_reference_is_immutable_and_only_report_can_write(self):
+        import re
+        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
+        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
+        for source in (workflow, action):
+            for reference in re.findall(r"uses:\s+(\S+)", source):
+                self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
+        unprivileged = workflow.split("\n  report:\n", 1)[0]
+        self.assertNotIn(": write", unprivileged)
+        self.assertNotIn("pull-requests:", workflow)
+        self.assertNotIn("statuses:", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("fail-fast: false", workflow)
 
 
 if __name__ == "__main__":

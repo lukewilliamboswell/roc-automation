@@ -95,8 +95,11 @@ its derived trees are removed and the release bytes are downloaded again.
 An unavailable or mismatching replacement cannot become a usable tool.
 
 An exact cache hit is a transfer optimization, not verification. Restoring it
-still transfers cache bytes from GitHub. The Blueprint installer itself is a
-separate verified download. Ordinary GitHub branch and pull-request cache
+still transfers cache bytes from GitHub. The Blueprint executable has a separate,
+default-on cache keyed by release, system and reviewed digest; restored executable
+bytes are rehashed before use. Disable it with `cache-binary: false`.
+`binary-cache-hit` describes verified executable reuse; `cache-hit` describes
+the artifact store. Neither changes a version pin. Ordinary GitHub branch and pull-request cache
 visibility applies: a PR can restore an eligible default-branch cache and its
 new cache is scoped to that PR; a failed job does not save a successful cache.
 

@@ -2,6 +2,9 @@ name: Set up Blueprint
 description: Install the Blueprint.roc-selected binary after SHA-256 verification, with optional Nix and verified-download caching.
 
 inputs:
+  cache-binary:
+    description: Cache the Blueprint executable by release, runner system and reviewed SHA-256; restored bytes are verified before every use
+    default: 'true'
   install-nix:
     description: Install Nix when the repository uses Nix sources or native builds; standalone Programs/Fetch/Expect environments do not need it
     default: 'false'
@@ -25,6 +28,9 @@ inputs:
     default: ''
 
 outputs:
+  binary-cache-hit:
+    description: Whether a restored executable passed SHA-256 verification and avoided a release download
+    value: ${{ steps.install.outputs.binary-cache-hit }}
   sha256:
     description: Verified Blueprint executable digest
     value: ${{ steps.install.outputs.sha256 }}
@@ -56,12 +62,36 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: install
-      name: Download and verify blueprint
+    - id: prepare
+      name: Select reviewed Blueprint executable cache identity
       shell: bash
       env:
         INPUT_INSTALL_NIX: ${{ inputs.install-nix }}
         INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_CACHE_BINARY: ${{ inputs.cache-binary }}
+        INPUT_CACHE_WORKLOAD: ${{ inputs.cache-workload }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_SHA256_X86_64_LINUX: ${{ inputs.sha256-x86_64-linux }}
+        INPUT_SHA256_AARCH64_LINUX: ${{ inputs.sha256-aarch64-linux }}
+        INPUT_SHA256_AARCH64_DARWIN: ${{ inputs.sha256-aarch64-darwin }}
+        INSTALLER: ${{ github.action_path }}/setup_blueprint.py
+      run: python3 "$INSTALLER" --prepare
+
+    - id: executable
+      name: Restore and save reviewed Blueprint executable bytes
+      if: inputs.cache-binary == 'true'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.prepare.outputs.binary-cache-directory }}
+        key: ${{ steps.prepare.outputs.binary-cache-key }}
+
+    - id: install
+      name: Verify cached Blueprint or download and verify release
+      shell: bash
+      env:
+        INPUT_INSTALL_NIX: ${{ inputs.install-nix }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_CACHE_BINARY: ${{ inputs.cache-binary }}
         INPUT_CACHE_WORKLOAD: ${{ inputs.cache-workload }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_SHA256_X86_64_LINUX: ${{ inputs.sha256-x86_64-linux }}

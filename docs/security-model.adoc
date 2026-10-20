@@ -44,7 +44,11 @@ documentation sources or restore a candidate-produced executable cache.
 
 | `nightly.yml` test
 | `contents: read`
-| Yes: default-branch scripts and the published examples archive
+| Yes: published examples and optional default-branch native prerequisites
+
+| `nightly.yml` selection and aggregation
+| `contents: read`
+| No: pinned shared runner and inert release/result metadata
 
 | `nightly.yml` report
 | `issues: write`
@@ -175,6 +179,14 @@ the floating package compiler. Earlier Blueprint releases bootstrap that compile
 through their pinned Nix overlay. `Programs`/`Fetch`/`Expect` environments need no
 Nix; environments selecting Nix-sourced tools and sandboxed builds do.
 
+The default executable cache is separate from the artifact store. Its exact key
+includes release, system and reviewed digest. The installer copies bounded
+regular bytes into a private file, hashes that copy and exposes an executable
+only on a match. Corrupt regular bytes cause a fresh verified download; symlink
+and nonregular cache entries are rejected. A cache hit never replaces hash
+admission. Cache visibility does not establish provenance, and no moving release
+lookup is needed to reuse the pinned executable.
+
 Optional artifact caching restores only `v1/artifacts`, never extracted trees or
 temporary task links. Keys separate logical tool subsets and include the lock,
 installer/registry identity, Blueprint release, system and workflow. Blueprint
@@ -218,6 +230,33 @@ It executes no downstream code. The daily schedule uses the same separate
 deployment job and permissions as other documentation builds. Publication does
 not commit to this repository or update a consumer. Unknown API evidence and
 incomplete trees never establish that a consumer is current.
+
+Compatibility evidence comes only from the latest scheduled caller of the
+pinned shared nightly workflow. The dashboard verifies that caller at the run's
+immutable SHA, the fixed aggregate gate, complete job inventory and a 48-hour
+pass freshness limit. Pin-updater success is not a compatibility verdict.
+
+== Shared release-compatibility runner
+
+Selection, per-target tests and aggregation have only `contents: read`.
+Selection resolves a release and compiler once; every target receives those
+identities and verifies the selected ZIP's asset ID, length and SHA-256. The
+archive is inspected for regular file types, canonical paths, duplicates,
+collisions and extraction limits before it is unpacked. Archived code and native
+prerequisite code run only in the read-only test job, with checkout credentials
+disabled and compiler/example child tokens cleared. Successful diagnostics are
+preserved; console workflow-command markers are escaped rather than interpreted.
+
+Aggregation checks every declared target's identity, counts and run attempt as
+inert JSON. No single matrix output can stand in for all targets. A cancelled or
+failed test job cannot produce a passing issue report even when old files exist.
+Reporting holds only `issues: write`, checks out nothing, and invokes the pinned
+`actions/nightly-report` using only a constrained outcome and selected tags.
+It receives no archive-generated diagnostic text. A complete pass can close the
+issue; known test failure can open/update it; unknown, missing, skipped or
+interrupted work cannot close it. Historical override runs never modify the
+latest-pair tracking issue. This runner has no pin-update, pull-request, merge,
+dispatch, release or deployment permission.
 
 == Linker-input release publisher
 

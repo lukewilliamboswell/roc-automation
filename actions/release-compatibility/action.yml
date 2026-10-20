@@ -25,12 +25,18 @@ inputs:
   artifacts:
     description: Directory containing downloaded per-target artifacts for aggregate
     default: ''
+  test-result:
+    description: Aggregate test job result; cancelled or failed infrastructure cannot close an issue
+    default: 'success'
   setup-command:
     description: Optional JSON argv array for native prerequisites; runs only in the read-only test job
     default: '[]'
   case-timeout-ms:
     description: Per-example deadline, 1–120000 milliseconds
     default: '10000'
+  test-environment:
+    description: JSON array of public name/value variables for native or headless tests; reserved compiler, cache and Actions variables cannot be overridden
+    default: '[]'
   install-blueprint:
     description: Install the caller's verified Blueprint for its optional prerequisite command
     default: 'false'
@@ -77,6 +83,14 @@ runs:
         directory=$(mktemp -d "$RUNNER_TEMP/roc-compatibility.XXXXXXXX")
         echo "directory=$directory" >> "$GITHUB_OUTPUT"
         roc build "$ACTION_PATH/../../scripts/release_compatibility.roc" --output="$directory/runner"
+        # setup-roc discovers extracted compilers in the workspace. Move the
+        # tooling installation aside so its second invocation selects the
+        # package nightly rather than reusing the tooling compiler.
+        tooling_directory=$(dirname "$(command -v roc)")
+        case "$tooling_directory" in
+          "$GITHUB_WORKSPACE"/roc_nightly-*) mv "$tooling_directory" "$directory/tooling" ;;
+          *) echo 'Unexpected tooling compiler directory' >&2; exit 1 ;;
+        esac
     - if: inputs.phase == 'test'
       uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
       with:
@@ -98,8 +112,10 @@ runs:
         RA_SELECTION: ${{ inputs.selection }}
         RA_RUNNER: ${{ inputs.runner }}
         RA_ARTIFACTS: ${{ inputs.artifacts }}
+        RA_TEST_RESULT: ${{ inputs.test-result }}
         RA_SETUP: ${{ inputs.setup-command }}
         RA_CASE_TIMEOUT_MS: ${{ inputs.case-timeout-ms }}
+        RA_ENVIRONMENT: ${{ inputs.test-environment }}
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail

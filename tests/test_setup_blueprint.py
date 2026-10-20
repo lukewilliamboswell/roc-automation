@@ -281,5 +281,132 @@ class ArtifactCacheTests(unittest.TestCase):
             self.assertRegex(setup.expected_sha256({}, setup.known_releases(), "0.6.0-rc1", system), r"^[0-9a-f]{64}$")
 
 
+class ExecutableCacheTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.directory = self.root / "install"
+        self.cache = self.root / "cache" / "identity"
+
+    def install(self, content=BINARY, seen=None):
+        return setup.install("0.4.0", "x86_64-linux", DIGEST, self.directory,
+                             serving(content, seen), cache_directory=self.cache)
+
+    def test_cold_cache_downloads_then_verified_hit_needs_no_network(self):
+        seen = []
+        installed = self.install(seen=seen)
+        self.assertEqual(len(seen), 1)
+        installed.unlink()
+        with patch.object(setup, "fetch", side_effect=AssertionError("unexpected network")):
+            admitted = setup.install("0.4.0", "x86_64-linux", DIGEST, self.directory,
+                                     cache_directory=self.cache)
+        self.assertEqual(admitted.read_bytes(), BINARY)
+        self.assertEqual((self.cache / "blueprint").read_bytes(), BINARY)
+
+    def test_cached_bytes_are_rehashed_on_each_use_and_corruption_is_refetched(self):
+        self.install()
+        cached = self.cache / "blueprint"
+        cached.write_bytes(b"corrupt")
+        seen = []
+        self.assertEqual(self.install(seen=seen).read_bytes(), BINARY)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(cached.read_bytes(), BINARY)
+
+    def test_corruption_and_bad_download_cannot_install_or_publish_path(self):
+        self.cache.mkdir(parents=True)
+        (self.cache / "blueprint").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            self.install(content=b"also corrupt")
+        self.assertEqual(list(self.directory.iterdir()), [])
+        self.assertEqual(list(self.cache.iterdir()), [self.cache / "blueprint"])
+
+    def test_cache_file_permissions_are_never_used_as_execution_authority(self):
+        installed = self.install()
+        cached = self.cache / "blueprint"
+        self.assertEqual(cached.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.cache.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
+        cached.chmod(0o777)
+        installed = self.install()
+        self.assertEqual(cached.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        self.assertNotEqual(installed.stat().st_ino, cached.stat().st_ino)
+
+    def test_symlink_cache_file_is_rejected_without_download_or_target_mutation(self):
+        self.cache.mkdir(parents=True)
+        outside = self.root / "outside"
+        outside.write_bytes(BINARY)
+        (self.cache / "blueprint").symlink_to(outside)
+        seen = []
+        with self.assertRaisesRegex(ValueError, "never a symlink"):
+            self.install(seen=seen)
+        self.assertEqual(seen, [])
+        self.assertEqual(outside.read_bytes(), BINARY)
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_symlink_cache_or_install_directory_is_rejected(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        for path in (self.directory, self.cache.parent, self.cache):
+            with self.subTest(path=path):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.symlink_to(outside, target_is_directory=True)
+                with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+                    self.install()
+                path.unlink()
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_nonregular_cache_entry_is_rejected(self):
+        self.cache.mkdir(parents=True)
+        os.mkfifo(self.cache / "blueprint")
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            self.install()
+
+    def test_oversized_cache_is_not_admitted_and_is_refetched(self):
+        self.cache.mkdir(parents=True)
+        (self.cache / "blueprint").write_bytes(b"x" * (len(BINARY) + 1))
+        seen = []
+        with patch.object(setup, "MAX_BYTES", len(BINARY)):
+            self.assertEqual(self.install(seen=seen).read_bytes(), BINARY)
+        self.assertEqual(len(seen), 1)
+
+    def test_keys_isolate_versions_systems_and_reviewed_digests(self):
+        env = {"RUNNER_TEMP": str(self.root)}
+        variants = [("0.4.0", "x86_64-linux", DIGEST),
+                    ("0.5.0", "x86_64-linux", DIGEST),
+                    ("0.4.0", "aarch64-linux", DIGEST),
+                    ("0.4.0", "x86_64-linux", OTHER)]
+        identities = [setup.binary_cache_settings(env, *variant) for variant in variants]
+        self.assertEqual(len(set(identities)), 4)
+        self.assertEqual(setup.binary_cache_settings({**env, "GITHUB_WORKFLOW": "another"}, *variants[0]), identities[0])
+        self.assertIn(DIGEST, identities[0][1])
+
+    def test_opt_out_and_invalid_boolean(self):
+        self.assertEqual(setup.binary_cache_settings({"INPUT_CACHE_BINARY": "false"}, "0.4.0", "x86_64-linux", DIGEST), ("", ""))
+        with self.assertRaisesRegex(ValueError, "cache-binary must"):
+            setup.binary_cache_settings({"INPUT_CACHE_BINARY": "yes"}, "0.4.0", "x86_64-linux", DIGEST)
+
+    def test_preparation_exports_only_cache_identity_without_network_or_path(self):
+        env = {"RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "INPUT_VERSION": "0.4.0",
+               "INPUT_SHA256_X86_64_LINUX": DIGEST, "RUNNER_TEMP": str(self.root),
+               "GITHUB_OUTPUT": str(self.root / "output"), "GITHUB_PATH": str(self.root / "path")}
+        with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", side_effect=AssertionError("network during preparation")):
+            setup.main(prepare=True)
+        self.assertIn("binary-cache-key=blueprint-executable-v1-x86_64-linux-0.4.0-" + DIGEST, (self.root / "output").read_text())
+        self.assertFalse((self.root / "path").exists())
+        self.assertFalse((self.root / "roc-automation-blueprint").exists())
+
+    def test_action_restores_exact_executable_key_before_verification(self):
+        action = (Path(setup.__file__).parent / "action.yml").read_text()
+        self.assertLess(action.index("- id: prepare"), action.index("- id: executable"))
+        self.assertLess(action.index("- id: executable"), action.index("- id: install"))
+        executable_step = action.split("- id: executable", 1)[1].split("- id: install", 1)[0]
+        self.assertIn("key: ${{ steps.prepare.outputs.binary-cache-key }}", executable_step)
+        self.assertNotIn("restore-keys", executable_step)
+        self.assertIn("INPUT_CACHE_BINARY: ${{ inputs.cache-binary }}", action.split("- id: install", 1)[1])
+        self.assertIn("cache-binary:\n", action)
+
+
 if __name__ == "__main__":
     unittest.main()

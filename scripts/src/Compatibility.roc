@@ -7,9 +7,13 @@ Compatibility := [].{
 	Release : { id : U64, tag_name : Str, draft : Bool, prerelease : Bool, published_at : Str, assets : List(Asset) }
 	Selection : { schema_version : U64, repository : Str, nightly : Str, release : Str, release_id : U64, asset : Asset, runners : List(Str) }
 	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
-	App : { path : Str, cases : List(Case) }
+	App : { path : Str, target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), cases : List(Case) }
 	Suite : { schema_version : U64, release : Str, dependencies : List(Str), apps : List(App) }
 	Result : { schema_version : U64, repository : Str, nightly : Str, release : Str, asset_digest : Str, runner : Str, run_id : Str, run_attempt : Str, outcome : Str, tested : U64, failed : U64, skipped : U64, diagnostic_commands : U64, detail : Str }
+	Environment : { name : Str, value : Str }
+	valid_environment : List(Environment) -> Bool
+	valid_environment = |values| unique(values.map(|entry| entry.name)).len() == values.len() and values.all(|entry| GitHub.is_plain(entry.name, "_") and !["PATH", "ROC", "ROC_CACHE_DIR", "NO_COLOR", "XDG_CACHE_HOME"].contains(entry.name) and !entry.name.starts_with("GITHUB_") and !entry.name.starts_with("GH_") and !entry.name.starts_with("RA_"))
+	valid_repository = GitHub.valid_repository
 
 	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26"]
 	valid_runners = |values| !values.is_empty() and values.len() <= 5 and values.all(|value| runners.contains(value)) and unique(values).len() == values.len()
@@ -47,12 +51,12 @@ Compatibility := [].{
 	## ZIP metadata is inspected before extraction. Only ordinary Unix files and
 	## directories with canonical paths are admitted; links, duplicates, traversal,
 	## encryption and expansion beyond 100 MB fail closed.
-	archive : Str, Str -> Try({}, Str)
+	archive : Str, Str -> Try(List(Str), Str)
 	archive = |root, listing| {
 		var $names = []
 		var $files = []
 		var $bytes = 0
-		for line in Str.split_on(listing, "\n").keep_if(|line| !line.starts_with("Archive:") and !line.starts_with("Zip file size:") and line.trim() != "" and !line.contains(" bytes uncompressed,")) {
+		for line in Str.split_on(listing, "\n").keep_if(|line| !line.starts_with("Archive:") and !line.starts_with("Zip file size:") and line.trim() != "" and !zip_summary(line)) {
 			parts = Str.split_on(line.trim(), " ").keep_if(|part| part != "")
 			match parts {
 				[mode, _, "unx", size, flags, _, _, _, _, name] if mode.starts_with("-") or mode.starts_with("d") => {
@@ -79,8 +83,19 @@ Compatibility := [].{
 		if !$files.contains("${root}/spec.json") or $names.any(|name| $files.any(|file| name.starts_with("${file}/"))) {
 			Err("archive lacks spec.json or has file/directory collisions")
 		} else {
-			Ok({})
+			Ok($names)
 		}
+	}
+
+	zip_summary = |line| match Str.to_utf8(line) {
+		[first, ..] if first >= '0' and first <= '9' => line.contains(" bytes uncompressed,") and !line.contains("/") and !line.contains("\\")
+		_ => Bool.False
+	}
+
+	archive_names : List(Str), Str -> Bool
+	archive_names = |metadata, listing| {
+		names = Str.split_on(listing, "\n").keep_if(|name| name != "").map(|name| name.drop_suffix("/"))
+		names.len() == metadata.len() and names.all(path) and GitHub.sort(names) == GitHub.sort(metadata)
 	}
 
 	suite : Str, Selection -> Try(Suite, Str)
@@ -99,6 +114,11 @@ Compatibility := [].{
 			return Err("duplicate suite applications")
 		}
 		for example in found.apps {
+			target = example.target ?? "native"
+			runtime = example.run ?? []
+			if !GitHub.is_plain(target, "-_") or (target != "native" and runtime.is_empty()) or (!runtime.is_empty() and !runtime.any(|arg| arg.contains("{executable}"))) {
+				return Err("cross targets need an explicit runtime argv using {executable}")
+			}
 			if !path(example.path) or !example.path.starts_with("examples/") or !example.path.ends_with(".roc") or example.cases.is_empty() or example.cases.len() > 100 or unique(example.cases.map(|case| case.name)).len() != example.cases.len() {
 				return Err("invalid application path or cases")
 			}
@@ -117,7 +137,7 @@ Compatibility := [].{
 	## An example must name a declared release dependency in its header. The runner
 	## never substitutes the default-branch bundle or edits a compiler constraint.
 	app_source = |source, dependencies| match Str.split_first(source, "}") {
-		Ok({ before, .. }) => dependencies.any(|url| before.contains("\"${url}\"")) and !Str.split_on(before, "\n").any(|line| line.trim().starts_with("roc:"))
+		Ok({ before, .. }) => dependencies.any(|url| before.contains("\"${url}\"")) and !before.replace_each(" ", "").replace_each("\t", "").contains("roc:")
 		Err(_) => Bool.False
 	}
 
@@ -170,7 +190,7 @@ expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["ubuntu-24.0
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["ubuntu-24.04"], [{ ..release, prerelease: Bool.True }]).is_err()
 expect Compatibility.select("o/pkg", selection.nightly, "", "pkg", ["self-hosted"], [release]).is_err()
 expect !Compatibility.valid_runners(["ubuntu-24.04", "ubuntu-24.04"])
-expect Compatibility.archive("root", listing) == Ok({})
+expect Compatibility.archive("root", listing) == Ok(["root/spec.json"])
 expect Compatibility.archive("root", listing.replace_each("root/spec.json", "root/../spec.json")).is_err()
 expect Compatibility.archive("root", listing.replace_each("-rw-r--r--", "lrwxrwxrwx")).is_err()
 expect Compatibility.archive("root", listing.replace_each(" b- ", " BX ")).is_err()
@@ -188,3 +208,11 @@ expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "setu
 expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "incompatible", failed: 1 }]).report == "failure"
 expect Compatibility.aggregate(selection, "10", "1", [{ ..result, asset_digest: "changed" }]).report == "none"
 expect Compatibility.aggregate(selection, "10", "1", [result, result]).report == "none"
+
+expect Compatibility.valid_environment([{ name: "DISPLAY", value: ":99" }])
+expect !Compatibility.valid_environment([{ name: "GH_TOKEN", value: "secret" }])
+expect !Compatibility.valid_environment([{ name: "PATH", value: "/tmp" }])
+expect !Compatibility.valid_environment([{ name: "DISPLAY", value: ":99" }, { name: "DISPLAY", value: ":98" }])
+expect !Compatibility.app_source("app [main!] { roc : \"old\", pf: platform \"url\" }", ["url"])
+expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "test-timeout" }]) == { outcome: "test-timeout", report: "none" }
+expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "output-limit" }]) == { outcome: "output-limit", report: "none" }

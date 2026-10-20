@@ -5,6 +5,16 @@ removes repeated values from every workflow, adds two shared actions for steps
 that each repository had written differently, and says what the model asks of
 the simplest kind of repository.
 
+== Verified Blueprint executable cache
+
+`actions/setup-blueprint` caches its executable by default using the exact
+release, system and reviewed SHA-256. It restores before installation, verifies
+every hit and avoids release requests when those bytes are usable. Corrupt
+regular bytes are refetched and checked; symlink/nonregular entries fail closed.
+The new `binary-cache-hit` output describes verified reuse; `cache-binary: false`
+opts out. Existing `cache` and `cache-hit` still refer only to the separate
+Blueprint artifact store. Pins and reviewed digests remain maintainer changes.
+
 == Shared published-release compatibility runner
 
 `actions/release-compatibility` and the `release-compatibility` utility define a
@@ -22,14 +32,17 @@ does not update pins, open upgrade pull requests or merge downstream changes.
 
 == Downstream status in the README
 
-The README again lists scheduled downstream CI results, alongside the exact
+The README lists the scheduled shared published-release compatibility verdict,
+its follow-up action, and the exact
 roc-automation revisions those repositories reference. The Documentation workflow
 refreshes a read-only inventory daily and publishes dated badge endpoints and a
 full source-linked report with the manual. It adds no repository write permission
 and makes no downstream changes. A version is latest only when every direct
 reference equals the observed upstream `main` commit; mixed revisions, unpinned
-references and unreadable evidence remain visible. CI outcomes and the version
-inventory do not establish successful validation or security compliance.
+references and unreadable evidence remain visible. An updater's green outcome
+does not count as compatibility evidence. Compatibility passes expire after
+48 hours; adoption, infrastructure and upgrade actions remain explicit. Neither
+column is a security-compliance claim.
 
 == `actions/setup-blueprint` needs no inputs
 

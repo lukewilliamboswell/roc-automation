@@ -85,6 +85,10 @@ package when the repository publishes several. It contains:
 * the expected-output specification those examples were tested with; and
 * a short README naming the release, the bundle URL and how to run an example.
 
+Publish the versioned `spec.json` and ZIP layout in
+xref:nightly-compatibility.adoc#publish-the-suite-contract[Publish the suite contract]
+so that the same immutable archive is executable by the central nightly runner.
+
 Nothing else in an example changes. The archived examples differ from the
 repository's at the tested commit only in the package dependency, and the check
 script verifies that.
