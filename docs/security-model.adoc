@@ -208,6 +208,17 @@ and `id-token: write`, runs only for the default branch, checks out nothing, and
 deploys the artifact the build job uploaded. A pull request can build the site
 and cannot deploy it.
 
+== Downstream status inventory
+
+The README's downstream version inventory is also built in the read-only
+Documentation job. `scripts/downstream_status.roc` makes only GET requests,
+reads immutable default-branch workflow and composite-action source as text,
+and emits JSON badge data and an escaped HTML report into the Pages artifact.
+It executes no downstream code. The daily schedule uses the same separate
+deployment job and permissions as other documentation builds. Publication does
+not commit to this repository or update a consumer. Unknown API evidence and
+incomplete trees never establish that a consumer is current.
+
 == Linker-input release publisher
 
 The pull-request linker-input publisher is a separate controller action for inert,

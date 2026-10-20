@@ -35,6 +35,8 @@ config = [
 	# Compare a repository's GitHub settings with the "Repository settings"
 	# chapter. Read-only; needs a `gh` login with administration access.
 	Task("check-settings", [Use("dev"), Run(["scripts/check_settings.roc", "--"])]),
+	# Read-only version inventory, published alongside the manual.
+	Task("downstream-status", [Use("dev"), Run(["scripts/downstream_status.roc", "--"])]),
 	# The two shared actions that are Roc scripts. Each action runs its task
 	# from its own checkout of this repository, with its inputs in the
 	# environment, and Blueprint.lock fixes everything the task starts.

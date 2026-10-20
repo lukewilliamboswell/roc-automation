@@ -5,6 +5,17 @@ removes repeated values from every workflow, adds two shared actions for steps
 that each repository had written differently, and says what the model asks of
 the simplest kind of repository.
 
+== Downstream status in the README
+
+The README again lists scheduled downstream CI results, alongside the exact
+roc-automation revisions those repositories reference. The Documentation workflow
+refreshes a read-only inventory daily and publishes dated badge endpoints and a
+full source-linked report with the manual. It adds no repository write permission
+and makes no downstream changes. A version is latest only when every direct
+reference equals the observed upstream `main` commit; mixed revisions, unpinned
+references and unreadable evidence remain visible. CI outcomes and the version
+inventory do not establish successful validation or security compliance.
+
 == `actions/setup-blueprint` needs no inputs
 
 The action reads the roc-blueprint release from the platform URL in the
