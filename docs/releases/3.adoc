@@ -57,10 +57,8 @@ Repositories generate and validate sidecars in read-only release builds and PR
 dry runs, distribute them with signature evidence, retain them downstream and
 use them for advisory impact analysis. The manual separates component records
 from lockfiles, dependency submissions, checksums and provenance, and describes
-immutable corrections. These are repository implementation requirements; the
-shared publisher does not generate or validate an SBOM. The version-1
-linker-input publisher needs a reviewed contract extension before accepting
-subject-bound sidecar assets.
+immutable corrections. Generation and validation belong to the read-only build;
+publication verifies and transfers the resulting files as inert bytes.
 
 == Fast PR checks and separate campaigns
 

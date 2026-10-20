@@ -6,9 +6,9 @@ Generate it from the resolved build and the delivered files, and distribute it
 with the release. Include first-party, open-source and proprietary components;
 a private component is still a component.
 
-This chapter defines the release practice repositories should implement. The
-shared publisher transfers and verifies supplied files; it does not discover
-components, generate an SBOM, validate its schema or establish its completeness.
+The read-only build task discovers components, generates the SBOM and validates
+its schema and coverage. The shared publisher transfers and verifies the
+supplied files as inert bytes.
 A checksum file, Blueprint lock or GitHub dependency submission alone does not
 meet this contract.
 

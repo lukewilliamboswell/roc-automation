@@ -64,15 +64,12 @@ This manifest and its generated lock describe source, target and artifact
 identities; they are not an SBOM of the native components in those archives.
 The release SBOM practice is defined in
 xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[Publish and consume software bills of materials].
-The current version-1 publisher accepts only the declared manifest and target
-archives, not arbitrary SBOM sidecars. Do not add undeclared files or bypass its
-inventory checks. Supporting sidecars here requires a reviewed manifest and
-publisher extension that binds each SBOM to its target digest and validates,
-attests and publishes the complete inert file set. Until then, an SBOM can
-describe the internal components within the declared archive, but binding it
-to the final archive digest requires separately distributed, authenticated
-metadata at an immutable location. Do not claim the controller supplies that
-generation, validation or distribution.
+Bind each target's SBOM to the final archive digest and distribute it at an
+authenticated immutable location. Generate and validate the inventory in the
+read-only producer. The publication contract must explicitly declare every
+sidecar, its subject and its digest, and verify and attest the complete inert
+file set. Undeclared files fail admission; SBOM distribution must preserve the
+same inventory and trust boundaries as the native archives.
 
 The producer must have no release, repository-write, or pull-request-write
 permission. Generate GitHub build-provenance attestations for the manifest and
