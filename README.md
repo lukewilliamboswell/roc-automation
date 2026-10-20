@@ -27,7 +27,8 @@ for how to use them. Pure Roc packages can start with the complete
 
 ## Downstream status
 
-Scheduled checks for the downstream repositories previously listed here.
+Scheduled checks and automation versions for the supported downstream
+repositories we maintain.
 Click a CI badge for its runs, or a version badge for full SHAs and source links.
 
 | Repository | Scheduled CI | roc-automation version / upgrade |
