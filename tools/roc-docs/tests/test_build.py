@@ -57,6 +57,125 @@ class RepositoryTests(unittest.TestCase):
         return output
     def unchanged(self, output):
         self.assertEqual({str(p.relative_to(output)):p.read_bytes() for p in output.rglob('*') if p.is_file()}, {'keep':b'previous publication'})
+    def test_literal_attribute_code_is_preserved_in_html_pdf_preparation_and_markdown(self):
+        self.source('index.adoc', '= Guide\n\nLiteral `+{docs-version}+`; expanded `{docs-version}`.\n')
+        self.run_build('--markdown', 'true', '--docs-version', '7')
+        site = self.root/'.docs-out/site'
+        self.assertIn('<code>{docs-version}</code>', (site/'index.html').read_text())
+        self.assertIn('<code>7</code>', (site/'index.html').read_text())
+        self.assertIn('` {docs-version} `', (site/'index.md').read_text())
+        self.assertIn('` 7 `', (site/'index.md').read_text())
+        self.run_build('--docs-version', '7', command='prepare')
+        self.assertIn('Literal `{docs-version}`; expanded `7`.', (self.root/'.docs-prepared/manual.md').read_text())
+
+    def test_static_markdown_publication_preserves_content_and_rewrites_only_links(self):
+        code = 'main! = || {\n\techo!("usage.html#start café <&>")  \n}\n'
+        self.source('index.adoc', '= Test manual\n:doctype: book\n\ninclude::usage.adoc[leveloffset=+1]\n')
+        self.source('usage.adoc', '= Usage\n\n[#start]\n== Start\n\nxref:usage.adoc#start[Start] xref:extra.adoc#details[Extra] link:https://example.com/usage.html[External] link:downloads/reference.pdf[PDF]\n\nLiteral `usage.html#start`.\n\n[source,roc]\n----\n' + code + '----\n\n[cols="1,2",options="header"]\n|===\n|Key |Value\n|One |Two\n|===\n\nNOTE: Keep this warning.\n\nimage::pixel.png[Pixel]\n')
+        self.source('extra.adoc', '= Extra\n\n[#details]\n== Details\n\nWebsite only.\n')
+        (self.docs/'pixel.png').write_bytes(png_bytes())
+        self.run_build('--markdown', 'true', '--docs-version', '7', '--site-url', 'https://example.com/project/')
+        site = self.root/'.docs-out/site'
+        markdown = (site/'usage.md').read_text()
+        self.assertIn('Documentation version: 7', markdown)
+        self.assertIn('[HTML page](https://example.com/project/usage.html)', markdown)
+        self.assertIn('[Start](#start)', markdown)
+        self.assertIn('[Extra](extra.md#details)', markdown)
+        self.assertIn('[External](https://example.com/usage.html)', markdown)
+        self.assertIn('[PDF](downloads/reference.pdf)', markdown)
+        self.assertIn('usage.html#start café <&>', markdown)
+        self.assertIn(code, markdown)
+        self.assertIn('<a id="start"></a>', markdown)
+        self.assertIn('## Start', markdown)
+        self.assertNotIn('{#start}', markdown)
+        self.assertIn('| Key | Value |', markdown)
+        self.assertIn('| One | Two |', markdown)
+        self.assertIn('Keep this warning.', markdown)
+        self.assertIn('![Pixel](pixel.png)', markdown)
+        html = (site/'usage.html').read_text()
+        self.assertIn('<link rel="alternate" type="text/markdown" href="usage.md">', html)
+        self.assertIn('<a href="usage.md">View Markdown</a>', html)
+        self.assertIn('[Usage](https://example.com/project/usage.md)', (site/'llms.txt').read_text())
+        self.assertEqual((site/'pixel.png').read_bytes(), png_bytes())
+
+    def test_markdown_export_uses_unique_anchors_and_preserves_inline_code_cells(self):
+        self.source('index.md', '# Guide\n\n## Same\n\nFirst.\n\n## Same\n\n[Second](#same-2)\n\nAll spaces: `   `.\n\n| Code | Value |\n| --- | --- |\n| `a\\|b` | `   ` |\n')
+        self.run_build('--entrypoint', 'index.md', '--markdown', 'true')
+        site = self.root/'.docs-out/site'
+        markdown = (site/'index.md').read_text()
+        self.assertEqual(markdown.count('<a id="same"></a>'), 1)
+        self.assertEqual(markdown.count('<a id="same-2"></a>'), 1)
+        self.assertIn('[Second](#same-2)', markdown)
+        self.assertIn('All spaces: `   `.', markdown)
+        self.assertIn('` a\\|b `', markdown)
+        self.assertIn('| ` a\\|b ` | `   ` |', markdown)
+
+    def test_markdown_export_chooses_valid_fence_for_backtick_info_and_grows_it(self):
+        self.source('index.md', '# Fence\n\n~~~~ ~lang`info\nvalue = 1\n~~~\n~~~~\n')
+        self.run_build('--entrypoint', 'index.md', '--markdown', 'true')
+        markdown = (self.root/'.docs-out/site/index.md').read_text()
+        self.assertIn('~~~~ ~lang`info\nvalue = 1\n~~~\n~~~~\n', markdown)
+        self.assertNotIn('```lang`info', markdown)
+
+    def test_static_markdown_is_optional_and_invalid_option_does_not_replace_output(self):
+        self.source('index.md', '# Home\n')
+        self.run_build('--entrypoint', 'index.md')
+        site = self.root/'.docs-out/site'
+        self.assertFalse((site/'index.md').exists())
+        self.assertFalse((site/'llms.txt').exists())
+        self.assertNotIn('View Markdown', (site/'index.html').read_text())
+        before = (site/'index.html').read_bytes()
+        self.run_build('--entrypoint', 'index.md', '--markdown', 'yes', success=False)
+        self.assertEqual((site/'index.html').read_bytes(), before)
+        self.run_build('--entrypoint', 'index.md', '--markdown', 'true')
+        self.assertTrue((site/'index.md').is_file())
+        self.assertTrue((site/'llms.txt').is_file())
+        self.run_build('--entrypoint', 'index.md', '--markdown', 'false')
+        self.assertFalse((site/'index.md').exists())
+        self.assertFalse((site/'llms.txt').exists())
+        self.assertNotIn('View Markdown', (site/'index.html').read_text())
+
+    def test_markdown_entrypoint_alias_and_escaped_unicode_index_labels(self):
+        self.source('guide.md', '# Café [Guide]\n\n```text\n[Other](other.html#details)\n```\n')
+        self.source('other.md', '# Other\n\n## Details\n\n[Guide](guide.html) [Home](index.html)\n')
+        self.run_build('--entrypoint', 'guide.md', '--markdown', 'true')
+        site = self.root/'.docs-out/site'
+        self.assertEqual((site/'index.md').read_bytes(), (site/'guide.md').read_bytes())
+        self.assertIn('href="index.md">View Markdown', (site/'index.html').read_text())
+        self.assertIn('<link rel="alternate" type="text/markdown" href="index.md">', (site/'index.html').read_text())
+        self.assertIn('[Guide](guide.md)', (site/'other.md').read_text())
+        self.assertIn('[Home](index.md)', (site/'other.md').read_text())
+        self.assertIn('[Other](other.html#details)\n```', (site/'guide.md').read_text())
+        self.assertIn('[Café \\[Guide\\]](guide.md)', (site/'llms.txt').read_text())
+        self.assertIn('<a id="details"></a>', (site/'other.md').read_text())
+
+    def test_markdown_destinations_support_spaces_parentheses_unicode_and_query(self):
+        self.source('index.md', '# Guide\n')
+        self.source('links.md', '# Links\n\n[Other](<other guide (é).html?mode=plain#details>)\n\n![Pixel](<pixel space (é).png>)\n')
+        self.source('other guide (é).md', '# Other\n\n## Details\n')
+        (self.docs/'pixel space (é).png').write_bytes(png_bytes())
+        self.run_build('--entrypoint', 'index.md', '--markdown', 'true')
+        site = self.root/'.docs-out/site'
+        markdown = (site/'links.md').read_text()
+        self.assertIn('[Other](other%20guide%20%28é%29.md?mode=plain#details)', markdown)
+        self.assertIn('![Pixel](pixel%20space%20%28é%29.png)', markdown)
+        self.assertTrue((site/'pixel space (é).png').exists())
+        self.assertIn('[Other](other%20guide%20%28é%29.md)', (site/'llms.txt').read_text())
+        self.assertIn('[HTML page](other%20guide%20%28é%29.html)', (site/'other guide (é).md').read_text())
+
+    def test_markdown_publication_collisions_preserve_previous_output(self):
+        self.source('guide.adoc', '= Guide\n')
+        output = self.prior()
+        for name in ['llms.txt', 'guide.md', 'index.md', 'guide.md/file.txt', 'index.md/file.txt']:
+            with self.subTest(name=name):
+                target = self.source(name, 'collision')
+                try:
+                    self.run_build('--entrypoint', 'guide.adoc', '--markdown', 'true', success=False)
+                    self.unchanged(output)
+                finally:
+                    target.unlink()
+                    if target.parent != self.docs: target.parent.rmdir()
+
     def test_roc_ray_tagged_listing_preserves_checked_source(self):
         fixture = Path(__file__).parent/'fixtures/compatibility/roc-ray-step1.roc.txt'
         original = fixture.read_text()
@@ -205,11 +324,12 @@ class RepositoryTests(unittest.TestCase):
         entry={'source_sha256':hashlib.sha256(body.encode()).hexdigest(),'href':'images/diagram.png','png':'diagram.png','png_sha256':hashlib.sha256(png_bytes()).hexdigest(),'svg':'diagram.svg','svg_sha256':hashlib.sha256(svg).hexdigest()}
         registry={'schema_version':2,'diagrams':[entry]}
         (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
-        self.run_build(); site=self.root/'.docs-out/site'; html=(site/'index.html').read_text()
+        self.run_build("--markdown", "true"); site=self.root/'.docs-out/site'; html=(site/'index.html').read_text()
         self.assertIn('<picture><source type="image/svg+xml" srcset="images/diagram.svg">',html)
         self.assertEqual((site/'images/diagram.svg').read_bytes(),svg)
         self.assertEqual((site/'images/diagram.png').read_bytes(),png_bytes())
         self.assertIn('<figcaption>Figure 1. A useful diagram</figcaption>',html)
+        self.assertIn('![A useful diagram](images/diagram.png)', (site/'index.md').read_text())
         for attack in [b'<svg onload="alert(1)"/>',b'<svg><script>alert(1)</script></svg>',b'<svg><style>p{background:image-set("remote.png")}</style></svg>']:
             attack = attack.replace(b'<svg', b'<svg xmlns="http://www.w3.org/2000/svg"', 1)
             (self.docs/'diagram.svg').write_bytes(attack); entry['svg_sha256']=hashlib.sha256(attack).hexdigest()

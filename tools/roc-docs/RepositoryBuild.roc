@@ -5,6 +5,7 @@ import cli.OsStr
 import cli.Stdout
 import BuildOptions
 import BuildFiles
+import MarkdownExport
 import Preparation
 import SourceIncludes
 import Renderer
@@ -221,6 +222,11 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 	site = Path.join(stage, "site")
 	Path.create_dir!(site).map_err(|e| Str.inspect(e))?
 	var $routes = []
+	entry_html = "${Str.join_with(options.entrypoint.split_on(".").drop_last(1), ".")}.html"
+	markdown_routes = if (options.markdown) prepared.pages.map(|p| MarkdownExport.route(p.route)).concat(["index.md", "llms.txt"]) else []
+	if options.markdown and options.entrypoint.ends_with(".adoc") and files.any(|f| markdown_routes.contains(f.path)) {
+		return Err("source file conflicts with Markdown publication output")
+	}
 	for file in WebAssets.list {
 		BuildFiles.write_bytes!(site, file.path, file.bytes)?
 	}
@@ -233,14 +239,32 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 			MarkdownSource => Renderer.render(page.source, metadata, assets.map(|a| a.rendered), HtmlOnly).map_ok(|r| r.html).map_err(|e| Str.inspect(e))?
 			Prepared(presentation) => Html.document(presentation.body, Markdown.parse_str(page.source), metadata, presentation.numbered, presentation.toc_depth, presentation.remark)
 		}
-		BuildFiles.write_text!(site, page.route, Html.vector_images(html, assets.map(|a| { href: a.href, svg_href: a.svg_href })))?
+		vector_html = Html.vector_images(html, assets.map(|a| { href: a.href, svg_href: a.svg_href }))
+		BuildFiles.write_text!(site, page.route, if (options.markdown) MarkdownExport.discover(vector_html, MarkdownExport.route(page.route)) else vector_html)?
+		if options.markdown {
+			if page.route == entry_html and !prepared.pages.any(|p| p.route == "index.html") {
+				BuildFiles.write_text!(site, "index.html", MarkdownExport.discover(vector_html, "index.md"))?
+			}
+			markdown = MarkdownExport.page(page.source, prepared.pages.map(|p| p.route).concat(["index.html"]), metadata.version, MarkdownExport.url(options.site_url, page.route))?
+			BuildFiles.write_text!(site, MarkdownExport.route(page.route), markdown)?
+		}
 	}
-	if !$routes.contains("index.html") {
+	if !$routes.contains("index.html") and !options.markdown {
 		entry_route = "${Str.join_with(options.entrypoint.split_on(".").drop_last(1), ".")}.html"
 		entry = BuildFiles.inside!(site, entry_route)?
 		BuildFiles.copy!(entry, Path.join(site, "index.html"))?
 	}
+	if options.markdown {
+		if !$routes.contains("index.html") {
+			entry_route = "${Str.join_with(options.entrypoint.split_on(".").drop_last(1), ".")}.md"
+			BuildFiles.copy!(BuildFiles.inside!(site, entry_route)?, Path.join(site, "index.md"))?
+		}
+		BuildFiles.write_text!(site, "llms.txt", MarkdownExport.index(metadata.title, metadata.version, prepared.pages.map(|p| { route: p.route, title: MarkdownExport.title(p.source) }), options.site_url))?
+	}
 	for asset in assets {
+		if markdown_routes.contains(asset.href) or markdown_routes.contains(asset.svg_href) {
+			return Err("image asset conflicts with Markdown publication output")
+		}
 		if WebAssets.list.any(|f| f.path == asset.href or f.path == asset.svg_href) or $routes.contains(asset.href) or asset.href == "index.html" or asset.href == metadata.pdf_filename or (options.api_entrypoint != "" and (asset.href == "api" or asset.href.starts_with("api/"))) {
 			return Err("image asset conflicts with publication output")
 		}

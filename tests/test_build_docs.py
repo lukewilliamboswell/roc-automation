@@ -42,7 +42,7 @@ class NativeActionShellTests(unittest.TestCase):
             "--pdf-filename", "manual.pdf", "--docs-version", "v1",
             "--pdf-image-dpi", "144", "--title", "Title $(touch sentinel)",
             "--author", "Author", "--language", "en", "--api-entrypoint", "",
-            "--roc-command", "roc", "--site-url", "https://example.com/manual/",
+            "--roc-command", "roc", "--site-url", "https://example.com/manual/", "--markdown", "true",
         ]
         result = self.invoke(*arguments)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -50,6 +50,11 @@ class NativeActionShellTests(unittest.TestCase):
         self.assertEqual(self.outputs.read_text(),
                          "site-directory=/absolute/site\npdf-path=/absolute/manual.pdf\n")
         self.assertNotIn("python", result.stderr.lower())
+
+    def test_disabled_markdown_uses_existing_binary_interface(self):
+        result = self.invoke("--markdown", "false")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded(), ["build"])
 
     def test_explicit_renderer_wins_over_environment_and_path(self):
         result = self.invoke("--renderer-binary", str(self.binary), ROC_DOCS_BINARY="missing")
@@ -73,7 +78,8 @@ class NativeActionShellTests(unittest.TestCase):
     def test_invalid_options_and_missing_values_do_not_execute_engine(self):
         for arguments in (("--backend", "legacy"), ("--backend", "roc"),
                           ("--theme-directory", "theme"), ("--renderer-binary",),
-                          ("--workspace",), ("--unexpected", "x")):
+                          ("--workspace",), ("--unexpected", "x"), ("--markdown",),
+                          ("--markdown", "yes"), ("--markdown", "true", "--markdown", "false")):
             with self.subTest(arguments=arguments):
                 result = self.invoke(*arguments)
                 self.assertEqual(result.returncode, 2)
@@ -113,10 +119,12 @@ class NativeActionIntegrationTests(unittest.TestCase):
     def test_native_asciidoc_action_outputs_and_rejection_preserve_publication(self):
         (self.docs / "index.adoc").write_text("= Project\n\ninclude::usage.adoc[leveloffset=+1]\n")
         (self.docs / "usage.adoc").write_text("= Usage\n\nVersion {docs-version}.\n\n[source,roc]\n----\napp [main!] {}\n----\n")
-        self.invoke("index.adoc")
+        self.invoke("index.adoc", "--markdown", "true")
         site = self.root / ".docs-out/site"
         pdf = self.root / ".docs-out/project.pdf"
         self.assertIn("Version 42", (site / "usage.html").read_text())
+        self.assertIn("Version 42", (site / "usage.md").read_text())
+        self.assertIn("usage.md", (site / "llms.txt").read_text())
         self.assertIn("syntax-keyword", (site / "usage.html").read_text())
         self.assertTrue(pdf.read_bytes().startswith(b"%PDF-2.0"))
         self.assertEqual(pdf.read_bytes(), (site / "project.pdf").read_bytes())
@@ -130,7 +138,7 @@ class NativeActionIntegrationTests(unittest.TestCase):
 
     def test_native_markdown_and_explicit_failed_api_preserve_publication(self):
         (self.docs / "index.md").write_text("# Project\n\n```roc\napp [main!] {}\n```\n")
-        self.invoke("index.md")
+        self.invoke("index.md", "--markdown", "false")
         before = self.snapshot()
         previous_outputs = self.outputs.read_text()
         (self.root / "main.roc").write_text("placeholder")

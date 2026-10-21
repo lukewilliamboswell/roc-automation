@@ -66,6 +66,91 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Missing HTML image'):
             verify.check(self.prepared,self.site)
 
+    def markdown_publication(self):
+        (self.site/'index.md').write_text('<a id="title"></a>\n# Title\n\n```roc\nx = 1\n```\n\n[Title](index.md#title)\n')
+        (self.site/'llms.txt').write_text('# Manual\n\n## Chapters\n- [Title](index.md)\n')
+        (self.site/'index.html').write_text('<link rel="alternate" type="text/markdown" href="index.md"><link rel="describedby" href="llms.txt">'+self.html+'<a href="index.md">View Markdown</a>')
+
+    def test_markdown_publication_parity_and_discovery(self):
+        self.markdown_publication()
+        self.assertEqual(verify.check(self.prepared,self.site,markdown=True)['markdown_pages'],1)
+
+    def test_markdown_damage_cannot_pass_html_only_evidence(self):
+        for before, after, error in [
+            ('x = 1', 'x = 2', 'Markdown source bytes'),
+            ('# Title', '# Other', 'Markdown heading'),
+            ('<a id="title"></a>', '<a id="wrong"></a>', 'Markdown explicit anchors'),
+            ('index.md#title', 'missing.md#title', 'Unresolved Markdown local link'),
+            ('index.md#title', 'index.md#wrong', 'Unresolved Markdown anchor'),
+            ('index.md#title', '../outside.md', 'Unresolved Markdown local link'),
+        ]:
+            with self.subTest(error=error):
+                self.markdown_publication()
+                path=self.site/'index.md'
+                path.write_text(path.read_text().replace(before,after))
+                with self.assertRaisesRegex(ValueError,error):
+                    verify.check(self.prepared,self.site,markdown=True)
+
+    def test_missing_markdown_discovery_or_index_is_rejected(self):
+        for name, source, error in [
+            ('index.html', self.html, 'Markdown discovery link'),
+            ('index.html', '<link rel="alternate" type="text/markdown" href="index.md">'+self.html+'<a href="index.md">View Markdown</a>', 'Markdown discovery link'),
+            ('llms.txt', '# Empty index\n', 'index omits chapters'),
+            ('llms.txt', '# Index\n- [Title](index.md)\n- [Missing](missing.md)\n', 'index names missing file'),
+        ]:
+            with self.subTest(name=name):
+                self.markdown_publication()
+                (self.site/name).write_text(source)
+                with self.assertRaisesRegex(ValueError,error):
+                    verify.check(self.prepared,self.site,markdown=True)
+
+    def test_markdown_literal_links_in_code_are_not_navigation(self):
+        self.markdown_publication()
+        path=self.site/'index.md'
+        path.write_text(path.read_text()+'\nUse `[example](absent.md)` or `` `[other](missing.md)` `` as literal text.\n')
+        path.write_text(path.read_text()+'\nAlso \\[example\\](absent.md) is escaped literal text.\n')
+        self.assertEqual(verify.check(self.prepared,self.site,markdown=True)['markdown_pages'],1)
+
+    def test_markdown_index_accepts_publication_base_path(self):
+        self.markdown_publication()
+        (self.site/'llms.txt').write_text('# Manual\n- [Title](https://example.com/project/index.md)\n')
+        self.assertEqual(verify.check(self.prepared,self.site,markdown=True)['markdown_pages'],1)
+
+    def test_markdown_prose_omission_is_rejected(self):
+        self.markdown_publication()
+        path=self.prepared/'index.md'
+        path.write_text(path.read_text()+'\nThe job must never expose credentials.\n')
+        published=self.site/'index.md'
+        published.write_text(published.read_text()+'\nThe job must expose credentials.\n')
+        with self.assertRaisesRegex(ValueError,'Markdown prose words omitted'):
+            verify.check(self.prepared,self.site,markdown=True)
+
+    def test_markdown_image_description_matches_admitted_html(self):
+        self.markdown_publication()
+        (self.site/'pixel.png').write_bytes(b'fixture')
+        expected=self.prepared/'index.md'
+        expected.write_text(expected.read_text()+'\n![Synthetic reference label](pixel.png)\n')
+        html=self.site/'index.html'
+        html.write_text(html.read_text()+'<img alt="Useful diagram description" src="pixel.png">')
+        published=self.site/'index.md'
+        original=published.read_text()
+        published.write_text(original+'\n![Useful diagram description](pixel.png)\n')
+        self.assertEqual(verify.check(self.prepared,self.site,markdown=True)['markdown_pages'],1)
+        published.write_text(original+'\n![](pixel.png)\n')
+        with self.assertRaisesRegex(ValueError,'Markdown image descriptions'):
+            verify.check(self.prepared,self.site,markdown=True)
+
+    def test_markdown_list_container_indent_is_not_part_of_source_bytes(self):
+        source='- Example\n\n  ```roc\n  x = 1\n      indented = 2\n  ```\n'
+        inventory=verify.markdown_inventory(source,nested_fences=True)
+        self.assertEqual(inventory['code_texts'],['x = 1\n    indented = 2\n'])
+        self.assertNotIn('x = 1',inventory['visible'])
+
+    def test_markdown_fence_info_does_not_invalidate_code_delimiters(self):
+        with self.assertRaisesRegex(ValueError,'Invalid Markdown backtick fence'):
+            verify.markdown_inventory('```lang`info\nx = 1\n```\n')
+        self.assertEqual(verify.markdown_inventory('~~~lang`info\nx = 1\n~~~\n')['code_texts'],['x = 1\n'])
+
 
 if __name__=='__main__':
     unittest.main()

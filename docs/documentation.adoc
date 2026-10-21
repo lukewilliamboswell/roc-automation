@@ -296,6 +296,40 @@ services and tools expect at the repository root, such as `README.md`,
 `CONTRIBUTING.md`, `SECURITY.md` and `LICENSE`, stay there and stay short; see
 xref:documentation.adoc#keep-the-readme-short[Keep the README short].
 
+[#publish-static-markdown]
+== Publish static Markdown for retrieval
+
+Enable `--markdown true` in `roc-docs build`, or `markdown: "true"` in
+`actions/build-docs`, when readers use agents or want searchable text downloads.
+Each rendered manual or chapter HTML page receives a static Markdown
+equivalent: `index.html` maps to `index.md`, and `testing.html` maps to `testing.md`. The site also contains
+`llms.txt`, a versioned chapter index following the
+https://llmstxt.org/[llms.txt discovery proposal]. HTML pages provide a visible
+"View Markdown" link, a `rel="alternate"` link with type `text/markdown`, and a
+`rel="describedby"` link to the index. All files deploy with the existing site
+artifact. Compiler-generated API pages remain separate HTML output; their URLs
+are preserved when linked from Markdown. GitHub Pages needs no content
+negotiation or server routing.
+
+Generate reader formats together. An agent can otherwise retrieve a stale
+export, lose a warning during conversion, or follow a chapter link into an
+unrelated version. The exporter uses the same admitted HTML-backend page tree,
+includes the documentation version and HTML page link, rewrites chapter targets
+to their Markdown equivalents, preserves canonical anchors and retains code,
+tables, image descriptions and supported callouts. Unsupported nodes or output
+collisions stop publication and leave the previous output intact. Set
+`site-url` when absolute index and HTML page URLs are needed; relative chapter
+and asset links keep a project site under its publication directory.
+
+Verify exported content and links as part of the publication build, including
+exact source blocks, heading anchors, tables, image targets, chapter coverage
+and HTML discovery links. The independent verifier accepts `--markdown` to
+check these outputs against the prepared source inventory. Our manual enables
+this format in its documentation workflow. The export adapts presentation to
+Markdown and does not preserve HTML styling or PDF pagination. `llms.txt`
+helps readers find individual chapters; discovery behavior depends on the
+client, and publication does not establish the accuracy of an agent's answer.
+
 == Keep claims testable
 
 Documentation is evidence of a declared process, not proof that the process is
@@ -322,7 +356,7 @@ interface changes.
 Before merging documentation:
 
 * verify links, commands, examples, and expected results;
-* build every published format, including HTML, PDF, and generated API pages;
+* build every published format, including HTML, PDF, optional Markdown, and generated API pages;
 * inspect Mermaid diagrams and highlighted code in both HTML and PDF output;
 * check headings and links without relying on generated numbering;
 * confirm the navigation names describe reader goals or subjects;

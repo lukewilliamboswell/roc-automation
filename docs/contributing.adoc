@@ -16,11 +16,11 @@ The sources are the AsciiDoc files under `docs/`.
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
 lists the conventions they follow.
 
-Build the site and PDF locally with a precompiled renderer:
+Build the site, PDF and static Markdown locally with a precompiled renderer:
 
 [source,sh]
 ----
-/path/to/roc-docs build --workspace . --pdf-filename roc-automation.pdf --docs-version 3
+/path/to/roc-docs build --workspace . --pdf-filename roc-automation.pdf --docs-version 3 --markdown true
 ----
 
 The output is written to `.docs-out/`. The `Documentation` workflow runs the

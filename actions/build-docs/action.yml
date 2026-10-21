@@ -1,5 +1,5 @@
 name: Build documentation
-description: Build an HTML site and PDF with a precompiled Roc renderer, plus optional Roc API reference.
+description: Build an HTML site and PDF with a precompiled Roc renderer, plus optional static Markdown and Roc API reference.
 
 inputs:
   docs-directory:
@@ -29,8 +29,11 @@ inputs:
   renderer-binary:
     description: Path or executable name for a precompiled roc-docs binary; otherwise ROC_DOCS_BINARY or PATH is used
     default: ""
+  markdown:
+    description: Publish static chapter Markdown, HTML discovery links and llms.txt alongside HTML and PDF
+    default: "false"
   site-url:
-    description: HTTPS publication directory used for PDF links to website-only pages, API docs and downloads
+    description: HTTPS publication directory used for PDF links, Markdown HTML-source links and llms.txt chapter URLs
     default: ""
   title:
     description: Optional document title override
@@ -68,6 +71,7 @@ runs:
         DOCS_API_ENTRYPOINT: ${{ inputs.api-entrypoint }}
         DOCS_ROC_COMMAND: ${{ inputs.roc-command }}
         DOCS_RENDERER_BINARY: ${{ inputs.renderer-binary }}
+        DOCS_MARKDOWN: ${{ inputs.markdown }}
         DOCS_SITE_URL: ${{ inputs.site-url }}
         DOCS_TITLE: ${{ inputs.title }}
         DOCS_AUTHOR: ${{ inputs.author }}
@@ -85,6 +89,7 @@ runs:
         --roc-command "$DOCS_ROC_COMMAND"
         --renderer-binary "$DOCS_RENDERER_BINARY"
         --site-url "$DOCS_SITE_URL"
+        --markdown "$DOCS_MARKDOWN"
         --title "$DOCS_TITLE"
         --author "$DOCS_AUTHOR"
         --language "$DOCS_LANGUAGE"

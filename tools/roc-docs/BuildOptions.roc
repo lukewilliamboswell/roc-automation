@@ -1,8 +1,8 @@
 ## Native repository-publication options. All filesystem authority is explicit.
 BuildOptions :: [].{
-	Options : { mode : [Build, Prepare], workspace : Str, docs_directory : Str, entrypoint : Str, output_directory : Str, pdf_filename : Str, docs_version : Str, pdf_image_dpi : U64, title : Str, author : Str, language : Str, api_entrypoint : Str, roc_command : Str, site_url : Str }
+	Options : { mode : [Build, Prepare], markdown : Bool, workspace : Str, docs_directory : Str, entrypoint : Str, output_directory : Str, pdf_filename : Str, docs_version : Str, pdf_image_dpi : U64, title : Str, author : Str, language : Str, api_entrypoint : Str, roc_command : Str, site_url : Str }
 	usage : Str
-	usage = "roc-docs build|prepare --workspace DIRECTORY [--docs-directory docs] [--entrypoint index.adoc] [--output-directory .docs-out] [--pdf-filename manual.pdf] [--docs-version VERSION] [--pdf-image-dpi 72..300] [--title TITLE] [--author AUTHOR] [--language TAG] [--api-entrypoint FILE] [--roc-command EXECUTABLE] [--site-url HTTPS_URL]"
+	usage = "roc-docs build|prepare --workspace DIRECTORY [--docs-directory docs] [--entrypoint index.adoc] [--output-directory .docs-out] [--pdf-filename manual.pdf] [--docs-version VERSION] [--pdf-image-dpi 72..300] [--title TITLE] [--author AUTHOR] [--language TAG] [--api-entrypoint FILE] [--roc-command EXECUTABLE] [--site-url HTTPS_URL] [--markdown true|false]"
 
 	parse : List(Str) -> Try(Options, Str)
 	parse = |args| {
@@ -12,7 +12,7 @@ BuildOptions :: [].{
 			_ => return Err(usage)
 		}
 		initial : Options
-		initial = { mode, workspace: ".", docs_directory: "docs", entrypoint: "index.adoc", output_directory: if (mode == Prepare) ".docs-prepared" else ".docs-out", pdf_filename: "manual.pdf", docs_version: "unreleased", pdf_image_dpi: 144, title: "", author: "", language: "", api_entrypoint: "", roc_command: "roc", site_url: "" }
+		initial = { mode, markdown: False, workspace: ".", docs_directory: "docs", entrypoint: "index.adoc", output_directory: if (mode == Prepare) ".docs-prepared" else ".docs-out", pdf_filename: "manual.pdf", docs_version: "unreleased", pdf_image_dpi: 144, title: "", author: "", language: "", api_entrypoint: "", roc_command: "roc", site_url: "" }
 		var $options = initial
 		var $rest = remaining
 		var $seen = []
@@ -24,6 +24,14 @@ BuildOptions :: [].{
 					}
 					$seen = $seen.append(key)
 					$options = match key {
+						"--markdown" => {
+							..$options,
+							markdown: match value {
+								"true" => True
+								"false" => False
+								_ => return Err("markdown must be true or false")
+							},
+						}
 						"--workspace" => { ..$options, workspace: value }
 						"--docs-directory" => { ..$options, docs_directory: value }
 						"--entrypoint" => { ..$options, entrypoint: value }
@@ -78,6 +86,9 @@ BuildOptions :: [].{
 		}
 		if options.language != "" and !options.language.to_utf8().all(|b| (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or b == '-') {
 			return Err("language must be a language tag")
+		}
+		if options.mode == Prepare and options.markdown {
+			return Err("Markdown publication requires build")
 		}
 		if options.mode == Prepare and options.api_entrypoint != "" {
 			return Err("API generation requires build")

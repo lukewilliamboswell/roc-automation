@@ -260,3 +260,12 @@ images. Windows native prerequisites use `setup-command`. Blueprint 0.6.0 has a
 Windows binary; the shared setup action does not map Windows runners yet. Nix
 is not a Windows prerequisite backend, so these shared installer options remain
 disabled there.
+
+== Static Markdown documentation
+
+The shared documentation utility can publish static chapter Markdown and a
+versioned `llms.txt` index alongside HTML and PDF. HTML pages expose visible
+Markdown links and standard discovery relations; chapter references and anchors
+remain usable under project-site paths. The manual enables this option, with
+independent content and link verification before publication. Literal AsciiDoc
+inline code preserves attribute placeholders across all published formats.

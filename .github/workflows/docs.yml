@@ -30,11 +30,12 @@ jobs:
         uses: ./actions/build-roc-docs-tool
 
       - id: docs
-        name: Build the HTML site and PDF manual
+        name: Build HTML, PDF and Markdown documentation
         uses: ./actions/build-docs
         with:
           renderer-binary: ${{ steps.renderer.outputs.renderer-binary }}
           pdf-filename: roc-automation.pdf
+          markdown: "true"
           docs-version: ${{ github.event_name == 'pull_request' && format('3 (pull request {0})', github.event.number) || '3' }}
 
       - name: Install the independent PDF reader for upstream verification
@@ -57,7 +58,7 @@ jobs:
           DOCS_VERSION: ${{ github.event_name == 'pull_request' && format('3 (pull request {0})', github.event.number) || '3' }}
         run: |
           python3 tools/roc-docs/tests/reference_prepare_docs.py --workspace . --output-directory .docs-verification-prepared --pdf-filename roc-automation.pdf --docs-version "$DOCS_VERSION"
-          python3 tools/roc-docs/tests/verify_prepared.py --prepared .docs-verification-prepared --site "$SITE" --pdf "$PDF" --independent-reader
+          python3 tools/roc-docs/tests/verify_prepared.py --prepared .docs-verification-prepared --site "$SITE" --pdf "$PDF" --independent-reader --markdown
 
       - name: Check desktop and mobile HTML in a real browser
         env:

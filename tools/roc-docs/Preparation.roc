@@ -283,7 +283,7 @@ blocks = |input, state, depth| {
 					digest = Sha256.hex(body.to_utf8())
 					diagram = $state.options.diagrams.find_first(|d| d.source_sha256 == digest).map_err(|_| "unprepared/stale Mermaid diagram ${digest}")?
 					$state = { ..$state, images: $state.images.append(diagram.href) }
-					$text = "${$text}![Diagram](${diagram.href})\n\n"
+					$text = "${$text}![${escape_text(if (n.title == "") "Diagram" else n.title).replace_each("&", "\\&")}](${diagram.href})\n\n"
 				} else {
 					candidates = $state.raw.keep_if(|r| r.normalized == normalize_code(n.source))
 					values = unique(candidates.map(|r| r.source))
@@ -478,9 +478,10 @@ protect_code = |source, attrs| {
 			$text = "${$text}${entry.text}"
 		}
 		else {
-			var $value = if (entry.text.starts_with("+") and entry.text.ends_with("+")) entry.text.drop_prefix("+").drop_suffix("+") else entry.text
+			literal = entry.text.starts_with("+") and entry.text.ends_with("+")
+			var $value = if (literal) entry.text.drop_prefix("+").drop_suffix("+") else entry.text
 			for attr in AsciiDoc.materialize_attributes(attrs) {
-				if !attr.name.starts_with("\u(0)") and !$value.is_empty() {
+				if !literal and !attr.name.starts_with("\u(0)") and !$value.is_empty() {
 					pattern = "{${attr.name}}"
 					occurrences = $value.split_on(pattern).len() - 1
 					expanded = $value.to_utf8().len() + occurrences * attr.value.to_utf8().len()

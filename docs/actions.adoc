@@ -287,7 +287,8 @@ what the action needs of the runner.
 Renders a repository's AsciiDoc or Markdown sources as an HTML site and a PDF
 manual using a precompiled `roc-docs` binary. It provides a built-in theme,
 embedded fonts and Roc syntax highlighting. It can also place
-compiler-generated API documentation under `site/api`.
+compiler-generated API documentation under `site/api`, and publish static
+chapter Markdown with `llms.txt` discovery when `markdown: "true"` is set.
 
 Install a reviewed renderer binary for the runner's architecture before invoking
 the action. Pass its path explicitly, set `ROC_DOCS_BINARY`, or put `roc-docs`
@@ -321,7 +322,8 @@ using xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Bluep
 | `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
 | `api-entrypoint` | empty | Roc package or platform root for the generated API reference
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
-| `site-url` | empty | HTTPS publication directory for PDF links to website-only pages, API docs and downloads
+| `markdown` | `false` | Publish chapter `.md` files, HTML discovery links and `llms.txt`
+| `site-url` | empty | HTTPS publication directory for PDF links, Markdown source links and absolute `llms.txt` chapter URLs
 | `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
 | `title`, `author`, `language` | empty | Optional overrides for document metadata
 | `pdf-image-dpi` | `144` | PDF raster resolution limit, from 72 to 300; original website images are retained
@@ -331,7 +333,7 @@ Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
 The action needs only the renderer binary and the action runner's
 shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.3, decodes
-PNG assets and renders both formats in Roc. It needs no Python, Docker or Roc
+PNG assets and renders the publications in Roc. It needs no Python, Docker or Roc
 compiler. Generating the optional API reference requires an explicitly supplied
 Roc compiler. The same binary can build a repository locally with
 `roc-docs build --workspace .`.

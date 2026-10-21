@@ -52,7 +52,7 @@ content identity, provenance and product correctness are different evidence.
 | Schema/graph checks, wrong-subject fixtures and transitive/build-only queries. Consistent records do not prove discovery completeness or vulnerability exploitability.
 
 | Documentation or an assessment overstates the checks
-| Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
+| Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims], xref:documentation.adoc#publish-static-markdown[retrievable documentation formats] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
 | Executable examples, rendered-content/link checks and review of operational evidence. A valid publication does not prove every technical assertion.
 |===
 
