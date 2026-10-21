@@ -23,6 +23,18 @@ indexes those explanations without duplicating their rules. Contribution and
 agent instructions keep this pattern part of future changes; scoped research
 produces issues and proposals before new practices enter the model.
 
+== Compatibility evidence admission
+
+The runner records normal exits, signals and launch errors separately. Missing
+executables cannot satisfy expected exit codes, and interrupted processes cannot
+produce a compatibility pass. Application-header admission requires an actual
+declared release dependency, ignores comments, rejects compiler constraints and
+fails closed for unsupported syntax. Native regression fixtures exercise these
+failures through aggregation as well as preserving valid nonzero exit cases.
+The dashboard requires a canonical single-job caller, GitHub-resolved shared
+workflow identity and a complete job inventory bound to the same run attempt.
+Local jobs or shell text cannot impersonate the shared compatibility verdict.
+
 == Verified Blueprint executable cache
 
 `actions/setup-blueprint` caches its executable by default using the exact

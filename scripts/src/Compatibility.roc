@@ -1,4 +1,5 @@
 import GitHub
+import AppHeader
 
 ## Canonical published-release suite and result contract. This module has no
 ## effects: neither archive source nor diagnostic text can issue workflow commands.
@@ -96,10 +97,7 @@ Compatibility := [].{
 
 	## An example must name a declared release dependency in its header. The runner
 	## never substitutes the default-branch bundle or edits a compiler constraint.
-	app_source = |source, dependencies| match Str.split_first(source, "}") {
-		Ok({ before, .. }) => dependencies.any(|url| before.contains("\"${url}\"")) and !before.replace_each(" ", "").replace_each("\t", "").contains("roc:")
-		Err(_) => Bool.False
-	}
+	app_source = AppHeader.valid
 
 	## Preserve raw diagnostics as artifacts; escape command markers and control
 	## characters only in their console rendering. Success never discards output.

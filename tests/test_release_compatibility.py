@@ -116,10 +116,10 @@ else:
             target.write_text("#!" + sys.executable + "\n" + source)
             target.chmod(0o755)
 
-    def make_archive(self, extra=None):
+    def make_archive(self, extra=None, source=None):
         prefix = "pkg-examples-1.0.0/"
         files = {prefix + "spec.json": json.dumps(self.spec),
-                 prefix + "examples/main.roc": 'app [main!] { pf: platform "' + self.dependency + '" }\n'}
+                 prefix + "examples/main.roc": source if source is not None else 'app [main!] { pf: platform "' + self.dependency + '" }\n'}
         with zipfile.ZipFile(self.archive, "w") as archive:
             for name, content in files.items():
                 info = zipfile.ZipInfo(name)
@@ -141,7 +141,9 @@ else:
 
     def run_phase(self, phase, phase_timeout=20, **extra):
         directory = self.root / (phase + "-output")
-        directory.mkdir(exist_ok=True)
+        if directory.exists():
+            shutil.rmtree(directory)
+        directory.mkdir()
         outputs = self.root / (phase + "-outputs")
         outputs.write_text("")
         summary = self.root / "summary.md"
@@ -166,6 +168,89 @@ else:
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
         self.assertIn("warning: successful", ran.stdout)
+
+    def assert_no_success_report(self, directory):
+        artifacts = self.root / "artifacts"
+        target = artifacts / ("compatibility-" + self.env["RA_RUNNER"])
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copy(directory / "result.json", target / "result.json")
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertNotIn("report=success", outputs)
+
+    def test_missing_runtime_cannot_match_an_expected_exit_code(self):
+        self.spec["apps"][0]["run"] = [str(self.root / "missing-runtime"), "{executable}"]
+        self.case.update(exit_code=126, stdout="", stderr="command could not be started")
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertNotEqual(ran.returncode, 0)
+        result = json.loads((directory / "result.json").read_text())
+        self.assertEqual((result["outcome"], result["tested"], result["failed"]), ("setup-failed", 0, 0))
+        command = json.loads((directory / "4-command.json").read_text())
+        self.assertEqual(command["status"], "io-error")
+        self.assertTrue(command["error"])
+        self.assert_no_success_report(directory)
+
+    def test_missing_compiler_is_setup_failure_with_launch_diagnostics(self):
+        ran, directory, _ = self.run_phase("test", RA_COMPILER=str(self.root / "missing-compiler"))
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+        self.assertEqual(json.loads((directory / "1-command.json").read_text())["status"], "io-error")
+        self.assert_no_success_report(directory)
+
+    @unittest.skipIf(os.name == "nt", "POSIX executable permission admission")
+    def test_nonexecutable_runtime_is_setup_failure(self):
+        runtime = self.root / "nonexecutable-runtime"
+        runtime.write_text("unexecutable")
+        runtime.chmod(0o644)
+        self.spec["apps"][0]["run"] = [str(runtime), "{executable}"]
+        self.case.update(exit_code=126, stdout="", stderr="command could not be started")
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+        self.assertEqual(json.loads((directory / "4-command.json").read_text())["status"], "io-error")
+        self.assert_no_success_report(directory)
+
+    @unittest.skipIf(os.name == "nt", "Windows reports process termination as an exit code")
+    def test_signal_cannot_match_expected_exit_255(self):
+        self.case.update(exit_code=255, stdout="", stderr="")
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_SIGNAL="1")
+        self.assertNotEqual(ran.returncode, 0)
+        result = json.loads((directory / "result.json").read_text())
+        self.assertEqual((result["outcome"], result["tested"], result["failed"]), ("incompatible", 1, 1))
+        command = json.loads((directory / "4-command.json").read_text())
+        self.assertEqual((command["status"], command["signal"]), ("signaled", 15))
+        self.assert_no_success_report(directory)
+
+    def test_real_nonzero_exits_remain_valid_case_expectations(self):
+        for code in [126, 255]:
+            with self.subTest(code=code):
+                self.case["exit_code"] = code
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", FAKE_CASE_EXIT=str(code))
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                self.assertEqual(json.loads((directory / "4-command.json").read_text())["status"], "exited")
+
+    def test_comment_or_body_url_does_not_establish_release_dependency(self):
+        sources = [
+            'app [main!] { # "' + self.dependency + '"\n pf: platform "other" }',
+            'app [main!] { pf: platform "other" }\nurl = "' + self.dependency + '"',
+            'app [main!] { pf: platform "' + self.dependency + '", roc\n:\n"nightly-x" }',
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.make_archive(source=source)
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+                self.assert_no_success_report(directory)
 
     def test_output_mismatch_has_expected_and_actual_evidence(self):
         self.case["stdout"] = "different\n"

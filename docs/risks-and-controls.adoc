@@ -37,7 +37,7 @@ content identity, provenance and product correctness are different evidence.
 
 | Partial, stale or unrelated results appear successful
 | Complete evidence is required for a pass. See xref:nightly-compatibility.adoc#risk-compatibility-verdicts[compatibility verdicts], xref:adopting.adoc#risk-adoption-evidence[adoption] and xref:project-practices.adoc#risk-evidence-claims[evidence claims].
-| Missing-target, stale-attempt and failed-publication scenarios. A static snapshot keeps its last colour when its publisher stops.
+| Missing-target, stale-attempt, spoofed-origin, launch-error and failed-publication scenarios. A static snapshot keeps its last colour when its publisher stops.
 
 | A test hangs, hides diagnostics or substitutes smoke for deeper testing
 | Bound execution and preserve its meaning. See xref:testing.adoc#risk-test-evidence[test evidence] and xref:optional-workflows.adoc#risk-campaign-separation[campaign separation].

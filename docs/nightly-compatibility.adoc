@@ -19,7 +19,11 @@ passing target can hide another target's failure or missing result. Resolve the
 pair once and require complete matching evidence. The shared runner verifies
 asset identity, runs the immutable suite, and aggregates every declared target
 for the same run and attempt. Missing or interrupted evidence cannot close the
-compatibility issue. Regression fixtures cover these states and hosted tests
+compatibility issue. Launch errors remain setup failures rather than synthetic
+exit codes that a case could accept; signal termination cannot match an ordinary
+exit expectation. Header admission checks actual dependency fields, ignoring
+comments and rejecting compiler constraints or ambiguous syntax. Regression
+fixtures cover these states and hosted tests
 exercise native execution. The dashboard is a dated snapshot; a stopped publisher
 cannot update its colour. A pass covers the declared examples and targets only.
 
@@ -204,7 +208,10 @@ explicit even when their value is empty:
 URLs belonging to that repository and tag. Each application directly names at
 least one declared bundle in its header and has no compiler constraint: it must
 be able to meet a newer compiler without editing the archived source. The runner
-never changes an archived file, substitutes the working-tree bundle or runs a
+accepts canonical `app [entrypoints] { alias: platform "URL", package: "URL" }`
+headers, including whitespace and line comments. Dependency URLs in comments or
+application bodies do not count; duplicate fields, escaped header strings and
+unsupported header syntax fail admission. It never changes an archived file, substitutes the working-tree bundle or runs a
 formatter. An empty package cache starts each target's test.
 
 The suite contains 1–100 unique application paths under `examples/`, with
@@ -240,7 +247,8 @@ it was warning-free. The runner owns compiler execution instead of delegating
 it to a driver that might discard captured success output.
 
 Each target artifact, `compatibility-<runner>`, retains raw stdout and stderr,
-command arguments, working directory, exit status, interruption flags and
+command arguments, working directory, process status (normal exit, signal or
+I/O error), exit code, signal number, launch-error details, interruption flags and
 stdin, public environment, deadlines and expected output for failing cases.
 The ZIP inventory is retained too. Console rendering escapes workflow-command
 markers, carriage returns and terminal escapes; raw files preserve the original
@@ -280,7 +288,13 @@ repository code.
 
 The README's compatibility column reads the fixed verdict gate of the latest
 scheduled shared workflow, checks its immutable caller still uses the configured
-pin, and links to the run. Each snapshot marks passes older than 48 hours stale.
+pin, and links to the run. Verification requires the canonical single-job caller
+shown above: one literal job-level `uses`, optional `with` and `permissions`,
+and no local jobs, conditional or matrix on that call. Other caller shapes
+remain unverified. GitHub must record the exact resolved shared workflow path
+and SHA; every verdict job must belong to the same run, attempt and source SHA.
+Job and step display names alone cannot establish the origin of a verdict. Each
+snapshot marks passes older than 48 hours stale.
 This age check runs at publication time: if Documentation stops deploying,
 static badges retain their last colour. Check the snapshot date and investigate
 publication when it is over 48 hours old before relying on a green result. Development CI,

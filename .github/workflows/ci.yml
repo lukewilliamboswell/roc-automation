@@ -39,6 +39,14 @@ jobs:
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_compatibility.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_workflow.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_packaging.py -v
+      - name: Verify dashboard verdict origin using the native utility
+        if: runner.os != 'Windows'
+        env:
+          TOOLING_COMPILER: ${{ steps.build.outputs.directory }}/tooling/roc
+          ROC_DOWNSTREAM_STATUS_BINARY: ${{ runner.temp }}/downstream-status
+        run: |
+          "$TOOLING_COMPILER" build scripts/downstream_status.roc --output="$ROC_DOWNSTREAM_STATUS_BINARY"
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_downstream_status.py -v
       - name: Build and execute a real Windows example with the fixed baseline compiler
         if: runner.os == 'Windows'
         env:

@@ -5,6 +5,9 @@ import sys
 import time
 
 sys.stdout.reconfigure(newline="\n")
+if os.environ.get("FAKE_CASE_SIGNAL"):
+    import signal
+    os.kill(os.getpid(), signal.SIGTERM)
 print("hello", flush=True)
 if os.environ.get("FAKE_CHILD_MARKER"):
     subprocess.Popen([sys.executable, "-c",
@@ -15,3 +18,5 @@ if os.environ.get("FAKE_CASE_FLOOD"):
         os.write(sys.stdout.fileno(), b"x" * 65536)
 if os.environ.get("FAKE_CASE_SLEEP"):
     time.sleep(30)
+
+sys.exit(int(os.environ.get("FAKE_CASE_EXIT", "0")))

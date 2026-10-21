@@ -53,8 +53,13 @@ class CompatibilityPackagingTests(unittest.TestCase):
                                   str(artifact / "compatibility-tests/tests"), "-v"],
                                  cwd=artifact, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-            self.assertIn("Ran 29 tests", ran.stderr)
-            self.assertNotRegex(ran.stderr, r"\.\.\. skipped|\(skipped=")
+            self.assertIn("Ran 35 tests", ran.stderr)
+            if os.name == "nt":
+                self.assertIn("OK (skipped=2)", ran.stderr)
+                self.assertIn("POSIX executable permission admission", ran.stderr)
+                self.assertIn("Windows reports process termination as an exit code", ran.stderr)
+            else:
+                self.assertNotRegex(ran.stderr, r"\.\.\. skipped|\(skipped=")
             self.assertFalse((artifact / "actions").exists())
             self.assertFalse((artifact / "scripts").exists())
             self.assertFalse((artifact / ".github").exists())

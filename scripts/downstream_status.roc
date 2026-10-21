@@ -62,7 +62,7 @@ compatibility! = |snapshot, cutoff| {
 		Ok(value) => value
 		Err(reason) => return Ok({ ..fallback, message: reason, detail: "Adopt the pinned shared published-release nightly workflow. Pin updaters, development CI and weekly floating-input checks do not establish this compatibility result." })
 	}
-	runs_source = match get!("repos/${snapshot.repository}/actions/workflows/${ref.file.drop_prefix(".github/workflows/")}/runs?event=schedule&per_page=1", "application/vnd.github+json", "[.workflow_runs[] | {id, head_sha, head_branch, event, status, conclusion: (.conclusion // \"\"), updated_at}]")? {
+	runs_source = match get!("repos/${snapshot.repository}/actions/workflows/${ref.file.drop_prefix(".github/workflows/")}/runs?event=schedule&per_page=1", "application/vnd.github+json", "[.workflow_runs[] | {id, run_attempt, path, referenced_workflows: [(.referenced_workflows // [])[] | {path, sha}], head_sha, head_branch, event, status, conclusion: (.conclusion // \"\"), updated_at}]")? {
 		Ok(source) => source
 		Err(_) => return Ok(fallback)
 	}
@@ -84,7 +84,7 @@ compatibility! = |snapshot, cutoff| {
 		Ok(source) => source
 		Err(_) => return Ok(fallback)
 	}
-	jobs_source = match get!("repos/${snapshot.repository}/actions/runs/${ran.id.to_str()}/jobs?per_page=100", "application/vnd.github+json", "{total_count, jobs: [.jobs[] | {name, status, conclusion: (.conclusion // \"\"), steps: [(.steps // [])[] | {name, conclusion: (.conclusion // \"\")}]}]}")? {
+	jobs_source = match get!("repos/${snapshot.repository}/actions/runs/${ran.id.to_str()}/attempts/${ran.run_attempt.to_str()}/jobs?per_page=100", "application/vnd.github+json", "{total_count, jobs: [.jobs[] | {id, run_id, run_attempt, head_sha, name, status, conclusion: (.conclusion // \"\"), steps: [(.steps // [])[] | {name, conclusion: (.conclusion // \"\")}]}]}")? {
 		Ok(source) => source
 		Err(_) => return Ok(fallback)
 	}
