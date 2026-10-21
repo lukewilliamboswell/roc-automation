@@ -235,5 +235,7 @@ paths and executable suffixes, validates archives with the same standard-library
 helper on every OS, rejects Windows path aliases and case-insensitive environment
 overrides, and bounds complete child process trees. CI runs real compiler
 check/build/execute smoke tests and unhappy-path regressions on both Windows
-images. Windows native prerequisites use `setup-command`; the runner rejects
-Blueprint or Nix installation there because those installers are unavailable.
+images. Windows native prerequisites use `setup-command`. Blueprint 0.6.0 has a
+Windows binary; the shared setup action does not map Windows runners yet. Nix
+is not a Windows prerequisite backend, so these shared installer options remain
+disabled there.

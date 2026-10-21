@@ -74,7 +74,11 @@ jobs:
   test:
     name: Published examples (${{ matrix.runner }})
     needs: select
-    if: needs.select.outputs.ready == 'true'
+    if: >-
+      needs.select.outputs.ready == 'true' &&
+      github.ref_type == 'branch' &&
+      github.ref_name == github.event.repository.default_branch &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
@@ -85,8 +89,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
+          # The pinned checkout defaults to the caller's exact event SHA.
           persist-credentials: false
+      - name: Verify the event checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: nightly-selection

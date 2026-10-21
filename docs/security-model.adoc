@@ -249,7 +249,10 @@ collisions. It never imports archive code. Child deadlines manage Windows Job
 Objects or Unix process groups, and public environment overrides cannot replace
 reserved variables under any spelling of their case. Archived code and native
 prerequisite code run only in the read-only test job, with checkout credentials
-disabled and compiler/example child tokens cleared. Successful diagnostics are
+disabled and compiler/example child tokens cleared. That job independently
+requires schedule/manual dispatch on the actual default branch and verifies
+the checkout HEAD equals the event SHA before running consumer prerequisites.
+Successful diagnostics are
 preserved; console workflow-command markers are escaped rather than interpreted.
 
 Aggregation checks every declared target's identity, counts and run attempt as
