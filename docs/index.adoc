@@ -40,6 +40,9 @@ Adopting the model:: Follow <<adopt-the-model-in-a-repository>> and its
 acceptance list.
 Reviewing trust boundaries:: Read <<automation-trust-model>> and
 <<verify-released-artifacts>>.
+Understanding the choices:: <<scope-and-design-principles>> defines the scope;
+<<risk-and-control-reference>> maps concrete risks to their contextual guidance
+and verification.
 Publishing component inventories:: <<publish-and-consume-software-bills-of-materials>>
 defines release SBOM scope, generation, validation and downstream use.
 Writing a project manual:: <<write-project-documentation>> covers the
@@ -97,3 +100,5 @@ include::project-practices.adoc[leveloffset=+1]
 include::contributing.adoc[leveloffset=+1]
 
 include::releases.adoc[leveloffset=+1]
+
+include::risks-and-controls.adoc[leveloffset=+1]

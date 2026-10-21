@@ -1,0 +1,84 @@
+[#risk-and-control-reference]
+= Risk and control reference
+
+roc-automation covers shared tooling, workflow boundaries and evidence for
+building, testing and distributing Roc packages and platforms. Product-specific
+security design and project governance remain with maintainers. The
+xref:overview.adoc#scope-and-design-principles[scope and design principles]
+explain that boundary.
+
+This reference is an index to contextual explanations. The linked chapter owns
+the rationale, mechanism, verification and assumptions; this table does not add
+another set of requirements or report implementation/adoption status. A control
+may reduce a risk without eliminating it. Configuration, observed execution,
+content identity, provenance and product correctness are different evidence.
+
+== Find the relevant explanation
+
+[cols="2,3,3",options="header"]
+|===
+| Concrete risk | Principle and owner chapters | Verification and limits to inspect
+
+| Executed code crosses into publication authority
+| Separate execution from authority. See xref:security-model.adoc#risk-execution-authority[execution boundaries], xref:actions.adoc#risk-action-boundaries[Action wrappers] and xref:settings.adoc#risk-settings-enforcement[effective settings].
+| Wrong-event/source rejection, read-only jobs, inert handoffs and a real blocked PR. Read-only permission is not a same-job process sandbox.
+
+| Storage or an upgrade substitutes executable bytes
+| Admit identities explicitly; treat caches as storage. See xref:artifact-verification.adoc#risk-artifact-admission[artifact admission], xref:pure-package.adoc#risk-utility-provisioning[provisioning], xref:environment.adoc#risk-tooling-selection[tool selection] and xref:maintenance.adoc#risk-input-upgrades[upgrades].
+| Hash and cache-corruption tests, reviewed locks and cold/warm execution. Identifying bytes does not establish that upstream code is benign.
+
+| Tested source or assets differ from the delivered release
+| Preserve identity across the operation. See xref:workflows.adoc#risk-release-evidence[release evidence], xref:examples.adoc#risk-example-identity[example archives] and xref:linker-input-releases.adoc#risk-linker-publication[native-input publication].
+| Exact-source/run binding, archive tests, complete inventories, post-upload verification and recovery tests. Matching hashes alone do not prove a reproducible build.
+
+| Source roles or native targets are confused
+| Make the selected input and target explicit. See xref:repository.adoc#risk-source-boundaries[source boundaries] and xref:platforms.adoc#risk-native-targets[native targets].
+| Header/binding checks and actual link/run tests for every claimed target. Static declarations and cross-compilation do not establish native behavior or FFI safety.
+
+| Partial, stale or unrelated results appear successful
+| Complete evidence is required for a pass. See xref:nightly-compatibility.adoc#risk-compatibility-verdicts[compatibility verdicts], xref:adopting.adoc#risk-adoption-evidence[adoption] and xref:project-practices.adoc#risk-evidence-claims[evidence claims].
+| Missing-target, stale-attempt and failed-publication scenarios. A static snapshot keeps its last colour when its publisher stops.
+
+| A test hangs, hides diagnostics or substitutes smoke for deeper testing
+| Bound execution and preserve its meaning. See xref:testing.adoc#risk-test-evidence[test evidence] and xref:optional-workflows.adoc#risk-campaign-separation[campaign separation].
+| Success/failure streams, explicit skips, child cleanup, small smoke workloads and retained reproducers. Smoke results do not establish performance or sustained search coverage.
+
+| Utility copies, companions or interfaces drift
+| Share versioned contracts and complete runtimes. See xref:shared-utilities.adoc#risk-utility-contracts[utility contracts] and xref:policy.adoc#risk-policy-evidence[policy evidence].
+| Exact distributed-artifact tests, native execution, invalid configuration and companion/version checks. A clean policy result covers only the selected rules.
+
+| Composition records omit components or bind the wrong artifact
+| Bind claims to subjects and keep uncertainty explicit. See xref:software-bill-of-materials.adoc#risk-component-evidence[component evidence].
+| Schema/graph checks, wrong-subject fixtures and transitive/build-only queries. Consistent records do not prove discovery completeness or vulnerability exploitability.
+
+| Documentation or an assessment overstates the checks
+| Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
+| Executable examples, rendered-content/link checks and review of operational evidence. A valid publication does not prove every technical assertion.
+|===
+
+== Use research without turning it into a framework checklist
+
+Use primary sources to challenge the model's assumptions and investigate a
+specific scenario. For workflow authority and untrusted checkout, start with
+https://docs.github.com/en/actions/reference/security/secure-use[GitHub's secure-use guidance].
+For input, build and distribution tampering, the
+https://slsa.dev/spec/v1.2/threats-overview[SLSA supply-chain threat analysis]
+separates source integrity, build integrity and availability. The
+https://owasp.org/projects/top-10-cicd-security-risks[OWASP CI/CD risk research]
+adds practical scenarios involving dependency abuse, pipeline execution,
+credentials, artifact integrity and logging. The
+https://www.cyber.gov.au/publication/secure-by-design-foundations[ACSC Secure by Design foundations]
+support choosing defaults and continuing assurance over a product's lifecycle.
+
+These sources inform decisions; citing one does not establish conformance or
+justify an unrelated control. For reconstruction claims, use the
+https://reproducible-builds.org/docs/definition/[reproducible-build definition]
+and evidence of recreated bytes, rather than substituting release hashes or
+provenance. Runtime and advisory evidence retain their separate purposes.
+
+For further work, follow
+xref:contributing.adoc#investigate-before-expanding-the-model[the investigation process]:
+a scoped agent researches an actual failure scenario and produces an issue and
+proposal. Review the evidence and alternatives before changing the model. Put
+implementation gaps and unverified hypotheses in issues, and keep this index
+linked to the selected practice rather than an accumulating backlog.

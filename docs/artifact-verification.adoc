@@ -5,6 +5,18 @@ package, platform, native library, tool, or other binary input consumed by
 builds and tests. Record that hash in reviewed source, a lock file, or another
 version-controlled manifest together with the artifact URL and release identity.
 
+[#risk-artifact-admission]
+== Risks and controls for artifact admission
+
+A download or cache can substitute bytes, and retrieving a fresh attestation
+can accidentally become a fallback for a failed reviewed hash. Separate trust
+admission from storage verification. Review producer evidence when adopting an
+input, record its identity, and compare every subsequent download/cache hit
+locally before extraction or execution. Negative tests include mismatched hashes
+and unsafe archive entries. A valid hash identifies admitted bytes; it does not
+prove those bytes are benign. Network provenance services have an explicit
+admission/audit role rather than becoming an ordinary build dependency.
+
 == Separate admission from routine use
 
 An attestation answers who or which workflow produced an artifact and from which

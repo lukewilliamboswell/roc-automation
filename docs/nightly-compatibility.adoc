@@ -11,6 +11,18 @@ Compiler-pin changes belong to maintainers during downstream pull-request work.
 This nightly does not change pins, open upgrade pull requests, merge changes,
 publish releases or test unreleased development examples.
 
+[#risk-compatibility-verdicts]
+== Risks and controls for compatibility verdicts
+
+Independent moving lookups can test different release/compiler pairs, and one
+passing target can hide another target's failure or missing result. Resolve the
+pair once and require complete matching evidence. The shared runner verifies
+asset identity, runs the immutable suite, and aggregates every declared target
+for the same run and attempt. Missing or interrupted evidence cannot close the
+compatibility issue. Regression fixtures cover these states and hosted tests
+exercise native execution. The dashboard is a dated snapshot; a stopped publisher
+cannot update its colour. A pass covers the declared examples and targets only.
+
 == Configure the caller
 
 Keep one caller for the product release suite. A pure package uses one Linux

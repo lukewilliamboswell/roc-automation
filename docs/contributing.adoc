@@ -36,6 +36,47 @@ that does not yet follow it is recorded in a GitHub issue, not in the manual.
 Record a change in the release notes under `docs/releases/`, in the file for the
 version it will ship in. `docs/releases.adoc` includes each of those files.
 
+== Explain the risk and control where they apply
+
+For a change to automation behavior, a workflow boundary or an evidence claim,
+update the relevant chapter's risk-and-control narrative. State a concrete
+failure or attack scenario, the guiding principle, the mechanism that addresses
+it, the test or observation that verifies it, and the assumptions that remain.
+Name the affected source, compiler, artifact, target or authority when it matters.
+Explain a tradeoff in terms of that risk rather than a framework score.
+
+Use connected prose beside the operational guidance. Do not add a generic
+security checklist to every task or duplicate command reference material.
+Keep the explanation specific to the chapter. Update
+xref:risks-and-controls.adoc#risk-and-control-reference[the reference mapping]
+when a risk or control moves, gains another owner chapter or changes its
+verification. The reference links to the authoritative narrative instead of
+maintaining a second copy of its rules.
+
+Review failures as well as the happy path. Useful regressions demonstrate that
+wrong identities, stale or incomplete evidence, unsafe paths and interrupted
+execution cannot become a pass or privileged operation. A configuration check
+establishes configuration; runtime and operational claims need corresponding
+execution or observation. Describe intended practice without asserting that
+an unimplemented utility already provides it.
+
+== Investigate before expanding the model
+
+Further investigations use a scoped agent task whose outputs are a concrete
+proposal and a GitHub issue, creating or updating the appropriate issue rather
+than duplicating it. Give the agent a realistic scenario to investigate, the
+affected boundary, primary sources to consult, and existing behavior to inspect.
+Ask it to assess applicability, failure modes, cost, alternatives and residual
+assumptions, with proposed changes and acceptance evidence. Separate verified
+findings from hypotheses. Keep private vulnerability details in the private
+reporting channel.
+
+Maintainers review the result before turning it into normative guidance or
+implementation. Investigation findings and implementation gaps stay in issues;
+the manual records the chosen practice and rationale. Do not create framework
+requirements, governance policy or product-specific security promises as an
+incidental outcome of an automation investigation.
+
 == Change a shared action
 
 Read xref:security-model.adoc#the-three-workflows[the trust model] first. It is

@@ -14,6 +14,15 @@ renderer and reviewed lock. Guidance prefers named tasks invoking shared
 executables; local Roc scripts supply product-specific behavior. CI checks the
 starter workflow syntax alongside the existing executable adoption tests.
 
+== Scope and enduring risk explanations
+
+The manual defines its scope as shared tooling, workflow boundaries and
+evidence. Contextual narratives connect concrete risks to guiding principles,
+specific controls, verification and residual assumptions. A linked reference
+indexes those explanations without duplicating their rules. Contribution and
+agent instructions keep this pattern part of future changes; scoped research
+produces issues and proposals before new practices enter the model.
+
 == Verified Blueprint executable cache
 
 `actions/setup-blueprint` caches its executable by default using the exact

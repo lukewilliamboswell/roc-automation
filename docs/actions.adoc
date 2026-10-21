@@ -9,6 +9,18 @@ request. A shared change never reaches a repository silently.
 - uses: lukewilliamboswell/roc-automation/actions/<name>@REVIEWED_FULL_SHA
 ----
 
+[#risk-action-boundaries]
+== Risks and controls for Action boundaries
+
+A wrapper can evaluate candidate configuration with write credentials, or
+silently select different utility bytes from the ones tested upstream. Keep
+GitHub integration thin and authority explicit. Pin Action/workflow source to
+reviewed full SHAs, provision declared utilities and companions, and restrict
+repository tasks to read-only jobs. Privileged controllers consume validated
+inert inputs instead. Test invalid inputs and native handoff paths. A pinned
+wrapper fixes its source revision; its external downloads and any allowed
+consumer configuration retain their own verification and trust requirements.
+
 [#setup-blueprint]
 == `actions/setup-blueprint`
 

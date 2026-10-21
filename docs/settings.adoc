@@ -4,6 +4,18 @@ Workflow files do not enforce a process by themselves. The settings in this
 chapter are part of the model, and a repository has not adopted it until they
 are in place and have been exercised with a real pull request.
 
+[#risk-settings-enforcement]
+== Risks and controls for settings enforcement
+
+A workflow file can describe a gate that repository settings do not enforce,
+or a required check name can refer to no actual job. Verify effective settings
+and exercise the boundary. The read-only settings checker reports hidden answers
+as unknown and identifies mismatches; a real PR with a deliberately failing
+check confirms whether merging is blocked. Check release and Pages environment
+restrictions separately. An API configuration report does not establish that a
+reporting channel works, a reviewer acted, or a required test covers the right
+behavior.
+
 == Actions
 
 * Set the default workflow token to read-only. Each job that needs to write

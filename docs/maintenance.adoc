@@ -35,6 +35,18 @@ and not a chore to automate.
 | When `ci.yml` reports that the latest nightly generates different bindings
 |===
 
+[#risk-input-upgrades]
+== Risks and controls for input upgrades
+
+An upgrade can change executable code through a URL, digest, transitive input
+or compiler selection without an obvious change to the product. Treat new
+identities as reviewed input changes. Update the declared recipe and lock,
+inspect the resolved artifacts and run the affected tasks before adopting them.
+Compiler and binding updates remain explicit maintainer work. The resulting
+checks establish the selected combinations. Matching an upstream revision or
+passing compatibility tests does not establish that an input is unaffected by
+known vulnerabilities; advisory analysis uses its own component evidence.
+
 == Update the lock
 
 . Run `blueprint update`, or `blueprint update <input>` to move one input and

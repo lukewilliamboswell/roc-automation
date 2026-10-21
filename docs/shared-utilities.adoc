@@ -6,6 +6,18 @@ in read-only CI. Actions add GitHub inputs, outputs and artifact handling around
 the shared implementation. Keep product-specific cases and metadata in the
 consumer repository.
 
+[#risk-utility-contracts]
+== Risks and controls for shared utility contracts
+
+Copied automation can drift, and a consumer can combine an executable with
+an incompatible helper or result parser. Share versioned executable contracts
+and distribute the complete declared runtime. Blueprint locks the selected
+artifacts; operation-specific schemas identify inputs and results; exact-artifact
+tests run the distributed files without a source checkout. Include malformed
+inputs, missing companions and target behavior in those tests. An executable
+version does not make every future schema compatible, and cross-compilation
+alone does not demonstrate native execution support.
+
 == Start from a working consumer
 
 Copy `examples/pure-package/`, including its hidden `.github` directory, to a

@@ -21,6 +21,18 @@ release credentials and controller selection under already-reviewed policy. A
 single PR job doing both would allow changed producer code to publish or write its
 own asserted digest.
 
+[#risk-linker-publication]
+== Risks and controls for linker-input publication
+
+An untrusted producer can supply a successful run or attestation for a different
+commit, or add an undeclared file to a native-input release. Bind admission to
+the selected producer and complete artifact inventory. The privileged controller
+checks run/source identities, manifest targets, sizes, hashes and attestations,
+then re-downloads published assets before accepting the release and lock.
+Regression tests cover stale evidence and interrupted publication. Attestation
+establishes the verified producer's statement; it does not demonstrate native
+code correctness or replace consumer-facing link tests.
+
 == Producer contract
 
 The unprivileged producer workflow builds and tests every supported target from

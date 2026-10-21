@@ -9,6 +9,18 @@ The rule is that every Roc program in the repository runs in pull-request CI,
 even if only briefly. This chapter says what runs, how much of it, and how the
 tests are organised.
 
+[#risk-test-evidence]
+== Risks and controls for test evidence
+
+Compilation alone can leave examples or error paths broken, while a long
+campaign in routine CI can make feedback too slow to use. Keep fast checks
+meaningful and put sustained searches on their own schedule. Build once, run
+recorded success and failure cases, and exercise bounded fuzz/benchmark smoke
+modes. Require expected outputs and exits, report skips explicitly, retain
+command diagnostics and stop hung child trees. The driver tests these failure
+states. A smoke pass establishes that the selected workload runs; it does not
+establish search depth, performance or complete test coverage.
+
 == What runs on every pull request
 
 [cols="2,3",options="header"]

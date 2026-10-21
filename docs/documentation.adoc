@@ -4,6 +4,18 @@ Use this guide when creating or reviewing documentation for a Roc package,
 platform, application, or shared tool. It separates the reader's needs from the
 project evidence that maintainers must preserve.
 
+[#risk-documentation-claims]
+== Risks and controls for documentation claims
+
+A documented command can drift from the executable interface, or a status
+claim can imply stronger evidence than its check provides. Keep guidance
+executable and claims bounded. Reuse checked examples, build all published
+formats, verify links and rendered content, and state what operational evidence
+supports each claim. Review risks beside the relevant task so caveats survive
+copying an example. Rendering and link checks establish publication integrity;
+they do not validate every technical assertion or prove that an operator followed
+the process.
+
 == Give each page one purpose
 
 Choose the page's dominant purpose before writing it. The four Diátaxis forms
@@ -296,7 +308,8 @@ followed. For every operational claim, identify how it is checked:
 |Published examples work |The release tests its examples archive before upload, and a nightly run tests the published archive unchanged
 |The test suite is the contribution gate |Contributor instructions and required CI run the stated command
 |The external interface is documented |An API or schema audit fails when public entries are missing
-|Releases are reproducible and identifiable |Immutable tags, artifact digests, provenance, and release notes
+|Published releases are identifiable |Immutable tags, artifact digests, provenance, and release notes
+|A claimed build is reproducible |A recorded reconstruction recipe and exact inputs let a fresh rebuild reproduce the specified artifact bytes
 |Vulnerability reports receive timely responses |A working private channel and periodically reviewed response history
 |===
 

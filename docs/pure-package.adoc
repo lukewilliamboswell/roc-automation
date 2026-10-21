@@ -11,6 +11,18 @@ The working example is in `examples/pure-package/`. It uses Blueprint
 its new lock entries. The utility release and fixed tooling compiler do not
 control which nightly tests the package.
 
+[#risk-utility-provisioning]
+== Risks and controls for utility provisioning
+
+A cache can return damaged bytes, a task can expose a temporary executable
+link, or a renderer recipe can accidentally choose the package compiler. Treat
+provisioning, persistent handoff and product testing as separate contracts.
+Blueprint rechecks locked downloads; the handoff resolves the executable's real
+store path; the floating compiler remains a distinct host input. The cold/warm
+adoption jobs exercise those boundaries and compare actual executable identities.
+A cache hit proves only that storage returned an entry. Supported provisioning
+targets and external runtime programs still need explicit validation.
+
 == Copy the starter
 
 Copy `examples/pure-package/` to the repository root, including `.github/` and

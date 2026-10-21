@@ -13,6 +13,17 @@ For a pure package using released utilities and fixed downloaded tooling, start
 with xref:pure-package.adoc#adopt-a-pure-package-without-nix[Adopt a pure package without Nix]. It includes a
 complete Blueprint recipe, lock review, cache lifecycle and executable handoff.
 
+[#risk-adoption-evidence]
+== Risks and controls for adoption evidence
+
+Copying a starter can leave stale paths, unrelated task names or missing
+product cases while producing plausible configuration. Adopt through observable
+behavior. Run the documented local tasks, a release dry run and the published
+suite; inspect the resulting files and test the required-check and issue-reporting
+failure paths. Keep configuration-specific fixes in the adopting repository and
+common fixes in the shared tool. Adoption evidence establishes the exercised
+integration, not every feature of the product or every future utility version.
+
 == Steps
 
 . *Environment.* Add `Blueprint.roc` and `Blueprint.lock` with the shared

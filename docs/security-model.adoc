@@ -12,6 +12,14 @@ Two rules carry most of the weight:
 * A job with write access runs only reviewed code at a full commit SHA, and
   handles candidate output as inert files.
 
+Read-only permissions limit repository authority; they are not a process sandbox
+or proof that build outputs are benign. Code in a job can read its workspace,
+use its network access and influence its outputs. Run floating compilers and
+consumer code on disposable hosted runners without sensitive workload data or
+publication credentials. Clearing child token variables reduces exposure but
+does not isolate same-job processes from one another. Reviewed inputs, exact
+source/artifact binding and consumer-facing tests remain separate controls.
+
 Documentation source conversion, renderer builds and renderer execution also
 belong in jobs with read-only tokens. The documentation and tools workflows
 build the native renderer from pinned compiler and package versions. Their cache
@@ -19,6 +27,18 @@ key includes the target, compiler identity, renderer source and embedded fonts;
 restored binaries still run the renderer acceptance tests. The deploy job only
 receives the resulting Pages artifact. It does not compile the renderer, execute
 documentation sources or restore a candidate-produced executable cache.
+
+[#risk-execution-authority]
+== Risks and controls for execution authority
+
+A compiler, example or prerequisite script can be malicious or compromised,
+and generated output can try to cross into a job that can publish or edit
+issues. Separate execution from authority. Use read-only disposable test jobs,
+reviewed pinned controllers in write jobs, inert data handoffs and validation
+of source/run/artifact identities before writes. Security regressions exercise
+wrong identities and rejected transitions. This reduces the authority available
+to executed code; it does not isolate same-job processes or prove a trusted
+upstream compiler produced a harmless artifact.
 
 == The three workflows
 

@@ -12,6 +12,19 @@ supplied files as inert bytes.
 A checksum file, Blueprint lock or GitHub dependency submission alone does not
 meet this contract.
 
+[#risk-component-evidence]
+== Risks and controls for component evidence
+
+An inventory can omit transitive/native components or describe a different
+binary while still passing schema validation. Bind composition claims to exact
+subjects and preserve explicit uncertainty. Generate from resolved inputs and
+reviewed composition metadata; independently validate graph references, subject
+hashes, targets and declared coverage before publication. Test with query fixtures
+that locate known transitive components and distinguish build-only from shipped
+code. Agreement between producer records detects inconsistency;
+it cannot prove that undiscovered components are absent or that a matched
+advisory is exploitable.
+
 == Share generation, validation and publication responsibilities
 
 Blueprint owns the reusable generation capability. It exposes resolved component

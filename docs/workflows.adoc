@@ -40,6 +40,18 @@ Workflows beyond these three, such as a documentation site or scheduled fuzzing,
 are described in
 xref:optional-workflows.adoc#optional-workflows[Optional workflows].
 
+[#risk-release-evidence]
+== Risks and controls for release evidence
+
+A workflow can publish a different source revision or rebuild assets after
+testing, and a retry can combine files from unrelated attempts. Preserve source
+and artifact identity across the release. Build and test the selected commit,
+pass exact files through the run, and let a separately authorized publisher
+verify the inventory and downloaded asset hashes. Interrupted-publication rules
+refuse ambiguous replacement. Exercise dry runs and publisher failure transitions.
+These controls bind the delivered bytes to the selected evidence; they do not
+prove an independently reproducible build or the trustworthiness of a compiler.
+
 == Continuous integration
 
 `ci.yml` tests the working tree.

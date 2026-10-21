@@ -4,6 +4,18 @@ A consistent layout lets the same checks, scripts and workflows apply to every
 repository, and lets a maintainer who knows one repository find their way in
 another.
 
+[#risk-source-boundaries]
+== Risks and controls for repository source boundaries
+
+A test can accidentally import a published dependency instead of the changed
+working tree, while source automation can accidentally depend on the broken
+product it must diagnose. Make source roles explicit. Product examples use
+relative working-tree dependencies; source tooling uses independently selected
+released dependencies and a fixed compiler. Header and source-policy checks
+verify those conventions, and behavioral tests verify the product itself.
+Static policy establishes declared structure, not which code paths execute or
+whether a package is correct.
+
 == The layout
 
 [source,text]

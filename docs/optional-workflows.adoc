@@ -42,6 +42,18 @@ can write.
 | See xref:linker-input-releases.adoc#trusted-publisher-contract[Trusted publisher contract]
 |===
 
+[#risk-campaign-separation]
+== Risks and controls for sustained campaigns
+
+A separate campaign job can still run on every PR, and a cancelled search can
+look like a successful time-bounded run. Separate workload intent and evidence.
+Use explicit schedule/manual event guards, normal bounded search completion,
+per-input limits and an overall safety timeout. Preserve reproducers and exact
+compiler/source identities on failure. Check the actual triggers and reproduce
+a saved failing input. Campaign results describe the selected search; neither
+their success nor a short PR smoke run substitutes for published-release
+compatibility or a meaningful benchmark measurement.
+
 == Documentation site
 
 `docs.yml` has two jobs.

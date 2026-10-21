@@ -6,6 +6,18 @@ Roc code written against the package that they read. This chapter covers what
 an example is for, and how the same example is kept correct in two places: the
 repository, and each release.
 
+[#risk-example-identity]
+== Risks and controls for example identity
+
+Examples that pass in the working tree can fail after packaging because files
+are omitted, dependency URLs are rewritten incorrectly, or a warm cache hides
+which bundle was fetched. Test the consumer-facing archive as an artifact.
+Stage the declared files, verify that intended dependency substitutions are the
+only changes, and run the archive against candidate bundles with an empty
+package cache. Inspect and reject unsafe archive members before extraction.
+These checks establish the tested archive's behavior for its recorded cases;
+they do not make the cases representative of every product feature.
+
 == What an example is for
 
 The audience of an example is a user of the package who is probably not
