@@ -36,6 +36,17 @@ main! = |args| {
 
 env! = |name| Env.var_str!(OsStr.from_str(name)).map_err(|_| "missing environment ${name}")
 
+## Path.join constructs UTF-8 paths using '/'. Convert external arguments and
+## environment values to native Windows spelling, matching the child cwd and
+## compiler's cache-root identity rather than mixing both separator forms.
+native! = |path| Compatibility.native_path(
+	Path.display(path),
+	match Env.platform!().os {
+		WINDOWS => Bool.True
+		_ => Bool.False
+	},
+)
+
 read! = |path| Path.read_utf8!(path).map_err(|_| "cannot read ${Path.display(path)}")
 
 write! = |path, text| Path.write_utf8!(path, text).map_err(|_| "cannot write ${Path.display(path)}")
@@ -115,7 +126,7 @@ command! = |argv, cwd, cache, input, timeout| {
 				return Err("test environment overrides a reserved variable or repeats a name")
 			}
 			base = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout_ms(timeout).output_limit(10_000_000).manage_tree(Bool.True)
-				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env_str("XDG_CACHE_HOME", Path.display(cache)).env_str("ROC_CACHE_DIR", Path.display(cache))
+				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env_str("XDG_CACHE_HOME", native!(cache)).env_str("ROC_CACHE_DIR", native!(cache))
 			ran = entries.fold(base, |command, entry| command.env_str(entry.name, entry.value)).run!()
 			Ok(
 				match ran {
@@ -143,7 +154,7 @@ logged! : Path, U64, List(Str), Path, Path, List(U8), U64 => Try({ code : I32, s
 logged! = |directory, number, argv, cwd, cache, input, timeout| {
 	ran = command!(argv, cwd, cache, input, timeout)?
 	prefix = "${number.to_str()}"
-	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: Path.display(cwd), stdin: Str.from_utf8_lossy(input), environment: env!("RA_ENVIRONMENT")?, timeout_ms: timeout, code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
+	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: native!(cwd), cache: native!(cache), stdin: Str.from_utf8_lossy(input), environment: env!("RA_ENVIRONMENT")?, timeout_ms: timeout, code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
 	Path.write_bytes!(Path.join(directory, "${prefix}-stdout.log"), ran.stdout).map_err(|_| "cannot preserve stdout")?
 	Path.write_bytes!(Path.join(directory, "${prefix}-stderr.log"), ran.stderr).map_err(|_| "cannot preserve stderr")?
 	Stdout.line!("\n${Compatibility.console(Json.to_str(argv))} (exit ${ran.code.to_str()})\n${Compatibility.console(Str.from_utf8_lossy(ran.stdout))}${Compatibility.console(Str.from_utf8_lossy(ran.stderr))}").map_err(|_| "cannot display diagnostics")?
@@ -187,7 +198,7 @@ execute! = |selected, initial, directory| {
 	Path.write_bytes!(asset, download.stdout_bytes).map_err(|_| "cannot save examples archive")?
 	root_name = selected.asset.name.drop_suffix(".zip")
 	unpacked = Path.join(directory, "unpacked")
-	prepared = command!([env!("RA_PYTHON")?, env!("RA_ARCHIVE_HELPER")?, Path.display(asset), selected.asset.digest, root_name, Path.display(unpacked)], directory, cache, [], 30_000)?
+	prepared = command!([env!("RA_PYTHON")?, env!("RA_ARCHIVE_HELPER")?, native!(asset), selected.asset.digest, root_name, native!(unpacked)], directory, cache, [], 30_000)?
 	Path.write_bytes!(Path.join(directory, "archive-listing.log"), prepared.stdout.concat(prepared.stderr)).map_err(|_| "cannot preserve ZIP inventory")?
 	if prepared.code != 0 {
 		return Err("examples ZIP verification or extraction failed; see archive-listing.log")
@@ -211,9 +222,11 @@ execute! = |selected, initial, directory| {
 		}
 		target = example.target ?? "native"
 		executable = Path.join(directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else if initial.runner.starts_with("windows-") ".exe" else ""}")
+		native_executable = native!(executable)
+		native_root = native!(root)
 		build_target = if target == "native" [] else ["--target=${target}"]
 		var $built = Bool.True
-		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${Path.display(executable)}"].concat(build_target)] {
+		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${native_executable}"].concat(build_target)] {
 			$number = $number + 1
 			ran = logged!(directory, $number, argv, root, cache, [], 300_000)?
 			if ran.timed_out or ran.limited {
@@ -236,8 +249,8 @@ execute! = |selected, initial, directory| {
 				Err(Missing) if $built => {
 					$number = $number + 1
 					runtime = match example.run {
-						Ok(argv) if !argv.is_empty() => argv.map(|arg| arg.replace_each("{executable}", Path.display(executable)).replace_each("{suite}", Path.display(root)))
-						_ => [Path.display(executable)]
+						Ok(argv) if !argv.is_empty() => argv.map(|arg| arg.replace_each("{executable}", native_executable).replace_each("{suite}", native_root))
+						_ => [native_executable]
 					}
 					ran = logged!(directory, $number, runtime.concat(case.args), root, cache, Str.to_utf8(case.stdin), case_timeout)?
 					if ran.timed_out or ran.limited {

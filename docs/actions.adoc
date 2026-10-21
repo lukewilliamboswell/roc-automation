@@ -149,7 +149,7 @@ compiler:
 `actions/nightly-report` and `actions/publish-release` are Roc scripts in
 roc-automation, `scripts/nightly_report.roc` and `scripts/publish_release.roc`,
 written as
-xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+xref:repository.adoc#write-automation-as-roc-scripts[Write product-specific automation as Roc scripts]
 describes. Each runs from source in the calling job, from the action's own copy
 of roc-automation at the referenced commit. The action:
 

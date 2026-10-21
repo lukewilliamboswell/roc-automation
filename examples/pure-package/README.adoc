@@ -1,0 +1,41 @@
+= Shared utility consumer starter
+
+Copy this directory's contents to a repository root, including the hidden
+`.github` directory. Keep `Blueprint.roc` and `Blueprint.lock` together. Add
+`.blueprint/` and `.docs-out/` to that repository's `.gitignore`.
+
+The starter uses published Blueprint 0.6.0-rc1 and roc-docs tools-0.1.0-rc.1.
+The lock records the exact per-system identities and lengths. Review and
+regenerate it when changing recipes; do not copy a lock from another release.
+The renderer supports the three Linux/Apple Silicon systems declared here.
+This starter does not provide Windows Blueprint provisioning.
+
+With the matching verified Blueprint installed, run from this directory:
+
+[source,sh]
+----
+blueprint check
+blueprint run docs
+----
+
+The rendered manual is under `.docs-out/`. These tasks do not need Nix or a
+globally installed Roc compiler. Blueprint provisions its own fixed compiler
+to evaluate configuration; the renderer runs as a prebuilt executable.
+
+Install the current Roc nightly separately to check the package:
+
+[source,sh]
+----
+blueprint run check-package
+----
+
+`.github/workflows/ci.yml` runs these same tasks in separate read-only jobs.
+It publishes only a CI artifact, not a release or website. Optional fixed-tool
+tasks demonstrate a separate `roc-stable`; they do not select the package
+compiler. `docs-path` returns the persistent renderer path for an Action that
+needs an explicit executable, resolving Blueprint's temporary task link.
+
+Replace the package and manual with the product's own content. Keep common
+operations as configured utility tasks, and add local source scripts only for
+product-specific behavior. The complete pattern and producer layout are in
+https://lukewilliamboswell.github.io/roc-automation/shared-utilities.html[the shared utility guide].

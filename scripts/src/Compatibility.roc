@@ -19,6 +19,10 @@ Compatibility := [].{
 		},
 	)
 	upper = |value| Str.from_utf8_lossy(Str.to_utf8(value).map(|byte| if byte >= 'a' and byte <= 'z' byte - 32 else byte))
+
+	## External compiler/runtime interfaces receive the host's path separators;
+	## Windows compiler cache identities compare their literal root prefixes.
+	native_path = |value, windows| if windows value.replace_each("/", "\\") else value
 	valid_repository = GitHub.valid_repository
 
 	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26", "windows-2022", "windows-2025"]
@@ -170,3 +174,6 @@ expect !Compatibility.valid_environment([{ name: "Path", value: "x" }])
 expect !Compatibility.valid_environment([{ name: "gh_token", value: "x" }])
 expect !Compatibility.valid_environment([{ name: "Display", value: "x" }, { name: "DISPLAY", value: "y" }])
 expect !Compatibility.valid_environment([{ name: "SystemRoot", value: "x" }])
+
+expect Compatibility.native_path("D:\\a\\temp/output/empty-cache", Bool.True) == "D:\\a\\temp\\output\\empty-cache"
+expect Compatibility.native_path("/tmp/output/empty-cache", Bool.False) == "/tmp/output/empty-cache"

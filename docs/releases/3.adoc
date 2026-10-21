@@ -5,6 +5,15 @@ removes repeated values from every workflow, adds two shared actions for steps
 that each repository had written differently, and says what the model asks of
 the simplest kind of repository.
 
+== A concrete shared utility starter
+
+The shared utility guide gives a working Blueprint consumer, a producer layout
+and interface conventions for new tools. The existing pure-package example
+includes copyable read-only CI and a local quickstart using a real released
+renderer and reviewed lock. Guidance prefers named tasks invoking shared
+executables; local Roc scripts supply product-specific behavior. CI checks the
+starter workflow syntax alongside the existing executable adoption tests.
+
 == Verified Blueprint executable cache
 
 `actions/setup-blueprint` caches its executable by default using the exact

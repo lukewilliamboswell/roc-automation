@@ -46,6 +46,8 @@ Writing a project manual:: <<write-project-documentation>> covers the
 conventions this manual itself follows.
 Changing roc-automation:: <<contribute-to-roc-automation>> covers the manual
 and the shared actions.
+Sharing automation:: <<share-automation-through-executable-utilities>> gives a
+working consumer starter, producer layout and utility interface conventions.
 ****
 
 include::overview.adoc[leveloffset=+1]
@@ -53,6 +55,8 @@ include::overview.adoc[leveloffset=+1]
 include::environment.adoc[leveloffset=+1]
 
 include::pure-package.adoc[leveloffset=+1]
+
+include::shared-utilities.adoc[leveloffset=+1]
 
 include::repository.adoc[leveloffset=+1]
 

@@ -15,16 +15,19 @@ complete Blueprint recipe, lock review, cache lifecycle and executable handoff.
 
 == Steps
 
-. *Environment.* Add `Blueprint.roc` and `Blueprint.lock` with `roc-stable`,
-  the script dependencies under `RocPackages`, and every tool and toolchain the
-  repository uses. Using the released `blueprint` binary, confirm that
-  `blueprint run` executes a shebang script. Remove any `flake.nix`,
+. *Environment.* Add `Blueprint.roc` and `Blueprint.lock` with the shared
+  utilities and every tool and toolchain the repository uses. Add `roc-stable`
+  and source dependencies only for tooling the repository itself runs from
+  source. Using the released `blueprint` binary, confirm that its named tasks
+  run the selected utilities. Remove any `flake.nix`,
   `flake.lock`, `.envrc` or other environment definition this replaces, and add
   `.blueprint/` to `.gitignore`.
-. *Scripts.* Before porting a script, decide whether it earns its place:
-  consolidate scripts that overlap, and delete one that only repeats another
-  test. Port what remains to Roc following
-  xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts].
+. *Tasks.* Use the
+  xref:shared-utilities.adoc#share-automation-through-executable-utilities[shared utility skeleton]
+  for common operations. Configure Blueprint tasks rather than copying their
+  implementations. Consolidate overlapping scripts and delete one that only
+  repeats another test. Keep product-specific source tooling in Roc following
+  xref:repository.adoc#write-automation-as-roc-scripts[Write product-specific automation as Roc scripts].
   Carry each script's tests across first, as `expect` tests or cases the check
   script runs. Delete the original only when its replacement runs in CI.
 . *Pins.* Remove `.roc-version`, `.github/roc-nightly.json` and every `roc`

@@ -73,7 +73,7 @@ python3 -m unittest discover -s tests -v
 == Change a script
 
 The repository's own automation is Roc scripts under `scripts/`, written as
-xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+xref:repository.adoc#write-automation-as-roc-scripts[Write product-specific automation as Roc scripts]
 describes. With `blueprint` installed as
 xref:environment.adoc#get-the-blueprint-binary[Get `blueprint`] describes:
 

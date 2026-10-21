@@ -62,6 +62,9 @@ else:
         self.write_program("roc", """import os,sys
 from pathlib import Path
 assert not os.environ.get('GH_TOKEN') and not os.environ.get('GITHUB_TOKEN')
+if os.name == 'nt':
+    assert '/' not in os.environ['ROC_CACHE_DIR'], 'compiler cache root must use native Windows separators'
+    assert os.environ['XDG_CACHE_HOME'] == os.environ['ROC_CACHE_DIR']
 if sys.argv[1]=='version':
     print('Roc compiler version '+os.environ['FAKE_NIGHTLY'])
 else:
@@ -69,7 +72,9 @@ else:
     print('warning: successful compilation diagnostic ::error::not an annotation',file=sys.stderr)
     if os.environ.get('FAKE_COMPILER_FAIL'): sys.exit(1)
     if sys.argv[1]=='build':
-        out=Path(next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output=')))
+        output=next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output='))
+        if os.name == 'nt': assert '/' not in output, 'compiler output must use native Windows separators'
+        out=Path(output)
         code = Path(os.environ['FAKE_EXAMPLE_SOURCE']).read_text()
         if os.name == 'nt' and out.suffix == '.exe':
             import shutil
