@@ -21,6 +21,7 @@ ARCHIVE_HELPER = Path(os.environ.get("ROC_COMPATIBILITY_ARCHIVE_HELPER", ROOT / 
 @unittest.skipUnless(BINARY, "set ROC_COMPATIBILITY_BINARY to test the native runner")
 class CompatibilityRunnerTests(unittest.TestCase):
     directory_name = "suite space é"
+    temporary_parent = None
 
     @classmethod
     def setUpClass(cls):
@@ -34,7 +35,7 @@ class CompatibilityRunnerTests(unittest.TestCase):
                            capture_output=True, text=True)
 
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
+        self.temporary = tempfile.TemporaryDirectory(dir=self.temporary_parent)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name) / self.directory_name
         self.root.mkdir()

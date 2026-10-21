@@ -28,6 +28,7 @@ def main():
         # native fixture suite exercises Unicode and spaces with real processes;
         # this smoke validates compiler behavior in the production directory.
         fixture.directory_name = "suite"
+        fixture.temporary_parent = os.environ.get("RUNNER_TEMP")
         fixture.setUp()
         dependency = "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst"
         suite = dict(schema_version=1, release="0.25.0", dependencies=[dependency],
@@ -52,9 +53,10 @@ def main():
             environment = {**fixture.env, "GH_TOKEN": "", "GITHUB_TOKEN": "", "NO_COLOR": "1",
                            "XDG_CACHE_HOME": str(directory / "empty-cache"),
                            "ROC_CACHE_DIR": str(directory / "empty-cache")}
-            verbose = subprocess.run([compiler, "check", "examples/main.roc", "--no-cache", "--verbose"],
-                                     cwd=directory / "unpacked/basic-cli-examples-0.25.0",
-                                     env=environment, capture_output=True, text=True, timeout=300)
+            build_command = json.loads((directory / "3-command.json").read_text())
+            verbose = subprocess.run([*build_command["argv"], "--verbose"],
+                                     cwd=build_command["cwd"], env=environment,
+                                     capture_output=True, text=True, timeout=300)
             print(verbose.stdout)
             print(verbose.stderr, file=sys.stderr)
             raise RuntimeError("real compiler smoke failed")
