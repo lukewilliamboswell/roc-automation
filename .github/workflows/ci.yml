@@ -97,6 +97,35 @@ jobs:
         run: |
           test "$ACTION" = none
           test -z "$ISSUE"
+  build-runner:
+    name: Check the native Roc build runner (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      ROC_BUILD_RUNNER_BINARY: ${{ github.workspace }}/roc-build-runner-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-18-1df370f
+      - name: Check the versioned source contract
+        run: roc fmt --check tools/roc-build-runner
+      - name: Run portable contract tests
+        run: roc test tools/roc-build-runner/main.roc
+      - name: Compile the standalone native executable
+        run: roc build tools/roc-build-runner/main.roc --output="$ROC_BUILD_RUNNER_BINARY"
+      - name: Check native refusals without a sandbox
+        run: python3 tools/roc-build-runner/tests/test_cli.py -v
+
   # The repository's own Roc scripts, on the pinned tooling compiler. This does
   # not ask GitHub about any repository's settings: that needs administration
   # access, which no workflow token has, so a maintainer runs check-settings.
