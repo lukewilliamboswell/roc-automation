@@ -1,5 +1,13 @@
 = roc-automation 3
 
+== Preserve component build admission evidence
+
+The build-input publisher accepts manifest format 2 and preserves its validated
+component build records in the generated lock. Format 1 remains supported.
+Exact source/run/workflow binding, attestation verification, final archive
+checks and lock-only publication remain required. Providers and candidate
+snapshots never execute in the privileged controller.
+
 This version applies what the first repository to adopt the model found. It
 removes repeated values from every workflow, adds two shared actions for steps
 that each repository had written differently, and says what the model asks of

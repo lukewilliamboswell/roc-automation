@@ -173,10 +173,18 @@ def sha256(path):
 
 def validate_candidate(directory, workflow, branch, source_sha):
     manifest_path = directory / "build-input-release.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.stat().st_size > 16 * 1024**2:
+        raise ValueError("missing or oversized build-input release manifest")
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
-    if set(manifest) != {"schema_version", "kind", "source", "assets"} or manifest["schema_version"] != 1:
+    version = manifest.get("schema_version")
+    fields = {"schema_version", "kind", "source", "assets"}
+    if version == 2:
+        fields.add("component_builds")
+    if set(manifest) != fields or type(version) is not int or version not in (1, 2):
         raise ValueError("unsupported build-input release manifest")
+    if version == 2:
+        validate_component_builds(manifest["component_builds"])
     kind = checked_name(manifest["kind"], "release kind")
     source = manifest["source"]
     expected_source = {
@@ -208,6 +216,31 @@ def validate_candidate(directory, workflow, branch, source_sha):
     return manifest, manifest_bytes, kind
 
 
+def validate_component_builds(builds):
+    """Validate inert producer evidence; never evaluate a recipe or snapshot."""
+    if not isinstance(builds, dict) or not 0 < len(builds) <= 1024:
+        raise ValueError("invalid component build evidence")
+    for name, record in builds.items():
+        checked_name(name, "component")
+        if (not isinstance(record, dict)
+                or set(record) != {"schema_version", "provider", "build_identity", "snapshot_digest", "snapshot", "artifact"}
+                or type(record.get("schema_version")) is not int or record["schema_version"] != 1
+                or not isinstance(record.get("provider"), str) or not IDENTIFIER.fullmatch(record["provider"])
+                or not isinstance(record.get("build_identity"), str) or not 0 < len(record["build_identity"]) <= 4096
+                or any(ord(char) < 32 or ord(char) == 127 for char in record["build_identity"])
+                or not isinstance(record.get("snapshot_digest"), str)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", record["snapshot_digest"])
+                or not isinstance(record.get("snapshot"), dict) or not record["snapshot"]):
+            raise ValueError("invalid component build evidence")
+        artifact = record["artifact"]
+        if (not isinstance(artifact, dict) or set(artifact) != {"name", "sha256", "size"}
+                or not isinstance(artifact.get("name"), str) or not IDENTIFIER.fullmatch(artifact["name"])
+                or not artifact["name"].endswith(".tar")
+                or not isinstance(artifact.get("sha256"), str) or not HEX256.fullmatch(artifact["sha256"])
+                or type(artifact.get("size")) is not int or not 0 < artifact["size"] <= MAX_CANDIDATE_BYTES):
+            raise ValueError("invalid component artifact evidence")
+
+
 def verify_attestations(directory, manifest):
     source = manifest["source"]
     for name in ["build-input-release.json", *(item["asset"] for item in manifest["assets"].values())]:
@@ -233,15 +266,19 @@ def release_by_tag(tag):
 
 
 def make_lock(manifest, tag, manifest_digest, lock_path):
-    return json.dumps({
-        "schema_version": 1,
+    lock = {
+        "schema_version": manifest["schema_version"],
         "kind": manifest["kind"],
         "repository": repository(),
         "release": tag,
         "manifest": {"asset": "build-input-release.json", "sha256": manifest_digest},
         "source": manifest["source"],
         "targets": manifest["assets"],
-    }, indent=2).encode() + b"\n"
+    }
+    if manifest["schema_version"] == 2:
+        validate_component_builds(manifest["component_builds"])
+        lock["component_builds"] = manifest["component_builds"]
+    return json.dumps(lock, indent=2).encode() + b"\n"
 
 
 def verify_release_download(release, assets):

@@ -465,6 +465,21 @@ exposes only a pull-request number and pins the controller action to a reviewed
 full SHA. Fork changes must first move to a same-repository branch because the
 controller never writes to forks.
 
+Manifest format 2 also carries `component_builds`: producer evidence that binds
+each selected component's provider-qualified build identity and input snapshot
+to its original archive digest. The publisher validates the record structure
+and preserves it in the generated lock. It does not run the provider, evaluate
+the snapshot or establish build equivalence itself. The read-only producer or
+admission job owns that comparison. Consumers verify the reviewed snapshot
+binding and the pinned delivered bytes; a build identity is not an output hash.
+
+A forged component claim must not bypass the existing source, workflow,
+attestation or final-asset checks. The complete manifest, including these
+records, is bound by its release digest and attestation. Publisher regression
+tests reject malformed records and prove that source or final-byte mismatches
+still fail. The remaining assumption is the reviewed producer's correctness;
+the privileged controller treats all component evidence as inert data.
+
 The complete producer, publisher, generated-lock, recovery, review, and merge
 contract is in
 xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request].
