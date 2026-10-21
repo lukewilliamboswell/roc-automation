@@ -39,13 +39,26 @@ jobs:
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_compatibility.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_workflow.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_packaging.py -v
+      - name: Build and execute a real Windows example with the fixed baseline compiler
+        if: runner.os == 'Windows'
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner.exe
+          ROC_COMPATIBILITY_SMOKE_COMPILER: ${{ steps.build.outputs.directory }}/tooling/roc.exe
+        run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
         with:
           version: nightly-new-compiler
           nightly-tag: nightly-2026-10-20-7a8a800
       - name: Check, build and execute a real published-platform example
+        if: runner.os != 'Windows'
         env:
           ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
+      - name: Verify the broken Windows nightly remains incompatible with diagnostics
+        if: runner.os == 'Windows'
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner.exe
+          ROC_COMPATIBILITY_SMOKE_EXPECTED: incompatible
         run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
   controller-tests:
     runs-on: ubuntu-24.04
