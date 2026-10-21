@@ -35,9 +35,18 @@ expect match BuildOptions.parse(["build", "--markdown", "true"]) {
 	Err(_) => False
 }
 expect match BuildOptions.parse(["build"]) {
-	Ok(o) => !o.markdown
+	Ok(o) => o.markdown
 	Err(_) => False
 }
 expect ["yes", "TRUE", "", "false; echo injected"].all(|value| BuildOptions.parse(["build", "--markdown", value]).is_err())
 
 expect BuildOptions.parse(["prepare", "--markdown", "true"]).is_err()
+
+expect match BuildOptions.parse(["build", "--markdown", "false"]) {
+	Ok(o) => !o.markdown
+	Err(_) => False
+}
+expect match BuildOptions.parse(["prepare"]) {
+	Ok(o) => !o.markdown
+	Err(_) => False
+}

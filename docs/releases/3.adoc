@@ -263,9 +263,10 @@ disabled there.
 
 == Static Markdown documentation
 
-The shared documentation utility can publish static chapter Markdown and a
-versioned `llms.txt` index alongside HTML and PDF. HTML pages expose visible
+The shared documentation utility publishes static chapter Markdown and a
+versioned `llms.txt` index alongside HTML and PDF by default.
+`--markdown false` or `markdown: "false"` opts out. HTML pages expose visible
 Markdown links and standard discovery relations; chapter references and anchors
-remain usable under project-site paths. The manual enables this option, with
+remain usable under project-site paths. The manual uses this default, with
 independent content and link verification before publication. Literal AsciiDoc
 inline code preserves attribute placeholders across all published formats.

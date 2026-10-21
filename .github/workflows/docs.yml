@@ -35,7 +35,6 @@ jobs:
         with:
           renderer-binary: ${{ steps.renderer.outputs.renderer-binary }}
           pdf-filename: roc-automation.pdf
-          markdown: "true"
           docs-version: ${{ github.event_name == 'pull_request' && format('3 (pull request {0})', github.event.number) || '3' }}
 
       - name: Install the independent PDF reader for upstream verification

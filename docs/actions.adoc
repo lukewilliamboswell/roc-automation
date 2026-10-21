@@ -288,7 +288,8 @@ Renders a repository's AsciiDoc or Markdown sources as an HTML site and a PDF
 manual using a precompiled `roc-docs` binary. It provides a built-in theme,
 embedded fonts and Roc syntax highlighting. It can also place
 compiler-generated API documentation under `site/api`, and publish static
-chapter Markdown with `llms.txt` discovery when `markdown: "true"` is set.
+chapter Markdown with `llms.txt` discovery by default. Set `markdown: "false"`
+to publish HTML and PDF without those exports.
 
 Install a reviewed renderer binary for the runner's architecture before invoking
 the action. Pass its path explicitly, set `ROC_DOCS_BINARY`, or put `roc-docs`
@@ -322,7 +323,7 @@ using xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Bluep
 | `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
 | `api-entrypoint` | empty | Roc package or platform root for the generated API reference
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
-| `markdown` | `false` | Publish chapter `.md` files, HTML discovery links and `llms.txt`
+| `markdown` | `true` | Publish chapter `.md` files, HTML discovery links and `llms.txt`; set `false` to omit them
 | `site-url` | empty | HTTPS publication directory for PDF links, Markdown source links and absolute `llms.txt` chapter URLs
 | `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
 | `title`, `author`, `language` | empty | Optional overrides for document metadata

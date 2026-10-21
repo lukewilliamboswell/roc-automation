@@ -12,7 +12,7 @@ BuildOptions :: [].{
 			_ => return Err(usage)
 		}
 		initial : Options
-		initial = { mode, markdown: False, workspace: ".", docs_directory: "docs", entrypoint: "index.adoc", output_directory: if (mode == Prepare) ".docs-prepared" else ".docs-out", pdf_filename: "manual.pdf", docs_version: "unreleased", pdf_image_dpi: 144, title: "", author: "", language: "", api_entrypoint: "", roc_command: "roc", site_url: "" }
+		initial = { mode, markdown: mode == Build, workspace: ".", docs_directory: "docs", entrypoint: "index.adoc", output_directory: if (mode == Prepare) ".docs-prepared" else ".docs-out", pdf_filename: "manual.pdf", docs_version: "unreleased", pdf_image_dpi: 144, title: "", author: "", language: "", api_entrypoint: "", roc_command: "roc", site_url: "" }
 		var $options = initial
 		var $rest = remaining
 		var $seen = []

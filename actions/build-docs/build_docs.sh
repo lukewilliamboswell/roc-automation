@@ -27,7 +27,7 @@ while (( $# )); do
             markdown_seen=true
             case "$2" in
                 true) arguments+=(--markdown true) ;;
-                false) ;; # Preserve the interface of released HTML/PDF-only binaries.
+                false) arguments+=(--markdown false) ;;
                 *) printf 'build-docs: markdown must be true or false\n' >&2; exit 2 ;;
             esac
             shift 2

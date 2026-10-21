@@ -17,13 +17,13 @@ The website is `.docs-out/site/`; the PDF is available both there and at
 `.docs-out/project.pdf`. `--title`, `--author` and `--language` override document
 metadata. `--pdf-image-dpi` accepts 72 through 300, default 144. The shared action
 invokes this native command directly and preserves its site/PDF outputs.
-`--markdown true` optionally publishes one static `.md` file per rendered
+The build publishes one static `.md` file per rendered
 manual or chapter HTML page, including `index.md`, plus a versioned `llms.txt`
 chapter index. Each rendered manual or chapter HTML page links visibly to its Markdown equivalent and declares `rel="alternate"`
 (`text/markdown`) and `rel="describedby"` (`llms.txt`). These are ordinary static
 files, suitable for GitHub Pages without content negotiation.
-The shared action exposes the same option as `markdown: "true"`; it defaults
-to false. `--site-url` makes index and HTML-source links absolute under the
+Markdown publication defaults to true in the CLI and shared action. Use
+`--markdown false` or `markdown: "false"` to omit Markdown and its index. `--site-url` makes index and HTML-source links absolute under the
 publication directory; chapter and asset links remain relative.
 `--api-entrypoint` and `--roc-command` add API documentation as a separate,
 explicitly requested compiler invocation.

@@ -117,23 +117,24 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('~~~~ ~lang`info\nvalue = 1\n~~~\n~~~~\n', markdown)
         self.assertNotIn('```lang`info', markdown)
 
-    def test_static_markdown_is_optional_and_invalid_option_does_not_replace_output(self):
+    def test_markdown_defaults_on_and_explicit_false_removes_exports(self):
         self.source('index.md', '# Home\n')
         self.run_build('--entrypoint', 'index.md')
         site = self.root/'.docs-out/site'
-        self.assertFalse((site/'index.md').exists())
-        self.assertFalse((site/'llms.txt').exists())
-        self.assertNotIn('View Markdown', (site/'index.html').read_text())
+        self.assertTrue((site/'index.md').is_file())
+        self.assertTrue((site/'llms.txt').is_file())
+        self.assertIn('View Markdown', (site/'index.html').read_text())
         before = (site/'index.html').read_bytes()
         self.run_build('--entrypoint', 'index.md', '--markdown', 'yes', success=False)
         self.assertEqual((site/'index.html').read_bytes(), before)
-        self.run_build('--entrypoint', 'index.md', '--markdown', 'true')
-        self.assertTrue((site/'index.md').is_file())
-        self.assertTrue((site/'llms.txt').is_file())
         self.run_build('--entrypoint', 'index.md', '--markdown', 'false')
         self.assertFalse((site/'index.md').exists())
         self.assertFalse((site/'llms.txt').exists())
         self.assertNotIn('View Markdown', (site/'index.html').read_text())
+        self.run_build('--entrypoint', 'index.md')
+        self.assertTrue((site/'index.md').is_file())
+        self.assertTrue((site/'llms.txt').is_file())
+
 
     def test_markdown_entrypoint_alias_and_escaped_unicode_index_labels(self):
         self.source('guide.md', '# Café [Guide]\n\n```text\n[Other](other.html#details)\n```\n')
@@ -348,7 +349,9 @@ class RepositoryTests(unittest.TestCase):
         self.source('guide.md', '# Guide\n')
         self.run_build('--entrypoint','guide.md')
         site = self.root/'.docs-out/site'
-        self.assertEqual((site/'index.html').read_bytes(), (site/'guide.html').read_bytes())
+        self.assertIn('href="index.md"', (site/'index.html').read_text())
+        self.assertIn('href="guide.md"', (site/'guide.html').read_text())
+        self.assertEqual((site/'index.md').read_bytes(), (site/'guide.md').read_bytes())
     def test_github_outputs_are_absolute(self):
         self.source('index.md','# Home\n'); outputs = self.root/'outputs'
         result = subprocess.run([BINARY,'build','--workspace',str(self.root),'--entrypoint','index.md'], capture_output=True, text=True,

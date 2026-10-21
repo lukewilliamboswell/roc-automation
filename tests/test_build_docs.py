@@ -51,10 +51,10 @@ class NativeActionShellTests(unittest.TestCase):
                          "site-directory=/absolute/site\npdf-path=/absolute/manual.pdf\n")
         self.assertNotIn("python", result.stderr.lower())
 
-    def test_disabled_markdown_uses_existing_binary_interface(self):
+    def test_explicit_false_overrides_native_markdown_default(self):
         result = self.invoke("--markdown", "false")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.recorded(), ["build"])
+        self.assertEqual(self.recorded(), ["build", "--markdown", "false"])
 
     def test_explicit_renderer_wins_over_environment_and_path(self):
         result = self.invoke("--renderer-binary", str(self.binary), ROC_DOCS_BINARY="missing")
@@ -119,7 +119,7 @@ class NativeActionIntegrationTests(unittest.TestCase):
     def test_native_asciidoc_action_outputs_and_rejection_preserve_publication(self):
         (self.docs / "index.adoc").write_text("= Project\n\ninclude::usage.adoc[leveloffset=+1]\n")
         (self.docs / "usage.adoc").write_text("= Usage\n\nVersion {docs-version}.\n\n[source,roc]\n----\napp [main!] {}\n----\n")
-        self.invoke("index.adoc", "--markdown", "true")
+        self.invoke("index.adoc")
         site = self.root / ".docs-out/site"
         pdf = self.root / ".docs-out/project.pdf"
         self.assertIn("Version 42", (site / "usage.html").read_text())

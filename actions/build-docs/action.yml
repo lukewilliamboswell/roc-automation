@@ -1,5 +1,5 @@
 name: Build documentation
-description: Build an HTML site and PDF with a precompiled Roc renderer, plus optional static Markdown and Roc API reference.
+description: Build HTML, PDF and Markdown documentation with a precompiled Roc renderer, plus optional Roc API reference.
 
 inputs:
   docs-directory:
@@ -30,8 +30,8 @@ inputs:
     description: Path or executable name for a precompiled roc-docs binary; otherwise ROC_DOCS_BINARY or PATH is used
     default: ""
   markdown:
-    description: Publish static chapter Markdown, HTML discovery links and llms.txt alongside HTML and PDF
-    default: "false"
+    description: Publish static chapter Markdown, HTML discovery links and llms.txt; set false to omit them
+    default: "true"
   site-url:
     description: HTTPS publication directory used for PDF links, Markdown HTML-source links and llms.txt chapter URLs
     default: ""
