@@ -40,10 +40,17 @@ Adopting the model:: Follow <<adopt-the-model-in-a-repository>> and its
 acceptance list.
 Reviewing trust boundaries:: Read <<automation-trust-model>> and
 <<verify-released-artifacts>>.
+Understanding the choices:: <<scope-and-design-principles>> defines the scope;
+<<risk-and-control-reference>> maps concrete risks to their contextual guidance
+and verification.
+Publishing component inventories:: <<publish-and-consume-software-bills-of-materials>>
+defines release SBOM scope, generation, validation and downstream use.
 Writing a project manual:: <<write-project-documentation>> covers the
 conventions this manual itself follows.
 Changing roc-automation:: <<contribute-to-roc-automation>> covers the manual
 and the shared actions.
+Sharing automation:: <<share-automation-through-executable-utilities>> gives a
+working consumer starter, producer layout and utility interface conventions.
 ****
 
 include::overview.adoc[leveloffset=+1]
@@ -51,6 +58,8 @@ include::overview.adoc[leveloffset=+1]
 include::environment.adoc[leveloffset=+1]
 
 include::pure-package.adoc[leveloffset=+1]
+
+include::shared-utilities.adoc[leveloffset=+1]
 
 include::repository.adoc[leveloffset=+1]
 
@@ -61,6 +70,8 @@ include::testing.adoc[leveloffset=+1]
 include::policy.adoc[leveloffset=+1]
 
 include::workflows.adoc[leveloffset=+1]
+
+include::nightly-compatibility.adoc[leveloffset=+1]
 
 include::optional-workflows.adoc[leveloffset=+1]
 
@@ -78,6 +89,8 @@ include::actions.adoc[leveloffset=+1]
 
 include::artifact-verification.adoc[leveloffset=+1]
 
+include::software-bill-of-materials.adoc[leveloffset=+1]
+
 include::security-model.adoc[leveloffset=+1]
 
 include::documentation.adoc[leveloffset=+1]
@@ -87,3 +100,5 @@ include::project-practices.adoc[leveloffset=+1]
 include::contributing.adoc[leveloffset=+1]
 
 include::releases.adoc[leveloffset=+1]
+
+include::risks-and-controls.adoc[leveloffset=+1]

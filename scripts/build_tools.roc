@@ -25,12 +25,17 @@ main! = |_args| {
 			run!(["build", "scripts/${tool.script}.roc", "--target=${system.roc}", "--opt=size", "--output=${output}"])?
 		}
 	}
-	Stdout.line!("PASS built every tool for every system in dist/")
+	# The compatibility utility's ZIP admission helper is a published, checksummed
+	# runtime artifact, not a dependency on an installed source checkout.
+	helper = Path.read_bytes!(Path.utf8("actions/release-compatibility/archive.py"))?
+	Path.write_bytes!(Path.utf8("dist/release-compatibility-archive.py"), helper)?
+	Stdout.line!("PASS built every tool and its runtime files in dist/")
 }
 
 tools = [
 	{ name: "nightly-report", script: "nightly_report" },
 	{ name: "publish-release", script: "publish_release" },
+	{ name: "release-compatibility", script: "release_compatibility" },
 ]
 
 # Both are built on one machine: the musl systems link statically and need no

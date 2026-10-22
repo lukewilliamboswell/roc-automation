@@ -9,6 +9,18 @@ request. A shared change never reaches a repository silently.
 - uses: lukewilliamboswell/roc-automation/actions/<name>@REVIEWED_FULL_SHA
 ----
 
+[#risk-action-boundaries]
+== Risks and controls for Action boundaries
+
+A wrapper can evaluate candidate configuration with write credentials, or
+silently select different utility bytes from the ones tested upstream. Keep
+GitHub integration thin and authority explicit. Pin Action/workflow source to
+reviewed full SHAs, provision declared utilities and companions, and restrict
+repository tasks to read-only jobs. Privileged controllers consume validated
+inert inputs instead. Test invalid inputs and native handoff paths. A pinned
+wrapper fixes its source revision; its external downloads and any allowed
+consumer configuration retain their own verification and trust requirements.
+
 [#setup-blueprint]
 == `actions/setup-blueprint`
 
@@ -16,6 +28,21 @@ Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
 installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
 The setup action builds nothing.
+
+The executable cache is enabled by default. Its exact identity includes the
+Blueprint release, runner system and reviewed SHA-256. Restored bytes are copied
+into a private file and rehashed before installation; a verified hit makes no
+GitHub Releases request. A version or digest change selects a new cache entry.
+`cache-binary: false` disables this cache. `binary-cache-hit` reports actual
+verified reuse, rather than trusting the cache service's hit flag.
+
+This is separate from the opt-in `cache: true` cache of Blueprint's
+`v1/artifacts` tool/package downloads. The existing `cache-hit` output describes
+that artifact store. Neither cache selects a newer Blueprint automatically:
+maintainers change its pin through a PR. Corrupt regular executable bytes are
+refetched and verified; symlink or nonregular entries fail closed. GitHub caches
+are immutable; delete a corrupt remote executable entry if it causes repeated
+safe fallback downloads.
 
 [source,yaml]
 ----
@@ -37,6 +64,7 @@ workflow cannot disagree with it.
 | Input | Meaning
 
 | `install-nix` | Defaults to `false`. Enable for Nix-sourced tools, sandboxed builds or an older Blueprint environment requiring Nix.
+| `cache-binary` | Defaults to `true`. Reuse only executable bytes that match the selected release, system and reviewed digest.
 | `cache` | Defaults to `false`. Restore/save only Blueprint `v1/artifacts` bytes.
 | `cache-workload` | Required with caching: a logical tool-set name, distinct for jobs or matrix variants that provision different subsets.
 | `version` | The roc-blueprint release to install. Defaults to the release named by the platform URL in `Blueprint.roc` at the root of the workspace. Set it only in a job that has no checkout.
@@ -133,7 +161,7 @@ compiler:
 `actions/nightly-report` and `actions/publish-release` are Roc scripts in
 roc-automation, `scripts/nightly_report.roc` and `scripts/publish_release.roc`,
 written as
-xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+xref:repository.adoc#write-automation-as-roc-scripts[Write product-specific automation as Roc scripts]
 describes. Each runs from source in the calling job, from the action's own copy
 of roc-automation at the referenced commit. The action:
 
@@ -165,6 +193,15 @@ runners provide. On a runner with an empty Nix store, installing Nix and
 downloading the environment is most of the job's time: the environment is about
 a gigabyte once unpacked, so allow a minute or two. The script itself finishes
 in seconds.
+
+== `actions/release-compatibility`
+
+The shared read-only runner owns selection, archive checks, compiler diagnostics
+and execution of a versioned published examples suite. The
+`nightly-compatibility.yml` reusable workflow adds the complete target matrix,
+evidence aggregation and a separate issue reporter. See
+xref:nightly-compatibility.adoc#shared-published-release-compatibility[Shared published-release compatibility] for the
+canonical archive, caller, inputs, diagnostic artifacts and failure handling.
 
 [#nightly-report]
 == `actions/nightly-report`
@@ -250,7 +287,9 @@ what the action needs of the runner.
 Renders a repository's AsciiDoc or Markdown sources as an HTML site and a PDF
 manual using a precompiled `roc-docs` binary. It provides a built-in theme,
 embedded fonts and Roc syntax highlighting. It can also place
-compiler-generated API documentation under `site/api`.
+compiler-generated API documentation under `site/api`, and publish static
+chapter Markdown with `llms.txt` discovery by default. Set `markdown: "false"`
+to publish HTML and PDF without those exports.
 
 Install a reviewed renderer binary for the runner's architecture before invoking
 the action. Pass its path explicitly, set `ROC_DOCS_BINARY`, or put `roc-docs`
@@ -284,7 +323,8 @@ using xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Bluep
 | `docs-version` | `unreleased` | Label passed to the sources as the `docs-version` attribute
 | `api-entrypoint` | empty | Roc package or platform root for the generated API reference
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
-| `site-url` | empty | HTTPS publication directory for PDF links to website-only pages, API docs and downloads
+| `markdown` | `true` | Publish chapter `.md` files, HTML discovery links and `llms.txt`; set `false` to omit them
+| `site-url` | empty | HTTPS publication directory for PDF links, Markdown source links and absolute `llms.txt` chapter URLs
 | `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
 | `title`, `author`, `language` | empty | Optional overrides for document metadata
 | `pdf-image-dpi` | `144` | PDF raster resolution limit, from 72 to 300; original website images are retained
@@ -294,7 +334,7 @@ Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
 The action needs only the renderer binary and the action runner's
 shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.3, decodes
-PNG assets and renders both formats in Roc. It needs no Python, Docker or Roc
+PNG assets and renders the publications in Roc. It needs no Python, Docker or Roc
 compiler. Generating the optional API reference requires an explicitly supplied
 Roc compiler. The same binary can build a repository locally with
 `roc-docs build --workspace .`.

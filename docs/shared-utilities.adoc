@@ -1,0 +1,153 @@
+= Share automation through executable utilities
+
+Use released utilities for common repository operations. Blueprint provisions
+their reviewed bytes and declares named tasks; the same tasks run locally and
+in read-only CI. Actions add GitHub inputs, outputs and artifact handling around
+the shared implementation. Keep product-specific cases and metadata in the
+consumer repository.
+
+[#risk-utility-contracts]
+== Risks and controls for shared utility contracts
+
+Copied automation can drift, and a consumer can combine an executable with
+an incompatible helper or result parser. Share versioned executable contracts
+and distribute the complete declared runtime. Blueprint locks the selected
+artifacts; operation-specific schemas identify inputs and results; exact-artifact
+tests run the distributed files without a source checkout. Include malformed
+inputs, missing companions and target behavior in those tests. An executable
+version does not make every future schema compatible, and cross-compilation
+alone does not demonstrate native execution support.
+
+== Start from a working consumer
+
+Copy `examples/pure-package/`, including its hidden `.github` directory, to a
+repository root. It contains a real released renderer, its content lock, a small
+package and manual, and a complete CI workflow:
+
+[source,text]
+----
+Blueprint.roc
+Blueprint.lock
+.github/workflows/ci.yml
+package/main.roc
+docs/index.adoc
+----
+
+Run `blueprint check` and `blueprint run docs`. With the current Roc nightly on
+PATH, run `blueprint run check-package`. The workflow invokes exactly those
+tasks. No consumer renderer implementation or installer is copied. The
+xref:pure-package.adoc#adopt-a-pure-package-without-nix[complete consumer walkthrough]
+includes the actual configuration and workflow, download verification, caching
+and executable handoff.
+
+The renderer is the worked example; apply the same provisioning pattern to
+other released utilities. Keep the utility's implementation compiler separate
+from the compiler passed to check a product. Consuming a compiled utility does
+not require adopting its basic-cli or tooling compiler in local source scripts.
+
+== Give each layer one job
+
+[cols="2,3",options="header"]
+|===
+| Layer | Responsibility
+| Blueprint | Select and verify executable/runtime artifacts, provision environments and expose named tasks.
+| Utility | Validate operation-specific data, perform the operation, retain diagnostics and return an explicit result.
+| Action or reusable workflow | Supply GitHub context, map documented inputs and outputs, transport inert artifacts and restrict permissions.
+| Product repository | Declare its paths, cases, release metadata, native prerequisites and product-specific behavior.
+|===
+
+Prefer a Blueprint task that invokes an existing utility. A local Roc script is
+appropriate when the product needs additional composition or behavior. General
+command and filesystem helpers remain implementation details unless a concrete
+in-process consumer justifies a public source API. Do not require consumers to
+import a shared helper package merely to use an executable operation.
+
+== Structure a utility producer
+
+Use the existing tools build and release pipeline. For a new operation, this
+layout separates the executable boundary from pure decisions and contract tests:
+
+[source,text]
+----
+tools/<operation>/
+  main.roc                 # CLI and effects
+  src/Config.roc           # versioned input decoding and validation
+  src/Plan.roc             # pure decisions and state transitions
+  src/Report.roc           # structured results and human diagnostics
+  test_config.roc
+  test_plan.roc
+  build.roc                # fixed build compiler and explicit targets
+  tests/test_cli.py        # tests the distributed executable
+  tests/fixtures/          # small valid and invalid inputs
+  README.adoc              # CLI, configuration, targets and runtime contract
+actions/<operation>/
+  action.yml               # GitHub integration
+.github/workflows/release-tools.yml
+----
+
+These are responsibility boundaries, not a requirement to relocate established
+tools. Reuse `tools/roc-policy` for repository policy and `tools/roc-docs` for
+documentation. Use the shared published-release compatibility runner for
+immutable release suites. Build distinct operations only where their behavior
+is not already supplied by an existing tool.
+
+Keep build and executable tests read-only. Test the exact release bytes and
+companion files on every claimed execution platform without a source checkout,
+Nix or the utility's build compiler. Explicit external runtime programs may
+still be required. The existing publisher receives the tested files as inert
+bytes; it never runs a candidate utility or consumer Blueprint task.
+
+== Define a small, versioned contract
+
+For a new checking utility, document its version command, operation arguments,
+configuration format, output directory and result schema. Use structured argv
+without shell evaluation. Keep configuration in the existing operation-specific
+format, such as the examples specification; do not duplicate Blueprint's
+provisioning data in a second project manifest.
+
+Checking and updating are distinct operations. A check never rewrites expected
+output. An update is explicit maintainer work and refuses immutable published
+suites. No utility changes a compiler pin as a side effect of checking a product.
+
+Keep process status and structured evidence consistent. A useful convention for
+new checking interfaces is exit 0 for complete success, exit 1 for completed
+checks with findings, and exit 2 for invalid inputs or incomplete evidence.
+Document existing tools' actual statuses rather than silently translating them
+to a new convention. Machine results have a schema version independent of the
+tool version and record the operation, outcome, completeness, relevant source,
+compiler and artifact identities, counts and safe relative diagnostic paths.
+Write a completed result atomically to the requested output directory.
+
+Preserve bounded stdout and stderr on successful as well as failed compiler
+calls. Warnings remain visible and nonfatal by default. A timeout, cancellation,
+skip or missing report cannot establish a complete pass. Bound child execution
+and clean up descendants. Escape workflow commands in console output; raw
+diagnostic artifacts retain the original bytes. Validate paths and reject
+unsafe aliases or special files before filesystem effects.
+
+Test malformed inputs and failure transitions as well as successful execution.
+Use tiny fixtures for warnings, missing tools, wrong identities, timeouts and
+cleanup. Fuzz and benchmark smoke workloads stay within the
+xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[one-second budget];
+sustained campaigns run separately.
+
+== Package the complete runtime
+
+Prefer a self-contained executable with embedded data when practical. A utility
+that needs helpers ships a declared runtime set: executable, helpers, licenses
+and their manifest. A per-system archive can keep these files together.
+Blueprint's `Archive(url, TarGz, member)` recipe selects the executable while
+preserving its archive siblings. Lock the archive digest and length, and test
+the unpacked runtime as distributed.
+
+Resolve helpers relative to the real executable, following Blueprint's task
+link, or accept explicit helper paths. Declare external programs such as Python
+in the environment. A binary that needs a helper is not self-contained, and a
+helper version must agree with its executable. Never rely on an undeclared
+source checkout to provide runtime files.
+
+When an Action needs the executable after a Blueprint task ends, use the
+xref:pure-package.adoc#pass-an-executable-to-a-shared-action[shared executable handoff].
+Return a persistent resolved store path rather than the task's temporary link.
+Action code and privileged controllers remain pinned to full reviewed SHAs;
+candidate tasks and executables run only in jobs without write authority.

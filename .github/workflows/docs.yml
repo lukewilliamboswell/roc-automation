@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '37 20 * * *'
 
 permissions: {}
 
@@ -28,7 +30,7 @@ jobs:
         uses: ./actions/build-roc-docs-tool
 
       - id: docs
-        name: Build the HTML site and PDF manual
+        name: Build HTML, PDF and Markdown documentation
         uses: ./actions/build-docs
         with:
           renderer-binary: ${{ steps.renderer.outputs.renderer-binary }}
@@ -55,7 +57,7 @@ jobs:
           DOCS_VERSION: ${{ github.event_name == 'pull_request' && format('3 (pull request {0})', github.event.number) || '3' }}
         run: |
           python3 tools/roc-docs/tests/reference_prepare_docs.py --workspace . --output-directory .docs-verification-prepared --pdf-filename roc-automation.pdf --docs-version "$DOCS_VERSION"
-          python3 tools/roc-docs/tests/verify_prepared.py --prepared .docs-verification-prepared --site "$SITE" --pdf "$PDF" --independent-reader
+          python3 tools/roc-docs/tests/verify_prepared.py --prepared .docs-verification-prepared --site "$SITE" --pdf "$PDF" --independent-reader --markdown
 
       - name: Check desktop and mobile HTML in a real browser
         env:
@@ -70,6 +72,18 @@ jobs:
           name: docs-browser-review
           path: docs-browser-review
           if-no-files-found: ignore
+
+      - name: Set up the pinned environment for the downstream inventory
+        uses: ./actions/setup-blueprint
+        with:
+          install-nix: 'true'
+
+      - name: Refresh downstream automation version badges
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE: ${{ steps.docs.outputs.site-directory }}
+        run: blueprint run downstream-status -- "$SITE"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5

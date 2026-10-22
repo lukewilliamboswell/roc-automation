@@ -1,0 +1,38 @@
+name: Check package and shared utility
+on:
+  pull_request:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@edcf260f8a9aea978cc7cb4b29dcc66910af2ca4
+        with:
+          cache: 'true'
+          cache-workload: docs
+      - run: blueprint check
+      - run: blueprint run docs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: manual
+          path: .docs-out/
+          if-no-files-found: error
+  package:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@edcf260f8a9aea978cc7cb4b29dcc66910af2ca4
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+      - run: blueprint run check-package

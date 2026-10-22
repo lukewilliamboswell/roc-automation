@@ -1,16 +1,28 @@
 = Project-practice evidence
 
-The OpenSSF Best Practices
-https://www.bestpractices.dev/en/criteria/0[passing criteria] cover project
-practices as well as tooling. The model in this manual supplies some of the
-evidence. Following it does not establish a project's badge status: a criterion
-is met when the project can point at the behavior, not at a configuration file.
+Keep evidence for the technical behavior the model aims to establish. A shared
+configuration records an intended practice; the corresponding execution or
+observation establishes whether it worked. Assess the shared tooling, workflow
+boundaries and evidence within the scope of this manual. Product-specific
+security claims and project governance remain with maintainers.
 
-== What the model supplies and what a project still owes
+[#risk-evidence-claims]
+== Risks and controls for evidence claims
+
+A maintainer can mistake a template, green check or external score for proof
+of a broader property. Match each claim to evidence of the behavior it actually
+names. Keep an inventory of applicability, verification, source links and
+unresolved questions; review actual execution and operational history where
+required. Distinguish source-policy checks, compatibility, composition and
+producer provenance. External assessment criteria can expose omitted questions,
+but their applicability and any project governance obligations remain the
+maintainer's responsibility.
+
+== What the model specifies and what needs evidence
 
 [cols="1,2,2",options="header"]
 |===
-| Area | Supplied by the model | Per-project evidence to review
+| Area | Specified practice | Per-project evidence to review
 
 | Change control
 | Actions pinned by full SHA, signed commits, pull requests for every tooling change
@@ -82,17 +94,16 @@ expands the documentation row into an authoring and review process. Verify that
 the configured reporting channel works. Review repository permissions and branch
 rules against actual successful checks, including signed commits where required.
 
-== Review and bots
+== External assessments
 
-Gold requires at least half of proposed modifications to be reviewed by another
-person before release. No workflow in this model approves or merges a change, so
-every tooling change is a maintainer's pull request and counts or fails to count
-on its own review. Do not manufacture bot approvals.
+External criteria can help maintainers find an omitted risk or organize their
+own evidence. OpenSSF Best Practices covers a wider project than this manual's
+technical scope; Scorecard measures another set of observable practices. Neither
+configuration nor a tool score establishes an entire project's badge status.
+Maintainers assess applicability and any governance requirements separately.
+Revisit the underlying evidence when behavior changes, rather than treating
+an old assessment as continuing proof.
 
-OpenSSF Scorecard is a separate measurement. Its automated checks are not the
-Best Practices badge, and it scores review independently. Revisit practice
-evidence and response history periodically.
-
-Sources: https://www.bestpractices.dev/en/criteria/0[passing],
-https://www.bestpractices.dev/en/criteria/2[gold],
-https://github.com/ossf/scorecard/blob/main/docs/checks.md#code-review[Scorecard Code-Review].
+For those separate assessments, consult the
+https://www.bestpractices.dev/en/criteria[OpenSSF criteria] and
+https://github.com/ossf/scorecard/blob/main/docs/checks.md[Scorecard check definitions].

@@ -21,6 +21,18 @@ release credentials and controller selection under already-reviewed policy. A
 single PR job doing both would allow changed producer code to publish or write its
 own asserted digest.
 
+[#risk-linker-publication]
+== Risks and controls for linker-input publication
+
+An untrusted producer can supply a successful run or attestation for a different
+commit, or add an undeclared file to a native-input release. Bind admission to
+the selected producer and complete artifact inventory. The privileged controller
+checks run/source identities, manifest targets, sizes, hashes and attestations,
+then re-downloads published assets before accepting the release and lock.
+Regression tests cover stale evidence and interrupted publication. Attestation
+establishes the verified producer's statement; it does not demonstrate native
+code correctness or replace consumer-facing link tests.
+
 == Producer contract
 
 The unprivileged producer workflow builds and tests every supported target from
@@ -59,6 +71,17 @@ replacement under the same contract. The input fingerprint covers every source,
 recipe, tool pin, generated input, target option, and other value that can affect
 the archives. It determines whether the selected release is current for the
 working tree; each asset SHA-256 identifies the exact bytes.
+
+This manifest and its generated lock describe source, target and artifact
+identities; they are not an SBOM of the native components in those archives.
+The release SBOM practice is defined in
+xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[Publish and consume software bills of materials].
+Bind each target's SBOM to the final archive digest and distribute it at an
+authenticated immutable location. Generate and validate the inventory in the
+read-only producer. The publication contract must explicitly declare every
+sidecar, its subject and its digest, and verify and attest the complete inert
+file set. Undeclared files fail admission; SBOM distribution must preserve the
+same inventory and trust boundaries as the native archives.
 
 The producer must have no release, repository-write, or pull-request-write
 permission. Generate GitHub build-provenance attestations for the manifest and
