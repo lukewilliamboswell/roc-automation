@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@edcf260f8a9aea978cc7cb4b29dcc66910af2ca4
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@5e4133933baec9a0b3bda20aba7b2fea221545c4
         with:
           cache: 'true'
           cache-workload: docs
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@edcf260f8a9aea978cc7cb4b29dcc66910af2ca4
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@5e4133933baec9a0b3bda20aba7b2fea221545c4
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
         with:
           version: nightly-new-compiler

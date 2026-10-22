@@ -117,7 +117,7 @@ In a read-only build job, call the shared setup action after checkout:
 - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
   with:
     persist-credentials: false
-- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
+- uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@5e4133933baec9a0b3bda20aba7b2fea221545c4
   with:
     cache: 'true'
     cache-workload: docs
@@ -181,13 +181,13 @@ use the example's `docs-path` task and the shared handoff action:
 [source,yaml]
 ----
 - id: renderer
-  uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
+  uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@5e4133933baec9a0b3bda20aba7b2fea221545c4
   with:
     task: docs-path
     label: roc-docs tools-0.2.0
     measure: 'true'
     output-directory: .docs-out
-- uses: lukewilliamboswell/roc-automation/actions/build-docs@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
+- uses: lukewilliamboswell/roc-automation/actions/build-docs@5e4133933baec9a0b3bda20aba7b2fea221545c4
   with:
     renderer-binary: ${{ steps.renderer.outputs.binary }}
     pdf-filename: example.pdf
