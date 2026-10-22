@@ -1,0 +1,29 @@
+{
+  "profile": "blueprint-spdx-3.0-v1",
+  "components": [
+    {"id": "package", "name": "sbom-chain-example", "version": "0.1.0",
+     "producer": "Organization: roc-automation contributors", "license": "UPL-1.0", "license_url": "",
+     "identity": "urn:roc-automation:fixture:sbom-chain-example:0.1.0", "download": "NOASSERTION",
+     "sha256": "", "modified": "", "target": "", "origin": "reviewed"},
+    {"id": "blueprint-core", "name": "roc-blueprint-core-9Z7WuswxTGgKd4i3cM5JDf5Kq9JqBpWoMxtWHALnjMcC.tar.zst", "version": "0.7.0",
+     "producer": "Person: Luke Boswell", "license": "UPL-1.0", "license_url": "",
+     "identity": "", "download": "", "sha256": "", "modified": "", "target": "", "origin": "source:blueprint-core"},
+    {"id": "compiler", "name": "roc", "version": "nightly-2026-10-21-5349569",
+     "producer": "Organization: Roc contributors", "license": "UPL-1.0", "license_url": "",
+     "identity": "https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-10-21-5349569",
+     "download": "https://github.com/roc-lang/nightlies/releases/download/nightly-2026-10-21-5349569/roc_nightly-source-2026-10-21-5349569.tar.gz",
+     "sha256": "", "modified": "", "target": "", "origin": "reviewed"}
+  ],
+  "relationships": [
+    {"from": "Subject", "to": "package", "relation": "contains", "scope": "", "basis": "The bundle is this package's source, as roc bundle writes it"},
+    {"from": "Subject", "to": "blueprint-core", "relation": "dependsOn", "scope": "", "basis": "Locked original file this example consumes, pinned by the supplier's published SHA-256"},
+    {"from": "Subject", "to": "compiler", "relation": "dependsOn", "scope": "build", "basis": "roc bundle produced the archive; the compiler does not ship in it"}
+  ],
+  "coverage": [],
+  "inputs": [
+    {"input": "source:blueprint-core", "component": "blueprint-core", "reason": "Supplier file the example consumes"},
+    {"input": "task:check-package", "component": "", "reason": "Development task; nothing it runs reaches the bundle"}
+  ],
+  "imported_documents": [],
+  "unavailable_sboms": []
+}

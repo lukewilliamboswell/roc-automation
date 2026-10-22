@@ -1,0 +1,58 @@
+name: Fetch dependency SBOMs
+description: Find each locked dependency's published SBOM beside its file by naming convention, record its digest and identity for Blueprint's inspect, and report dependencies that publish none. The only SBOM step that uses the network.
+
+inputs:
+  target:
+    description: Blueprint system the composition describes, such as x86_64-linux, or source for a source bundle
+    required: true
+  composition:
+    description: Reviewed composition JSON, relative to the workspace
+    default: sbom/composition.json
+  output:
+    description: Where to write the roc-automation-sbom-imports-v1 file; an existing file is the reviewed record the fetch must reproduce
+    default: sbom/imports.json
+  contact:
+    description: HTTPS URL of whoever resolves a coverage gap in this repository's SBOMs; defaults to the repository's security policy
+    default: ''
+  missing:
+    description: fail or warn when a locked dependency has neither a published SBOM nor a reviewed unavailable_sboms entry
+    default: fail
+  stale-opt-outs:
+    description: fail or warn when an unavailable_sboms entry names a dependency whose supplier now publishes a sidecar
+    default: fail
+  blueprint-binary:
+    description: Installed Blueprint executable, otherwise blueprint on PATH
+    default: blueprint
+
+outputs:
+  imports:
+    description: Path of the written imports file
+    value: ${{ steps.fetch.outputs.imports }}
+  fetched:
+    description: Number of supplier SBOMs fetched and recorded
+    value: ${{ steps.fetch.outputs.fetched }}
+  missing:
+    description: Number of locked dependencies with no published SBOM and no reviewed entry
+    value: ${{ steps.fetch.outputs.missing }}
+  unbindable:
+    description: Number of dependencies pinned by a tree digest, which no SBOM can bind to
+    value: ${{ steps.fetch.outputs.unbindable }}
+  stale:
+    description: Number of unavailable_sboms entries whose supplier now publishes a sidecar
+    value: ${{ steps.fetch.outputs.stale }}
+
+runs:
+  using: composite
+  steps:
+    - id: fetch
+      shell: bash
+      env:
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_COMPOSITION: ${{ inputs.composition }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_CONTACT: ${{ inputs.contact }}
+        INPUT_MISSING: ${{ inputs.missing }}
+        INPUT_STALE_OPT_OUTS: ${{ inputs.stale-opt-outs }}
+        INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
+        CONTROLLER: ${{ github.action_path }}/fetch_dependency_sboms.py
+      run: python3 "$CONTROLLER"

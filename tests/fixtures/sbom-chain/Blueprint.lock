@@ -1,0 +1,18 @@
+(
+	(fetched ())
+	(format (
+		(major 2)
+		(minor 0)))
+	(hints ())
+	(intent (
+		(build_sources ())
+		(inputs ())
+		(overlays ())
+		(resolvers ())
+		(sources ())))
+	(sources ((
+		(digest "sha256:1e1190e25a117ab5996e3f6e780e43dcdaf9f7da88aaaf9536f2ba0571c78265")
+		(name "blueprint-core")
+		(provider "file")
+		(ref "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/roc-blueprint-core-9Z7WuswxTGgKd4i3cM5JDf5Kq9JqBpWoMxtWHALnjMcC.tar.zst")
+		(rev "")))))

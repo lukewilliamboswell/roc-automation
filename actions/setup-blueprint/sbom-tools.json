@@ -1,0 +1,7 @@
+{
+  "0.7.0": {
+    "url": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/roc-blueprint-sbom-2pLqc6Kr6KE3fw5JE4z17TMnhKYP3npqDMBTVm9K2oKP.tar.zst",
+    "compiler": "nightly-2026-10-21-5349569",
+    "generator": "Tool: blueprint-sbom-0.7.0"
+  }
+}

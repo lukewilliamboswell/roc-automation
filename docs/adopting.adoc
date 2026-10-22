@@ -54,7 +54,10 @@ integration, not every feature of the product or every future utility version.
   against a loopback bundle. Generate and locally validate an SPDX or CycloneDX
   SBOM for each final artifact as described in
   xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[the SBOM contract],
-  including transitive components and exact subject digests. Arrange immutable
+  including transitive components and exact subject digests;
+  xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] and
+  xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
+  do this with a reviewed `sbom/composition.json`. Arrange immutable
   downstream distribution and authenticated evidence without granting write
   permissions to jobs executing repository code.
 . *Workflows.* Replace the repository's workflows with `ci.yml`, `release.yml`

@@ -23,7 +23,10 @@ hashes, targets and declared coverage before publication. Test with query fixtur
 that locate known transitive components and distinguish build-only from shipped
 code. Agreement between producer records detects inconsistency;
 it cannot prove that undiscovered components are absent or that a matched
-advisory is exploitable.
+advisory is exploitable. A supplier's document fetched beside a locked file
+is bound by the file's SHA-256 and the document's own digest, and a stale
+opt-out is reported rather than kept; those checks show the chain is intact,
+not that the supplier's inventory is complete or authentic.
 
 == Share generation, validation and publication responsibilities
 
@@ -172,6 +175,60 @@ it discovers Roc imports, bundled platform/native code or vendored inputs.
 Pin and cache generators like other tools. Routine validation uses local
 schemas and metadata; remote vulnerability queries and full advisory rescans
 belong in a separate scheduled/manual analysis job so they do not delay PR CI.
+
+[#generate-sidecars-with-the-shared-actions]
+=== Generate sidecars and chain suppliers' SBOMs with the shared actions
+
+Blueprint 0.7.0 ships the generation capability above as a standalone Roc app
+bundle, `roc-blueprint-sbom-<hash>.tar.zst`, with `inspect`, `bind` and
+`check`, and its own releases publish `.spdx.json`, `.cdx.json` and
+`.spdx-2.3.json` beside every asset. Two shared actions wire that tool into a
+repository's release build so each project does not repeat the steps:
+
+* xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] runs in the
+  read-only build job after the final files exist. It exports the evaluated
+  Spec and the Lock, inspects the reviewed composition for one target, binds
+  the sidecars to each listed file's final bytes with a creation time and
+  namespace taken from the tested commit, checks them offline, and returns the
+  complete asset set for the test jobs, the attestation step and
+  `actions/publish-release`. The tool bundle and the Roc release it needs are
+  recorded per Blueprint release in `actions/setup-blueprint/sbom-tools.json`,
+  so `Blueprint.roc` remains the one place a repository names its release.
+* xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
+  is the one step that uses the network. For every component the composition
+  takes from a locked `SourceFile` or fetched program, it looks for the
+  supplier's sidecar beside the locked URL by the naming convention, records
+  the document with its SHA-256 and identity bound to the Lock's digest, and
+  writes `sbom/imports.json`. `inspect` then verifies the binding and folds the
+  supplier's graph into the inventory under the import's prefix, so the chain
+  is transitive: package, platform, application.
+
+The repository keeps `sbom/composition.json` under review, one per release
+target where targets differ, and decides where the imports live. Committing
+`sbom/imports.json` keeps the release build offline and stable and makes a
+supplier's changed document a reviewed change, which is the recommended
+default; a scheduled job can run the fetch action and propose the update.
+Fetching in the release build itself is also supported, at the cost of a
+network dependency on release day. Either way the fetch action refuses to
+adopt bytes that differ from a recorded digest.
+
+The release fails, in the pull-request dry run as well as on release day, when
+a locked dependency has neither a bound supplier SBOM nor a reviewed
+`unavailable_sboms` entry. The fetch action reports a stub for the maintainer
+to complete with a real reason and contact; it never invents the opt-out, and
+an opt-out whose supplier now publishes a sidecar is reported as stale so it
+gets removed. A dependency pinned by a tree or NAR digest cannot be bound,
+because that digest is not the file's SHA-256; pin the file by its published
+hash to chain it, or record why it is not. Every gap appears as an
+`incomplete` coverage scope in the documents and in the job summary.
+
+The shared actions cover bundles and binaries first; an examples or
+documentation archive is listed in `files` only when the repository has a
+reviewed composition for it. A fetched supplier document's digest proves that
+the bytes did not change after review, not that the supplier wrote them.
+Attesting a supplier's sidecar at admission, and the independent validator and
+evidence envelope the publisher hands off, remain separate work that these
+actions neither replace nor weaken.
 
 === Validate a declared release inventory
 

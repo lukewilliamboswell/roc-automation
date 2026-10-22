@@ -261,10 +261,14 @@ flowchart TD
 The publish job consumes the artifacts of its own run. It never rebuilds, and
 never resolves a moving branch.
 SBOM generation and validation belong to the read-only build task and its PR
-dry run. The shared publication action does not implement those steps; it
-uploads the supplied SBOM files as inert assets and verifies their transferred
-bytes. A repository implements and tests its generator before claiming SBOM
-coverage. Remote advisory rescans run separately from routine PR checks.
+dry run; xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] implements
+them with the pinned Blueprint tool, and
+xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
+chains the suppliers' documents in. The shared publication action does not
+implement those steps; it uploads the supplied SBOM files as inert assets and
+verifies their transferred bytes. Pass the asset list the sidecar action
+returns to the upload, the attestation and the publisher, so a missing sidecar
+cannot hide behind a wildcard. Remote advisory rescans run separately from routine PR checks.
 
 Enable immutable releases in the repository, so that a published release cannot
 gain, lose or replace an asset. Hash checks remain necessary even with immutable

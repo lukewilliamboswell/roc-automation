@@ -49,7 +49,7 @@ content identity, provenance and product correctness are different evidence.
 
 | Composition records omit components or bind the wrong artifact
 | Bind claims to subjects and keep uncertainty explicit. See xref:software-bill-of-materials.adoc#risk-component-evidence[component evidence].
-| Schema/graph checks, wrong-subject fixtures and transitive/build-only queries. Consistent records do not prove discovery completeness or vulnerability exploitability.
+| Schema/graph checks, wrong-subject fixtures, transitive/build-only queries, and supplier documents bound by digest with stale opt-outs reported. Consistent records do not prove discovery completeness, supplier authorship or vulnerability exploitability.
 
 | Documentation or an assessment overstates the checks
 | Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims], xref:documentation.adoc#publish-static-markdown[retrievable documentation formats] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
