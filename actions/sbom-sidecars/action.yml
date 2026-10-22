@@ -52,6 +52,9 @@ outputs:
   digests:
     description: Path of a sha256sum-format listing of the sidecars
     value: ${{ steps.sidecars.outputs.digests }}
+  evidence:
+    description: Path of the roc-automation-sbom-evidence-v1 envelope listing every file and sidecar by name, size and SHA-256, bound to the source commit and run, for the independent validator and publisher
+    value: ${{ steps.sidecars.outputs.evidence }}
   tool-url:
     description: Immutable URL of the SBOM tool bundle that generated the sidecars
     value: ${{ steps.sidecars.outputs.tool-url }}

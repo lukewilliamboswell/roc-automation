@@ -258,6 +258,44 @@ def dependency_report(composition: dict, inventory: dict) -> list[dict[str, str]
     return rows
 
 
+SIDECAR_FORMATS = {".spdx.json": "SPDX-3.0.1", ".cdx.json": "CycloneDX-1.7", ".spdx-2.3.json": "SPDX-2.3"}
+
+
+def evidence_envelope(env: dict[str, str], workspace: Path, files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]],
+                      tool: dict[str, str], blueprint_version: str, target: str, version: str, url_base: str,
+                      commit: str, created: str, rows: list[dict[str, str]]) -> dict:
+    """The producer's handoff: every file and sidecar by name, size and SHA-256, bound to source and run.
+
+    This is a transfer manifest for the independent validator and publisher,
+    not a component inventory; composition stays in the sidecars.
+    """
+    subjects = []
+    for file in files:
+        subjects.append({
+            "name": file.name,
+            "path": str(file.relative_to(workspace)),
+            "size": file.stat().st_size,
+            "sha256": sha256_of(file),
+            "target": target,
+            "version": version,
+            "url": f"{url_base}/{file.name}",
+            "sidecars": [
+                {"name": sidecar.name, "path": str(sidecar.relative_to(workspace)), "size": sidecar.stat().st_size, "sha256": digest,
+                 "format": next(fmt for suffix, fmt in SIDECAR_FORMATS.items() if sidecar.name.endswith(suffix))}
+                for sidecar, digest in sidecars[file]
+            ],
+        })
+    return {
+        "format": "roc-automation-sbom-evidence-v1",
+        "source": {"server": env.get("GITHUB_SERVER_URL", ""), "repository": env.get("GITHUB_REPOSITORY", ""), "commit": commit},
+        "producer": {"workflow": env.get("GITHUB_WORKFLOW_REF", ""), "run_id": env.get("GITHUB_RUN_ID", ""), "run_attempt": env.get("GITHUB_RUN_ATTEMPT", "")},
+        "generator": {"tool": tool["url"], "compiler": tool["compiler"], "generator": tool["generator"], "blueprint": blueprint_version, "created": created},
+        "subjects": subjects,
+        "dependencies": [row for row in rows if row["origin"] != "coverage"],
+        "coverage": [{"scope": row["component"], "status": "incomplete", "detail": row["detail"]} for row in rows if row["origin"] == "coverage"],
+    }
+
+
 def summary_text(files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]], rows: list[dict[str, str]], tool: dict[str, str], target: str) -> str:
     lines = ["", "### SBOM sidecars", "", f"Tool `{tool['url']}` on compiler `{tool['compiler']}`; target `{target}`.", "", "| Release file | Sidecar | SHA-256 |", "| --- | --- | --- |"]
     for file in files:
@@ -375,11 +413,13 @@ def main(run: Run = run_command) -> None:
             for sidecar, digest in written[file]:
                 output.write(f"{digest}  {sidecar.relative_to(workspace)}\n")
     rows = dependency_report(composition, inventory)
+    evidence = staging / "sbom-evidence.json"
+    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, tool, blueprint_version, target, version, url_base, commit, created, rows))
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")
         output.write(f"sidecars<<{delimiter}\n" + "\n".join(sidecars_only) + f"\n{delimiter}\n")
-        output.write(f"inventory={inventory_path}\ndigests={digests}\ntool-url={tool['url']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
+        output.write(f"inventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool['url']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
     for file in files:
         for sidecar, digest in written[file]:
             print(f"{sidecar.relative_to(workspace)}: SHA-256 {digest}")

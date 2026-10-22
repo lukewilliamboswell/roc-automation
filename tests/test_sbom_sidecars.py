@@ -239,6 +239,7 @@ class EndToEndTests(unittest.TestCase):
         self.env = {
             "GITHUB_WORKSPACE": str(self.workspace), "RUNNER_TEMP": str(self.runner_temp), "GITHUB_OUTPUT": str(self.root / "outputs"),
             "GITHUB_STEP_SUMMARY": str(self.root / "summary.md"), "GITHUB_SHA": self.commit, "GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "owner/repo",
+            "GITHUB_WORKFLOW_REF": "owner/repo/.github/workflows/release.yml@refs/heads/main", "GITHUB_RUN_ID": "77", "GITHUB_RUN_ATTEMPT": "2",
             "INPUT_FILES": "dist/app\ndist/bundle.tar.zst\n", "INPUT_VERSION": "1.2.0", "INPUT_TARGET": "x86_64-linux", "INPUT_AUTHOR": "Organization: Example Ltd",
             "INPUT_ROC_BINARY": str(self.bin / "roc"), "INPUT_BLUEPRINT_BINARY": str(self.bin / "blueprint"),
             "TOOL_LOG": str(self.log), "EXPECTED_TOOL": TOOL,
@@ -297,6 +298,21 @@ class EndToEndTests(unittest.TestCase):
         digests = Path(values["digests"]).read_text().splitlines()
         self.assertEqual(len(digests), 4)
         self.assertTrue(all(line.endswith(("app.spdx.json", "app.cdx.json", "bundle.tar.zst.spdx.json", "bundle.tar.zst.cdx.json")) for line in digests))
+        evidence = json.loads(Path(values["evidence"]).read_text())
+        self.assertEqual(evidence["format"], "roc-automation-sbom-evidence-v1")
+        self.assertEqual(evidence["source"], {"server": "https://github.com", "repository": "owner/repo", "commit": self.commit})
+        self.assertEqual(evidence["producer"], {"workflow": "owner/repo/.github/workflows/release.yml@refs/heads/main", "run_id": "77", "run_attempt": "2"})
+        self.assertEqual(evidence["generator"]["tool"], TOOL)
+        self.assertEqual(evidence["generator"]["blueprint"], "0.7.0")
+        self.assertEqual([subject["name"] for subject in evidence["subjects"]], ["app", "bundle.tar.zst"])
+        app = evidence["subjects"][0]
+        self.assertEqual((app["path"], app["size"], app["sha256"], app["target"], app["version"], app["url"]), ("dist/app", len(b"final app bytes"), hashlib.sha256(b"final app bytes").hexdigest(), "x86_64-linux", "1.2.0", "https://github.com/owner/repo/releases/download/1.2.0/app"))
+        self.assertEqual([(sidecar["name"], sidecar["format"]) for sidecar in app["sidecars"]], [("app.spdx.json", "SPDX-3.0.1"), ("app.cdx.json", "CycloneDX-1.7")])
+        for sidecar in app["sidecars"]:
+            self.assertEqual(sidecar["sha256"], hashlib.sha256((self.workspace / sidecar["path"]).read_bytes()).hexdigest())
+            self.assertEqual(sidecar["size"], (self.workspace / sidecar["path"]).stat().st_size)
+        self.assertEqual([(row["component"], row["state"]) for row in evidence["dependencies"]], [("dep", "unavailable")])
+        self.assertEqual([gap["scope"] for gap in evidence["coverage"]], ["native-closure", "sbom:dep"])
         summary = (self.root / "summary.md").read_text()
         self.assertIn("| `dep` | `source:dep` | unavailable | The supplier publishes no SBOM (contact https://example.org/security) |", summary)
         self.assertIn("| `sbom:dep` | `coverage` | incomplete |", summary)
@@ -307,6 +323,8 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(values["assets"].splitlines(), ["dist/app", "dist/app.cdx.json", "dist/app.spdx-2.3.json", "dist/app.spdx.json"])
         document = json.loads((self.workspace / "dist/app.spdx-2.3.json").read_text())
         self.assertEqual(document["format"], "SPDX-2.3")
+        evidence = json.loads(Path(values["evidence"]).read_text())
+        self.assertEqual([sidecar["format"] for sidecar in evidence["subjects"][0]["sidecars"]], ["SPDX-3.0.1", "CycloneDX-1.7", "SPDX-2.3"])
         binds = [call["args"] for call in self.calls() if call["args"][0] == "run" and call["args"][3] == "bind"]
         self.assertEqual(len(binds), 2)
         self.assertEqual(binds[0][4:7], binds[1][4:7])

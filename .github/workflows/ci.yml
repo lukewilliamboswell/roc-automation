@@ -188,8 +188,15 @@ jobs:
         run: python3 tools/roc-build-runner/tests/test_cli.py -v
 
   sbom-actions:
-    name: SBOM sidecars and supplier chain with the released tools
-    runs-on: ubuntu-24.04
+    name: SBOM sidecars and supplier chain (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, system: x86_64-linux }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux }
+          - { runner: macos-15, system: aarch64-darwin }
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -200,8 +207,8 @@ jobs:
       # the supplier, roc-blueprint 0.7.0, publishes sidecars beside that file.
       - name: Use the consumer fixture
         run: |
-          cp tests/fixtures/sbom-chain/Blueprint.roc tests/fixtures/sbom-chain/Blueprint.lock .
-          cp -R tests/fixtures/sbom-chain/package tests/fixtures/sbom-chain/app tests/fixtures/sbom-chain/sbom .
+          cp examples/sbom-chain/Blueprint.roc examples/sbom-chain/Blueprint.lock .
+          cp -R examples/sbom-chain/package examples/sbom-chain/app examples/sbom-chain/sbom .
       - uses: ./actions/setup-blueprint
       # The SBOM tool bundle runs on the exact Roc release its Blueprint release records.
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
@@ -238,7 +245,7 @@ jobs:
           test "$FETCHED" = 1
           test "$MISSING" = 0
           test "$(printf '%s\n' "$ASSETS" | wc -l)" = 4
-          sha256sum --check "$DIGESTS"
+          shasum -a 256 --check "$DIGESTS"
           grep -q '#blueprint-core-sbom-Subject' "$FILE.spdx.json"
           grep -q '"copiedTo"' "$FILE.spdx.json"
       # A native executable is a second subject, bound per target with its own
@@ -252,32 +259,46 @@ jobs:
       - id: fetch-native
         uses: ./actions/fetch-dependency-sboms
         with:
-          target: x86_64-linux
-          composition: sbom/composition-x86_64-linux.json
-          output: sbom/imports-x86_64-linux.json
+          target: ${{ matrix.system }}
+          composition: sbom/composition-${{ matrix.system }}.json
+          output: sbom/imports-${{ matrix.system }}.json
       - id: sidecars-native
         uses: ./actions/sbom-sidecars
         with:
           files: dist-native/hello
           version: 0.1.0
-          target: x86_64-linux
+          target: ${{ matrix.system }}
           author: 'Organization: roc-automation contributors'
-          composition: sbom/composition-x86_64-linux.json
-          imports: sbom/imports-x86_64-linux.json
+          composition: sbom/composition-${{ matrix.system }}.json
+          imports: sbom/imports-${{ matrix.system }}.json
       - name: Check the native sidecars name their target and the compiler gap
         env:
           FETCHED: ${{ steps.fetch-native.outputs.fetched }}
           MISSING: ${{ steps.fetch-native.outputs.missing }}
           ASSETS: ${{ steps.sidecars-native.outputs.assets }}
           DIGESTS: ${{ steps.sidecars-native.outputs.digests }}
+          EVIDENCE: ${{ steps.sidecars-native.outputs.evidence }}
+          SYSTEM: ${{ matrix.system }}
         run: |
           test "$FETCHED" = 0
           test "$MISSING" = 0
           test "$(printf '%s\n' "$ASSETS" | wc -l)" = 3
-          sha256sum --check "$DIGESTS"
-          grep -q '"blueprint:target","value":"x86_64-linux"' dist-native/hello.cdx.json
+          shasum -a 256 --check "$DIGESTS"
+          grep -q "\"blueprint:target\",\"value\":\"$SYSTEM\"" dist-native/hello.cdx.json
           grep -q 'sbom:roc-stable' dist-native/hello.spdx.json
-          test "$(sha256sum dist-native/hello | cut -d' ' -f1)" = "$(python3 -c 'import json;print(json.load(open("dist-native/hello.cdx.json"))["metadata"]["component"]["hashes"][0]["content"])')"
+          test "$(shasum -a 256 dist-native/hello | cut -d' ' -f1)" = "$(python3 -c 'import json;print(json.load(open("dist-native/hello.cdx.json"))["metadata"]["component"]["hashes"][0]["content"])')"
+          # The evidence envelope binds the same bytes to this commit and run.
+          python3 - "$EVIDENCE" "$SYSTEM" <<'PY'
+          import hashlib, json, os, sys
+          envelope = json.load(open(sys.argv[1]))
+          assert envelope["format"] == "roc-automation-sbom-evidence-v1"
+          assert envelope["source"]["commit"] == os.environ["GITHUB_SHA"] and envelope["producer"]["run_id"] == os.environ["GITHUB_RUN_ID"]
+          [subject] = envelope["subjects"]
+          assert subject["target"] == sys.argv[2] and subject["sha256"] == hashlib.sha256(open(subject["path"], "rb").read()).hexdigest()
+          for sidecar in subject["sidecars"]:
+              assert sidecar["sha256"] == hashlib.sha256(open(sidecar["path"], "rb").read()).hexdigest() and sidecar["size"] == os.path.getsize(sidecar["path"])
+          assert [gap["scope"] for gap in envelope["coverage"]] == ["native-closure", "sbom:roc-stable"], envelope["coverage"]
+          PY
       - name: Provoke the refusals a maintainer must see
         run: python3 tests/check_sbom_chain.py
 

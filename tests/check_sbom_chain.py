@@ -1,6 +1,6 @@
 """Exercise the SBOM sidecar and supplier-chain actions with the released tools.
 
-The workflow copies `tests/fixtures/sbom-chain/` to the workspace root and
+The workflow copies `examples/sbom-chain/` to the workspace root and
 installs the real Blueprint and the Roc release its SBOM tool needs. This runs
 the two controllers against that fixture: the supplier's published SBOM is
 fetched and bound, sidecars are written and checked, and then the refusals a
@@ -56,7 +56,7 @@ def bundle(directory):
 
 def main():
     workspace = ROOT
-    assert (workspace / "sbom/composition.json").is_file() and (workspace / "package/main.roc").is_file(), "copy tests/fixtures/sbom-chain to the workspace root first"
+    assert (workspace / "sbom/composition.json").is_file() and (workspace / "package/main.roc").is_file(), "copy examples/sbom-chain to the workspace root first"
     composition = json.loads((workspace / "sbom/composition.json").read_text())
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     common = {"GITHUB_WORKSPACE": str(workspace), "GITHUB_SHA": commit, "GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": os.environ.get("GITHUB_REPOSITORY", "lukewilliamboswell/roc-automation")}
