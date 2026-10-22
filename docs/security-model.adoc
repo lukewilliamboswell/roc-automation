@@ -279,7 +279,10 @@ records, and CI runs both actions against a consumer fixture that pins a
 roc-blueprint release file by its published SHA-256: once for its source
 bundle, where the supplier's SBOM is bound in, and once for a native
 executable on the runner's target, whose fetched compiler has no published
-SBOM and so appears as a reviewed gap.
+SBOM and so appears as a reviewed gap, on x86_64 Linux, arm64 Linux and
+Apple Silicon. The evidence envelope the sidecar action returns names what
+the publisher should receive; it authorizes nothing, and the privileged job
+rechecks every file it names.
 
 The digest of a fetched document establishes which bytes were reviewed, not
 who produced them, and `inspect` establishes that the composition is

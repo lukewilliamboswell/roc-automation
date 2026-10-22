@@ -520,8 +520,22 @@ Outputs are `assets`, every listed file and its sidecars, one relative path
 per line, for the artifact upload, the test jobs, the attestation step's
 `subject-path` and `actions/publish-release`; `sidecars`, the sidecars alone;
 `digests`, a `sha256sum`-format listing of them; `inventory`, the inspected
-inventory the documents were rendered from; and `tool-url`, `compiler`,
+inventory the documents were rendered from; `evidence`, a
+`roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `compiler`,
 `commit` and `created`, which release notes can record.
+
+The evidence envelope lists every file and sidecar by name, path, size,
+SHA-256, format, target and version, bound to the source repository and
+commit and to the producing workflow, run and attempt, with the generator,
+the dependency states and the `incomplete` coverage scopes. It is the
+producer's handoff to the independent validator and publisher: a transfer
+manifest, not a component inventory, and not an authorization. A privileged
+job rechecks what it names against the files it receives.
+
+`examples/sbom-chain/.github/workflows/release.yml` is a complete release
+that uses both actions for a bundle and a native executable per system, runs
+the exact files, attests every asset including the sidecars, and hands the
+explicit asset list to `actions/publish-release`.
 
 The action does the following, in this order, and stops at the first failure.
 

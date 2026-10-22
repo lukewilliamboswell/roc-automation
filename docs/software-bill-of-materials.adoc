@@ -222,6 +222,15 @@ because that digest is not the file's SHA-256; pin the file by its published
 hash to chain it, or record why it is not. Every gap appears as an
 `incomplete` coverage scope in the documents and in the job summary.
 
+The sidecar action also returns a `roc-automation-sbom-evidence-v1`
+envelope, the producer's input to the independent validator and privileged
+publisher handoff: each file and sidecar by name, size, SHA-256, format,
+target and version, bound to the source commit and the producing run. The
+complete release in `examples/sbom-chain/` builds a bundle and a native
+executable for each supported system in read-only jobs, tests the exact
+files, attests every asset with its sidecars and publishes the explicit
+asset list through `actions/publish-release`.
+
 The shared actions cover bundles and binaries first; an examples or
 documentation archive is listed in `files` only when the repository has a
 reviewed composition for it. A fetched supplier document's digest proves that

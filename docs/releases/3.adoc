@@ -25,7 +25,12 @@ must be reproduced byte for byte on every later run. CI exercises both actions
 with the released tools against a consumer fixture that pins a roc-blueprint
 release file: a source bundle that binds the supplier's SBOM in, and a native
 executable bound for the runner's target with a reviewed gap for its fetched
-compiler; it then provokes each refusal.
+compiler; it then provokes each refusal on x86_64 Linux, arm64 Linux and Apple
+Silicon. The sidecar action also returns a `roc-automation-sbom-evidence-v1`
+envelope, the producer's handoff to the independent validator and publisher,
+and `examples/sbom-chain/` holds a complete release workflow that builds,
+tests, attests and publishes a bundle and per-system executables with their
+sidecars.
 xref:software-bill-of-materials.adoc#generate-sidecars-with-the-shared-actions[The SBOM chapter]
 says where the composition and imports live and what the chain does not prove.
 

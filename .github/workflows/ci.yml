@@ -330,3 +330,4 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           actionlint
           actionlint examples/pure-package/.github/workflows/ci.yml
+          actionlint examples/sbom-chain/.github/workflows/release.yml
