@@ -244,7 +244,7 @@ jobs:
         run: |
           test "$FETCHED" = 1
           test "$MISSING" = 0
-          test "$(printf '%s\n' "$ASSETS" | wc -l)" = 4
+          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 4
           shasum -a 256 --check "$DIGESTS"
           grep -q '#blueprint-core-sbom-Subject' "$FILE.spdx.json"
           grep -q '"copiedTo"' "$FILE.spdx.json"
@@ -282,7 +282,7 @@ jobs:
         run: |
           test "$FETCHED" = 0
           test "$MISSING" = 0
-          test "$(printf '%s\n' "$ASSETS" | wc -l)" = 3
+          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 3
           shasum -a 256 --check "$DIGESTS"
           grep -q "\"blueprint:target\",\"value\":\"$SYSTEM\"" dist-native/hello.cdx.json
           grep -q 'sbom:roc-stable' dist-native/hello.spdx.json
