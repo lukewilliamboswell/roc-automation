@@ -231,6 +231,13 @@ executable for each supported system in read-only jobs, tests the exact
 files, attests every asset with its sidecars and publishes the explicit
 asset list through `actions/publish-release`.
 
+The chain into a native consumer depends on Blueprint admitting a `source`
+supplier into a native inventory. Blueprint 0.7.0 refuses it with `import
+target differs from subject`; the fix is in roc-blueprint PR #62, and the
+fetch action already records the supplier's stated target so the bound
+import is accepted as soon as a release carries it. The example keeps both
+compositions, and its chain check requires that exact refusal until then.
+
 The shared actions cover bundles and binaries first; an examples or
 documentation archive is listed in `files` only when the repository has a
 reviewed composition for it. A fetched supplier document's digest proves that

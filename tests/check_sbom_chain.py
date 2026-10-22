@@ -131,6 +131,25 @@ def main():
     result, values = run(SIDECARS, {**sidecar_env, "INPUT_IMPORTS": "", "INPUT_COMPOSITION": "sbom/composition-exempt.json", "INPUT_SPDX_2_3": "false"})
     assert "unavailable: blueprint-core" in result.stdout and "incomplete: sbom:blueprint-core" in result.stdout
     assert values["assets"].splitlines() == [str(archive), f"{archive}.cdx.json", f"{archive}.spdx.json"]
+    # The package-to-platform chain: the native executable's composition imports the
+    # supplier's source bundle SBOM bound. The fetch action records the bundle's own
+    # `source` target, and Blueprint 0.7.0 refuses that import into a native inventory
+    # with exactly one message; the release carrying roc-blueprint#62 admits it, and
+    # this check then flips to require success.
+    system = {"Linux": {"X64": "x86_64-linux", "ARM64": "aarch64-linux"}, "macOS": {"ARM64": "aarch64-darwin"}}[os.environ["RUNNER_OS"]][os.environ["RUNNER_ARCH"]]
+    bound = f"sbom/composition-{system}-bound.json"
+    _, values = run(FETCH, {**common, "INPUT_TARGET": system, "INPUT_COMPOSITION": bound, "INPUT_OUTPUT": f"sbom/chain-imports-{system}-bound.json"})
+    assert values["fetched"] == "1" and values["missing"] == "0"
+    recorded = json.loads((workspace / f"sbom/chain-imports-{system}-bound.json").read_text())["imported_documents"][0]
+    assert recorded["target"] == "source" and recorded["subject"]["component"] == "blueprint-core", recorded["target"]
+    native = Path("dist-chain-native")
+    if native.exists():
+        shutil.rmtree(native)
+    native.mkdir()
+    subprocess.run(["roc", "build", "app/main.roc", f"--output={native}/hello"], cwd=ROOT, check=True, capture_output=True, text=True)
+    result, _ = run(SIDECARS, {**common, "INPUT_FILES": f"{native}/hello", "INPUT_VERSION": "0.1.0", "INPUT_TARGET": system, "INPUT_AUTHOR": "Organization: roc-automation contributors", "INPUT_COMPOSITION": bound, "INPUT_IMPORTS": f"sbom/chain-imports-{system}-bound.json"}, expect=1)
+    assert "import target differs from subject" in result.stderr, result.stderr
+    assert sorted(path.name for path in native.iterdir()) == ["hello"]
     print("SBOM chain checks passed")
 
 

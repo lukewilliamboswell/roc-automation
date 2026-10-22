@@ -15,7 +15,8 @@ Blueprint.lock                       their reviewed digests
 package/main.roc                     the package whose bundle is released
 app/main.roc                         the application built natively per system
 sbom/composition.json                what the bundle contains (target source)
-sbom/composition-<system>.json       what each executable contains
+sbom/composition-<system>.json       what each executable contains, on Blueprint 0.7.0
+sbom/composition-<system>-bound.json the same with the supplier's bundle SBOM bound in
 .github/workflows/release.yml        build, test, attest and publish once
 ----
 
@@ -27,6 +28,13 @@ for such a repository: read-only build jobs generate and check the sidecars
 and return the asset set; test jobs run the exact executables; a publish job
 with no checkout attests every file, including the sidecars, and hands the
 explicit asset list to `actions/publish-release`.
+
+The `-bound` compositions are the package-to-platform chain: the native
+executable imports the supplier's bundle SBOM bound to the locked bytes, with
+the bundle's own `source` target kept. Blueprint 0.7.0 refuses that import
+into a native inventory; roc-blueprint PR #62 admits it, and the chain check
+requires that exact refusal until a release carries the fix, when the bound
+compositions replace the others.
 
 To adopt it, replace the package and application, review each composition
 against what your files actually contain, and commit `sbom/imports.json`
