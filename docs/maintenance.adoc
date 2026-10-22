@@ -27,7 +27,7 @@ and not a chore to automate.
 | For a new roc-blueprint release
 
 | Update script dependencies
-| Script headers, `RocPackages` in `Blueprint.roc`, `Blueprint.lock`
+| Script headers, `RocPackages` in `Blueprint.roc`, and `Blueprint.lock` when build sources change
 | For a new release of a platform or package the scripts use
 
 | Regenerate host bindings
@@ -127,8 +127,10 @@ Contributors then download the binary from the same release.
 . Change the same URL under `RocPackages` in `Blueprint.roc`, and add any new
   dependencies of that dependency. `roc-stable deps scripts/check_all.roc`
   lists them.
-. Run `blueprint update` and commit `Blueprint.lock`.
-. Merge after `ci.yml` passes.
+. For sandboxed builds using those bundles, run `blueprint update`, review
+  the changed source identities and commit `Blueprint.lock`. Task-only bundles
+  are pinned by their committed URL hashes and do not change the lock.
+. Run the affected tasks and merge after `ci.yml` passes.
 
 == Regenerate host bindings
 

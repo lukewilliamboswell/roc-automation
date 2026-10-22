@@ -4,7 +4,10 @@
 == Blueprint 0.7 and parser 3 adoption
 
 The repository and copyable pure-package starter use Blueprint 0.7.0, with
-Spec major 3 and Lock 2. Explicit package sources and `Input` declarations
+Spec major 3 and Lock 2. Task-only Roc bundles retain their committed URL
+content hashes without provider-lock entries; sandboxed-build bundles remain
+provider-locked. Guidance distinguishes initial bundle verification from reuse
+of Roc's extracted package cache. Explicit package sources and `Input` declarations
 replace the older configuration shape. A full update replaces earlier locks;
 generated local state is removed and changed pins are reviewed. Blueprint's
 configuration compiler is embedded in its admitted executable, so first use

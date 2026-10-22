@@ -102,7 +102,11 @@ verified store before any Roc CLI is installed globally. No GitHub compiler
 bootstrap download is needed. This compiler is separate from the downloaded
 renderer and the floating package compiler; the example's fixed `roc-stable`
 recipe also remains a separate reviewed pin. Roc package bundles occupy Roc's
-package cache and are not covered by the artifact cache below.
+package cache and are not covered by the artifact cache below. Task-only
+`RocPackages` bundles are pinned by their URL hashes and verified on initial
+unbundling, rather than listed in `Blueprint.lock`. Existing extracted package
+directories are reused without rehashing, as
+xref:security-model.adoc#compilers[the compiler trust model] explains.
 
 The adoption checks read `blueprint lock show --json` format 2 and select fetched
 programs by name and system to compare actual executable lengths and hashes.

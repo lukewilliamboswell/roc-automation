@@ -67,10 +67,14 @@ The compiler comes from https://github.com/roc-lang/roc-overlay[roc-overlay],
 which packages recorded nightlies under their release tags. `Command` exposes
 that one release as `roc-stable` without adding the tool's own executables, so
 the environment provides no bare `roc`.
-`RocPackages`:: Locks the Roc bundles the scripts depend on, so a script
-resolves them without downloading. List every bundle, including dependencies of
-dependencies; `roc-stable deps scripts/check_all.roc` prints them. Blueprint
-does not read package headers and cannot add a missing one.
+`RocPackages`:: Declares the content-addressed Roc bundles to prepare before
+scripts start. For tasks and shells, Blueprint downloads missing bundles and
+uses `roc unbundle` to verify their URL hashes before publishing them into Roc's
+package cache; these task-only bundles have no entries in `Blueprint.lock`.
+Sandboxed builds instead take their bundles from provider-locked sources. List
+every bundle, including dependencies of dependencies;
+`roc-stable deps scripts/check_all.roc` prints them. Blueprint does not read
+package headers and cannot add a missing one.
 `Tools`:: Every program a script starts, and every toolchain a build needs: for
 example `pandoc`, `zig`, a Rust toolchain or `go`. A tool that a script calls
 and the environment does not declare is a defect, because CI and contributors
@@ -81,7 +85,9 @@ workflow and a contributor run the same command.
 The two files divide the work. `Blueprint.roc` states which release is the
 tooling compiler and which tools are needed, where a reviewer can read it.
 `Blueprint.lock` pins the overlay revision that supplies that release's download
-URL and hash, the package source, and each locked bundle. Blueprint 0.7 uses
+URL and hash, package sources, fetched programs and bundle sources used by
+sandboxed builds. Task-only bundle identities remain in their committed URLs.
+Blueprint 0.7 uses
 Spec major 3 and Lock 2; older lock formats require a full update as
 xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint] describes.
 

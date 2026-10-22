@@ -34,6 +34,13 @@ and a full `blueprint update`, review the regenerated Lock 2 against prior pins,
 and remove generated `.blueprint/` state. Earlier locks are refused outside the
 full update path. Build declarations also need explicit named executors.
 
+Task-only `RocPackages` bundles are pinned by their committed content-addressed
+URLs rather than provider-lock entries. Missing bundles are verified through
+`roc unbundle`; existing extracted Roc package directories are reused without
+rehashing. Sandboxed-build bundles remain provider-locked and use a separate
+build package cache. Blueprint artifact-cache verification does not authenticate
+pre-existing Roc package cache directories.
+
 Adoption checks use the public `blueprint lock show --json` format 2 interface,
 select fetched programs by name and system, and compare actual executable
 identities. The copyable pure-package starter uses Blueprint 0.7.0 and the
