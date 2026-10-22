@@ -201,7 +201,7 @@ jobs:
       - name: Use the consumer fixture
         run: |
           cp tests/fixtures/sbom-chain/Blueprint.roc tests/fixtures/sbom-chain/Blueprint.lock .
-          cp -R tests/fixtures/sbom-chain/package tests/fixtures/sbom-chain/sbom .
+          cp -R tests/fixtures/sbom-chain/package tests/fixtures/sbom-chain/app tests/fixtures/sbom-chain/sbom .
       - uses: ./actions/setup-blueprint
       # The SBOM tool bundle runs on the exact Roc release its Blueprint release records.
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
@@ -241,6 +241,43 @@ jobs:
           sha256sum --check "$DIGESTS"
           grep -q '#blueprint-core-sbom-Subject' "$FILE.spdx.json"
           grep -q '"copiedTo"' "$FILE.spdx.json"
+      # A native executable is a second subject, bound per target with its own
+      # composition: the fetched fixed compiler is a locked dependency whose
+      # publisher ships no SBOM, so a reviewed opt-out becomes a visible gap.
+      - name: Build the native executable
+        run: |
+          mkdir dist-native
+          roc build app/main.roc --output=dist-native/hello
+          dist-native/hello
+      - id: fetch-native
+        uses: ./actions/fetch-dependency-sboms
+        with:
+          target: x86_64-linux
+          composition: sbom/composition-x86_64-linux.json
+          output: sbom/imports-x86_64-linux.json
+      - id: sidecars-native
+        uses: ./actions/sbom-sidecars
+        with:
+          files: dist-native/hello
+          version: 0.1.0
+          target: x86_64-linux
+          author: 'Organization: roc-automation contributors'
+          composition: sbom/composition-x86_64-linux.json
+          imports: sbom/imports-x86_64-linux.json
+      - name: Check the native sidecars name their target and the compiler gap
+        env:
+          FETCHED: ${{ steps.fetch-native.outputs.fetched }}
+          MISSING: ${{ steps.fetch-native.outputs.missing }}
+          ASSETS: ${{ steps.sidecars-native.outputs.assets }}
+          DIGESTS: ${{ steps.sidecars-native.outputs.digests }}
+        run: |
+          test "$FETCHED" = 0
+          test "$MISSING" = 0
+          test "$(printf '%s\n' "$ASSETS" | wc -l)" = 3
+          sha256sum --check "$DIGESTS"
+          grep -q '"blueprint:target","value":"x86_64-linux"' dist-native/hello.cdx.json
+          grep -q 'sbom:roc-stable' dist-native/hello.spdx.json
+          test "$(sha256sum dist-native/hello | cut -d' ' -f1)" = "$(python3 -c 'import json;print(json.load(open("dist-native/hello.cdx.json"))["metadata"]["component"]["hashes"][0]["content"])')"
       - name: Provoke the refusals a maintainer must see
         run: python3 tests/check_sbom_chain.py
 

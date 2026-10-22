@@ -23,7 +23,9 @@ dependency without a published SBOM as a stub the maintainer completes, and
 reports an opt-out whose supplier now publishes as stale. A recorded document
 must be reproduced byte for byte on every later run. CI exercises both actions
 with the released tools against a consumer fixture that pins a roc-blueprint
-release file, and provokes each refusal.
+release file: a source bundle that binds the supplier's SBOM in, and a native
+executable bound for the runner's target with a reviewed gap for its fetched
+compiler; it then provokes each refusal.
 xref:software-bill-of-materials.adoc#generate-sidecars-with-the-shared-actions[The SBOM chapter]
 says where the composition and imports live and what the chain does not prove.
 

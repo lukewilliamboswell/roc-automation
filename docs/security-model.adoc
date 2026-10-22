@@ -276,7 +276,10 @@ vanished supplier document fails the step; nothing is adopted silently. The
 regression tests exercise wrong compilers, stale sidecars, a checkout that is
 not the event commit, documents about other bytes, stale opt-outs and changed
 records, and CI runs both actions against a consumer fixture that pins a
-roc-blueprint release file by its published SHA-256.
+roc-blueprint release file by its published SHA-256: once for its source
+bundle, where the supplier's SBOM is bound in, and once for a native
+executable on the runner's target, whose fetched compiler has no published
+SBOM and so appears as a reviewed gap.
 
 The digest of a fetched document establishes which bytes were reviewed, not
 who produced them, and `inspect` establishes that the composition is
