@@ -2,8 +2,9 @@
 
 == Shared SBOM sidecars and supplier chaining
 
-Two shared actions put Blueprint 0.7.0's standalone SBOM tool into a
-repository's release build.
+Two shared actions put Blueprint's standalone SBOM tool, the native
+`blueprint-sbom-<system>` binary of 0.8.0 or the app bundle of 0.7.0, into a
+repository's release build. `actions/setup-blueprint` records 0.8.0.
 xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] inspects the reviewed
 composition against the evaluated Spec and Lock, binds SPDX 3.0.1 and
 CycloneDX 1.7 sidecars, and SPDX 2.3 on request, to each listed release file's
@@ -31,7 +32,8 @@ reports an opt-out whose supplier now publishes as stale. A recorded document
 must be reproduced byte for byte on every later run. CI exercises both actions
 with the released tools against a consumer fixture that pins a roc-blueprint
 release file: a source bundle that binds the supplier's SBOM in, and a native
-executable bound for the runner's target with a reviewed gap for its fetched
+executable bound for the runner's target that imports that bundle's SBOM
+bound, the package-to-platform chain, with a reviewed gap for its fetched
 compiler; it then provokes each refusal on x86_64 Linux, arm64 Linux and Apple
 Silicon. The sidecar action also returns a `roc-automation-sbom-evidence-v1`
 envelope, the producer's handoff to the independent validator and publisher,

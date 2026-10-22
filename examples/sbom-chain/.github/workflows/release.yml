@@ -101,7 +101,7 @@ jobs:
             echo "# sbom-chain-example $VERSION"
             echo
             cat <<'TEXT'
-          Every asset has `<asset>.spdx.json` (SPDX 3.0.1) and `<asset>.cdx.json` (CycloneDX 1.7) beside it, bound to its SHA-256 and covered by the release attestation.
+          Every asset has `<asset>.spdx.json` (SPDX 3.0.1), `<asset>.cdx.json` (CycloneDX 1.7) and `<asset>.sbom-manifest.json` beside it, bound to its SHA-256 and covered by the release attestation.
 
           TEXT
             echo "Bundle: \`$(basename "$FILE")\`. SBOM tool: $TOOL on Roc \`$COMPILER\`."
@@ -210,11 +210,11 @@ jobs:
       - name: Gather the complete asset set
         run: |
           mkdir release
-          mv candidate/bundle/dist/*.tar.zst candidate/bundle/dist/*.tar.zst.spdx.json candidate/bundle/dist/*.tar.zst.cdx.json release/
+          mv candidate/bundle/dist/*.tar.zst candidate/bundle/dist/*.tar.zst.spdx.json candidate/bundle/dist/*.tar.zst.cdx.json candidate/bundle/dist/*.tar.zst.sbom-manifest.json release/
           for system in x86_64-linux aarch64-linux aarch64-darwin; do
-            mv "candidate/native-$system/dist/hello-$system" "candidate/native-$system/dist/hello-$system.spdx.json" "candidate/native-$system/dist/hello-$system.cdx.json" release/
+            mv "candidate/native-$system/dist/hello-$system" "candidate/native-$system/dist/hello-$system.spdx.json" "candidate/native-$system/dist/hello-$system.cdx.json" "candidate/native-$system/dist/hello-$system.sbom-manifest.json" release/
           done
-          test "$(find release -type f | wc -l)" = 12
+          test "$(find release -type f | wc -l)" = 16
       # The subjects are the exact files built and tested in this run; the
       # sidecars are subjects too, as Blueprint's own release attests them.
       - id: provenance
@@ -242,15 +242,19 @@ jobs:
             release/*.tar.zst
             release/*.tar.zst.spdx.json
             release/*.tar.zst.cdx.json
+            release/*.tar.zst.sbom-manifest.json
             release/hello-x86_64-linux
             release/hello-x86_64-linux.spdx.json
             release/hello-x86_64-linux.cdx.json
+            release/hello-x86_64-linux.sbom-manifest.json
             release/hello-aarch64-linux
             release/hello-aarch64-linux.spdx.json
             release/hello-aarch64-linux.cdx.json
+            release/hello-aarch64-linux.sbom-manifest.json
             release/hello-aarch64-darwin
             release/hello-aarch64-darwin.spdx.json
             release/hello-aarch64-darwin.cdx.json
+            release/hello-aarch64-darwin.sbom-manifest.json
             release/provenance.sigstore.json
 
   # The required check of the dry run: green only when every job above passed.

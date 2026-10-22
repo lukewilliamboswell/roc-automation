@@ -95,7 +95,7 @@ def main():
     archive = bundle(workspace / "dist-chain")
     sidecar_env = {**common, "INPUT_FILES": str(archive), "INPUT_VERSION": "0.1.0", "INPUT_TARGET": "source", "INPUT_AUTHOR": "Organization: roc-automation contributors", "INPUT_IMPORTS": "sbom/chain-imports.json", "INPUT_SPDX_2_3": "true"}
     _, values = run(SIDECARS, sidecar_env)
-    expected = [str(archive)] + [f"{archive}{suffix}" for suffix in (".cdx.json", ".spdx-2.3.json", ".spdx.json")]
+    expected = [str(archive)] + [f"{archive}{suffix}" for suffix in (".cdx.json", ".sbom-manifest.json", ".spdx-2.3.json", ".spdx.json")]
     assert values["assets"].splitlines() == expected, values["assets"]
     assert values["compiler"] == "nightly-2026-10-21-5349569" and values["commit"] == commit
     digest = hashlib.sha256((workspace / archive).read_bytes()).hexdigest()
@@ -109,7 +109,12 @@ def main():
     cyclonedx = json.loads((workspace / f"{archive}.cdx.json").read_text())
     assert cyclonedx["metadata"]["component"]["hashes"][0]["content"] == digest
     listing = Path(values["digests"]).read_text().splitlines()
-    assert len(listing) == 3 and all(line.split("  ", 1)[1] in expected[1:] for line in listing)
+    assert len(listing) == 4 and all(line.split("  ", 1)[1] in expected[1:] for line in listing)
+    manifest = json.loads((workspace / f"{archive}.sbom-manifest.json").read_text())
+    assert manifest["subject"]["sha256"] == digest and manifest["subject"]["target"] == "source"
+    assert {entry["filename"] for entry in manifest["sidecars"]} == {f"{archive.name}.spdx.json", f"{archive.name}.cdx.json"}
+    # The archive, not the argument list, is the authority: its one member is a component.
+    assert any(element.get("name") == "main.roc" and "archive-member" in json.dumps(element) for element in spdx["@graph"]), "bundle member missing from the SBOM"
     for line in listing:
         recorded, name = line.split("  ", 1)
         assert hashlib.sha256((workspace / name).read_bytes()).hexdigest() == recorded
@@ -130,26 +135,30 @@ def main():
     (workspace / "sbom/composition-exempt.json").write_text(json.dumps(exempt))
     result, values = run(SIDECARS, {**sidecar_env, "INPUT_IMPORTS": "", "INPUT_COMPOSITION": "sbom/composition-exempt.json", "INPUT_SPDX_2_3": "false"})
     assert "unavailable: blueprint-core" in result.stdout and "incomplete: sbom:blueprint-core" in result.stdout
-    assert values["assets"].splitlines() == [str(archive), f"{archive}.cdx.json", f"{archive}.spdx.json"]
-    # The package-to-platform chain: the native executable's composition imports the
-    # supplier's source bundle SBOM bound. The fetch action records the bundle's own
-    # `source` target, and Blueprint 0.7.0 refuses that import into a native inventory
-    # with exactly one message; the release carrying roc-blueprint#62 admits it, and
-    # this check then flips to require success.
+    assert values["assets"].splitlines() == [str(archive), f"{archive}.cdx.json", f"{archive}.sbom-manifest.json", f"{archive}.spdx.json"]
+    # The package-to-platform chain on every system: the native executable's
+    # composition imports the supplier's source bundle SBOM bound to the locked
+    # bytes, with the bundle's own `source` target kept, and the executable's
+    # sidecars carry the supplier's graph under the import prefix.
     system = {"Linux": {"X64": "x86_64-linux", "ARM64": "aarch64-linux"}, "macOS": {"ARM64": "aarch64-darwin"}}[os.environ["RUNNER_OS"]][os.environ["RUNNER_ARCH"]]
-    bound = f"sbom/composition-{system}-bound.json"
-    _, values = run(FETCH, {**common, "INPUT_TARGET": system, "INPUT_COMPOSITION": bound, "INPUT_OUTPUT": f"sbom/chain-imports-{system}-bound.json"})
+    native_composition = f"sbom/composition-{system}.json"
+    _, values = run(FETCH, {**common, "INPUT_TARGET": system, "INPUT_COMPOSITION": native_composition, "INPUT_OUTPUT": f"sbom/chain-imports-{system}.json"})
     assert values["fetched"] == "1" and values["missing"] == "0"
-    recorded = json.loads((workspace / f"sbom/chain-imports-{system}-bound.json").read_text())["imported_documents"][0]
+    recorded = json.loads((workspace / f"sbom/chain-imports-{system}.json").read_text())["imported_documents"][0]
     assert recorded["target"] == "source" and recorded["subject"]["component"] == "blueprint-core", recorded["target"]
     native = Path("dist-chain-native")
     if native.exists():
         shutil.rmtree(native)
     native.mkdir()
     subprocess.run(["roc", "build", "app/main.roc", f"--output={native}/hello"], cwd=ROOT, check=True, capture_output=True, text=True)
-    result, _ = run(SIDECARS, {**common, "INPUT_FILES": f"{native}/hello", "INPUT_VERSION": "0.1.0", "INPUT_TARGET": system, "INPUT_AUTHOR": "Organization: roc-automation contributors", "INPUT_COMPOSITION": bound, "INPUT_IMPORTS": f"sbom/chain-imports-{system}-bound.json"}, expect=1)
-    assert "import target differs from subject" in result.stderr, result.stderr
-    assert sorted(path.name for path in native.iterdir()) == ["hello"]
+    _, values = run(SIDECARS, {**common, "INPUT_FILES": f"{native}/hello", "INPUT_VERSION": "0.1.0", "INPUT_TARGET": system, "INPUT_AUTHOR": "Organization: roc-automation contributors", "INPUT_COMPOSITION": native_composition, "INPUT_IMPORTS": f"sbom/chain-imports-{system}.json"})
+    spdx = json.loads((workspace / native / "hello.spdx.json").read_text())
+    packages = [element for element in spdx["@graph"] if element.get("type") == "software_Package"]
+    assert any(element["spdxId"].endswith("#blueprint-core-sbom-Subject") for element in packages), "supplier graph missing from the native SBOM"
+    copied = [element for element in spdx["@graph"] if element.get("relationshipType") == "copiedTo"]
+    assert copied and copied[0]["to"][0].endswith("#blueprint-core"), "no copiedTo binding in the native SBOM"
+    assert "sbom:roc-stable" in json.dumps(spdx), "the reviewed compiler gap is missing"
+    assert len(values["assets"].splitlines()) == 4, values["assets"]
     print("SBOM chain checks passed")
 
 

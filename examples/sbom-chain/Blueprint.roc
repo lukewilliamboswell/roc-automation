@@ -1,7 +1,7 @@
 # A consumer that pins a supplier's release file by its published SHA-256, so
 # the supplier's SBOM beside that file can be imported bound to it, and that
 # fetches a fixed compiler whose publisher ships no SBOM.
-app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/2zwBq8cAkEPfRNMaWgtwCsVwxSJ3z9FncazjNofBXspG.tar.zst" }
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst" }
 
 import pf.Recipes
 

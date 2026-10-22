@@ -244,13 +244,15 @@ jobs:
         run: |
           test "$FETCHED" = 1
           test "$MISSING" = 0
-          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 4
+          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 5
           shasum -a 256 --check "$DIGESTS"
+          test -s "$FILE.sbom-manifest.json"
           grep -q '#blueprint-core-sbom-Subject' "$FILE.spdx.json"
           grep -q '"copiedTo"' "$FILE.spdx.json"
       # A native executable is a second subject, bound per target with its own
-      # composition: the fetched fixed compiler is a locked dependency whose
-      # publisher ships no SBOM, so a reviewed opt-out becomes a visible gap.
+      # composition: it imports the supplier's bundle SBOM bound, and the
+      # fetched fixed compiler is a locked dependency whose publisher ships no
+      # SBOM, so a reviewed opt-out becomes a visible gap.
       - name: Build the native executable
         run: |
           mkdir dist-native
@@ -280,12 +282,14 @@ jobs:
           EVIDENCE: ${{ steps.sidecars-native.outputs.evidence }}
           SYSTEM: ${{ matrix.system }}
         run: |
-          test "$FETCHED" = 0
+          test "$FETCHED" = 1
           test "$MISSING" = 0
-          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 3
+          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 4
           shasum -a 256 --check "$DIGESTS"
+          test -s dist-native/hello.sbom-manifest.json
           grep -q "\"blueprint:target\",\"value\":\"$SYSTEM\"" dist-native/hello.cdx.json
           grep -q 'sbom:roc-stable' dist-native/hello.spdx.json
+          grep -q '#blueprint-core-sbom-Subject' dist-native/hello.spdx.json
           test "$(shasum -a 256 dist-native/hello | cut -d' ' -f1)" = "$(python3 -c 'import json;print(json.load(open("dist-native/hello.cdx.json"))["metadata"]["component"]["hashes"][0]["content"])')"
           # The evidence envelope binds the same bytes to this commit and run.
           python3 - "$EVIDENCE" "$SYSTEM" <<'PY'
@@ -297,7 +301,7 @@ jobs:
           assert subject["target"] == sys.argv[2] and subject["sha256"] == hashlib.sha256(open(subject["path"], "rb").read()).hexdigest()
           for sidecar in subject["sidecars"]:
               assert sidecar["sha256"] == hashlib.sha256(open(sidecar["path"], "rb").read()).hexdigest() and sidecar["size"] == os.path.getsize(sidecar["path"])
-          assert [gap["scope"] for gap in envelope["coverage"]] == ["native-closure", "sbom:roc-stable"], envelope["coverage"]
+          assert [gap["scope"] for gap in envelope["coverage"]] == ["native-closure", "sbom:roc-stable", "import:blueprint-core-sbom"], envelope["coverage"]
           PY
       - name: Provoke the refusals a maintainer must see
         run: python3 tests/check_sbom_chain.py

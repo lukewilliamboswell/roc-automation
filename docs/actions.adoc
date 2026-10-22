@@ -611,7 +611,7 @@ The Roc compiler is then a separate input: Blueprint 0.7.0's tool needs
 xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`] can supply without
 putting it on `PATH` as `roc`, or `roc-lang/setup-roc` with `nightly-tag` in
 a job that does not also need the package nightly. Blueprint 0.7.0 ships no
-native tool binary, so it takes this path.
+native tool binary and takes this path; 0.8.0 ships one per system.
 
 What the action establishes is bounded. The tool's `inspect` decides what the
 composition may claim, and the sidecars bind that claim to the final bytes.

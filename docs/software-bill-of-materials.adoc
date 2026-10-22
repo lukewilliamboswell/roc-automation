@@ -179,10 +179,13 @@ belong in a separate scheduled/manual analysis job so they do not delay PR CI.
 [#generate-sidecars-with-the-shared-actions]
 === Generate sidecars and chain suppliers' SBOMs with the shared actions
 
-Blueprint 0.7.0 ships the generation capability above as a standalone Roc app
-bundle, `roc-blueprint-sbom-<hash>.tar.zst`, with `inspect`, `bind` and
-`check`, and its own releases publish `.spdx.json`, `.cdx.json` and
-`.spdx-2.3.json` beside every asset. Two shared actions wire that tool into a
+Blueprint ships the generation capability above as a standalone tool with
+`inspect`, `bind` and `check`: a Roc app bundle,
+`roc-blueprint-sbom-<hash>.tar.zst`, since 0.7.0, and a native
+`blueprint-sbom-<system>` binary per system since 0.8.0, which also lists a
+produced archive member by member and writes an evidence manifest beside the
+sidecars. Its own releases publish `.spdx.json`, `.cdx.json`,
+`.spdx-2.3.json` and the manifest beside every asset. Two shared actions wire that tool into a
 repository's release build so each project does not repeat the steps:
 
 * xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] runs in the
@@ -237,11 +240,11 @@ files, attests every asset with its sidecars and publishes the explicit
 asset list through `actions/publish-release`.
 
 The chain into a native consumer depends on Blueprint admitting a `source`
-supplier into a native inventory. Blueprint 0.7.0 refuses it with `import
-target differs from subject`; the fix is in roc-blueprint PR #62, and the
-fetch action already records the supplier's stated target so the bound
-import is accepted as soon as a release carries it. The example keeps both
-compositions, and its chain check requires that exact refusal until then.
+supplier into a native inventory, which Blueprint 0.8.0 does and 0.7.0
+refused with `import target differs from subject`. The fetch action records
+the supplier's stated target, so the bound import is accepted, and the
+example's chain check requires the executable's SBOM to carry the supplier's
+graph on every system.
 
 The shared actions cover bundles and binaries first; an examples or
 documentation archive is listed in `files` only when the repository has a
