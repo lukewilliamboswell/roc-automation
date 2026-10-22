@@ -1,0 +1,171 @@
+= Native sandbox build runner
+
+`roc-build-runner` executes one recipe inside an existing Linux sandbox and
+publishes one declared file or directory. The utility is pure Roc over pinned
+basic-cli. It imports no consumer libraries and invokes no Python or shell
+interpreter at runtime. A recipe may explicitly declare either as a tool.
+The executable does not create a sandbox: the caller supplies it and its
+read-only input mounts.
+
+== Build and test
+
+The initial frozen toolchain is Roc `nightly-2026-10-18-1df370f`. Compile the
+single source file, keeping its exact bytes, compiler archive, platform and
+transitive package archives pinned in the caller's build recipe:
+
+[source,sh]
+----
+roc version
+roc test tools/roc-build-runner/main.roc
+roc build tools/roc-build-runner/main.roc --output=/tmp/roc-build-runner
+ROC_BUILD_RUNNER_BINARY=/tmp/roc-build-runner python3 tools/roc-build-runner/tests/test_cli.py -v
+----
+
+The compiler-independent Python standard-library harness checks the actual
+native executable's refusal boundaries. Python is a test dependency only.
+macOS and other non-Linux systems refuse execution before reading the recipe
+or creating a workspace. Positive isolation, exact argv/raw filenames,
+read-only inputs, exit statuses and output publication require the consumer's
+real Linux namespace/sandbox integration gates; the portable refusal tests
+alone do not prove those properties.
+
+[cols="2,5",options="header"]
+|===
+| Frozen input | Original archive SHA-256
+
+| Roc Linux x86_64, `nightly-2026-10-18-1df370f`
+| `0821ea1a9772f921f0b4eb1cd400238abb59b0247db2810f0ea865426f782e9d`
+
+| Roc macOS Apple Silicon, same version (refusal tests)
+| `0f5fe1d12714bf5fcc906dd5b00fd0ccd31dfb96bb82737b9d6f6ccc0e93c147`
+
+| basic-cli `0.26.0-rc2`, `Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst`
+| `sha256-V3jm3ANU1ef7Wwcl7/jgTaPI1lYEnGO0PjzCdevvr4s=`
+
+| HTTP `1.0.0`, `6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst` (platform build dependency)
+| `sha256-6e+qlQ5y9vds326vAEJFcvppsEumEnMjV6wEU2ePArQ=`
+|===
+
+Roc archives come from `roc-lang/nightlies` under the exact version's release;
+platform archives come from `roc-lang/basic-cli` and `roc-lang/http` under the
+versions above. The source header contains the immutable platform URL. Seed
+both platform package bundles in Roc's package cache before an offline compile.
+These original archive digests are flat file hashes; they are not NAR hashes
+of the unpacked package directories.
+
+Consumers can embed a compiler archive and reuse its verified bytes to compile
+this runner offline. Compile the frozen runner source as a separate native
+executable. A consumer CLI executable, its version, cache location and caller
+namespace IDs must not become runner derivation inputs. A reviewed change to
+the frozen source or toolchain intentionally changes the runner identity.
+
+== Invocation and isolation proof
+
+Invoke `roc-build-runner /absolute/specification.json`. With no argument, the
+specification path comes from `runnerSpecPath`, matching a Nix
+`passAsFile = [ "runnerSpec" ]` input. Other argument counts fail.
+The caller also supplies:
+
+[cols="2,5",options="header"]
+|===
+| Environment | Meaning
+
+| `out`
+| Absolute destination that does not exist before the recipe starts. The runner owns publication there.
+
+| `ROC_BUILD_RUNNER_WITNESS`
+| Absolute path of a regular, non-symlink file mounted read-only in the sandbox. Its contents are exactly the caller's mount identity, newline, network identity, newline, such as `mnt:[4026531841]` and `net:[4026531842]`.
+
+| `ROC_BUILD_RUNNER_READLINK`
+| Absolute trusted readlink executable available inside the sandbox. It reads `/proc/self/ns/mnt` and `/proc/self/ns/net`; both must have valid kernel identity syntax and differ from the witness.
+|===
+
+The caller creates the witness from its own namespaces before entering a local
+sandbox. Namespace identities are authorization data supplied at runtime, not
+recipe or derivation identity. The witness must be independent of candidate
+recipe writes. The helper executable and specification must come from the
+caller's trusted, pinned plan. This utility does not authenticate an arbitrary
+caller-controlled helper or create read-only mounts by itself.
+
+No JSON recipe interpretation, workspace creation, command or output write
+precedes a successful proof of both namespace boundaries. Missing, malformed,
+symlink, directory and FIFO witnesses fail closed. Host namespace reuse fails
+closed, even when the caller's sandbox options were ignored. `/proc` must be
+available. Non-Linux hosts always fail closed.
+
+== JSON protocol 1
+
+The specification is UTF-8 JSON with required `schema_version: 1`. An unsupported
+version fails. Required fields have these types and meanings:
+
+[cols="2,5",options="header"]
+|===
+| Field | Contract
+
+| `project: string`
+| Absolute immutable project directory. The runner recursively refuses symlinks and special files, then copies regular files and directories into a private writable workspace. The working directory must be outside the project source.
+
+| `argv: string[]`
+| Nonempty exact command argv, with a nonempty first argument. No shell expansion or splitting occurs. Empty later arguments, Unicode and embedded line breaks are preserved. NUL is refused.
+
+| `output: string`
+| Contained relative output path. Empty, `.` and `..` components, absolute paths, repeated/trailing separators, backslashes, colons and control bytes are refused before the recipe runs. Unicode and spaces are supported.
+
+| `path: string`
+| Exact PATH for the recipe, possibly empty. A bare command name resolves only there; no host PATH is inherited.
+
+| `inputs: string`, `artifacts: string`
+| Absolute generated farm directories whose children are symlinks to declared inputs. The runner follows exactly the generated farm link and rejects symlinks or special files at or beneath each target. Both farms and targets must be read-only mounts supplied by the caller. An original file is accepted as a farm target.
+
+| `tools: string`
+| Absolute farm of complete tool package roots. It is not traversed: package roots legitimately contain executable/library symlinks. The caller verifies and mounts them read-only.
+
+| `readlink: string`, `chmod: string`
+| Absolute trusted helper programs. `readlink` resolves farm links by raw bytes; `chmod` makes only the copied project workspace writable.
+
+| `env: {name: string, value: string}[]`
+| Caller-specific recipe bindings, such as a variable pointing at `inputs`. Names follow `[A-Za-z_][A-Za-z0-9_]*`; values reject NUL. Duplicate names are rejected case-insensitively. Bindings cannot override PATH, HOME, XDG_CACHE_HOME, out, runnerSpecPath, or any ROC_BUILD_RUNNER_* variable, irrespective of case.
+|===
+
+The runner clears the inherited recipe environment, then sets its own `PATH`,
+private `HOME`, owned `out`, the validated `env` bindings and, when requested,
+a private `XDG_CACHE_HOME`. Namespace proof variables and the specification
+path are never forwarded to the recipe. No consumer-specific variable name is
+hardcoded in the runner.
+
+Optional `roc_packages` is an array of `{name: string, path: string}` entries.
+Each name is a unique nonempty alphanumeric/underscore/hyphen directory name;
+each absolute package path must contain a regular `main.roc`. A nonempty array
+requires an absolute `ln` helper. The caller has already verified these immutable
+package bundles by content. The runner creates a private
+`$XDG_CACHE_HOME/roc/packages/<name>` link cache for the recipe. No compiler,
+package download, user cache or network is needed inside the sandbox. Without
+bundles, neither optional field is required and no shared cache is inherited.
+
+The recipe runs in `runner-work`, with `runner-home` and optional `runner-cache`
+inside the caller's otherwise fresh writable working directory. Existing
+workspace names fail rather than being reused. Source and output entry names
+are copied as raw Unix bytes, preserving non-UTF-8 filenames and permissions;
+JSON metadata and argv remain UTF-8.
+
+== Exit and publication
+
+A recipe exit code is returned unchanged. A signal is returned as
+`128 + signal`. Missing commands, invalid metadata, failed helpers, isolation
+failures and rejected outputs return nonzero status with a `roc-build-runner:`
+diagnostic on stderr. Recipe stdout/stderr are inherited unchanged.
+
+Only a successful recipe can publish output. Every output-path ancestor must
+remain a real directory; the declared output must exist, stay inside the
+workspace after canonicalization, and contain only directories and regular
+files. The runner refuses a replaced workspace, symlinks, special files and a
+recipe that wrote directly to `out`. It copies only the declared output to the
+destination; other project files do not become artifacts. The caller must
+discard all outputs of a failed build, including any direct writes a rejected
+recipe attempted, as Nix does.
+
+basic-cli does not expose no-follow opens or process-group containment. A recipe
+that deliberately leaves background writers can race filesystem checks and
+copies. The caller must contain the entire build process tree and discard it
+when the build finishes. The utility is a narrow executor inside that boundary,
+not a replacement for a sandbox, resource limits or an artifact admission policy.

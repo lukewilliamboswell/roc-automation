@@ -26,6 +26,18 @@ See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions
 for how to use them. Pure Roc packages can start with the complete
 [Nix-free adoption guide](https://lukewilliamboswell.github.io/roc-automation/pure-package.html).
 
+## Shared native utilities
+
+| Utility | Purpose |
+| --- | --- |
+| [roc-docs](tools/roc-docs/README.adoc) | Build an HTML site and PDF from documentation sources |
+| [roc-build-runner](tools/roc-build-runner/README.adoc) | Execute a versioned build specification with verified isolation and checked inputs and outputs |
+
+The build runner is a standalone Roc program. Consumers pin its source and
+compiler inputs and compile a native executable; the runner has no Blueprint
+dependency. Blueprint owns project planning and lock validation and supplies
+the runner's inputs. The current isolation contract requires Linux namespaces.
+
 ## Downstream status
 
 Published-release compatibility and automation revisions for the supported
