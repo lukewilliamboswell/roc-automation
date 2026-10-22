@@ -47,9 +47,11 @@ downstream debugging. Setup failures, skipped targets, missing evidence,
 timeouts and output limits cannot establish compatibility or clear an issue.
 Compiler-pin changes remain a manual downstream PR task.
 
-The release includes Linux executables, the checksummed Python standard-library
-ZIP admission helper and a standalone compatibility test bundle. The helper is
-a required runtime companion for archive admission. The shared action supplies
+The release includes Linux executables and the checksummed Python
+standard-library ZIP admission helper, a required runtime companion for archive
+admission. The release pipeline tests these files using a standalone
+compatibility harness carried in CI artifacts; the harness is not a public
+release asset. The shared action supplies
 the Windows implementation from its pinned source; this release does not add
 Windows executable assets. Process launch failures and signals cannot satisfy
 expected normal exit statuses. Archive validation rejects unsafe entries and
