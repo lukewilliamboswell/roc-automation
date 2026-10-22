@@ -17,6 +17,14 @@ The website is `.docs-out/site/`; the PDF is available both there and at
 `.docs-out/project.pdf`. `--title`, `--author` and `--language` override document
 metadata. `--pdf-image-dpi` accepts 72 through 300, default 144. The shared action
 invokes this native command directly and preserves its site/PDF outputs.
+The build publishes one static `.md` file per rendered
+manual or chapter HTML page, including `index.md`, plus a versioned `llms.txt`
+chapter index. Each rendered manual or chapter HTML page links visibly to its Markdown equivalent and declares `rel="alternate"`
+(`text/markdown`) and `rel="describedby"` (`llms.txt`). These are ordinary static
+files, suitable for GitHub Pages without content negotiation.
+Markdown publication defaults to true in the CLI and shared action. Use
+`--markdown false` or `markdown: "false"` to omit Markdown and its index. `--site-url` makes index and HTML-source links absolute under the
+publication directory; chapter and asset links remain relative.
 `--api-entrypoint` and `--roc-command` add API documentation as a separate,
 explicitly requested compiler invocation.
 
@@ -51,6 +59,15 @@ site pages and PDF destinations. Native Markdown makes every top-level `.md`
 file a website page, but the PDF uses only the selected entrypoint. Markdown
 includes and automatic cross-file PDF link rewriting are not implemented. Use
 absolute URLs or destinations present in that PDF entrypoint.
+
+Markdown publication uses the HTML-backend prepared pages, retaining website-only
+content and rewriting chapter links to `.md`. It emits explicit canonical heading
+anchors and preserves code, tables, image descriptions and other supported content;
+unsupported export nodes fail the build. The export keeps table content but
+does not reproduce column weights, HTML styling or PDF pagination.
+The combined prepared `manual.md` remains a PDF intermediate, not a published
+Markdown download. `llms.txt` is a discovery convention, not a guarantee that any
+specific agent automatically fetches or follows it.
 
 Supported rendering blocks include headings, paragraphs, fenced source,
 ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported

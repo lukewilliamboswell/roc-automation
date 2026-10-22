@@ -1,9 +1,34 @@
 = How a Roc repository is maintained
 
-This manual is end-to-end guidance for managing Roc packages, platforms and the
-infrastructure that supports them: the tooling environment, the repository
-layout, continuous integration, releases, documentation, and the routine upkeep
-in between.
+This manual covers the shared tooling, workflow boundaries and evidence needed
+to build, test and distribute Roc packages and platforms reliably. It explains
+which concrete risks an opinionated practice addresses, how its controls work,
+and what the resulting evidence can establish.
+
+Product-specific security design and project governance remain with maintainers.
+The model supplies reusable automation and integration contracts; it does not
+establish that a product's algorithms, native host or dependencies are secure.
+
+== Scope and design principles
+
+Shared tools own input validation, artifact identities, bounded execution and
+diagnostics. Workflows own when those tools run, which source and artifacts
+they receive, and the authority each job holds. Evidence connects the selected
+inputs, actual execution and published bytes so a maintainer can investigate
+failures and decide what to do next.
+
+Each chapter explains its relevant failure or attack scenario, guiding principle,
+specific controls, verification and remaining assumptions. The
+xref:risks-and-controls.adoc#risk-and-control-reference[risk and control reference]
+indexes those explanations. It is a navigation aid, not another specification
+or a claim that every control has been deployed in every consumer.
+
+Experience and primary technical research inform the choices. A standard can
+reveal an omitted risk; satisfying a framework is not itself the reason to add
+a control. Prefer a shared, testable mechanism that addresses an identified
+failure over a new service, permission or mandatory check with no clear benefit.
+
+== Why a shared baseline helps
 
 Keeping a Roc project in good shape means juggling several things that move at
 different speeds. The compiler is still changing, and breaking changes are
@@ -42,7 +67,7 @@ the day a new compiler breaks something.
 | Declared in `Blueprint.roc`, pinned by `Blueprint.lock`, identical for contributors and CI.
 
 | Automation
-| Roc scripts under `scripts/`, run by `roc-stable`.
+| Released utilities through Blueprint tasks; product-specific Roc scripts under `scripts/` run by `roc-stable` where needed.
 
 | Repository examples
 | Depend on the working tree by relative path.
@@ -54,7 +79,7 @@ the day a new compiler breaks something.
 | One immutable release holding the bundle, an examples archive pinned to that bundle, a documentation archive, and the manual where there is one. Every asset is tested as the exact bytes that are published.
 
 | Nightly
-| Runs the latest release's own examples archive on the latest nightly. A failure means the package needs a patch release.
+| Runs the latest release's examples archive on one selected nightly. Example failures require compatibility investigation; incomplete execution requires setup repair or rerun.
 
 | Upkeep
 | Blueprint, the lock, the tooling compiler, the scripts and a platform's host bindings are each changed by hand, in a pull request.
@@ -62,8 +87,9 @@ the day a new compiler breaks something.
 
 == Three compilers, three jobs
 
-A repository involves three Roc compilers. Each has one job, and they are never
-interchangeable.
+There are three compiler roles. A consumer of released utilities need not install
+their implementation compiler; a repository with local source tooling names it
+explicitly. Each role has one job, and they are never interchangeable.
 
 [cols="2,2,3",options="header"]
 |===

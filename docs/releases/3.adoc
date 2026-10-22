@@ -5,6 +5,106 @@ removes repeated values from every workflow, adds two shared actions for steps
 that each repository had written differently, and says what the model asks of
 the simplest kind of repository.
 
+== A concrete shared utility starter
+
+The shared utility guide gives a working Blueprint consumer, a producer layout
+and interface conventions for new tools. The existing pure-package example
+includes copyable read-only CI and a local quickstart using a real released
+renderer and reviewed lock. Guidance prefers named tasks invoking shared
+executables; local Roc scripts supply product-specific behavior. CI checks the
+starter workflow syntax alongside the existing executable adoption tests.
+
+== Scope and enduring risk explanations
+
+The manual defines its scope as shared tooling, workflow boundaries and
+evidence. Contextual narratives connect concrete risks to guiding principles,
+specific controls, verification and residual assumptions. A linked reference
+indexes those explanations without duplicating their rules. Contribution and
+agent instructions keep this pattern part of future changes; scoped research
+produces issues and proposals before new practices enter the model.
+
+== Compatibility evidence admission
+
+The runner records normal exits, signals and launch errors separately. Missing
+executables cannot satisfy expected exit codes, and interrupted processes cannot
+produce a compatibility pass. Application-header admission requires an actual
+declared release dependency, ignores comments, rejects compiler constraints and
+fails closed for unsupported syntax. Native regression fixtures exercise these
+failures through aggregation as well as preserving valid nonzero exit cases.
+The dashboard requires a canonical single-job caller, GitHub-resolved shared
+workflow identity and a complete job inventory bound to the same run attempt.
+Local jobs or shell text cannot impersonate the shared compatibility verdict.
+
+== Verified Blueprint executable cache
+
+`actions/setup-blueprint` caches its executable by default using the exact
+release, system and reviewed SHA-256. It restores before installation, verifies
+every hit and avoids release requests when those bytes are usable. Corrupt
+regular bytes are refetched and checked; symlink/nonregular entries fail closed.
+The new `binary-cache-hit` output describes verified reuse; `cache-binary: false`
+opts out. Existing `cache` and `cache-hit` still refer only to the separate
+Blueprint artifact store. Pins and reviewed digests remain maintainer changes.
+
+== Shared published-release compatibility runner
+
+`actions/release-compatibility` and the `release-compatibility` utility define a
+single versioned contract for published examples. The runner resolves one final
+product release and one nightly, verifies the selected examples ZIP by its asset
+identity and SHA-256, validates its paths and test specification, and checks,
+builds and runs the archived applications without changing their dependencies.
+Successful compiler stdout and stderr remain visible and are preserved as raw
+diagnostic artifacts. Warnings are nonfatal; test failures, infrastructure
+failures, skipped cases, timeouts and incomplete target evidence stay distinct.
+Only a complete, matching pass on every target can close a compatibility issue.
+
+Compiler pins are changed manually during downstream development. This runner
+does not update pins, open upgrade pull requests or merge downstream changes.
+
+== Downstream status in the README
+
+The README lists the scheduled shared published-release compatibility verdict,
+its follow-up action, and the exact
+roc-automation revisions those repositories reference. The Documentation workflow
+refreshes a read-only inventory daily and publishes dated badge endpoints and a
+full source-linked report with the manual. It adds no repository write permission
+and makes no downstream changes. A version is latest only when every direct
+reference equals the observed upstream `main` commit; mixed revisions, unpinned
+references and unreadable evidence remain visible. An updater's green outcome
+does not count as compatibility evidence. Each publication marks passes over
+48 hours old stale. Static badges retain their last colour if publication stops;
+an old snapshot date requires investigation. Adoption, infrastructure and upgrade actions remain explicit. Neither
+column is a security-compliance claim.
+
+== Release software bills of materials
+
+The release guidance defines a machine-processable SPDX or CycloneDX SBOM for
+each deliverable, bound to its exact SHA-256 and target. It distinguishes
+shipped components from build/test tooling and source dependencies, includes
+transitive, vendored and proprietary components, and requires explicit identity,
+license, source and relationship information with declared coverage gaps.
+
+Repositories generate and validate sidecars in read-only release builds and PR
+dry runs, distribute them with signature evidence, retain them downstream and
+use them for advisory impact analysis. The manual separates component records
+from lockfiles, dependency submissions, checksums and provenance, and describes
+immutable corrections. Generation and validation belong to the read-only build;
+publication verifies and transfers the resulting files as inert bytes.
+
+== Fast PR checks and separate campaigns
+
+Benchmark and fuzz targets expose explicit smoke modes with at most one second
+of workload execution per target, excluding compilation and provisioning.
+Routine PR checks and release dry runs build and exercise those modes;
+benchmark smoke timings establish no performance baseline. Sustained fuzzing
+and measured benchmarks use separate schedule/manual jobs with explicit event
+guards, so moving work to another job cannot accidentally run it on every PR.
+
+The guidance includes a daily ten-minute total campaign over roc-fuzz's Roc
+builtin targets against the latest nightly, with compiler/source identities,
+bounded inputs and preserved reproducer artifacts. Campaign results remain
+separate from published-release compatibility; failures stay failures and
+interrupted or skipped work never establishes compatibility.
+
 == `actions/setup-blueprint` needs no inputs
 
 The action reads the roc-blueprint release from the platform URL in the
@@ -54,8 +154,10 @@ steps. It keeps the one tracking issue, which is the open issue with the exact
 title whose author is a bot account, and it treats any outcome other than
 `success` or `failure` as a setup failure that leaves the issue alone.
 
-Pass it the outcome of the step that ran the examples, not the result of the
-test job; xref:workflows.adoc#reporting[Reporting] explains the difference.
+The shared runner passes only its constrained aggregate outcome after verifying
+matching evidence from every declared target. A failed job alone is not proof
+of incompatibility; xref:workflows.adoc#reporting[Reporting] explains the
+difference.
 
 == Repository settings are checked by a task
 
@@ -145,3 +247,26 @@ tooling and released utilities through `Programs`/`Fetch`. The shared
 `blueprint-tool` handoff resolves persistent paths and optionally reports
 provisioning time, command time/RSS and output sizes. Cold/warm CI fixtures
 exercise different tool subsets on fresh runners.
+
+== Native Windows compatibility runners
+
+The shared published-release compatibility runner supports native x64 tests on
+`windows-2022` and `windows-2025` alongside Linux and macOS. It preserves native
+paths and executable suffixes, validates archives with the same standard-library
+helper on every OS, rejects Windows path aliases and case-insensitive environment
+overrides, and bounds complete child process trees. CI runs real compiler
+check/build/execute smoke tests and unhappy-path regressions on both Windows
+images. Windows native prerequisites use `setup-command`. Blueprint 0.6.0 has a
+Windows binary; the shared setup action does not map Windows runners yet. Nix
+is not a Windows prerequisite backend, so these shared installer options remain
+disabled there.
+
+== Static Markdown documentation
+
+The shared documentation utility publishes static chapter Markdown and a
+versioned `llms.txt` index alongside HTML and PDF by default.
+`--markdown false` or `markdown: "false"` opts out. HTML pages expose visible
+Markdown links and standard discovery relations; chapter references and anchors
+remain usable under project-site paths. The manual uses this default, with
+independent content and link verification before publication. Literal AsciiDoc
+inline code preserves attribute placeholders across all published formats.

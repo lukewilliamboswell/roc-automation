@@ -16,7 +16,7 @@ The sources are the AsciiDoc files under `docs/`.
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer]
 lists the conventions they follow.
 
-Build the site and PDF locally with a precompiled renderer:
+Build the site, PDF and static Markdown locally with a precompiled renderer:
 
 [source,sh]
 ----
@@ -36,11 +36,56 @@ that does not yet follow it is recorded in a GitHub issue, not in the manual.
 Record a change in the release notes under `docs/releases/`, in the file for the
 version it will ship in. `docs/releases.adoc` includes each of those files.
 
+== Explain the risk and control where they apply
+
+For a change to automation behavior, a workflow boundary or an evidence claim,
+update the relevant chapter's risk-and-control narrative. State a concrete
+failure or attack scenario, the guiding principle, the mechanism that addresses
+it, the test or observation that verifies it, and the assumptions that remain.
+Name the affected source, compiler, artifact, target or authority when it matters.
+Explain a tradeoff in terms of that risk rather than a framework score.
+
+Use connected prose beside the operational guidance. Do not add a generic
+security checklist to every task or duplicate command reference material.
+Keep the explanation specific to the chapter. Update
+xref:risks-and-controls.adoc#risk-and-control-reference[the reference mapping]
+when a risk or control moves, gains another owner chapter or changes its
+verification. The reference links to the authoritative narrative instead of
+maintaining a second copy of its rules.
+
+Review failures as well as the happy path. Useful regressions demonstrate that
+wrong identities, stale or incomplete evidence, unsafe paths and interrupted
+execution cannot become a pass or privileged operation. A configuration check
+establishes configuration; runtime and operational claims need corresponding
+execution or observation. Describe intended practice without asserting that
+an unimplemented utility already provides it.
+
+== Investigate before expanding the model
+
+Further investigations use a scoped agent task whose outputs are a concrete
+proposal and a GitHub issue, creating or updating the appropriate issue rather
+than duplicating it. Give the agent a realistic scenario to investigate, the
+affected boundary, primary sources to consult, and existing behavior to inspect.
+Ask it to assess applicability, failure modes, cost, alternatives and residual
+assumptions, with proposed changes and acceptance evidence. Separate verified
+findings from hypotheses. Keep private vulnerability details in the private
+reporting channel.
+
+Maintainers review the result before turning it into normative guidance or
+implementation. Investigation findings and implementation gaps stay in issues;
+the manual records the chosen practice and rationale. Do not create framework
+requirements, governance policy or product-specific security promises as an
+incidental outcome of an automation investigation.
+
 == Change a shared action
 
 Read xref:security-model.adoc#the-three-workflows[the trust model] first. It is
 normative: a change to an action's behavior or permissions keeps those
 boundaries and arrives with regression tests for them.
+Controller implementation references live beside their source. Changes to
+`actions/nightly` or `actions/check-release` also require reading
+`actions/nightly/security-model.adoc`; those implementation notes stay separate
+from the consumer manual.
 
 `actions/nightly-report` and `actions/publish-release` are Roc scripts,
 `scripts/nightly_report.roc` and `scripts/publish_release.roc`, and their tests
@@ -69,7 +114,7 @@ python3 -m unittest discover -s tests -v
 == Change a script
 
 The repository's own automation is Roc scripts under `scripts/`, written as
-xref:repository.adoc#write-automation-as-roc-scripts[Write automation as Roc scripts]
+xref:repository.adoc#write-automation-as-roc-scripts[Write product-specific automation as Roc scripts]
 describes. With `blueprint` installed as
 xref:environment.adoc#get-the-blueprint-binary[Get `blueprint`] describes:
 

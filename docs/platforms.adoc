@@ -6,6 +6,18 @@ chapter covers what a platform adds, which is a native host. A host brings
 generated bindings, a target matrix, and build inputs that are too expensive or
 too sensitive to rebuild on every pull request.
 
+[#risk-native-targets]
+== Risks and controls for native targets
+
+A cross-compiled host can link but fail on its advertised OS, and stale glue
+can disagree with the compiler's ABI. Treat native execution and interface
+identity as separate evidence. Check generated bindings against the selected
+nightly, bind native inputs to their source and target, and run the exact bundles
+on every supported runner. Include a consumer link/run test rather than relying
+on archive presence. The target matrix establishes those exercised combinations;
+it does not establish that native host code or FFI behavior is memory-safe or
+that every downstream application is compatible.
+
 == Host bindings
 
 A host is compiled against bindings that `roc glue` generates from

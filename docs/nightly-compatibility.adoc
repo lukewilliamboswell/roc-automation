@@ -1,0 +1,338 @@
+= Shared published-release compatibility
+
+The shared nightly answers one question: does the latest published product
+release work with the latest Roc nightly on every supported release target?
+Consumers use `.github/workflows/nightly-compatibility.yml` at a reviewed full
+SHA. Their caller supplies the schedule and native prerequisites; the shared
+runner owns selection, archive validation, compilation, execution, diagnostics
+and reporting.
+
+Compiler-pin changes belong to maintainers during downstream pull-request work.
+This nightly does not change pins, open upgrade pull requests, merge changes,
+publish releases or test unreleased development examples.
+
+[#risk-compatibility-verdicts]
+== Risks and controls for compatibility verdicts
+
+Independent moving lookups can test different release/compiler pairs, and one
+passing target can hide another target's failure or missing result. Resolve the
+pair once and require complete matching evidence. The shared runner verifies
+asset identity, runs the immutable suite, and aggregates every declared target
+for the same run and attempt. Missing or interrupted evidence cannot close the
+compatibility issue. Launch errors remain setup failures rather than synthetic
+exit codes that a case could accept; signal termination cannot match an ordinary
+exit expectation. Header admission checks actual dependency fields, ignoring
+comments and rejecting compiler constraints or ambiguous syntax. Regression
+fixtures cover these states and hosted tests
+exercise native execution. The dashboard is a dated snapshot; a stopped publisher
+cannot update its colour. A pass covers the declared examples and targets only.
+
+== Configure the caller
+
+Keep one caller for the product release suite. A pure package uses one Linux
+runner. A platform names every supported release runner. One archive can cover
+several bundles through its declared release dependencies.
+
+[source,yaml]
+----
+name: Nightly compatibility
+on:
+  schedule:
+    - cron: '17 13 * * *'
+  workflow_dispatch:
+    inputs:
+      nightly-tag:
+        type: string
+        default: ''
+      release-tag:
+        type: string
+        default: ''
+permissions: {}
+jobs:
+  compatibility:
+    permissions:
+      contents: read
+      issues: write
+    uses: lukewilliamboswell/roc-automation/.github/workflows/nightly-compatibility.yml@REVIEWED_FULL_SHA
+    with:
+      nightly-tag: ${{ inputs.nightly-tag || '' }}
+      release-tag: ${{ inputs.release-tag || '' }}
+      runners: '["ubuntu-24.04"]'
+----
+
+The permission ceiling permits the separate report job. Selection, tests and
+aggregation reduce it to `contents: read`; only reporting has `issues: write`.
+No secrets are inherited. The caller runs only on schedule or manual dispatch
+on the actual default branch. The shared concurrency group serializes runs, so
+an older failure cannot race a newer passing report.
+
+`runners` accepts a unique, non-empty JSON array drawn from `ubuntu-22.04`,
+`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, `macos-26`, `windows-2022` and
+`windows-2025`. The Windows labels run native x64 executables. Name the complete
+release matrix. Windows uses the same archive admission, compiler diagnostics,
+case deadlines and aggregate evidence contract as Linux and macOS; the runner
+adds the native `.exe` suffix automatically.
+
+For native prerequisites, `setup-command` is a JSON argv array, for example
+`["blueprint", "run", "nightly-prerequisites"]`. It runs from the event commit's
+checkout in the read-only test job; it must provision dependencies, not rebuild
+the package or replace archived examples. `install-blueprint: true` installs the
+consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
+an environment that needs it. Leave both false for a runner that needs neither.
+Toolchain installation precedes the prerequisite command. Windows prerequisites
+must use native tools through `setup-command`, such as a checked-in Python setup
+script. Blueprint 0.6.0 publishes a native Windows binary;
+`actions/setup-blueprint` does not install it on Windows runners yet
+(https://github.com/lukewilliamboswell/roc-automation/issues/59[#59]). Nix is not
+a Windows prerequisite backend. Requesting either shared installer on Windows
+fails explicitly.
+For a mixed matrix, keep both installers disabled and let a portable setup script
+select the native provisioning steps for each operating system. A prerequisite
+failure is a setup failure, never a compatibility pass.
+
+`test-environment` is a JSON array of public name/value records, for example
+`[{"name":"DISPLAY","value":":99"}]`, for a headless native test environment.
+Reserved compiler, cache and Actions variables cannot be overridden. Names and
+duplicates are checked without regard to case, including Windows `Path`,
+`PATHEXT`, `SystemRoot` and `COMSPEC`. These
+values are not secrets. Setup scripts must arrange any display server's
+lifetime and redirected output explicitly; exporting a variable inside the
+setup child does not change the runner's environment.
+
+The action has a fixed 300-second compiler deadline, a 600-second prerequisite
+deadline and a default 10-second deadline per example case. `case-timeout-ms`
+can select 1–120000 milliseconds. The matrix job has a 60-minute overall limit.
+Each command has a 10 MB capture budget; timeout and output-limit results keep
+the partial bytes captured before cancellation and terminate child processes.
+On Windows, basic-cli manages the complete child tree in a Windows Job Object;
+on Unix, it manages a process group. CI tests that a timed-out example cannot
+leave a descendant running, alongside successful compilation and execution with
+the real compiler on both supported Windows images.
+The compiler and every example run without `GH_TOKEN` or `GITHUB_TOKEN`.
+
+== Keep compatibility cases bounded
+
+The archived cases verify published behavior and expected output. A package
+that demonstrates fuzzing or benchmarks supplies a small smoke mode for those
+examples, with at most one second of workload execution per target. That budget
+excludes compiler checks and builds. The runner's default ten-second case
+deadline is a safety limit for ordinary examples, not a recommended fuzzing
+duration or permission to put a campaign in the suite. An interrupted case is
+incomplete evidence, even if it ran for its allotted wall time.
+
+Routine PR CI verifies working-tree builds and smoke execution. This shared
+nightly verifies the published release on the selected compiler. Sustained fuzz
+searches and statistically meaningful benchmark runs belong in separate
+schedule/manual jobs, as
+xref:optional-workflows.adoc#fuzzing[Fuzzing] and
+xref:optional-workflows.adoc#benchmarks[Benchmarks] describe. Their failures
+remain visible in their own runs; they neither replace nor alter this runner's
+compatibility verdict. In particular, a daily search of Roc builtins can catch
+upstream regressions without making release examples run a ten-minute campaign.
+
+== Select one immutable pair
+
+The selection job resolves the latest Roc nightly and the most recently
+published final numeric product release, such as `0.13.2` or `v1.2.3`. It
+excludes drafts, prereleases and auxiliary tags such as `tools-*`, `runtime-*`
+and `linker-inputs-*`. Release lists are paginated; an incomplete listing is an
+error. All targets receive the same `selection.json`, never separate moving
+lookups. Compiler execution verifies the installed version names that nightly.
+
+The selected release must contain exactly one
+`<package-name>-examples-<release-tag>.zip`. `package-name` defaults to the
+repository name. Missing examples on the newest product release are an error,
+not permission to silently test an older product release. A repository with no
+final release has no compatibility result; its workflow fails selection with
+the reason visible in the log and does not modify the compatibility issue.
+
+Selection records the release ID, asset ID, length and GitHub's SHA-256 digest.
+Targets download by that asset ID and check length and digest before extracting
+or executing anything. This binds the tested bytes to that selection; GitHub
+release metadata is not an independent provenance attestation. Roc verifies
+the content identities in the archived dependency URLs when fetching bundles.
+
+Manual `nightly-tag` or `release-tag` inputs reproduce a historical combination.
+A run with either override never opens or closes the issue about the latest
+pair. Use `report-issue: false` for an explicit diagnostic-only caller.
+
+== Publish the suite contract
+
+Build and test the same archive before publishing it, as
+xref:examples.adoc#build-and-test-the-exact-archive[Build and test the exact archive]
+describes. The canonical ZIP has one root named after its filename without
+`.zip`, ordinary Unix regular files and directories, and these contents:
+
+[source,text]
+----
+<package-name>-examples-<release-tag>/
+  README.md
+  spec.json
+  examples/
+    main.roc
+    ... sibling modules and data ...
+----
+
+Every member stays under that root. Links, traversal, duplicates, encrypted
+members, file/directory collisions and ambiguous filenames are rejected before
+extraction. The ZIP is at most 50 MB, expands to at most 100 MB, and has at most
+10000 members. Member paths use ASCII letters, digits, dots, underscores,
+hyphens and directory separators; no empty, `.` or `..` component is allowed.
+
+`spec.json` is a versioned, explicit test plan. Required case fields remain
+explicit even when their value is empty:
+
+[source,json]
+----
+{
+  "schema_version": 1,
+  "release": "1.0.0",
+  "dependencies": [
+    "https://github.com/owner/package/releases/download/1.0.0/CONTENT_HASH.tar.zst"
+  ],
+  "apps": [{
+    "path": "examples/main.roc",
+    "cases": [{
+      "name": "default",
+      "args": [],
+      "stdin": "",
+      "stdout": "Hello!\n",
+      "stderr": "",
+      "exit_code": 0
+    }]
+  }]
+}
+----
+
+`release` must match the selection. Dependencies are immutable published bundle
+URLs belonging to that repository and tag. Each application directly names at
+least one declared bundle in its header and has no compiler constraint: it must
+be able to meet a newer compiler without editing the archived source. The runner
+accepts canonical `app [entrypoints] { alias: platform "URL", package: "URL" }`
+headers, including whitespace and line comments. Dependency URLs in comments or
+application bodies do not count; duplicate fields, escaped header strings and
+unsupported header syntax fail admission. It never changes an archived file, substitutes the working-tree bundle or runs a
+formatter. An empty package cache starts each target's test.
+
+The suite contains 1–100 unique application paths under `examples/`, with
+1–100 uniquely named cases per application. The runner checks and builds each
+application once with the selected compiler, then runs each recorded case and
+compares stdout, stderr and exit code exactly. A failed application does not
+prevent diagnostics for later applications. Declared cases are the execution
+inventory; maintainers review the suite for representative coverage before
+publishing it. Passing is not a claim of security compliance or complete API
+coverage.
+
+An application may add `target`, such as `wasm32`, and `run`, a JSON argv array
+for its runtime. Native applications omit both. A non-native target requires a
+runtime command containing `{executable}`; `{suite}` names the extracted root.
+For example, a Wasm platform can supply
+`"target":"wasm32", "run":["node","{suite}/runtime/check.mjs","{executable}"]`.
+The runtime helper and fixtures belong to the immutable archive; native setup
+installs its tools. The shared runner still owns checking, compilation, timeout,
+stdout/stderr capture and exact case comparison. The runtime must exercise the
+built artifact and exit after its assertions; merely building a cart or opening
+a window does not establish behavioral compatibility.
+
+A case may add `skip: {"reason":"...","issue":"https://github.com/..."}`.
+The app is still checked and built, and the skip is visible. Any skip prevents
+a complete pass and prevents closing the compatibility issue. Prefer a runnable
+headless test where possible. A suite with no executed cases is never compatible.
+
+== Preserve diagnostics on happy and unhappy paths
+
+Compiler stdout and stderr are always displayed, including after exit code 0.
+Warnings remain nonfatal by default. Successful compilation does not imply that
+it was warning-free. The runner owns compiler execution instead of delegating
+it to a driver that might discard captured success output.
+
+Each target artifact, `compatibility-<runner>`, retains raw stdout and stderr,
+command arguments, working directory, process status (normal exit, signal or
+I/O error), exit code, signal number, launch-error details, interruption flags and
+stdin, public environment, deadlines and expected output for failing cases.
+The ZIP inventory is retained too. Console rendering escapes workflow-command
+markers, carriage returns and terminal escapes; raw files preserve the original
+bytes. Compiler diagnostics and example stderr are separate: expected example
+stderr is compared with the case's specification.
+
+The `nightly-compatibility-summary-<attempt>` artifact contains `summary.json`:
+the selected identities, per-target results, counts and aggregate verdict. The
+job summary links the meaning of the verdict to the diagnostic artifacts.
+Artifacts are retained for 14 days. Download useful evidence before retention
+expires; the run link and selected versions allow a later manual reproduction.
+
+[cols="2,3,3",options="header"]
+|===
+| Result | Meaning | Follow-up
+| `compatible` | Every target ran cases and passed, without skips | No compatibility action; review any compiler warnings
+| `incompatible` | A compiler check/build or recorded example assertion failed | Inspect per-target diagnostics; fix the compiler/package issue and publish a compatible patch release when needed
+| `setup-failed` | Selection, archive validation, prerequisites or target evidence failed | Repair setup or release packaging; rerun all jobs
+| `test-timeout` / `output-limit` | Execution was interrupted; compatibility is unknown | Inspect partial logs; repair the hang/noise or adjust a justified deadline
+| `not-tested` | Cases were skipped or no complete execution was established | Resolve the documented skips or missing work; rerun all targets
+|===
+
+Test failures keep the workflow red after evidence is uploaded. Reporting a
+failure does not turn it green. Matrix fail-fast is disabled, so a failing
+target does not cancel the others. A missing, duplicate, stale-attempt or
+mismatched result cannot produce a passing aggregate. Rerun all jobs when
+retrying a matrix; a successful old target is not current-attempt evidence.
+
+Only an established compatibility failure opens or updates the one tracking
+issue. Only a complete current-attempt pass on every target closes it.
+Infrastructure failure, cancellation, timeout and skipped cases leave that issue
+alone. The privileged report job executes only the pinned shared reporting
+action; it receives outcome and selected tags, never archive diagnostics or
+repository code.
+
+== Read the downstream dashboard
+
+The README's compatibility column reads the fixed verdict gate of the latest
+scheduled shared workflow, checks its immutable caller still uses the configured
+pin, and links to the run. Verification requires the canonical single-job caller
+shown above: one literal job-level `uses`, optional `with` and `permissions`,
+and no local jobs, conditional or matrix on that call. Other caller shapes
+remain unverified. GitHub must record the exact resolved shared workflow path
+and SHA; every verdict job must belong to the same run, attempt and source SHA.
+Job and step display names alone cannot establish the origin of a verdict. Each
+snapshot marks passes older than 48 hours stale.
+This age check runs at publication time: if Documentation stops deploying,
+static badges retain their last colour. Check the snapshot date and investigate
+publication when it is over 48 hours old before relying on a green result. Development CI,
+pin-updater success and weekly floating-input checks are outside this contract.
+An adoption or infrastructure message means compatibility has not been verified,
+and states the follow-up. Manual historical probes do not replace scheduled
+results. The independent revision column tells maintainers which automation
+SHAs need review and upgrade.
+
+== Run the utility directly
+
+The source entry point is `scripts/release_compatibility.roc`, behind
+`blueprint run release-compatibility -- <phase>`. The tools build also produces
+static Linux `release-compatibility-<system>` executables; adoption of a released
+binary follows xref:artifact-verification.adoc#verify-released-artifacts[Verify released artifacts]. New
+artifacts become available only when a maintainer releases the tools.
+
+The phases are `select`, `test` and `aggregate`, using the same `RA_*` environment
+contract as `actions/release-compatibility/action.yml`. `RA_DIRECTORY` must be a
+new private directory for each invocation. `select` needs `GH_TOKEN`,
+`GITHUB_REPOSITORY`, `RA_NIGHTLY`, `RA_RELEASE`, `RA_PACKAGE` and `RA_RUNNERS`.
+`test` needs `RA_SELECTION`, `RA_RUNNER`, the actual `RA_COMPILER` executable,
+`RA_SETUP`, `RA_ENVIRONMENT`, `RA_CASE_TIMEOUT_MS`, `RA_PYTHON`,
+`RA_ARCHIVE_HELPER`, `GITHUB_RUN_ID` and
+`GITHUB_RUN_ATTEMPT`. `aggregate` needs `RA_SELECTION`, `RA_ARTIFACTS`,
+`RA_TEST_RESULT` and the same run identity. `GITHUB_OUTPUT` is an existing output
+file; aggregation also writes `GITHUB_STEP_SUMMARY`.
+
+The utility and action use `gh` and Python 3.10 or later on Linux, macOS and
+Windows. `RA_PYTHON` names the Python executable and `RA_ARCHIVE_HELPER` names
+the companion `release-compatibility-archive.py` artifact from the same tools
+release as the utility. Verify both files against that release's admitted
+checksums. When running from source, use `actions/release-compatibility/archive.py`
+from the same reviewed commit instead.
+The Python standard library verifies SHA-256, inspects ZIP metadata and extracts
+regular bytes, avoiding platform-dependent shell archive tools. Archive admission
+rejects Windows device names, alternate data streams, trailing dots and
+case-insensitive file or parent-directory collisions on every host. No archived
+code is imported by the helper. The action builds the utility with its fixed tooling compiler before
+installing the selected floating package compiler; consumer Blueprint evaluation
+is optional and limited to native prerequisite setup.

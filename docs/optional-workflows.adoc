@@ -42,6 +42,18 @@ can write.
 | See xref:linker-input-releases.adoc#trusted-publisher-contract[Trusted publisher contract]
 |===
 
+[#risk-campaign-separation]
+== Risks and controls for sustained campaigns
+
+A separate campaign job can still run on every PR, and a cancelled search can
+look like a successful time-bounded run. Separate workload intent and evidence.
+Use explicit schedule/manual event guards, normal bounded search completion,
+per-input limits and an overall safety timeout. Preserve reproducers and exact
+compiler/source identities on failure. Check the actual triggers and reproduce
+a saved failing input. Campaign results describe the selected search; neither
+their success nor a short PR smoke run substitutes for published-release
+compatibility or a meaningful benchmark measurement.
+
 == Documentation site
 
 `docs.yml` has two jobs.
@@ -85,21 +97,74 @@ Fuzz targets are written with roc-fuzz; see
 xref:testing.adoc#property-based-tests-with-roc-fuzz[Property-based tests with roc-fuzz]
 for why and how.
 
-`fuzz.yml` runs each target for a fixed duration on a schedule. It restores and
-saves the corpus through the Actions cache, uploads any reproducer as a workflow
-artifact, and fails when a target fails. Fuzz targets are Roc applications that
-depend on the working tree, so the latest nightly builds them.
+`fuzz.yml` runs sustained campaigns on a schedule or manual dispatch. It has no
+pull-request trigger, and campaign jobs explicitly accept only those two event
+types on the default branch:
+
+[source,yaml]
+----
+if: >-
+  (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+  github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+----
+
+The same guard is required if a campaign job shares a workflow file with PR
+jobs. A separate job or runner alone does not keep expensive work out of PR CI.
+Campaign jobs have `contents: read`, disable persisted checkout credentials and
+run no publishing or pin-update controller.
+
+Resolve the latest Roc nightly once and record its exact tag and `roc version`,
+the tested source commit, platform release/digest, target, arguments and duration
+in the report. Define whether a budget applies per target or to the complete
+campaign; ten minutes per target across dozens of targets is not a ten-minute
+job. Bound each input's time and memory as well as the campaign's search time,
+and leave headroom in the job timeout for building, cleanup and uploading logs.
+
+Restore and save the evolving corpus through the Actions cache, separately
+from the small committed PR smoke corpus. Cache absence starts a new search;
+it never excuses a missing target. Preserve crash inputs, raw stdout/stderr and
+the run metadata as artifacts even when testing fails. Reproduce findings with
+the saved input, not the random seed alone. A property failure, crash or
+per-input timeout fails the job; a campaign that reaches its configured search
+limit normally may pass. Job cancellation, missing reports and infrastructure
+timeouts are incomplete work, never a successful campaign.
 
 `ci.yml` gives every target a smoke run: it builds the target and replays the
-committed corpus, which is fast and deterministic. That keeps the targets
-building between scheduled runs. The scheduled run is the only place new inputs
-are searched for, and the only place a target is built with `--opt=speed`.
+small committed corpus within the
+xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[one-second workload budget].
+That keeps targets building between campaigns. Sustained searches and their
+`--opt=speed` builds stay in the campaign job.
+
+=== Daily checks of Roc builtins
+
+roc-fuzz's builtin targets exercise compiler-provided operations such as list
+sorting, strings and dictionaries. Run a bounded daily campaign against the
+latest Roc nightly, for example a ten-minute total search budget distributed
+across the selected targets. New nightlies can change these operations without
+any change to roc-fuzz, so a daily campaign can find upstream regressions that
+PR smoke runs and published examples do not expose.
+
+Keep this as `fuzz.yml`, with its own status and failure artifacts. It tests
+the selected builtin targets and search configuration, while
+xref:nightly-compatibility.adoc#shared-published-release-compatibility[shared nightly compatibility]
+tests the immutable published product examples. Neither result substitutes for
+the other. Investigate a failure, minimise and preserve its reproducer, and
+report an upstream issue when the evidence points to Roc. Compiler-pin changes
+remain a separate maintainer decision.
 
 == Benchmarks
 
 `bench.yml` measures on a schedule and on request, never on a pull request.
 `ci.yml` gives every benchmark a smoke run, one small iteration built with
-`--opt=dev`, so that a benchmark cannot fall behind the API it measures.
+`--opt=dev` and at most one second of workload execution, so that a benchmark
+cannot fall behind the API it measures. Smoke timings are not performance
+measurements and must not update baselines or fail a performance threshold.
+
+Use the same schedule/manual event and default-branch guard as `fuzz.yml`.
+Measured runs use `--opt=speed`, documented warmups, samples and runner
+conditions. Record source and compiler identities beside the baseline and raw
+measurements so a comparison is interpretable. Hosted-runner variance needs an
+explicit measurement policy; do not turn timing noise into a PR failure.
 
 A measurement that depends on the compiler, such as an allocation count, is
 compared as a ratchet: the build fails when the value is worse than the recorded

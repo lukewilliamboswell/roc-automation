@@ -3,6 +3,7 @@ app [main!] {
 	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.3/E5r48puF3KGvqzbd6v1JWA7qJFMehppWb7A6NzRWieJT.tar.zst",
 }
 import Preparation
+import Sha256
 main! = |_| Ok({})
 
 options = { entrypoint: "index.adoc", version: "3", pdf_filename: "manual.pdf", diagrams: [], site_url: "" }
@@ -56,3 +57,13 @@ expect manual("= Manual\n\n[cols=\"1,2\",options=\"header\"]\n|===\n| A | B\n| l
 expect Preparation.prepare(source("= Manual\n\nlink:api/index.html[API]\n"), { ..options, site_url: "https://example.com/project/" }).map_ok(|r| r.manual.contains("https://example.com/project/api/index.html")) == Ok(True)
 
 expect manual("= Manual\n\n[cols=\",,\",options=\"header\"]\n|===\n| A | B | C\n| x | y | z\n|===\n").map_ok(|s| s.contains("| A | B | C |")) == Ok(True)
+
+expect manual("= Manual\n\nLiteral `+{docs-version}+`; expanded `{docs-version}`.\n").map_ok(|s| s.contains("Literal `{docs-version}`; expanded `3`.")) == Ok(True)
+
+diagram_body = "flowchart LR\n  First --> Last\n"
+
+diagram_prepared = Preparation.prepare(source("= Manual\n\n.A [useful] diagram\n[mermaid]\n....\n${diagram_body}....\n"), { ..options, diagrams: [{ source_sha256: Sha256.hex(diagram_body.to_utf8()), href: "images/diagram.png" }] })
+
+diagram_text = diagram_prepared.map_ok(|r| r.manual)
+expect diagram_text.map_ok(|s| s.contains("![A \\[useful\\] diagram](images/diagram.png)")) == Ok(True)
+expect diagram_prepared.map_ok(|r| r.pages.any(|p| p.source.contains("![A \\[useful\\] diagram](images/diagram.png)"))) == Ok(True)

@@ -13,6 +13,18 @@ Pure packages can use `Programs`, `Fetch` and `Expect` with no Nix source.
 Follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide]. Native
 platforms can declare Nix sources for their host toolchains and sandboxed builds.
 
+[#risk-tooling-selection]
+== Risks and controls for tooling selection
+
+A contributor and CI can run different tool versions, or a new compiler can
+break the scripts needed to diagnose the product. Keep tooling identity explicit
+and separate from the compiler under test. Blueprint recipes and locks select
+the tooling bytes; local source scripts declare the corresponding compiler.
+Verify configuration and run the same named tasks locally and in CI. Changing a
+lock is an admission decision, not a harmless cache refresh. The lock establishes
+selected identities; it does not establish that the selected upstream code is
+free of defects.
+
 == Declare the environment
 
 [source,roc]

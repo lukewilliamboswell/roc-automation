@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
@@ -115,19 +116,72 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def install(version: str, system: str, expected: str, directory: Path, download: Fetch | None = None) -> Path:
-    """Download into a private temporary file; the binary becomes visible only after its hash matches."""
+def private_directory(directory: Path) -> None:
+    """Never follow a cache/install directory supplied as a symlink."""
+    if directory.is_symlink():
+        raise ValueError("Blueprint cache/install directory must not be a symlink")
+    directory.mkdir(parents=True, exist_ok=True)
+    if not directory.is_dir():
+        raise ValueError("Blueprint cache/install path must be a directory")
+    directory.chmod(0o700)
+
+
+def copy_cached(source: Path, destination: Path) -> bool:
+    """Copy only a bounded regular file; admission uses the copied bytes' hash."""
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise ValueError("Blueprint executable cache must contain a regular file, never a symlink") from error
+    with os.fdopen(descriptor, "rb") as cached:
+        metadata = os.fstat(cached.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("Blueprint executable cache must contain a regular file")
+        if metadata.st_size > MAX_BYTES:
+            return False
+        with destination.open("wb") as output:
+            remaining = MAX_BYTES
+            while chunk := cached.read(min(1024 * 1024, remaining + 1)):
+                remaining -= len(chunk)
+                if remaining < 0:
+                    return False
+                output.write(chunk)
+    return True
+
+
+def install(version: str, system: str, expected: str, directory: Path, download: Fetch | None = None,
+            cache_directory: Path | None = None, cache_status: list[bool] | None = None) -> Path:
+    """Admit downloaded or restored bytes in a private file before exposing an executable."""
     download = download or fetch
     url = asset_url(version, system)
-    directory.mkdir(parents=True, exist_ok=True)
+    private_directory(directory)
+    if cache_directory is not None:
+        private_directory(cache_directory.parent)
+        private_directory(cache_directory)
     handle, name = tempfile.mkstemp(prefix="blueprint-", suffix=".download", dir=directory)
     os.close(handle)
     candidate = Path(name)
     try:
-        download(url, candidate)
+        hit = cache_directory is not None and copy_cached(cache_directory / "blueprint", candidate)
+        if hit and not hmac.compare_digest(sha256_of(candidate), expected):
+            print("Blueprint executable cache digest mismatch; fetching the reviewed release again")
+            hit = False
+        if not hit:
+            download(url, candidate)
         actual = sha256_of(candidate)
         if not hmac.compare_digest(actual, expected):
             raise ValueError(f"SHA-256 mismatch for {url}: expected {expected}, got {actual}")
+        if cache_directory is not None:
+            cache_handle, cache_name = tempfile.mkstemp(prefix=".verified-", dir=cache_directory)
+            try:
+                with os.fdopen(cache_handle, "wb") as output, candidate.open("rb") as source:
+                    shutil.copyfileobj(source, output)
+                Path(cache_name).replace(cache_directory / "blueprint")
+            finally:
+                Path(cache_name).unlink(missing_ok=True)
+        if cache_status is not None:
+            cache_status.append(bool(hit))
         candidate.chmod(stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
         installed = directory / "blueprint"
         candidate.replace(installed)
@@ -169,7 +223,17 @@ def cache_settings(env: dict[str, str], version: str, system: str) -> tuple[str,
     return artifacts, key
 
 
-def main() -> None:
+def binary_cache_settings(env: dict[str, str], version: str, system: str, expected: str) -> tuple[str, str]:
+    if not boolean_input(env.get("INPUT_CACHE_BINARY", "true"), "cache-binary"):
+        return "", ""
+    identity = f"blueprint-executable-v1-{system}-{version}-{expected}"
+    directory = Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint-cache" / identity
+    if not directory.is_absolute() or any(ord(c) < 32 or ord(c) == 127 for c in str(directory)):
+        raise ValueError("the Blueprint executable cache must be an absolute path without control characters")
+    return str(directory), identity
+
+
+def main(prepare: bool = False) -> None:
     env = os.environ
     system = system_for(env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", ""))
     supplied = {name: env.get("INPUT_SHA256_" + name.replace("-", "_").upper(), "").strip() for name in SYSTEMS.values()}
@@ -180,24 +244,33 @@ def main() -> None:
         version = version_in(read_config(Path(env.get("GITHUB_WORKSPACE", ".")) / "Blueprint.roc"))
     expected = expected_sha256(supplied, known_releases(), version, system)
     artifacts, cache_key = cache_settings(env, version, system)
+    binary_directory, binary_key = binary_cache_settings(env, version, system, expected)
+    if prepare:
+        with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+            output.write(f"binary-cache-directory={binary_directory}\nbinary-cache-key={binary_key}\n")
+        return
     started = time.perf_counter()
     directory = Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint"
-    installed = install(version, system, expected, directory)
+    cache_status: list[bool] = []
+    installed = install(version, system, expected, directory,
+                        cache_directory=Path(binary_directory) if binary_directory else None,
+                        cache_status=cache_status)
     duration = time.perf_counter() - started
     size = installed.stat().st_size
     with open(env["GITHUB_PATH"], "a", encoding="utf-8") as path_file:
         path_file.write(f"{directory}\n")
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.write(f"blueprint-path={installed}\nsystem={system}\nversion={version}\nsha256={expected}\nbytes={size}\ninstall-seconds={duration:.3f}\nartifacts-directory={artifacts}\ncache-key={cache_key}\n")
+        output.write(f"binary-cache-hit={str(cache_status[0]).lower()}\n")
     print(f"Installed blueprint {version} for {system}; SHA-256 {expected} verified; {size} bytes; installation {duration:.3f} seconds")
     if env.get("GITHUB_STEP_SUMMARY"):
         with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-            summary.write(f"\n### Blueprint bootstrap\n\nRelease `{version}`, system `{system}`; {size} bytes; {duration:.3f} seconds. Verified SHA-256: `{expected}`.\n")
+            summary.write(f"\n### Blueprint bootstrap\n\nRelease `{version}`, system `{system}`; {size} bytes; {duration:.3f} seconds. Verified SHA-256: `{expected}`. Executable reused from verified cache: `{str(cache_status[0]).lower()}`.\n")
 
 
 if __name__ == "__main__":
     try:
-        main()
+        main(prepare=sys.argv[1:] == ["--prepare"])
     except ValueError as error:
         print(f"::error::{error}", file=sys.stderr)
         raise SystemExit(1) from error

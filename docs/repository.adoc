@@ -4,6 +4,18 @@ A consistent layout lets the same checks, scripts and workflows apply to every
 repository, and lets a maintainer who knows one repository find their way in
 another.
 
+[#risk-source-boundaries]
+== Risks and controls for repository source boundaries
+
+A test can accidentally import a published dependency instead of the changed
+working tree, while source automation can accidentally depend on the broken
+product it must diagnose. Make source roles explicit. Product examples use
+relative working-tree dependencies; source tooling uses independently selected
+released dependencies and a fixed compiler. Header and source-policy checks
+verify those conventions, and behavioral tests verify the product itself.
+Static policy establishes declared structure, not which code paths execute or
+whether a package is correct.
+
 == The layout
 
 [source,text]
@@ -89,9 +101,23 @@ holds `main.roc`, its sibling modules and any data files it reads. A local
 helper package that several examples share sits beside them and is referenced by
 relative path.
 
-== Write automation as Roc scripts
+== Use shared utilities through Blueprint tasks
 
-Each entry point under `scripts/` is an executable Roc application:
+Use a released executable for an operation shared across repositories, with
+its recipe and named task in Blueprint. Local use and CI invoke the same task.
+The
+xref:shared-utilities.adoc#share-automation-through-executable-utilities[shared utility skeleton]
+shows a working consumer and the producer boundaries. A consumer of a prebuilt
+tool does not need that tool's source dependencies or implementation compiler.
+
+Write a local script only for behavior or composition specific to the product.
+Keep common validation, example execution and release orchestration in their
+shared utilities rather than copying helper modules between repositories.
+
+[#write-automation-as-roc-scripts]
+== Write product-specific automation as Roc scripts
+
+A source entry point kept under `scripts/` is an executable Roc application:
 
 [source,roc]
 ----
@@ -115,8 +141,10 @@ app [main!] {
 * Pass arguments after `--`, for example `scripts/test_goldens.roc -- --update`.
 * Declare every entry point as a `Task` in `Blueprint.roc`.
 
-Automation is not written in Python, bash or PowerShell. A script that exists
-only to wrap one command is deleted in favour of a `Task` that runs the command.
+Product orchestration scripts are written in Roc. Small platform adapters and
+independent test harnesses may use the runtime their documented contract
+requires. A script that only wraps one command is replaced by a Blueprint
+`Task` that runs that command directly.
 
 === Keep the script pins in step
 
@@ -151,8 +179,10 @@ changes them together.
 
 === The check script
 
-One script, conventionally `scripts/check_all.roc` behind the `check` task, runs
-everything a pull request must pass: the static checks in this chapter,
+One `check` task owns everything a pull request must pass. It uses shared
+checking utilities; a product-specific driver, conventionally
+`scripts/check_all.roc`, can compose additional checks when needed. Its scope
+includes the static checks in this chapter,
 `roc fmt --check` and `roc-stable fmt --check`, the script tests, `roc test` on the package root, every
 example and integration case, a smoke run of each benchmark and fuzz target,
 and a dry-run build of what a release would publish.

@@ -8,6 +8,18 @@ ARM64 Linux and Apple Silicon macOS. The Linux binaries are static musl
 executables. Building and testing the implementation happens upstream; source
 checking downstream requires no Roc compiler, Python, Git or Nix.
 
+[#risk-policy-evidence]
+== Risks and controls for source-policy evidence
+
+A rule can inspect the wrong files, an override can hide a violation, or an
+incomplete scan can appear successful. Make rule scope and analysis completeness
+observable. Explicit roots, validated profiles, explained effective configuration
+and stable findings let maintainers inspect what the checker selected. Malformed
+configuration and incomplete analysis fail separately from policy findings;
+fixtures verify exclusions and conflicting settings. A clean source-policy report
+establishes only the rules actually checked. It is not behavioral test coverage
+or proof that the product has no security defects.
+
 == Declare policy in Blueprint
 
 The default authority is `repository_policy` in `Blueprint.roc`. Schema 2 composes

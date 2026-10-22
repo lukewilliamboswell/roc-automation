@@ -6,6 +6,18 @@ Roc code written against the package that they read. This chapter covers what
 an example is for, and how the same example is kept correct in two places: the
 repository, and each release.
 
+[#risk-example-identity]
+== Risks and controls for example identity
+
+Examples that pass in the working tree can fail after packaging because files
+are omitted, dependency URLs are rewritten incorrectly, or a warm cache hides
+which bundle was fetched. Test the consumer-facing archive as an artifact.
+Stage the declared files, verify that intended dependency substitutions are the
+only changes, and run the archive against candidate bundles with an empty
+package cache. Inspect and reject unsafe archive members before extraction.
+These checks establish the tested archive's behavior for its recorded cases;
+they do not make the cases representative of every product feature.
+
 == What an example is for
 
 The audience of an example is a user of the package who is probably not
@@ -85,6 +97,10 @@ package when the repository publishes several. It contains:
 * the expected-output specification those examples were tested with; and
 * a short README naming the release, the bundle URL and how to run an example.
 
+Publish the versioned `spec.json` and ZIP layout in
+xref:nightly-compatibility.adoc#publish-the-suite-contract[Publish the suite contract]
+so that the same immutable archive is executable by the central nightly runner.
+
 Nothing else in an example changes. The archived examples differ from the
 repository's at the tested commit only in the package dependency, and the check
 script verifies that.
@@ -104,6 +120,13 @@ installing. The archive is also the fixed input to
 xref:workflows.adoc#nightly-compatibility[nightly compatibility], which is why
 it carries its own expected output: the default branch's specification describes
 the default branch, not the release.
+
+Examples of expensive work, such as fuzzing or benchmarking, expose a small,
+bounded mode suitable for routine checks. Archive cases use that mode to verify
+the published API and executable behavior; they do not launch sustained searches
+or produce performance comparisons. Keep campaigns in
+xref:optional-workflows.adoc#fuzzing[their own scheduled workflow], outside both
+PR dry runs and the shared published-release compatibility verdict.
 
 == Build and test the exact archive
 
