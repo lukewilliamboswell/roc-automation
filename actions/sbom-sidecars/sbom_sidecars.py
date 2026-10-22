@@ -292,7 +292,7 @@ def main(run: Run = run_command) -> None:
     author = env.get("INPUT_AUTHOR", "").strip()
     if not AGENT.fullmatch(author) or not clean(author):
         raise Refusal("author must be an SPDX agent such as 'Organization: Example Ltd' or 'Person: A Maintainer'")
-    spdx_2_3 = setup_blueprint.boolean_input(env.get("INPUT_SPDX_2_3", "false"), "spdx-2.3")
+    spdx_2_3 = setup_blueprint.boolean_input(env.get("INPUT_SPDX_2_3", "false"), "spdx-2-3")
     server, repository = env.get("GITHUB_SERVER_URL", "https://github.com"), env.get("GITHUB_REPOSITORY", "")
     url_base = https_base(env.get("INPUT_URL_BASE", "").strip() or f"{server}/{repository}/releases/download/{version}", "url-base")
     namespace_base = https_base(env.get("INPUT_NAMESPACE_BASE", "").strip() or f"{server}/{repository}/sbom", "namespace-base")

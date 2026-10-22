@@ -226,7 +226,7 @@ jobs:
           target: source
           author: 'Organization: roc-automation contributors'
           imports: sbom/imports.json
-          spdx-2.3: 'true'
+          spdx-2-3: 'true'
       - name: Check the supplier graph is bound into the attested asset set
         env:
           FETCHED: ${{ steps.fetch.outputs.fetched }}

@@ -511,7 +511,7 @@ the composition stays the repository's reviewed file.
 | `url-base` | the release download URL | Where the files will be published; each subject URL is this base plus the file name
 | `namespace-base` | the repository's `sbom` URL | The namespace is this base, the commit, the file name and `revision-<revision>`
 | `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
-| `spdx-2.3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
+| `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
 | `roc-binary` | `roc` | The Roc compiler that runs the tool bundle
 | `blueprint-binary` | `blueprint` | The installed Blueprint executable
 |===

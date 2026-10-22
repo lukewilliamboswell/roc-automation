@@ -354,7 +354,7 @@ class EndToEndTests(unittest.TestCase):
             ("INPUT_TARGET", "linux", "target must be"),
             ("INPUT_AUTHOR", "Example Ltd", "author must be"),
             ("INPUT_REVISION", "0", "revision must be"),
-            ("INPUT_SPDX_2_3", "yes", "spdx-2.3 must be"),
+            ("INPUT_SPDX_2_3", "yes", "spdx-2-3 must be"),
             ("INPUT_URL_BASE", "http://example.org", "url-base must be"),
             ("INPUT_NAMESPACE_BASE", "https://example.org/?x", "namespace-base must be"),
             ("INPUT_ROC_BINARY", str(self.root / "missing"), "roc-binary is not an executable"),

@@ -29,7 +29,7 @@ inputs:
   revision:
     description: Document revision; a correction of a published SBOM increments it
     default: '1'
-  spdx-2.3:
+  spdx-2-3:
     description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
     default: 'false'
   roc-binary:
@@ -80,7 +80,7 @@ runs:
         INPUT_URL_BASE: ${{ inputs.url-base }}
         INPUT_NAMESPACE_BASE: ${{ inputs.namespace-base }}
         INPUT_REVISION: ${{ inputs.revision }}
-        INPUT_SPDX_2_3: ${{ inputs.spdx-2.3 }}
+        INPUT_SPDX_2_3: ${{ inputs.spdx-2-3 }}
         INPUT_ROC_BINARY: ${{ inputs.roc-binary }}
         INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
         CONTROLLER: ${{ github.action_path }}/sbom_sidecars.py
