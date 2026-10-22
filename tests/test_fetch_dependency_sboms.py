@@ -19,30 +19,30 @@ TOOL_SHA = hashlib.sha256(b"tool bytes").hexdigest()
 NAMESPACE = "https://example.org/sbom/dep/1.2.0/revision-1"
 
 
-def spdx3(name="dep-abc.tar.zst", version="1.2.0", sha256=DEP_SHA, namespace=NAMESPACE):
+def spdx3(name="dep-abc.tar.zst", version="1.2.0", sha256=DEP_SHA, namespace=NAMESPACE, target="source"):
     return {
         "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
         "@graph": [
             {"type": "CreationInfo", "@id": "_:creationinfo", "specVersion": "3.0.1", "created": "2026-10-21T00:00:00Z"},
             {"type": "SpdxDocument", "spdxId": f"{namespace}#spdx/document", "rootElement": [f"{namespace}#spdx/sbom"]},
             {"type": "software_Sbom", "spdxId": f"{namespace}#spdx/sbom", "rootElement": [f"{namespace}#Subject"]},
-            {"type": "software_Package", "spdxId": f"{namespace}#Subject", "name": name, "software_packageVersion": version, "verifiedUsing": [{"type": "Hash", "algorithm": "sha256", "hashValue": sha256}]},
+            {"type": "software_Package", "spdxId": f"{namespace}#Subject", "name": name, "software_packageVersion": version, "comment": json.dumps({"digest_kind": "final-deliverable-sha256", "target": target}), "verifiedUsing": [{"type": "Hash", "algorithm": "sha256", "hashValue": sha256}]},
         ],
     }
 
 
-def spdx2(name="dep-abc.tar.zst", version="1.2.0", sha256=DEP_SHA):
+def spdx2(name="dep-abc.tar.zst", version="1.2.0", sha256=DEP_SHA, target="source"):
     return {
         "spdxVersion": "SPDX-2.3", "SPDXID": "SPDXRef-DOCUMENT", "name": name, "documentNamespace": NAMESPACE,
-        "packages": [{"SPDXID": "SPDXRef-Subject", "name": name, "versionInfo": version, "checksums": [{"algorithm": "SHA256", "checksumValue": sha256}]}],
+        "packages": [{"SPDXID": "SPDXRef-Subject", "name": name, "versionInfo": version, "comment": json.dumps({"target": target}), "checksums": [{"algorithm": "SHA256", "checksumValue": sha256}]}],
         "relationships": [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Subject"}],
     }
 
 
-def cyclonedx(name="dep-abc.tar.zst", version="1.2.0", sha256=DEP_SHA):
+def cyclonedx(name="dep-abc.tar.zst", version="1.2.0", sha256=DEP_SHA, target="source"):
     return {
         "bomFormat": "CycloneDX", "specVersion": "1.7", "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79", "version": 1,
-        "metadata": {"component": {"type": "file", "name": name, "version": version, "hashes": [{"alg": "SHA-256", "content": sha256}]}},
+        "metadata": {"component": {"type": "file", "name": name, "version": version, "hashes": [{"alg": "SHA-256", "content": sha256}], "properties": [{"name": "blueprint:target", "value": target}]}},
         "components": [],
     }
 
@@ -93,15 +93,19 @@ class Published:
 
 class IdentityTests(unittest.TestCase):
     def test_each_format_yields_the_identity_blueprint_compares(self):
-        self.assertEqual(fetcher.document_identity(spdx3()), {"format": "SPDX-3.0.1", "namespace": NAMESPACE, "name": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA})
-        self.assertEqual(fetcher.document_identity(spdx2()), {"format": "SPDX-2.3", "namespace": NAMESPACE, "name": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA})
-        self.assertEqual(fetcher.document_identity(cyclonedx()), {"format": "CycloneDX-1.7", "namespace": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79", "name": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA})
+        self.assertEqual(fetcher.document_identity(spdx3()), {"format": "SPDX-3.0.1", "namespace": NAMESPACE, "name": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA, "target": "source"})
+        self.assertEqual(fetcher.document_identity(spdx2()), {"format": "SPDX-2.3", "namespace": NAMESPACE, "name": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA, "target": "source"})
+        self.assertEqual(fetcher.document_identity(cyclonedx()), {"format": "CycloneDX-1.7", "namespace": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79", "name": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA, "target": "source"})
+        self.assertEqual(fetcher.document_identity(cyclonedx(target="x86_64-linux"))["target"], "x86_64-linux")
 
     def test_documents_with_no_described_subject_still_identify_themselves(self):
         scanner = {"spdxVersion": "SPDX-2.3", "SPDXID": "SPDXRef-DOCUMENT", "documentNamespace": "https://anchore.com/syft/dir/src-1", "packages": [{"SPDXID": "SPDXRef-Package-x", "name": "x", "versionInfo": "1"}], "relationships": [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-DocumentRoot-Directory-src"}]}
-        self.assertEqual(fetcher.document_identity(scanner), {"format": "SPDX-2.3", "namespace": "https://anchore.com/syft/dir/src-1", "name": "", "version": "", "sha256": ""})
+        self.assertEqual(fetcher.document_identity(scanner), {"format": "SPDX-2.3", "namespace": "https://anchore.com/syft/dir/src-1", "name": "", "version": "", "sha256": "", "target": ""})
         bom = {"bomFormat": "CycloneDX", "specVersion": "1.5", "serialNumber": "urn:uuid:1", "metadata": {"component": {"type": "application", "name": "src"}}}
-        self.assertEqual(fetcher.document_identity(bom), {"format": "CycloneDX-1.5", "namespace": "urn:uuid:1", "name": "src", "version": "", "sha256": ""})
+        self.assertEqual(fetcher.document_identity(bom), {"format": "CycloneDX-1.5", "namespace": "urn:uuid:1", "name": "src", "version": "", "sha256": "", "target": ""})
+        unparsable = spdx2()
+        unparsable["packages"][0]["comment"] = "not json"
+        self.assertEqual(fetcher.document_identity(unparsable)["target"], "")
         described_by = spdx2()
         described_by["relationships"] = [{"spdxElementId": "SPDXRef-Subject", "relationshipType": "DESCRIBED_BY", "relatedSpdxElement": "SPDXRef-DOCUMENT"}]
         self.assertEqual(fetcher.document_identity(described_by)["sha256"], DEP_SHA)
@@ -139,7 +143,12 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(entry["document"], content.decode())
         self.assertEqual(entry["subject"], {"component": "dep", "filename": "dep-abc.tar.zst", "version": "1.2.0", "sha256": DEP_SHA})
         self.assertEqual(entry["relation"], "dependsOn")
-        self.assertEqual(entry["target"], "x86_64-linux")
+        # The supplier's bundle is architecture-independent and says so; the
+        # entry keeps that, so a native consumer can bind it once Blueprint admits it.
+        self.assertEqual(entry["target"], "source")
+        silent = spdx3()
+        silent["@graph"][3].pop("comment")
+        self.assertEqual(fetcher.import_entry(component, pinned, DEP_URL + ".spdx.json", encode(silent), "https://example.org/security")["target"], "x86_64-linux")
         self.assertEqual(entry["contact"], "https://example.org/security")
 
     def test_a_program_without_a_reviewed_version_takes_the_suppliers_or_its_digest(self):

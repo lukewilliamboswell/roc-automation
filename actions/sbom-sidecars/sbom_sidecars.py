@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -20,6 +21,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -87,8 +89,14 @@ def read_bounded_json(path: Path, what: str) -> dict:
     return document
 
 
-def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict[str, str]:
-    """The reviewed standalone SBOM tool bundle and compiler for a Blueprint release."""
+def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
+    """The reviewed standalone SBOM tool of a Blueprint release.
+
+    Every release records the Roc app bundle and the compiler it needs. A
+    release that also ships `blueprint-sbom-<system>` binaries records their
+    reviewed SHA-256 per system; the action then runs the binary and needs
+    no compiler.
+    """
     tools = json.loads(path.read_text(encoding="utf-8"))
     entry = tools.get(version)
     if not isinstance(entry, dict):
@@ -97,13 +105,40 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict[str, str]:
             "use a revision whose actions/setup-blueprint/sbom-tools.json records it"
         )
     url, compiler, generator = entry.get("url", ""), entry.get("compiler", ""), entry.get("generator", "")
-    if not re.fullmatch(r"https://github\.com/lukewilliamboswell/roc-blueprint/releases/download/[^/\s\"]+/roc-blueprint-sbom-[0-9A-Za-z]+\.tar\.zst", url):
+    if not re.fullmatch(r"https://github\.com/lukewilliamboswell/roc-blueprint/releases/download/" + re.escape(version) + r"/roc-blueprint-sbom-[0-9A-Za-z]+\.tar\.zst", url):
         raise Refusal(f"the recorded SBOM tool URL for roc-blueprint {version} is not an immutable roc-blueprint release bundle")
     if not re.fullmatch(r"nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}|[0-9]+\.[0-9]+\.[0-9]+", compiler):
         raise Refusal(f"the recorded compiler for roc-blueprint {version} is not a Roc release tag")
     if not generator.startswith("Tool: ") or not clean(generator):
         raise Refusal(f"the recorded generator name for roc-blueprint {version} is malformed")
-    return {"url": url, "compiler": compiler, "generator": generator}
+    binaries = entry.get("binaries", {})
+    if not isinstance(binaries, dict) or any(system not in setup_blueprint.SYSTEMS.values() or not isinstance(digest, str) or not SHA256.fullmatch(digest) for system, digest in binaries.items()):
+        raise Refusal(f"the recorded SBOM tool binaries for roc-blueprint {version} must map released systems to 64 lowercase hexadecimal SHA-256 digests")
+    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries)}
+
+
+def binary_url(version: str, system: str) -> str:
+    return f"{setup_blueprint.RELEASES}/{setup_blueprint.checked_version(version)}/blueprint-sbom-{system}"
+
+
+def install_binary(version: str, system: str, expected: str, directory: Path, download: setup_blueprint.Fetch = setup_blueprint.fetch) -> Path:
+    """Admit the released tool binary by its reviewed SHA-256 before it can run, as setup-blueprint admits blueprint."""
+    url = binary_url(version, system)
+    setup_blueprint.private_directory(directory)
+    handle, name = tempfile.mkstemp(prefix="blueprint-sbom-", suffix=".download", dir=directory)
+    os.close(handle)
+    candidate = Path(name)
+    try:
+        download(url, candidate)
+        actual = sha256_of(candidate)
+        if not hmac.compare_digest(actual, expected):
+            raise Refusal(f"SHA-256 mismatch for {url}: expected {expected}, got {actual}")
+        candidate.chmod(0o755)
+        installed = directory / f"blueprint-sbom-{system}"
+        candidate.replace(installed)
+        return installed
+    finally:
+        candidate.unlink(missing_ok=True)
 
 
 def compiler_matches(output: str, tag: str) -> bool:
@@ -289,7 +324,7 @@ def evidence_envelope(env: dict[str, str], workspace: Path, files: list[Path], s
         "format": "roc-automation-sbom-evidence-v1",
         "source": {"server": env.get("GITHUB_SERVER_URL", ""), "repository": env.get("GITHUB_REPOSITORY", ""), "commit": commit},
         "producer": {"workflow": env.get("GITHUB_WORKFLOW_REF", ""), "run_id": env.get("GITHUB_RUN_ID", ""), "run_attempt": env.get("GITHUB_RUN_ATTEMPT", "")},
-        "generator": {"tool": tool["url"], "compiler": tool["compiler"], "generator": tool["generator"], "blueprint": blueprint_version, "created": created},
+        "generator": {"tool": tool["url"], "tool_sha256": tool.get("sha256", ""), "compiler": tool["compiler"], "generator": tool["generator"], "blueprint": blueprint_version, "created": created},
         "subjects": subjects,
         "dependencies": [row for row in rows if row["origin"] != "coverage"],
         "coverage": [{"scope": row["component"], "status": "incomplete", "detail": row["detail"]} for row in rows if row["origin"] == "coverage"],
@@ -310,14 +345,13 @@ def summary_text(files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]]
     return "\n".join(lines) + "\n"
 
 
-def main(run: Run = run_command) -> None:
+def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_blueprint.fetch) -> None:
     env = os.environ
     workspace = Path(env.get("GITHUB_WORKSPACE", ".")).resolve()
     blueprint = env.get("INPUT_BLUEPRINT_BINARY") or "blueprint"
     roc = env.get("INPUT_ROC_BINARY") or "roc"
-    for name, value in (("blueprint-binary", blueprint), ("roc-binary", roc)):
-        if not clean(value) or shutil.which(value) is None:
-            raise Refusal(f"{name} is not an executable on this runner: {value!r}")
+    if not clean(blueprint) or shutil.which(blueprint) is None:
+        raise Refusal(f"blueprint-binary is not an executable on this runner: {blueprint!r}")
     version = env.get("INPUT_VERSION", "").strip()
     if not VERSION.fullmatch(version):
         raise Refusal("version must be a release version such as 0.12.0 or 0.12.0-rc1")
@@ -344,13 +378,25 @@ def main(run: Run = run_command) -> None:
     composition = merge_imports(composition, imports, imports_name)
 
     blueprint_version = setup_blueprint.version_in(setup_blueprint.read_config(workspace / "Blueprint.roc"))
-    tool = sbom_tool(blueprint_version)
-    compiler_output = succeed(run, [roc, "version"], workspace, f"{roc} version")
-    if not compiler_matches(compiler_output, tool["compiler"]):
-        raise Refusal(
-            f"roc-binary reports {compiler_output.strip().splitlines()[0] if compiler_output.strip() else 'nothing'!r}, but roc-blueprint {blueprint_version}'s SBOM tool "
-            f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or roc-lang/setup-roc with nightly-tag"
-        )
+    tool = sbom_tool(blueprint_version, SBOM_TOOLS)
+    system = setup_blueprint.SYSTEMS.get((env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", "")), "")
+    expected = tool["binaries"].get(system, "")
+    if expected:
+        # A released native tool: admitted by its reviewed digest, no compiler needed.
+        binary = install_binary(blueprint_version, system, expected, Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint-sbom", download)
+        tool_command = [str(binary)]
+        tool_identity = {"url": binary_url(blueprint_version, system), "sha256": expected}
+    else:
+        if not clean(roc) or shutil.which(roc) is None:
+            raise Refusal(f"roc-binary is not an executable on this runner: {roc!r}; roc-blueprint {blueprint_version} records no native SBOM tool binary for {system or 'this runner'}, so the app bundle needs the compiler {tool['compiler']}")
+        compiler_output = succeed(run, [roc, "version"], workspace, f"{roc} version")
+        if not compiler_matches(compiler_output, tool["compiler"]):
+            raise Refusal(
+                f"roc-binary reports {compiler_output.strip().splitlines()[0] if compiler_output.strip() else 'nothing'!r}, but roc-blueprint {blueprint_version}'s SBOM tool "
+                f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or roc-lang/setup-roc with nightly-tag"
+            )
+        tool_command = [roc, "run", tool["url"], "--"]
+        tool_identity = {"url": tool["url"], "sha256": ""}
 
     commit = succeed(run, ["git", "rev-parse", "HEAD"], workspace, "git rev-parse HEAD").strip()
     if not COMMIT.fullmatch(commit):
@@ -371,7 +417,6 @@ def main(run: Run = run_command) -> None:
     shutil.copyfile(lock, staging / "Lock")
     write_json(staging / "composition.json", composition)
     inventory_path = staging / "inventory.json"
-    tool_command = [roc, "run", tool["url"], "--"]
     result = run(tool_command + ["inspect", str(staging / "Spec"), str(staging / "Lock"), str(staging / "composition.json"), target, str(inventory_path)], staging)
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
@@ -414,12 +459,12 @@ def main(run: Run = run_command) -> None:
                 output.write(f"{digest}  {sidecar.relative_to(workspace)}\n")
     rows = dependency_report(composition, inventory)
     evidence = staging / "sbom-evidence.json"
-    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, tool, blueprint_version, target, version, url_base, commit, created, rows))
+    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, {**tool, **tool_identity}, blueprint_version, target, version, url_base, commit, created, rows))
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")
         output.write(f"sidecars<<{delimiter}\n" + "\n".join(sidecars_only) + f"\n{delimiter}\n")
-        output.write(f"inventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool['url']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
+        output.write(f"inventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool_identity['url']}\ntool-sha256={tool_identity['sha256']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
     for file in files:
         for sidecar, digest in written[file]:
             print(f"{sidecar.relative_to(workspace)}: SHA-256 {digest}")
@@ -427,7 +472,7 @@ def main(run: Run = run_command) -> None:
         print(f"{row['state']}: {row['component']} ({row['origin']}): {row['detail']}")
     if env.get("GITHUB_STEP_SUMMARY"):
         with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-            summary.write(summary_text(files, written, rows, tool, target))
+            summary.write(summary_text(files, written, rows, {**tool, **tool_identity}, target))
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ inputs:
     description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
     default: 'false'
   roc-binary:
-    description: Roc compiler that runs the tool bundle; it must be the release the Blueprint release records
+    description: Roc compiler that runs the tool app bundle, needed only when the Blueprint release records no native tool binary for the runner; it must be the release the record names
     default: roc
   blueprint-binary:
     description: Installed Blueprint executable, otherwise blueprint on PATH
@@ -56,8 +56,11 @@ outputs:
     description: Path of the roc-automation-sbom-evidence-v1 envelope listing every file and sidecar by name, size and SHA-256, bound to the source commit and run, for the independent validator and publisher
     value: ${{ steps.sidecars.outputs.evidence }}
   tool-url:
-    description: Immutable URL of the SBOM tool bundle that generated the sidecars
+    description: Immutable URL of the SBOM tool that generated the sidecars, a native binary or the app bundle
     value: ${{ steps.sidecars.outputs.tool-url }}
+  tool-sha256:
+    description: Reviewed SHA-256 the native tool binary was admitted by; empty when the app bundle ran
+    value: ${{ steps.sidecars.outputs.tool-sha256 }}
   compiler:
     description: Roc release that ran the tool
     value: ${{ steps.sidecars.outputs.compiler }}

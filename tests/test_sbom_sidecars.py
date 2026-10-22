@@ -90,6 +90,38 @@ class PureTests(unittest.TestCase):
                 self.assertTrue(entry["url"].startswith("https://github.com/lukewilliamboswell/roc-blueprint/releases/download/" + version + "/roc-blueprint-sbom-"))
                 self.assertEqual(entry["generator"], f"Tool: blueprint-sbom-{version}")
 
+    def test_recorded_binaries_map_released_systems_to_digests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "tools.json"
+            good = {"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "binaries": {"x86_64-linux": "a" * 64}}}
+            path.write_text(json.dumps(good))
+            self.assertEqual(sidecars.sbom_tool("0.7.0", path)["binaries"], {"x86_64-linux": "a" * 64})
+            path.write_text(json.dumps({"0.7.0": {**good["0.7.0"], "binaries": {}}}))
+            self.assertEqual(sidecars.sbom_tool("0.7.0", path)["binaries"], {})
+            for binaries in ({"x86_64-windows": "a" * 64}, {"x86_64-linux": "A" * 64}, {"x86_64-linux": "a" * 63}, ["a" * 64]):
+                path.write_text(json.dumps({"0.7.0": {**good["0.7.0"], "binaries": binaries}}))
+                with self.subTest(binaries=binaries), self.assertRaisesRegex(ValueError, "released systems to 64 lowercase"):
+                    sidecars.sbom_tool("0.7.0", path)
+        self.assertEqual(sidecars.binary_url("0.8.0", "aarch64-linux"), "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/blueprint-sbom-aarch64-linux")
+
+    def test_a_binary_is_admitted_only_by_its_reviewed_digest(self):
+        content = b"#!/bin/sh\necho tool\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "tool"
+            seen = []
+
+            def serving(url, destination):
+                seen.append(url)
+                destination.write_bytes(content)
+
+            installed = sidecars.install_binary("0.7.0", "x86_64-linux", hashlib.sha256(content).hexdigest(), directory, serving)
+            self.assertEqual(installed, directory / "blueprint-sbom-x86_64-linux")
+            self.assertTrue(os.access(installed, os.X_OK))
+            self.assertEqual(seen, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/blueprint-sbom-x86_64-linux"])
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                sidecars.install_binary("0.7.0", "x86_64-linux", "0" * 64, Path(temporary) / "other", serving)
+            self.assertEqual(list((Path(temporary) / "other").iterdir()), [])
+
     def test_an_unrecorded_release_is_refused_with_the_remedy(self):
         with self.assertRaisesRegex(ValueError, "records no SBOM tool for roc-blueprint 0.6.0"):
             sidecars.sbom_tool("0.6.0")
@@ -381,6 +413,40 @@ class EndToEndTests(unittest.TestCase):
                 self.run_action(**{name: value})
         self.assertFalse(self.log.exists())
         self.assertFalse((self.root / "outputs").exists())
+
+    def test_a_recorded_native_binary_runs_without_any_compiler(self):
+        # The pretend binary is the pretend roc with the `run URL --` prefix stripped.
+        binary = FAKE_ROC.replace('assert args[:2] == ["run", os.environ["EXPECTED_TOOL"]] and args[2] == "--", args\ncommand, rest = args[3], args[4:]', 'command, rest = args[0], args[1:]').encode()
+        digest = hashlib.sha256(binary).hexdigest()
+        tools = self.root / "tools.json"
+        tools.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "binaries": {"x86_64-linux": digest}}}))
+        served = []
+
+        def serving(url, destination):
+            served.append(url)
+            destination.write_bytes(binary)
+
+        with patch.object(sidecars, "SBOM_TOOLS", tools), patch.dict(os.environ, {**self.env, "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "INPUT_ROC_BINARY": str(self.root / "no-such-roc"), "INPUT_FILES": "dist/app"}, clear=False):
+            sidecars.main(download=serving)
+        values = self.outputs()
+        self.assertEqual(served, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/blueprint-sbom-x86_64-linux"])
+        self.assertEqual(values["tool-url"], served[0])
+        self.assertEqual(values["tool-sha256"], digest)
+        self.assertEqual(values["assets"].splitlines(), ["dist/app", "dist/app.cdx.json", "dist/app.spdx.json"])
+        self.assertEqual([call["args"][0] for call in self.calls()], ["inspect", "bind", "check"])
+        self.assertEqual(json.loads(Path(values["evidence"]).read_text())["generator"]["tool_sha256"], digest)
+
+    def test_a_binary_with_the_wrong_digest_never_runs(self):
+        tools = self.root / "tools.json"
+        tools.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "binaries": {"aarch64-darwin": "1" * 64}}}))
+        with patch.object(sidecars, "SBOM_TOOLS", tools), patch.dict(os.environ, {**self.env, "RUNNER_OS": "macOS", "RUNNER_ARCH": "ARM64"}, clear=False), self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            sidecars.main(download=lambda url, destination: destination.write_bytes(b"other"))
+        self.assertFalse(self.log.exists())
+        self.assertFalse((self.root / "outputs").exists())
+
+    def test_a_runner_without_a_recorded_binary_needs_the_compiler(self):
+        with patch.dict(os.environ, {**self.env, "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "INPUT_ROC_BINARY": str(self.root / "no-such-roc")}, clear=False), self.assertRaisesRegex(ValueError, "records no native SBOM tool binary for x86_64-linux"):
+            sidecars.main()
 
     def test_source_target_and_explicit_bases_are_passed_through(self):
         values = self.run_action(INPUT_TARGET="source", INPUT_FILES="dist/bundle.tar.zst", INPUT_URL_BASE="https://example.org/releases/1.2.0/", INPUT_NAMESPACE_BASE="https://example.org/sbom", INPUT_REVISION="3")

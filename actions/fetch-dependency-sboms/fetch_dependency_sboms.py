@@ -107,6 +107,15 @@ def text(value) -> str:
     return value if isinstance(value, str) else ""
 
 
+def stated_target(comment: str) -> str:
+    """The target a Blueprint-written SPDX subject states in its JSON comment."""
+    try:
+        metadata = json.loads(comment) if comment else {}
+    except json.JSONDecodeError:
+        return ""
+    return text(metadata.get("target")) if isinstance(metadata, dict) else ""
+
+
 def document_identity(document: dict) -> dict[str, str]:
     """The format, namespace and described subject of a supplier's SBOM.
 
@@ -166,6 +175,7 @@ def spdx3_identity(document: dict) -> dict[str, str]:
         "name": text(subject.get("name")) if subject else "",
         "version": text(subject.get("software_packageVersion")) if subject else "",
         "sha256": sha256,
+        "target": stated_target(text(subject.get("comment"))) if subject else "",
     }
 
 
@@ -192,6 +202,7 @@ def spdx2_identity(document: dict) -> dict[str, str]:
         "name": text(subject.get("name")) if subject else "",
         "version": text(subject.get("versionInfo")) if subject else "",
         "sha256": sha256,
+        "target": stated_target(text(subject.get("comment"))) if subject else "",
     }
 
 
@@ -206,12 +217,18 @@ def cyclonedx_identity(document: dict) -> dict[str, str]:
         for entry in subject.get("hashes", []) or []:
             if isinstance(entry, dict) and text(entry.get("alg")).upper() == "SHA-256":
                 sha256 = text(entry.get("content")).lower()
+    target = ""
+    if subject is not None:
+        for entry in subject.get("properties", []) or []:
+            if isinstance(entry, dict) and entry.get("name") == "blueprint:target":
+                target = text(entry.get("value"))
     return {
         "format": f"CycloneDX-{text(document.get('specVersion'))}",
         "namespace": serial,
         "name": text(subject.get("name")) if subject else "",
         "version": text(subject.get("version")) if subject else "",
         "sha256": sha256,
+        "target": target,
     }
 
 
@@ -286,7 +303,10 @@ def import_entry(component: dict, pinned: dict[str, str], url: str, content: byt
 
     What the document says it describes is compared with the Lock here so the
     failure names the supplier's statement; `inspect` repeats the comparison
-    and remains the authority.
+    and remains the authority. The entry keeps the target the supplier states,
+    such as `source` for an architecture-independent bundle, because a
+    relabelled import is refused; a document that states none takes the
+    Lock's system for a program or the inventory's target for a file.
     """
     identity = document_identity(parse_json(content, f"SBOM at {url}"))
     filename = url[: -len(next(suffix for suffix in SUFFIXES if url.endswith(suffix)))].rsplit("/", 1)[-1]
@@ -302,7 +322,7 @@ def import_entry(component: dict, pinned: dict[str, str], url: str, content: byt
         "url": url,
         "sha256": hashlib.sha256(content).hexdigest(),
         "namespace": identity["namespace"],
-        "target": pinned["target"],
+        "target": identity["target"] or pinned["target"],
         "document": content.decode("utf-8"),
         "relation": "dependsOn",
         "basis": f"Supplier's published {identity['format']} SBOM beside the locked file, found by naming convention",

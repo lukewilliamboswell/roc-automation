@@ -92,9 +92,12 @@ in one place while migrating configuration and locked inputs together:
   where the checksums are reviewed.
 . Change the platform URL in the `Blueprint.roc` header.
 . A repository that generates sidecars with `actions/sbom-sidecars` also needs
-  a revision that records the release's SBOM tool bundle and compiler in
-  `actions/setup-blueprint/sbom-tools.json`; the tool runs on the release's
-  `blueprint compiler-version`, so update that fixed compiler recipe with it.
+  a revision that records the release's SBOM tool in
+  `actions/setup-blueprint/sbom-tools.json`: the app bundle and its compiler,
+  and the reviewed SHA-256 of each `blueprint-sbom-<system>` binary the
+  release ships. With binaries recorded the action needs no compiler;
+  otherwise the tool runs on the release's `blueprint compiler-version`, so
+  update that fixed compiler recipe with it.
 . Migrate configuration to the release's supported Spec and run `blueprint check`.
 . Run a full `blueprint update` when the release changes the lock format, review
   changed identities against the previous lock and commit the regenerated lock.

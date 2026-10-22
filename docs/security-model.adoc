@@ -267,8 +267,10 @@ asset.
 The sidecar action selects the tool bundle by the Blueprint release that
 `Blueprint.roc` names, from a reviewed record in
 `actions/setup-blueprint/sbom-tools.json` fixed by the action's full SHA.
-Roc verifies the bundle's content hash from its URL before running it, and
-the action requires the Roc release that record names. The tool makes no
+A release that ships native tool binaries has their SHA-256 reviewed in the
+same record, and the binary is admitted by that digest, as `blueprint` is.
+Otherwise Roc verifies the app bundle's content hash from its URL before
+running it, and the action requires the Roc release the record names. The tool makes no
 request while reporting. The fetch action is the one step that reaches the
 network: HTTPS only, bounded to Blueprint's 1 MiB limit, with a document's
 SHA-256 recorded for review and reproduced on every later run. A changed or

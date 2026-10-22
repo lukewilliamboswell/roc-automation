@@ -512,7 +512,7 @@ the composition stays the repository's reviewed file.
 | `namespace-base` | the repository's `sbom` URL | The namespace is this base, the commit, the file name and `revision-<revision>`
 | `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
 | `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
-| `roc-binary` | `roc` | The Roc compiler that runs the tool bundle
+| `roc-binary` | `roc` | The Roc compiler that runs the tool app bundle, used only when the release records no native tool binary for the runner
 | `blueprint-binary` | `blueprint` | The installed Blueprint executable
 |===
 
@@ -521,8 +521,8 @@ per line, for the artifact upload, the test jobs, the attestation step's
 `subject-path` and `actions/publish-release`; `sidecars`, the sidecars alone;
 `digests`, a `sha256sum`-format listing of them; `inventory`, the inspected
 inventory the documents were rendered from; `evidence`, a
-`roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `compiler`,
-`commit` and `created`, which release notes can record.
+`roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `tool-sha256`,
+`compiler`, `commit` and `created`, which release notes can record.
 
 The evidence envelope lists every file and sidecar by name, path, size,
 SHA-256, format, target and version, bound to the source repository and
@@ -546,9 +546,13 @@ The action does the following, in this order, and stops at the first failure.
 . *Select the tool.* The roc-blueprint release is read from the platform URL in
   `Blueprint.roc`, as `actions/setup-blueprint` reads it. The action records,
   in `actions/setup-blueprint/sbom-tools.json`, the immutable URL of that
-  release's `roc-blueprint-sbom-<hash>.tar.zst` bundle and the Roc release it
-  was built for. A release without a record fails the step. `roc-binary` must
-  report that Roc release; another compiler fails before anything runs.
+  release's `roc-blueprint-sbom-<hash>.tar.zst` app bundle, the Roc release
+  it was built for, and, for a release that ships `blueprint-sbom-<system>`
+  binaries, their reviewed SHA-256 per system. A release without a record
+  fails the step. With a recorded binary for the runner, the action downloads
+  it into a private file, admits it only when its digest matches, and needs
+  no compiler. Otherwise `roc-binary` must report the recorded Roc release;
+  another compiler fails before anything runs.
 . *Bind to the tested commit.* The checkout's `HEAD` must equal the event
   commit. The documents' creation time is that commit's time, not the wall
   clock, and their namespace names the commit, so two runs of one commit
@@ -576,14 +580,18 @@ The action does the following, in this order, and stops at the first failure.
   dependency as bound or unavailable with the reviewed reason and contact, and
   every `incomplete` coverage scope.
 
-The job needs `contents: read` and nothing else. The first `roc run` of the
-tool bundle fills Roc's package cache from the immutable URL, whose content
-hash Roc verifies; after that the steps make no request. The Roc compiler is a
-separate input: Blueprint 0.7.0's tool needs `nightly-2026-10-21-5349569`,
-which a `Fetch` recipe with `Recipes.roc_nightly` and
+The job needs `contents: read` and nothing else. A recorded native binary is
+one bounded download verified by its reviewed digest. Without one, the first
+`roc run` of the app bundle fills Roc's package cache from the immutable URL,
+whose content hash Roc verifies, and compiles the tool, which costs about a
+minute and a half on a fresh runner; after that the steps make no request.
+The Roc compiler is then a separate input: Blueprint 0.7.0's tool needs
+`nightly-2026-10-21-5349569`, which a `Fetch` recipe with
+`Recipes.roc_nightly` and
 xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`] can supply without
 putting it on `PATH` as `roc`, or `roc-lang/setup-roc` with `nightly-tag` in
-a job that does not also need the package nightly.
+a job that does not also need the package nightly. Blueprint 0.7.0 ships no
+native tool binary, so it takes this path.
 
 What the action establishes is bounded. The tool's `inspect` decides what the
 composition may claim, and the sidecars bind that claim to the final bytes.
@@ -645,9 +653,13 @@ For each component of the composition whose origin is `source:<name>` or
   does not review fails the step and names the difference. `inspect` repeats
   the comparison later and remains the authority.
 . The entry records `id` `<component>-sbom`, the URL, the document's SHA-256
-  and identity, the target, the document bytes, the relation, the basis, the
-  contact, and a `subject` that binds it to the component with the Lock's
-  SHA-256 and the reviewed version.
+  and identity, the target the supplier's document states for its subject,
+  such as `source` for an architecture-independent bundle, the document
+  bytes, the relation, the basis, the contact, and a `subject` that binds it
+  to the component with the Lock's SHA-256 and the reviewed version. A
+  document that states no target takes the Lock's system for a program and
+  the inventory's target for a file; a relabelled import is what `inspect`
+  refuses.
 . When nothing is published, no entry is written. The file carries a
   ready-to-paste `unavailable_sboms` stub whose reason and contact say
   `REPLACE`, and the step fails with it, unless `missing` is `warn`. The

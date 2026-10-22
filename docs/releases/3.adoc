@@ -10,15 +10,19 @@ CycloneDX 1.7 sidecars, and SPDX 2.3 on request, to each listed release file's
 final bytes, checks them offline, and returns the complete asset set for the
 test jobs, the attestation step and the publisher. Its documents take their
 creation time and namespace from the tested commit, a stale sidecar fails the
-step, and the tool bundle and Roc release are recorded per Blueprint release
-in `actions/setup-blueprint/sbom-tools.json`, so `Blueprint.roc` still names
-the release once.
+step, and the tool is recorded per Blueprint release in
+`actions/setup-blueprint/sbom-tools.json`, so `Blueprint.roc` still names
+the release once: the app bundle with its Roc release, and the reviewed
+SHA-256 of each native tool binary a release ships, which the action then
+runs with no compiler at all.
 
 xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
 finds each locked dependency's published SBOM beside its file by the naming
 convention, records it bound to the Lock's SHA-256 for `inspect` to verify,
 and writes `sbom/imports.json` for review. It is the one network step, holds
-no write token, refuses a document that describes other bytes, reports a
+no write token, keeps the target the supplier's document states so a
+`source` bundle binds into a native inventory, refuses a document that
+describes other bytes, reports a
 dependency without a published SBOM as a stub the maintainer completes, and
 reports an opt-out whose supplier now publishes as stale. A recorded document
 must be reproduced byte for byte on every later run. CI exercises both actions
