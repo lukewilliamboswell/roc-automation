@@ -30,6 +30,9 @@ import setup_blueprint  # noqa: E402
 
 SBOM_TOOLS = Path(__file__).resolve().parents[1] / "setup-blueprint" / "sbom-tools.json"
 SIDECAR_SUFFIXES = (".spdx.json", ".cdx.json", ".spdx-2.3.json")
+MANIFEST_SUFFIX = ".sbom-manifest.json"
+TOOL_FEATURES = ("members", "manifest")
+MEMBER_ID = re.compile(r"[^A-Za-z0-9.-]+")
 MAX_JSON_BYTES = 1024 * 1024
 MAX_FILES = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -114,7 +117,10 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
     binaries = entry.get("binaries", {})
     if not isinstance(binaries, dict) or any(system not in setup_blueprint.SYSTEMS.values() or not isinstance(digest, str) or not SHA256.fullmatch(digest) for system, digest in binaries.items()):
         raise Refusal(f"the recorded SBOM tool binaries for roc-blueprint {version} must map released systems to 64 lowercase hexadecimal SHA-256 digests")
-    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries)}
+    features = entry.get("features", [])
+    if not isinstance(features, list) or any(feature not in TOOL_FEATURES for feature in features) or len(set(features)) != len(features):
+        raise Refusal(f"the recorded SBOM tool features for roc-blueprint {version} must be a subset of {', '.join(TOOL_FEATURES)}")
+    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features)}
 
 
 def binary_url(version: str, system: str) -> str:
@@ -163,7 +169,7 @@ def release_files(listing: str, workspace: Path) -> list[Path]:
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts:
             raise Refusal(f"files must be relative workspace paths without '..': {name!r}")
-        if relative.name.endswith(SIDECAR_SUFFIXES):
+        if relative.name.endswith(SIDECAR_SUFFIXES + (MANIFEST_SUFFIX,)):
             raise Refusal(f"a sidecar is not a release subject: {name!r}")
         path = workspace / relative
         if path.is_symlink() or not path.is_file():
@@ -181,7 +187,7 @@ def release_files(listing: str, workspace: Path) -> list[Path]:
 def refuse_stale_sidecars(files: list[Path]) -> None:
     """Any sidecar beside a release file predates this build and is stale."""
     for file in files:
-        for suffix in SIDECAR_SUFFIXES:
+        for suffix in SIDECAR_SUFFIXES + (MANIFEST_SUFFIX,):
             sidecar = file.with_name(file.name + suffix)
             if sidecar.exists() or sidecar.is_symlink():
                 raise Refusal(f"a sidecar already exists and would be stale: {sidecar}; generate into a fresh build")
@@ -217,6 +223,42 @@ def context_for(namespace_base: str, commit: str, filename: str, revision: str, 
 
 def subject_for(filename: str, version: str, target: str, url_base: str) -> dict[str, str]:
     return {"filename": filename, "version": version, "target": target, "sha256": "", "url": f"{url_base}/{filename}"}
+
+
+def member_components(composition: dict, listing: dict) -> dict:
+    """Account for every member of a source archive, as Blueprint's own release does.
+
+    A member a reviewed component already states by SHA-256, or an input
+    disposition already names, is left to the review. Every other member
+    becomes a component with `sha256-<digest>` as its version and
+    `urn:blueprint:archive-member:<name>:<digest>` as its identity, with
+    NOASSERTION for what nobody reviewed, contained by the subject. The
+    archive, not the bundler's argument list, is then the authority.
+    """
+    members = listing.get("members")
+    if not isinstance(members, list) or not all(isinstance(member, dict) and isinstance(member.get("name"), str) and isinstance(member.get("sha256"), str) and SHA256.fullmatch(member["sha256"]) for member in members):
+        raise Refusal("the members listing must name each member with its SHA-256")
+    stated = {component.get("sha256") for component in composition.get("components", []) if isinstance(component, dict)}
+    disposed = {entry.get("input") for entry in composition.get("inputs", []) if isinstance(entry, dict)}
+    taken = {component.get("id") for component in composition.get("components", []) if isinstance(component, dict)}
+    merged = dict(composition)
+    merged["components"] = list(composition.get("components", []))
+    merged["relationships"] = list(composition.get("relationships", []))
+    for member in members:
+        name, digest = member["name"], member["sha256"]
+        if digest in stated or f"archive-member:{name}:{digest}" in disposed:
+            continue
+        identifier = "member-" + MEMBER_ID.sub("-", name).strip("-.") or "member"
+        candidate, counter = identifier, 2
+        while candidate in taken:
+            candidate, counter = f"{identifier}-{counter}", counter + 1
+        taken.add(candidate)
+        merged["components"].append({
+            "id": candidate, "name": name, "version": f"sha256-{digest}", "producer": "NOASSERTION", "license": "NOASSERTION", "license_url": "",
+            "identity": f"urn:blueprint:archive-member:{name}:{digest}", "download": "NOASSERTION", "sha256": digest, "modified": "", "target": "", "origin": "reviewed",
+        })
+        merged["relationships"].append({"from": "Subject", "to": candidate, "relation": "contains", "scope": "", "basis": f"Member {name} of the archive roc bundle produced; digest is the member's bytes"})
+    return merged
 
 
 def merge_imports(composition: dict, imports: dict | None, imports_path: str) -> dict:
@@ -293,12 +335,12 @@ def dependency_report(composition: dict, inventory: dict) -> list[dict[str, str]
     return rows
 
 
-SIDECAR_FORMATS = {".spdx.json": "SPDX-3.0.1", ".cdx.json": "CycloneDX-1.7", ".spdx-2.3.json": "SPDX-2.3"}
+SIDECAR_FORMATS = {".spdx.json": "SPDX-3.0.1", ".cdx.json": "CycloneDX-1.7", ".spdx-2.3.json": "SPDX-2.3", MANIFEST_SUFFIX: "manifest"}
 
 
 def evidence_envelope(env: dict[str, str], workspace: Path, files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]],
-                      tool: dict[str, str], blueprint_version: str, target: str, version: str, url_base: str,
-                      commit: str, created: str, rows: list[dict[str, str]]) -> dict:
+                      tool: dict, blueprint_version: str, target: str, version: str, url_base: str,
+                      commit: str, created: str, rows: list[dict[str, str]], inventories: dict[Path, Path] | None = None) -> dict:
     """The producer's handoff: every file and sidecar by name, size and SHA-256, bound to source and run.
 
     This is a transfer manifest for the independent validator and publisher,
@@ -314,6 +356,7 @@ def evidence_envelope(env: dict[str, str], workspace: Path, files: list[Path], s
             "target": target,
             "version": version,
             "url": f"{url_base}/{file.name}",
+            "inventory_sha256": sha256_of(inventories[file]) if inventories and file in inventories else "",
             "sidecars": [
                 {"name": sidecar.name, "path": str(sidecar.relative_to(workspace)), "size": sidecar.stat().st_size, "sha256": digest,
                  "format": next(fmt for suffix, fmt in SIDECAR_FORMATS.items() if sidecar.name.endswith(suffix))}
@@ -365,6 +408,9 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     if not AGENT.fullmatch(author) or not clean(author):
         raise Refusal("author must be an SPDX agent such as 'Organization: Example Ltd' or 'Person: A Maintainer'")
     spdx_2_3 = setup_blueprint.boolean_input(env.get("INPUT_SPDX_2_3", "false"), "spdx-2-3")
+    archive_members = env.get("INPUT_ARCHIVE_MEMBERS", "generate") or "generate"
+    if archive_members not in ("generate", "reviewed"):
+        raise Refusal("archive-members must be generate or reviewed")
     server, repository = env.get("GITHUB_SERVER_URL", "https://github.com"), env.get("GITHUB_REPOSITORY", "")
     url_base = https_base(env.get("INPUT_URL_BASE", "").strip() or f"{server}/{repository}/releases/download/{version}", "url-base")
     namespace_base = https_base(env.get("INPUT_NAMESPACE_BASE", "").strip() or f"{server}/{repository}/sbom", "namespace-base")
@@ -415,25 +461,51 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     if lock.is_symlink() or not lock.is_file():
         raise Refusal("Blueprint.lock must be a regular checked-in file")
     shutil.copyfile(lock, staging / "Lock")
-    write_json(staging / "composition.json", composition)
-    inventory_path = staging / "inventory.json"
-    result = run(tool_command + ["inspect", str(staging / "Spec"), str(staging / "Lock"), str(staging / "composition.json"), target, str(inventory_path)], staging)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr, end="")
-    if result.returncode:
-        message = result.stderr.strip() or result.stdout.strip()
-        hint = ""
-        if "has no supplier SBOM" in message:
-            hint = "; run actions/fetch-dependency-sboms to fetch the supplier's sidecar by naming convention, or complete the unavailable_sboms stub it reports"
-        raise Refusal(f"inspect refused the composition for {target}: {message}{hint}")
-    inventory = read_bounded_json(inventory_path, "inventory")
+    features = set(tool["features"])
+    with_members = "members" in features and target == "source"
+    with_manifest = "manifest" in features
 
+    def inspect(composition_path: Path, inventory_path: Path, listing: Path | None) -> dict:
+        command = tool_command + ["inspect", str(staging / "Spec"), str(staging / "Lock"), str(composition_path), target, str(inventory_path)]
+        if listing is not None:
+            command += ["--members", str(listing)]
+        result = run(command, staging)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, end="")
+        if result.returncode:
+            message = result.stderr.strip() or result.stdout.strip()
+            hint = ""
+            if "has no supplier SBOM" in message:
+                hint = "; run actions/fetch-dependency-sboms to fetch the supplier's sidecar by naming convention, or complete the unavailable_sboms stub it reports"
+            raise Refusal(f"inspect refused the composition for {target}: {message}{hint}")
+        return read_bounded_json(inventory_path, "inventory")
+
+    inventories: dict[Path, Path] = {}
+    inventory_path = staging / "inventory.json"
+    if not with_members:
+        # One inventory for every listed file of this target.
+        write_json(staging / "composition.json", composition)
+        inventory = inspect(staging / "composition.json", inventory_path, None)
+        inventories = {file: inventory_path for file in files}
     written: dict[Path, list[tuple[Path, str]]] = {}
+    manifests: dict[Path, tuple[Path, str]] = {}
     for index, file in enumerate(files):
         directory = private_directory(staging / f"subject-{index}")
+        if with_members:
+            # The archive is the authority on a source bundle's contents: list
+            # it, account for every member, and inspect this file's inventory.
+            listing_path = directory / "members.json"
+            succeed(run, tool_command + ["members", str(file), str(listing_path)], staging, f"members {file.name}")
+            listing = read_bounded_json(listing_path, "members listing")
+            accounted = member_components(composition, listing) if archive_members == "generate" else composition
+            write_json(directory / "composition.json", accounted)
+            inventories[file] = directory / "inventory.json"
+            inventory = inspect(directory / "composition.json", inventories[file], listing_path)
+            if index == 0:
+                inventory_path = inventories[file]
         write_json(directory / "subject.json", subject_for(file.name, version, target, url_base))
         write_json(directory / "context.json", context_for(namespace_base, commit, file.name, revision, created, author, tool["generator"]))
-        base = tool_command + ["bind", str(inventory_path), str(directory / "subject.json"), str(directory / "context.json"), str(file)]
+        base = tool_command + ["bind", str(inventories[file]), str(directory / "subject.json"), str(directory / "context.json"), str(file)]
         succeed(run, base, staging, f"bind {file.name}")
         if spdx_2_3:
             succeed(run, base + [str(file.with_name(file.name + ".spdx-2.3.json")), "--spdx-2.3"], staging, f"bind {file.name} (SPDX 2.3)")
@@ -443,13 +515,26 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
             if sidecar.is_symlink() or not sidecar.is_file():
                 raise Refusal(f"bind did not write {sidecar}")
             written[file].append((sidecar, sha256_of(sidecar)))
+        if with_manifest:
+            manifest = file.with_name(file.name + MANIFEST_SUFFIX)
+            if manifest.is_symlink() or not manifest.is_file():
+                raise Refusal(f"bind did not write {manifest}")
+            manifests[file] = (manifest, sha256_of(manifest))
 
-    by_directory: dict[Path, list[Path]] = {}
     for file in files:
-        by_directory.setdefault(file.parent, []).extend(sidecar for sidecar, _ in written[file])
-    for directory, sidecars in by_directory.items():
-        succeed(run, tool_command + ["check", "--inventory", str(inventory_path), "--artifacts", str(directory)] + [str(sidecar) for sidecar in sidecars], staging, f"check in {directory}")
+        # With a manifest, check holds it to the files and checks the sidecars
+        # it lists; a rendering the manifest does not list is named as well.
+        command = tool_command + ["check"]
+        documents = [sidecar for sidecar, _ in written[file]]
+        if file in manifests:
+            command += ["--manifest", str(manifests[file][0])]
+            documents = [sidecar for sidecar in documents if sidecar.name.endswith(".spdx-2.3.json")]
+        command += ["--inventory", str(inventories[file]), "--artifacts", str(file.parent)] + [str(sidecar) for sidecar in documents]
+        succeed(run, command, staging, f"check {file.name}")
 
+    for file in files:
+        if file in manifests:
+            written[file].append(manifests[file])
     assets = sorted({str(file.relative_to(workspace)) for file in files} | {str(sidecar.relative_to(workspace)) for file in files for sidecar, _ in written[file]})
     sidecars_only = sorted(str(sidecar.relative_to(workspace)) for file in files for sidecar, _ in written[file])
     digests = staging / "sidecars.sha256"
@@ -459,7 +544,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
                 output.write(f"{digest}  {sidecar.relative_to(workspace)}\n")
     rows = dependency_report(composition, inventory)
     evidence = staging / "sbom-evidence.json"
-    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, {**tool, **tool_identity}, blueprint_version, target, version, url_base, commit, created, rows))
+    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, {**tool, **tool_identity}, blueprint_version, target, version, url_base, commit, created, rows, inventories))
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")

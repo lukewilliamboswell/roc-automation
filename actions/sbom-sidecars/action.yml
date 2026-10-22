@@ -32,6 +32,9 @@ inputs:
   spdx-2-3:
     description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
     default: 'false'
+  archive-members:
+    description: For a source target with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself
+    default: generate
   roc-binary:
     description: Roc compiler that runs the tool app bundle, needed only when the Blueprint release records no native tool binary for the runner; it must be the release the record names
     default: roc
@@ -44,7 +47,7 @@ outputs:
     description: Every listed file and its sidecars, one relative path per line, for the test jobs and the publisher
     value: ${{ steps.sidecars.outputs.assets }}
   sidecars:
-    description: Only the sidecars written, one relative path per line
+    description: Only the sidecars written, one relative path per line, with each evidence manifest when the tool writes one
     value: ${{ steps.sidecars.outputs.sidecars }}
   inventory:
     description: Path of the inspected inventory JSON the sidecars were bound from
@@ -87,6 +90,7 @@ runs:
         INPUT_NAMESPACE_BASE: ${{ inputs.namespace-base }}
         INPUT_REVISION: ${{ inputs.revision }}
         INPUT_SPDX_2_3: ${{ inputs.spdx-2-3 }}
+        INPUT_ARCHIVE_MEMBERS: ${{ inputs.archive-members }}
         INPUT_ROC_BINARY: ${{ inputs.roc-binary }}
         INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
         CONTROLLER: ${{ github.action_path }}/sbom_sidecars.py

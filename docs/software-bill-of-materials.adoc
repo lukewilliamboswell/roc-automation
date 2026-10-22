@@ -225,7 +225,12 @@ hash to chain it, or record why it is not. Every gap appears as an
 The sidecar action also returns a `roc-automation-sbom-evidence-v1`
 envelope, the producer's input to the independent validator and privileged
 publisher handoff: each file and sidecar by name, size, SHA-256, format,
-target and version, bound to the source commit and the producing run. The
+target and version, bound to the source commit and the producing run, with
+the digest of the inventory each subject was bound from. A Blueprint release
+whose `bind` writes an evidence manifest beside the sidecars has it checked,
+listed in the asset set and recorded in the envelope, and one whose tool
+lists a produced archive member by member has every member of a source
+bundle accounted for before the inventory is bound. The
 complete release in `examples/sbom-chain/` builds a bundle and a native
 executable for each supported system in read-only jobs, tests the exact
 files, attests every asset with its sidecars and publishes the explicit

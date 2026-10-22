@@ -14,7 +14,10 @@ step, and the tool is recorded per Blueprint release in
 `actions/setup-blueprint/sbom-tools.json`, so `Blueprint.roc` still names
 the release once: the app bundle with its Roc release, and the reviewed
 SHA-256 of each native tool binary a release ships, which the action then
-runs with no compiler at all.
+runs with no compiler at all, and the tool's features: a release whose tool
+lists a produced archive has every member of a source bundle accounted for,
+and one whose `bind` writes an evidence manifest has it checked, listed as
+an asset and recorded in the envelope.
 
 xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
 finds each locked dependency's published SBOM beside its file by the naming

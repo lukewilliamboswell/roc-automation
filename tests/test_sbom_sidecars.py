@@ -28,13 +28,28 @@ if args == ["version"]:
     print(os.environ.get("FAKE_ROC_VERSION", "Roc compiler version nightly-2026-10-21-5349569")); sys.exit(0)
 assert args[:2] == ["run", os.environ["EXPECTED_TOOL"]] and args[2] == "--", args
 command, rest = args[3], args[4:]
+features = os.environ.get("FAKE_FEATURES", "").split(",")
+if command == "members":
+    archive, output = rest
+    data = open(archive, "rb").read()
+    with open(output, "x") as out:
+        json.dump({"archive": os.path.basename(archive), "sha256": hashlib.sha256(data).hexdigest(), "members": [{"name": "main.roc", "size": len(data), "sha256": hashlib.sha256(b"member:" + data).hexdigest()}, {"name": "assets/LICENSE", "size": 7, "sha256": hashlib.sha256(b"license").hexdigest()}]}, out)
+    print(output); sys.exit(0)
 if command == "inspect":
-    spec_path, lock, composition, target, output = rest
+    spec_path, lock, composition, target, output = rest[:5]
     comp = json.load(open(composition))
+    if len(rest) > 5:
+        assert rest[5] == "--members" and "members" in features, rest
+        listing = json.load(open(rest[6]))
+        stated = {c.get("sha256") for c in comp["components"]}
+        disposed = {i.get("input") for i in comp.get("inputs", [])}
+        for member in listing["members"]:
+            if member["sha256"] not in stated and "archive-member:%s:%s" % (member["name"], member["sha256"]) not in disposed:
+                sys.stderr.write("SBOM: Invalid(\"the archive holds %s (sha256 %s), which no component states by SHA-256 and no input disposition accounts for\")\n" % (member["name"], member["sha256"])); sys.exit(1)
     if os.environ.get("INSPECT_REFUSES"):
         sys.stderr.write("SBOM: Invalid(\"" + os.environ["INSPECT_REFUSES"] + "\")\n"); sys.exit(1)
     with open(output, "x") as out:
-        json.dump({"target": target, "coverage": comp.get("coverage", []) + [{"scope": "sbom:" + e["component"], "status": "incomplete", "reason": "No supplier SBOM: " + e["reason"], "contact": e["contact"]} for e in comp.get("unavailable_sboms", [])], "imports": [e["id"] for e in comp.get("imported_documents", [])]}, out)
+        json.dump({"target": target, "components": [c["id"] for c in comp["components"]], "coverage": comp.get("coverage", []) + [{"scope": "sbom:" + e["component"], "status": "incomplete", "reason": "No supplier SBOM: " + e["reason"], "contact": e["contact"]} for e in comp.get("unavailable_sboms", [])], "imports": [e["id"] for e in comp.get("imported_documents", [])]}, out)
     print(output); sys.exit(0)
 if command == "bind":
     inventory, subject, context, artifact = rest[:4]
@@ -46,11 +61,24 @@ if command == "bind":
         with open(path, "x") as out:
             json.dump({"format": fmt, "subject": {**subject, "sha256": digest}, "context": context, "inventory": os.path.basename(inventory)}, out)
         print(path)
+    if "manifest" in features and len(rest) == 4:
+        listed = [{"filename": os.path.basename(p), "format": f.lower(), "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "size": os.path.getsize(p)} for p, f in outputs]
+        with open(artifact + ".sbom-manifest.json", "x") as out:
+            json.dump({"profile": "blueprint-spdx-3.0-v1", "subject": {**subject, "sha256": digest, "size": os.path.getsize(artifact)}, "inventory_sha256": hashlib.sha256(open(inventory, "rb").read()).hexdigest(), "sidecars": listed}, out)
+        print(artifact + ".sbom-manifest.json")
     sys.exit(0)
 if command == "check":
-    options = {"--artifacts": "", "--inventory": ""}
+    options = {"--artifacts": "", "--inventory": "", "--manifest": ""}
     while rest and rest[0] in options:
         options[rest[0]] = rest[1]; rest = rest[2:]
+    if options["--manifest"]:
+        manifest = json.load(open(options["--manifest"]))
+        assert manifest["inventory_sha256"] == hashlib.sha256(open(options["--inventory"], "rb").read()).hexdigest(), "manifest inventory digest differs"
+        for entry in manifest["sidecars"]:
+            path = os.path.join(os.path.dirname(options["--manifest"]), entry["filename"])
+            assert hashlib.sha256(open(path, "rb").read()).hexdigest() == entry["sha256"], path + ": listed digest differs"
+            rest.append(path)
+        print(options["--manifest"] + ": manifest of " + manifest["subject"]["filename"] + " checks")
     for document in rest:
         doc = json.load(open(document))
         actual = hashlib.sha256(open(os.path.join(options["--artifacts"], doc["subject"]["filename"]), "rb").read()).hexdigest()
@@ -316,17 +344,20 @@ class EndToEndTests(unittest.TestCase):
         bundle = json.loads((self.workspace / "dist/bundle.tar.zst.cdx.json").read_text())
         self.assertEqual(bundle["context"]["namespace"], f"https://github.com/owner/repo/sbom/{self.commit}/bundle.tar.zst/revision-1")
         commands = [call["args"][3] if call["args"][0] == "run" else call["args"][0] for call in self.calls()]
-        self.assertEqual(commands, ["version", "inspect", "bind", "bind", "check"])
+        self.assertEqual(commands, ["version", "inspect", "bind", "bind", "check", "check"])
         inspect = self.calls()[1]["args"]
         self.assertEqual(inspect[7], "x86_64-linux")
+        self.assertEqual(len(inspect), 9)
         staging = Path(inspect[4]).parent
         self.assertEqual(staging.parent, self.runner_temp)
         self.assertEqual((staging / "Spec").read_text(), "(spec (name example))\n")
         self.assertEqual((staging / "Lock").read_text(), "(lock)\n")
         self.assertEqual(json.loads((staging / "composition.json").read_text()), composition())
-        check = self.calls()[4]["args"]
-        self.assertEqual(check[4:8], ["--inventory", str(staging / "inventory.json"), "--artifacts", str(self.workspace / "dist")])
-        self.assertEqual(sorted(Path(p).name for p in check[8:]), ["app.cdx.json", "app.spdx.json", "bundle.tar.zst.cdx.json", "bundle.tar.zst.spdx.json"])
+        checks = [call["args"] for call in self.calls() if call["args"][:1] == ["run"] and call["args"][3] == "check"]
+        for check, names in zip(checks, (["app.cdx.json", "app.spdx.json"], ["bundle.tar.zst.cdx.json", "bundle.tar.zst.spdx.json"])):
+            self.assertEqual(check[4:8], ["--inventory", str(staging / "inventory.json"), "--artifacts", str(self.workspace / "dist")])
+            self.assertEqual(sorted(Path(p).name for p in check[8:]), names)
+        self.assertEqual(json.loads(Path(values["evidence"]).read_text())["subjects"][0]["inventory_sha256"], hashlib.sha256((staging / "inventory.json").read_bytes()).hexdigest())
         digests = Path(values["digests"]).read_text().splitlines()
         self.assertEqual(len(digests), 4)
         self.assertTrue(all(line.endswith(("app.spdx.json", "app.cdx.json", "bundle.tar.zst.spdx.json", "bundle.tar.zst.cdx.json")) for line in digests))
@@ -357,7 +388,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(document["format"], "SPDX-2.3")
         evidence = json.loads(Path(values["evidence"]).read_text())
         self.assertEqual([sidecar["format"] for sidecar in evidence["subjects"][0]["sidecars"]], ["SPDX-3.0.1", "CycloneDX-1.7", "SPDX-2.3"])
-        binds = [call["args"] for call in self.calls() if call["args"][0] == "run" and call["args"][3] == "bind"]
+        binds = [call["args"] for call in self.calls() if call["args"][:1] == ["run"] and call["args"][3] == "bind"]
         self.assertEqual(len(binds), 2)
         self.assertEqual(binds[0][4:7], binds[1][4:7])
         self.assertEqual(binds[1][-2:], [str(self.workspace / "dist/app.spdx-2.3.json"), "--spdx-2.3"])
@@ -447,6 +478,84 @@ class EndToEndTests(unittest.TestCase):
     def test_a_runner_without_a_recorded_binary_needs_the_compiler(self):
         with patch.dict(os.environ, {**self.env, "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "INPUT_ROC_BINARY": str(self.root / "no-such-roc")}, clear=False), self.assertRaisesRegex(ValueError, "records no native SBOM tool binary for x86_64-linux"):
             sidecars.main()
+
+    def with_features(self, *features):
+        tools = self.root / "tools.json"
+        tools.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "features": list(features)}}))
+        return patch.object(sidecars, "SBOM_TOOLS", tools)
+
+    def test_a_tool_that_lists_members_makes_the_archive_the_authority(self):
+        with self.with_features("members"):
+            values = self.run_action(INPUT_TARGET="source", INPUT_FILES="dist/bundle.tar.zst", FAKE_FEATURES="members")
+        commands = [call["args"][3] if call["args"][0] == "run" else call["args"][0] for call in self.calls()]
+        self.assertEqual(commands, ["version", "members", "inspect", "bind", "check"])
+        inspect = [call["args"] for call in self.calls() if call["args"][:1] == ["run"] and call["args"][3] == "inspect"][0]
+        self.assertEqual(inspect[-2], "--members")
+        listing = json.loads(Path(inspect[-1]).read_text())
+        accounted = json.loads(Path(inspect[6]).read_text())
+        generated = [component for component in accounted["components"] if component["id"].startswith("member-")]
+        self.assertEqual([(component["id"], component["name"], component["sha256"]) for component in generated], [("member-main.roc", "main.roc", listing["members"][0]["sha256"]), ("member-assets-LICENSE", "assets/LICENSE", listing["members"][1]["sha256"])])
+        self.assertEqual([component["version"] for component in generated], ["sha256-" + member["sha256"] for member in listing["members"]])
+        self.assertEqual([edge["to"] for edge in accounted["relationships"] if edge["from"] == "Subject" and edge["relation"] == "contains"], ["member-main.roc", "member-assets-LICENSE"])
+        self.assertEqual(accounted["unavailable_sboms"], composition()["unavailable_sboms"])
+        self.assertEqual(values["assets"].splitlines(), ["dist/bundle.tar.zst", "dist/bundle.tar.zst.cdx.json", "dist/bundle.tar.zst.spdx.json"])
+        self.assertEqual(Path(values["inventory"]).name, "inventory.json")
+        self.assertEqual(Path(values["inventory"]).parent.name, "subject-0")
+
+    def test_reviewed_members_are_left_to_the_composition(self):
+        with self.with_features("members"), self.assertRaisesRegex(ValueError, "the archive holds main.roc .*no component states"):
+            self.run_action(INPUT_TARGET="source", INPUT_FILES="dist/bundle.tar.zst", INPUT_ARCHIVE_MEMBERS="reviewed", FAKE_FEATURES="members")
+        self.assertEqual(sorted(p.name for p in (self.workspace / "dist").iterdir()), ["app", "bundle.tar.zst"])
+        with self.assertRaisesRegex(ValueError, "archive-members must be"):
+            self.run_action(INPUT_ARCHIVE_MEMBERS="maybe")
+
+    def test_members_are_listed_only_for_source_targets(self):
+        with self.with_features("members"):
+            self.run_action(INPUT_FILES="dist/app", FAKE_FEATURES="members")
+        commands = [call["args"][3] if call["args"][0] == "run" else call["args"][0] for call in self.calls()]
+        self.assertEqual(commands, ["version", "inspect", "bind", "check"])
+
+    def test_a_tool_that_writes_manifests_has_them_checked_and_listed(self):
+        with self.with_features("manifest"):
+            values = self.run_action(INPUT_FILES="dist/app", INPUT_SPDX_2_3="true", FAKE_FEATURES="manifest")
+        manifest = self.workspace / "dist/app.sbom-manifest.json"
+        self.assertTrue(manifest.is_file())
+        self.assertEqual(values["assets"].splitlines(), ["dist/app", "dist/app.cdx.json", "dist/app.sbom-manifest.json", "dist/app.spdx-2.3.json", "dist/app.spdx.json"])
+        check = [call["args"] for call in self.calls() if call["args"][:1] == ["run"] and call["args"][3] == "check"][0]
+        self.assertEqual(check[4:6], ["--manifest", str(manifest)])
+        self.assertEqual([Path(p).name for p in check[10:]], ["app.spdx-2.3.json"])
+        digests = {path: digest for digest, path in (line.split("  ", 1) for line in Path(values["digests"]).read_text().splitlines())}
+        self.assertEqual(digests["dist/app.sbom-manifest.json"], hashlib.sha256(manifest.read_bytes()).hexdigest())
+        subject = json.loads(Path(values["evidence"]).read_text())["subjects"][0]
+        self.assertEqual([(entry["name"], entry["format"]) for entry in subject["sidecars"]], [("app.spdx.json", "SPDX-3.0.1"), ("app.cdx.json", "CycloneDX-1.7"), ("app.spdx-2.3.json", "SPDX-2.3"), ("app.sbom-manifest.json", "manifest")])
+        self.assertEqual(subject["inventory_sha256"], json.loads(manifest.read_text())["inventory_sha256"])
+
+    def test_a_manifest_left_from_an_earlier_build_is_stale(self):
+        (self.workspace / "dist/app.sbom-manifest.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "would be stale"):
+            self.run_action()
+        self.assertFalse(self.log.exists())
+
+    def test_member_components_skip_what_the_review_states(self):
+        listing = {"members": [{"name": "main.roc", "sha256": "a" * 64}, {"name": "LICENSE", "sha256": "b" * 64}, {"name": "fonts/x.ttf", "sha256": "c" * 64}, {"name": "fonts x.ttf", "sha256": "d" * 64}]}
+        comp = {"components": [{"id": "src", "sha256": "a" * 64}, {"id": "member-fonts-x.ttf", "sha256": ""}], "relationships": [], "inputs": [{"input": "archive-member:LICENSE:" + "b" * 64, "component": "", "reason": "notice"}]}
+        merged = sidecars.member_components(comp, listing)
+        self.assertEqual([component["id"] for component in merged["components"]], ["src", "member-fonts-x.ttf", "member-fonts-x.ttf-2", "member-fonts-x.ttf-3"])
+        self.assertEqual(merged["components"][2]["identity"], "urn:blueprint:archive-member:fonts/x.ttf:" + "c" * 64)
+        self.assertEqual(comp["components"][0], {"id": "src", "sha256": "a" * 64})
+        with self.assertRaisesRegex(ValueError, "members listing must name"):
+            sidecars.member_components(comp, {"members": [{"name": "x"}]})
+
+    def test_recorded_features_are_a_known_subset(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "tools.json"
+            for features in (["members", "manifest"], [], ["manifest"]):
+                path.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "features": features}}))
+                self.assertEqual(sidecars.sbom_tool("0.7.0", path)["features"], features)
+            for features in (["manifests"], "members", ["members", "members"]):
+                path.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "features": features}}))
+                with self.subTest(features=features), self.assertRaisesRegex(ValueError, "subset of members, manifest"):
+                    sidecars.sbom_tool("0.7.0", path)
 
     def test_source_target_and_explicit_bases_are_passed_through(self):
         values = self.run_action(INPUT_TARGET="source", INPUT_FILES="dist/bundle.tar.zst", INPUT_URL_BASE="https://example.org/releases/1.2.0/", INPUT_NAMESPACE_BASE="https://example.org/sbom", INPUT_REVISION="3")

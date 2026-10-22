@@ -512,6 +512,7 @@ the composition stays the repository's reviewed file.
 | `namespace-base` | the repository's `sbom` URL | The namespace is this base, the commit, the file name and `revision-<revision>`
 | `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
 | `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
+| `archive-members` | `generate` | For a `source` target with a tool that lists archive members: generate a component for each member the composition does not account for, or `reviewed` to require the composition to account for every member itself
 | `roc-binary` | `roc` | The Roc compiler that runs the tool app bundle, used only when the release records no native tool binary for the runner
 | `blueprint-binary` | `blueprint` | The installed Blueprint executable
 |===
@@ -527,8 +528,9 @@ inventory the documents were rendered from; `evidence`, a
 The evidence envelope lists every file and sidecar by name, path, size,
 SHA-256, format, target and version, bound to the source repository and
 commit and to the producing workflow, run and attempt, with the generator,
-the dependency states and the `incomplete` coverage scopes. It is the
-producer's handoff to the independent validator and publisher: a transfer
+the digest of the inventory each subject was bound from, each evidence
+manifest the tool wrote, the dependency states and the `incomplete` coverage
+scopes. It is the producer's handoff to the independent validator and publisher: a transfer
 manifest, not a component inventory, and not an authorization. A privileged
 job rechecks what it names against the files it receives.
 
@@ -548,8 +550,10 @@ The action does the following, in this order, and stops at the first failure.
   in `actions/setup-blueprint/sbom-tools.json`, the immutable URL of that
   release's `roc-blueprint-sbom-<hash>.tar.zst` app bundle, the Roc release
   it was built for, and, for a release that ships `blueprint-sbom-<system>`
-  binaries, their reviewed SHA-256 per system. A release without a record
-  fails the step. With a recorded binary for the runner, the action downloads
+  binaries, their reviewed SHA-256 per system, and the tool's features:
+  `members`, when the tool lists a produced archive, and `manifest`, when
+  `bind` writes an evidence manifest. A release without a record fails the
+  step. With a recorded binary for the runner, the action downloads
   it into a private file, admits it only when its digest matches, and needs
   no compiler. Otherwise `roc-binary` must report the recorded Roc release;
   another compiler fails before anything runs.
@@ -562,20 +566,36 @@ The action does the following, in this order, and stops at the first failure.
   composition. When `imports` is given, its `imported_documents` are appended
   to the composition's; its `unavailable_sboms` stubs are never used, so a
   generated stub cannot become an exemption.
-. *Inspect.* `roc run <tool> -- inspect` checks the composition against the
-  Spec and Lock for `target` and writes the inventory. It runs nothing and
+. *Inspect.* The tool's `inspect` checks the composition against the Spec
+  and Lock for `target` and writes the inventory. It runs nothing and
   downloads nothing. A refusal names the rule; when a locked dependency has
   neither a bound supplier SBOM nor a reviewed `unavailable_sboms` entry, the
-  error points at `actions/fetch-dependency-sboms`.
+  error points at `actions/fetch-dependency-sboms`. With a tool that lists
+  archive members and a `source` target, each file is listed first with
+  `members`, and `inspect --members` runs once per file, so the archive
+  `roc bundle` produced, not the bundler's argument list, is the authority on
+  what it holds. By default a member no reviewed component states by SHA-256
+  and no `archive-member:<name>:<sha256>` disposition names becomes a
+  component with `sha256-<digest>` as its version, NOASSERTION for its
+  supplier, download and license, and a `contains` edge from the subject, as
+  Blueprint's own release lists its bundles; `archive-members: reviewed`
+  leaves every member to the composition and lets `inspect` refuse an
+  omission.
 . *Bind.* For each file, a subject with an empty SHA-256, so the tool hashes
   the final bytes itself, and a context name the file, version, target,
   release URL, namespace, revision, creation time, author and generator.
   `bind` writes `<file>.spdx.json` and `<file>.cdx.json` beside the file, and
-  `<file>.spdx-2.3.json` when asked. It refuses to overwrite anything.
+  `<file>.spdx-2.3.json` when asked. A tool that writes evidence manifests
+  also writes `<file>.sbom-manifest.json`: the subject's name, version,
+  target, SHA-256 and size, each sidecar's name, format, SHA-256 and size,
+  and the inventory's SHA-256. It refuses to overwrite anything.
 . *Check.* `check --inventory ... --artifacts <directory>` holds every sidecar
   to its format's specification and the profile, confirms it describes the
   file of that name byte for byte, that its evidence is the inventory's, and
-  that the renderings of one document state one graph.
+  that the renderings of one document state one graph. With a manifest,
+  `check --manifest` rehashes the subject, each listed sidecar and the
+  inventory first and refuses any difference; the SPDX 2.3 rendering, which
+  the manifest does not list, is named beside it.
 . *Report.* The job summary lists each sidecar with its SHA-256, each locked
   dependency as bound or unavailable with the reviewed reason and contact, and
   every `incomplete` coverage scope.
