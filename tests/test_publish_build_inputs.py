@@ -50,6 +50,50 @@ class BuildInputPublisherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs"):
             p.validate_candidate(self.root, "link-inputs.yml", "feature", "b" * 40)
 
+    def component_builds(self):
+        return {"native-library": {
+            "schema_version": 1, "provider": "independent", "build_identity": "native:opaque:recipe",
+            "snapshot_digest": "sha256:" + "e" * 64,
+            "snapshot": {"name": "native-library", "nodes": [{"declarations": "inert data"}]},
+            "artifact": {"name": "native-library-linux.tar", "sha256": "f" * 64, "size": 42},
+        }}
+
+    def test_component_build_evidence_is_preserved_in_manifest_bound_lock(self):
+        manifest = dict(self.candidate(), schema_version=2, component_builds=self.component_builds())
+        (self.root / "build-input-release.json").write_text(json.dumps(manifest))
+        with patch.object(p.subprocess, "run", side_effect=AssertionError("must not execute evidence")):
+            observed, _, _ = p.validate_candidate(self.root, "link-inputs.yml", "feature", "b" * 40)
+            lock = json.loads(p.make_lock(observed, "inputs-sha256-x", "c" * 64, "inputs.lock.json"))
+        self.assertEqual(lock["schema_version"], 2)
+        self.assertEqual(lock["component_builds"], manifest["component_builds"])
+        self.assertEqual(lock["source"], manifest["source"])
+        self.assertEqual(lock["targets"], manifest["assets"])
+
+    def test_bad_component_evidence_never_becomes_a_publishable_candidate(self):
+        for change in ({"provider": ""}, {"build_identity": ""}, {"build_identity": "recipe\ncommand"},
+                       {"snapshot_digest": "e" * 64}, {"snapshot": []}, {"schema_version": True},
+                       {"artifact": {"name": "../escape.tar", "sha256": "f" * 64, "size": 42}},
+                       {"artifact": {"name": "native.tar", "sha256": "f" * 64, "size": True}}):
+            with self.subTest(change=change):
+                builds = self.component_builds()
+                builds["native-library"].update(change)
+                manifest = dict(self.candidate(), schema_version=2, component_builds=builds)
+                (self.root / "build-input-release.json").write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, "component"):
+                    p.validate_candidate(self.root, "link-inputs.yml", "feature", "b" * 40)
+
+    def test_component_schema_cannot_relax_source_or_final_byte_binding(self):
+        manifest = dict(self.candidate(), schema_version=2, component_builds=self.component_builds())
+        manifest["source"]["sha"] = "a" * 40
+        (self.root / "build-input-release.json").write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "source identity"):
+            p.validate_candidate(self.root, "link-inputs.yml", "feature", "b" * 40)
+        manifest["source"]["sha"] = "b" * 40
+        (self.root / "build-input-release.json").write_text(json.dumps(manifest))
+        (self.root / "link-inputs-x64glibc.tar").write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            p.validate_candidate(self.root, "link-inputs.yml", "feature", "b" * 40)
+
     def test_default_branch_dispatch_is_the_only_privileged_entry(self):
         with patch.object(p, "api", return_value={"object": {"sha": "a" * 40}}):
             p.require_default_dispatch()
