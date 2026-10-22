@@ -333,7 +333,7 @@ using xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Bluep
 Outputs are `site-directory` and `pdf-path`, both absolute paths.
 
 The action needs only the renderer binary and the action runner's
-shell. The binary parses supported AsciiDoc with roc-parser 2.1.0-rc.3, decodes
+shell. The binary parses supported AsciiDoc with roc-parser 3.0.0, decodes
 PNG assets and renders the publications in Roc. It needs no Python, Docker or Roc
 compiler. Generating the optional API reference requires an explicitly supplied
 Roc compiler. The same binary can build a repository locally with

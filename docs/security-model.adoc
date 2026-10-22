@@ -192,12 +192,14 @@ written to a private temporary file and becomes executable and visible on `PATH`
 only after its hash matches. A mismatch, a release with no reviewed hash for the
 runner, or a system with no released binary fails the step and installs nothing.
 
-Blueprint 0.6 evaluates `Blueprint.roc` with its own fixed compiler, fetched into
-its store and admitted by a hash recorded inside the binary, or an exactly
-matching host compiler. This is separate from both fixed repository tooling and
-the floating package compiler. Earlier Blueprint releases bootstrap that compiler
-through their pinned Nix overlay. `Programs`/`Fetch`/`Expect` environments need no
-Nix; environments selecting Nix-sourced tools and sandboxed builds do.
+Blueprint 0.7 evaluates `Blueprint.roc` with its own fixed compiler, embedded in
+the admitted executable and verified against its recorded SHA-256 before
+extraction into the store, or an exactly matching host compiler. No GitHub
+compiler download is needed for this bootstrap. The executable digest therefore
+also fixes the embedded compiler archive; it does not prove that compiler
+is free of defects. This compiler remains separate from fixed repository tooling
+and the floating package compiler. `Programs`/`Fetch`/`Expect` environments need
+no Nix; environments selecting Nix-sourced tools and sandboxed builds do.
 
 The default executable cache is separate from the artifact store. Its exact key
 includes release, system and reviewed digest. The installer copies bounded

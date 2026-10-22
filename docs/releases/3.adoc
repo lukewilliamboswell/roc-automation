@@ -1,5 +1,28 @@
 = roc-automation 3
 
+[#blueprint-parser-adoption]
+== Blueprint 0.7 and parser 3 adoption
+
+The repository and copyable pure-package starter use Blueprint 0.7.0, with
+Spec major 3 and Lock 2. Explicit package sources and `Input` declarations
+replace the older configuration shape. A full update replaces earlier locks;
+generated local state is removed and changed pins are reviewed. Blueprint's
+configuration compiler is embedded in its admitted executable, so first use
+requires no GitHub compiler bootstrap request. Fixed automation pins and the
+floating package compiler retain their separate roles.
+
+Adoption checks consume `blueprint lock show --json` format 2 instead of parsing
+the internal lock representation. They select fetched programs by name and
+system, verify actual executable identities and exercise cold, warm and damaged
+cache paths. The starter consumes the released tools 0.2.0 renderer, providing
+HTML, mirrored Markdown, `llms.txt` and PDF by default.
+
+The renderer adopts roc-parser 3.0.0 and compiler
+`nightly-2026-10-21-5349569`. Its checked listing-include boundary remains
+single positive tag selection and `indent=0`; broader upstream include APIs
+do not implicitly expand the supported authoring contract. Independent
+publication acceptance remains required when adopting changed parser output.
+
 == Preserve component build admission evidence
 
 The build-input publisher accepts manifest format 2 and preserves its validated
@@ -227,7 +250,7 @@ Schema 1 remains supported.
 `roc-docs` renders HTML and PDF with embedded fonts and Roc highlighting, before
 any Roc compiler is installed downstream. The shared documentation action now
 uses a supplied renderer binary. AsciiDoc parsing, PNG preparation,
-HTML and PDF rendering all run inside that binary, using roc-parser 2.1.0-rc.3.
+HTML and PDF rendering all run inside that binary, using roc-parser 3.0.0.
 The action needs no Python; the renderer also accepts Markdown.
 The tools pipeline builds and tests three native targets, alongside `roc-policy`.
 
@@ -248,7 +271,8 @@ bundled reading fonts and supports light and dark colour schemes.
 
 == Nix-free utility adoption
 
-The shared Blueprint setup admits `0.6.0-rc1` and `0.6.0`, installs Nix only when requested,
+The shared Blueprint setup admits `0.7.0` as well as previously reviewed releases,
+installs Nix only when requested,
 and can cache verified download artifacts by locked logical tool set. A complete
 pure-package example keeps the package nightly floating and declares fixed
 tooling and released utilities through `Programs`/`Fetch`. The shared
@@ -264,7 +288,7 @@ paths and executable suffixes, validates archives with the same standard-library
 helper on every OS, rejects Windows path aliases and case-insensitive environment
 overrides, and bounds complete child process trees. CI runs real compiler
 check/build/execute smoke tests and unhappy-path regressions on both Windows
-images. Windows native prerequisites use `setup-command`. Blueprint 0.6.0 has a
+images. Windows native prerequisites use `setup-command`. Blueprint 0.7.0 has a
 Windows binary; the shared setup action does not map Windows runners yet. Nix
 is not a Windows prerequisite backend, so these shared installer options remain
 disabled there.

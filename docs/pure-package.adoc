@@ -1,13 +1,14 @@
 = Adopt a pure package without Nix
 
-A pure Roc package can run its checks and publish a website and PDF using
+A pure Roc package can run its checks and publish HTML, mirrored Markdown, an
+`llms.txt` discovery index and a PDF using
 released executables. Blueprint owns the fixed downloads and their reviewed
 lock. The package compiler remains the latest nightly supplied by CI. No local
 installer, renderer build or Nix environment is needed for this path.
 
 The working example is in `examples/pure-package/`. It uses Blueprint
-`0.6.0-rc1`, the matching platform URL and the published experimental
-`tools-0.1.0-rc.1` renderer. Upgrade a utility by changing its recipe and reviewing
+`0.7.0`, the matching platform URL and the published experimental
+`tools-0.2.0` renderer. Upgrade a utility by changing its recipe and reviewing
 its new lock entries. The utility release and fixed tooling compiler do not
 control which nightly tests the package.
 
@@ -76,7 +77,7 @@ Python 3.10 or later on the runner; the renderer executable uses none of these
 tools to parse or render documents.
 
 Install the release binary matching the platform URL, following
-https://github.com/lukewilliamboswell/roc-blueprint/blob/0.6.0-rc1/docs/getting-started.adoc[Blueprint's installation instructions].
+https://github.com/lukewilliamboswell/roc-blueprint/blob/0.7.0/docs/getting-started.adoc[Blueprint's installation instructions].
 Then run these commands from the example directory, or from your repository
 after adopting its files:
 
@@ -96,11 +97,16 @@ action's full SHA fixes its reviewed Blueprint installer and checksum registry;
 it reads the Blueprint release from the platform URL rather than another
 workflow version pin.
 
-Blueprint can fetch its own fixed configuration compiler into its verified
-store before any Roc CLI is installed globally. This bootstrap download is
-separate from the renderer and from the floating package compiler. Its cost is
-part of cold provisioning. Roc package bundles occupy Roc's package cache and
-are not covered by the artifact cache below.
+Blueprint 0.7 installs its embedded fixed configuration compiler into its
+verified store before any Roc CLI is installed globally. No GitHub compiler
+bootstrap download is needed. This compiler is separate from the downloaded
+renderer and the floating package compiler; the example's fixed `roc-stable`
+recipe also remains a separate reviewed pin. Roc package bundles occupy Roc's
+package cache and are not covered by the artifact cache below.
+
+The adoption checks read `blueprint lock show --json` format 2 and select fetched
+programs by name and system to compare actual executable lengths and hashes.
+This public report avoids depending on the lock's internal representation.
 
 == Restore downloads before the first task
 
@@ -125,9 +131,10 @@ In a read-only build job, call the shared setup action after checkout:
 
 The setup action installs a verified Blueprint binary without Nix by default.
 Set `install-nix: 'true'` when a selected environment takes tools from a Nix
-source or a sandboxed native build needs it. Existing 0.5 configurations need
-migration before using the pure 0.6 path; retain Nix while they still depend on
-it. The privileged report/publisher actions retain their own reviewed tooling
+source or a sandboxed native build needs it. Existing configurations must follow
+xref:maintenance.adoc#upgrade-blueprint[the Blueprint migration steps], including
+a full lock update when moving to Lock 2. Retain Nix while selected tools or
+sandboxed builds depend on it. The privileged report/publisher actions retain their own reviewed tooling
 and do not run this candidate repository configuration.
 
 The cache contains only
@@ -162,7 +169,7 @@ jobs, then restores each exact cache on another fresh runner. It compares actual
 executables with the lock and checks that warm tasks do not refetch utility or
 fixed compiler archives. A Nix sentinel fails any accidental Nix invocation.
 See
-https://github.com/lukewilliamboswell/roc-blueprint/blob/0.6.0-rc1/docs/without-nix.adoc#the-store-of-downloads[Blueprint's store rules]
+https://github.com/lukewilliamboswell/roc-blueprint/blob/0.7.0/docs/no-provider.adoc#the-store-of-downloads[Blueprint's store rules]
 for the detailed verification and rebuilding contract.
 
 == Pass an executable to a shared action
@@ -177,7 +184,7 @@ use the example's `docs-path` task and the shared handoff action:
   uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5
   with:
     task: docs-path
-    label: roc-docs tools-0.1.0-rc.1
+    label: roc-docs tools-0.2.0
     measure: 'true'
     output-directory: .docs-out
 - uses: lukewilliamboswell/roc-automation/actions/build-docs@b283eee0b8de2bb0c7472dc0b8ace6c1866760e5

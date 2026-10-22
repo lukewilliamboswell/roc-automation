@@ -4,7 +4,7 @@ Pins := [].{
 	## The release tag that the text of `Blueprint.roc` names as `roc-stable`.
 	stable_tag : Str -> Try(Str, [NoStableCompiler])
 	stable_tag = |blueprint|
-		match Str.split_on(blueprint, "Command(\"roc-stable\", \"rocpkgs.") {
+		match Str.split_on(Str.join_with(Str.split_on(blueprint, "\"nix#rocpkgs."), "\"rocpkgs."), "Command(\"roc-stable\", \"rocpkgs.") {
 			[_, after] =>
 				match Str.split_first(after, "\"") {
 					Ok({ before, .. }) if before != "" => Ok(before)
@@ -60,3 +60,7 @@ expect Pins.roc_pin("app [main!] {\n\tcli: platform \"https://example.com/cli.ta
 expect Pins.roc_pin("app [main!] { heroc: \"nightly-1\" }\n") == Err(NoPin)
 expect Pins.roc_pin("app [main!] { roc: \"a\", roc: \"b\" }\n") == Err(NoPin)
 expect Pins.roc_pin("Pins := [].{\n\tpin = { roc: \"nightly-1\" }\n}\n") == Err(NoPin)
+
+expect Pins.stable_tag("Command(\"roc-stable\", \"nix#rocpkgs.nightly-2026-10-09-258ab27\")") == Ok("nightly-2026-10-09-258ab27")
+expect Pins.stable_tag("Command(\"roc-stable\", \"nix#rocpkgs.\")") == Err(NoStableCompiler)
+expect Pins.stable_tag("Command(\"roc-stable\", \"rocpkgs.a\")\nCommand(\"roc-stable\", \"nix#rocpkgs.b\")") == Err(NoStableCompiler)

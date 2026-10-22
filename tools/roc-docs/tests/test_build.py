@@ -57,6 +57,24 @@ class RepositoryTests(unittest.TestCase):
         return output
     def unchanged(self, output):
         self.assertEqual({str(p.relative_to(output)):p.read_bytes() for p in output.rglob('*') if p.is_file()}, {'keep':b'previous publication'})
+    def test_checked_listing_keeps_selected_tabs_whitespace_and_quote_bytes(self):
+        code = '\tvalue = "`code`\'s"  \n'
+        original = '# tag::body[]\n' + code + '# end::body[]\n'
+        self.source('sample.roc', original)
+        for options, expected in [('tag=body', code), ('tag=body,indent=0', code[1:])]:
+            with self.subTest(options=options):
+                self.source('index.adoc', '= Manual\n\n[source,roc]\n----\ninclude::sample.roc[' + options + ']\n----\n')
+                self.run_build('--docs-version', '3')
+                site = self.root/'.docs-out/site'
+                self.assertEqual(Html((site/'index.html').read_text()).code, [expected])
+                self.assertIn(expected, (site/'index.md').read_text())
+                self.assertTrue((self.root/'.docs-out/manual.pdf').read_bytes().startswith(b'%PDF-'))
+                prepared = '.prepared-' + ('dedent' if 'indent' in options else 'raw')
+                self.run_build('--output-directory', prepared, command='prepare')
+                provenance = json.loads((self.root/prepared/'manifest.json').read_text())['includes']
+                self.assertEqual(provenance[0]['source_sha256'], hashlib.sha256(original.encode()).hexdigest())
+                self.assertEqual(provenance[0]['selected_sha256'], hashlib.sha256(expected.encode()).hexdigest())
+
     def test_literal_attribute_code_is_preserved_in_html_pdf_preparation_and_markdown(self):
         self.source('index.adoc', '= Guide\n\nLiteral `+{docs-version}+`; expanded `{docs-version}`.\n')
         self.run_build('--markdown', 'true', '--docs-version', '7')

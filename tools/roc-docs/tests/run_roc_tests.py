@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run renderer tests/builds, retaining a narrow upstream warning allowance.
 
-Roc 1df370f exits 2 after passing tests with compile warnings. These pinned
+Roc 5349569 exits 2 after passing tests with compile warnings. These pinned
 packages predate its unreachable-code diagnostic. Never accept local warnings,
 a different diagnostic, a missing passing summary, or another nonzero status.
 """
@@ -13,7 +13,6 @@ import sys
 
 PACKAGES = {
     'BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze',
-    'E5r48puF3KGvqzbd6v1JWA7qJFMehppWb7A6NzRWieJT',
     '4W8SHzvwet9hH9qZewJ1J1CVQoH7YKA6zyijWFTB3y1w',
     'BRKYfdjzNFJmhx5c3Do9gTnW7FrZuYqoUzMcg1FHkYBf',
 }

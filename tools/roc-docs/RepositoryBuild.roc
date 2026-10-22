@@ -218,6 +218,7 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 	Ok($assets)
 }
 
+render_site! : Path, Preparation.Result, Renderer.Metadata, List(LoadedAsset), List(BuildFiles.Entry), BuildOptions.Options, Path => Try({}, Str)
 render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 	site = Path.join(stage, "site")
 	Path.create_dir!(site).map_err(|e| Str.inspect(e))?

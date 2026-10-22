@@ -23,7 +23,7 @@ and not a chore to automate.
 | When scripts need a newer compiler, or periodically to stay close to current
 
 | Upgrade Blueprint
-| `Blueprint.roc` header, the `blueprint` version and checksums
+| `Blueprint.roc`, `Blueprint.lock`, and the reviewed setup-action revision
 | For a new roc-blueprint release
 
 | Update script dependencies
@@ -82,8 +82,8 @@ agree.
 == Upgrade Blueprint
 
 A release's `blueprint` binary must be used with that release's platform URL.
-`actions/setup-blueprint` reads the release from that URL, so the URL is the
-only place to change:
+`actions/setup-blueprint` reads the release from that URL. Keep that selection
+in one place while migrating configuration and locked inputs together:
 
 . Choose a roc-blueprint release.
 . Move the workflows' reference to `actions/setup-blueprint` to a revision that
@@ -91,8 +91,31 @@ only place to change:
   change; xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`] explains
   where the checksums are reviewed.
 . Change the platform URL in the `Blueprint.roc` header.
-. Run `blueprint update` if the new release refuses the existing lock.
-. Merge after `ci.yml` passes.
+. Migrate configuration to the release's supported Spec and run `blueprint check`.
+. Run a full `blueprint update` when the release changes the lock format, review
+  changed identities against the previous lock and commit the regenerated lock.
+. Remove generated `.blueprint/` state when the release requires it.
+. Run the affected named tasks and merge after `ci.yml` passes.
+
+Blueprint 0.7 uses Spec major 3, Lock 2 and lock report format 2. Earlier locks
+are refused by commands other than the full `blueprint update`; a named update
+requires a current lock. Keep the previous lock in history for comparison.
+Replace `Overlay(name, ref)` declarations with `Input(name, ref)`; the
+environment's `Overlays` setting still selects which inputs act as overlays.
+Declare package sources explicitly and use source-qualified tool names.
+For sandboxed `Build` declarations, name an executor with
+`Executor("native", Nix("pkgs"))` and select it with `Execute("native")`;
+`pkgs` must name the intended declared Nix package source.
+Remove generated `.blueprint/` state after migration so later builds establish
+a new local explanation baseline.
+
+External tools should read `blueprint lock show --json`, validate its public
+report format and use `content_identity` and namespaced provider metadata.
+Do not parse the internal representation of `Blueprint.lock`. Consumers of
+build reports use `build_identity`; report and package versions are separate
+compatibility contracts. Run cold and warm provisioning checks and exercise
+corrupt-cache recovery: a successful lock conversion alone does not demonstrate
+that the selected programs execute correctly.
 
 No workflow file names the Blueprint version or a checksum.
 

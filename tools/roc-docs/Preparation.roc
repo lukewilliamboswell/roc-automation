@@ -540,6 +540,7 @@ xml_markdown = |nodes, state, code| {
 	Ok($out)
 }
 
+resolve : Str, State -> Try({ href : Str, title : Str }, Str)
 resolve = |href, state| {
 	if href.starts_with("https://") or href.starts_with("http://") or href.starts_with("mailto:") {
 		return Ok({ href, title: href })
@@ -789,6 +790,7 @@ html_blocks = |input, state, depth| {
 
 # A page may contain several included chapters. Resolve against the rendered
 # page identity, not the current chapter's source path, before routing elsewhere.
+html_reference : Ref, State -> Try({ href : Str, title : Str }, Str)
 html_reference = |ref, state| {
 	local = state.routes.find_first(|r| r.path == ref.path and r.local_id == ref.local_id and r.route == state.page.drop_suffix(".adoc").concat(".html"))
 	match local {

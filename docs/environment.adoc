@@ -34,7 +34,7 @@ app [config] { pf: platform "<roc-blueprint release URL>" }
 config = [
 	Name("roc-example"),
 	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
-	Overlay("roc", "github:roc-lang/roc-overlay"),
+	Input("roc", "github:roc-lang/roc-overlay"),
 	Environment(
 		"dev",
 		[
@@ -57,7 +57,9 @@ config = [
 ]
 ----
 
-This example declares its Nix package source explicitly for Blueprint 0.6.
+This example uses Blueprint 0.7: `Packages` declares its Nix package source,
+`Input` declares the flake input and `Overlays` selects its role in this environment.
+Source-qualified names such as `nix#gh` select the declared package source.
 Each setting has one job:
 
 `Command("roc-stable", ...)`:: Names the exact nightly release used for tooling.
@@ -79,7 +81,9 @@ workflow and a contributor run the same command.
 The two files divide the work. `Blueprint.roc` states which release is the
 tooling compiler and which tools are needed, where a reviewer can read it.
 `Blueprint.lock` pins the overlay revision that supplies that release's download
-URL and hash, the package source, and each locked bundle.
+URL and hash, the package source, and each locked bundle. Blueprint 0.7 uses
+Spec major 3 and Lock 2; older lock formats require a full update as
+xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint] describes.
 
 Commit the generated lock after review. Derived files and generated Nix stay in
 `.blueprint/`, which the repository's `.gitignore` lists.
@@ -87,7 +91,7 @@ Commit the generated lock after review. Derived files and generated Nix stay in
 [#get-the-blueprint-binary]
 == Get `blueprint`
 
-Blueprint 0.6 needs Nix only for Nix-sourced tools and sandboxed builds. For
+Blueprint 0.7 needs Nix only for Nix-sourced tools and sandboxed builds. For
 those environments install https://nixos.org/download[Nix] first. There are two
 ways to get the `blueprint` command. Whichever you
 use, take the same roc-blueprint release as the platform URL in the
@@ -127,11 +131,20 @@ from source in CI.
 
 === What the command needs
 
-The binary needs neither Python nor Roc installed. Blueprint 0.6 downloads its
-fixed configuration compiler into its own store and verifies the recorded hash.
-It uses a matching host `roc` when available. Earlier releases bootstrap through
-Nix instead. The advanced `ROC` override must name the exact compiler required
-by the Blueprint binary.
+The binary needs neither Python nor Roc installed. Blueprint 0.7 embeds its
+fixed configuration compiler, `nightly-2026-10-21-5349569`. On first use it
+installs the embedded archive into its content-addressed store and verifies the
+recorded hash before extraction. It reuses verified bytes on later runs and
+repairs a damaged archive from its embedded copy. Bootstrapping this compiler
+needs no GitHub request; project tools and packages can still need downloads.
+A compatible explicit `ROC` override takes precedence, then a compatible host
+`roc`. An override must match the compiler required by the Blueprint binary.
+
+`blueprint compiler-version` reports the bundled compiler tag without evaluating
+a project, installing a compiler or writing a cache. It describes Blueprint
+itself even when a host override is selected. The report does not require the
+repository's `roc-stable` pin to match: update that pin separately after testing
+the scripts that use it.
 
 This compiler is separate from `roc-stable` for a reason: Blueprint is written
 in Roc and must run before the environment it describes exists. See

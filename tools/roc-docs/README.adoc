@@ -28,7 +28,7 @@ publication directory; chapter and asset links remain relative.
 `--api-entrypoint` and `--roc-command` add API documentation as a separate,
 explicitly requested compiler invocation.
 
-The first candidate is `tools-0.1.0-rc.1`. Its shared AsciiDoc authoring profile,
+The native renderer's shared AsciiDoc authoring profile,
 asset-preparation policy, supported systems and known migration limits are in
 link:../../docs/documentation.adoc#experimental-native-docs-contract[the experimental native documentation contract].
 Adopt a reviewed release asset digest and verify it before execution. The
@@ -44,7 +44,7 @@ a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
 
 == Authoring
 
-The parser package pins roc-parser 2.1.0-rc.3. `Preparation.roc` adapts its real
+The parser package pins roc-parser 3.0.0. `Preparation.roc` adapts its real
 AsciiDoc syntax tree and virtual-file preprocessor. HTML preserves description
 lists, sidebars, captions and table column weights directly from that tree;
 PDF uses roc-pdf 0.1.0-rc6 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
@@ -89,6 +89,9 @@ for PDF links to website-only chapters, API routes and downloads. The utility
 keeps manual chapter references internal and preserves other download filenames.
 Local listing includes can select `tag=name` and `indent=0` from checked files
 inside the workspace; consumers still compile/test their examples separately.
+The broader roc-parser 3.0.0 include-selector API does not expand this renderer
+contract. Parser upgrades still require acceptance checks for whitespace, tab
+handling, inline code, source highlighting and links across every output format.
 
 HTML and PDF share the same language-aware source highlighter and original
 UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
@@ -181,12 +184,12 @@ publishes through a sibling staging directory.
 
 == Build and verify
 
-Use compiler `nightly-2026-10-18-1df370f` and its normal cache. Immutable package
+Use compiler `nightly-2026-10-21-5349569` and its normal cache. Immutable package
 URLs pin basic-cli, roc-parser, roc-pdf and roc-deflate. Release builds use the
 validated `--opt=speed` configuration; compilation has substantial RAM cost,
 separate from native rendering. Keep Roc commands sharing a cache sequential on
 this pin: its
-https://github.com/roc-lang/roc/blob/1df370f0660e2086db08e6370b77689594db8928/src/compile/cache_cleanup.zig#L130-L162[scratch cleanup]
+https://github.com/roc-lang/roc/blob/534956997e8e5c62888bc14cbc763f60109d0b72/src/compile/cache_cleanup.zig#L127-L161[scratch cleanup]
 can remove another build's active scratch directory once it is five minutes old.
 
 [source,sh]
@@ -200,7 +203,7 @@ python3 tools/roc-docs/tests/run_roc_tests.py
 ----
 
 The suite runner requires a passing test summary. On the pinned compiler it
-accepts warning status 2 only for unreachable-code warnings in the four pinned
+accepts warning status 2 only for unreachable-code warnings in the three pinned
 dependencies; warnings in local code, other diagnostics and failed tests reject.
 
 Python is used by the upstream build/test harness and independent reference

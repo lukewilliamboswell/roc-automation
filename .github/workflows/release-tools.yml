@@ -167,7 +167,7 @@ jobs:
             printf '\n## Compilers\n\n```\n'
             blueprint run compiler-version
             printf '```\n'
-            printf '\nPolicy utility compiler: nightly-2026-10-15-38e6c42\nDocumentation utility compiler: nightly-2026-10-18-1df370f\n'
+            printf '\nPolicy utility compiler: nightly-2026-10-15-38e6c42\nDocumentation utility compiler: nightly-2026-10-21-5349569\n'
           } > release-notes.md
       - name: List the digests
         working-directory: dist
