@@ -1,7 +1,7 @@
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0-rc2/Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst",
 	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.4.0-rc2/BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze.tar.zst",
-	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/2.1.0-rc.3/E5r48puF3KGvqzbd6v1JWA7qJFMehppWb7A6NzRWieJT.tar.zst",
+	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/3.0.0/6xsRdRqenJrAb4wG7HaST4Xh349vD5sHAJDsKTK6E3dr.tar.zst",
 }
 
 import cli.OsStr

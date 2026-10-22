@@ -9,16 +9,17 @@
 #
 # `roc-stable` is the release named below; it runs the scripts under scripts/.
 # Nothing here provides a bare `roc`.
-app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.4.0/4jmnCGtQeuXTJJYc1rPrnA1pQFPRqUecY5oau1te8cYn.tar.zst" }
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/2zwBq8cAkEPfRNMaWgtwCsVwxSJ3z9FncazjNofBXspG.tar.zst" }
 
 config = [
 	Name("roc-automation"),
-	Overlay("roc", "github:roc-lang/roc-overlay"),
+	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
+	Input("roc", "github:roc-lang/roc-overlay"),
 	Environment(
 		"dev",
 		[
 			Overlays(["roc"]),
-			Command("roc-stable", "rocpkgs.nightly-2026-10-09-258ab27"),
+			Command("roc-stable", "nix#rocpkgs.nightly-2026-10-09-258ab27"),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
 			RocPackages([
@@ -26,7 +27,7 @@ config = [
 				"https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 			]),
 			# Programs the scripts start.
-			Tools(["coreutils", "gh"]),
+			Tools(["nix#coreutils", "nix#gh"]),
 		],
 	),
 	Shell("default", [Use("dev")]),

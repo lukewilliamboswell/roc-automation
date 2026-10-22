@@ -37,7 +37,7 @@ maintainer's responsibility.
 | Analysis suited to the project's own languages; findings resolved
 
 | Dependencies
-| Dependabot pull requests for actions; locked tools and bundles
+| Dependabot pull requests for actions; pinned tools and content-addressed bundles
 | Dependency inventory, reviewed upgrades, timely vulnerability fixes
 
 | Delivery

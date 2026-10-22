@@ -4,7 +4,7 @@ Copy this directory's contents to a repository root, including the hidden
 `.github` directory. Keep `Blueprint.roc` and `Blueprint.lock` together. Add
 `.blueprint/` and `.docs-out/` to that repository's `.gitignore`.
 
-The starter uses published Blueprint 0.6.0-rc1 and roc-docs tools-0.1.0-rc.1.
+The starter uses published Blueprint 0.7.0 and roc-docs tools-0.2.0.
 The lock records the exact per-system identities and lengths. Review and
 regenerate it when changing recipes; do not copy a lock from another release.
 The renderer supports the three Linux/Apple Silicon systems declared here.
@@ -18,9 +18,18 @@ blueprint check
 blueprint run docs
 ----
 
-The rendered manual is under `.docs-out/`. These tasks do not need Nix or a
-globally installed Roc compiler. Blueprint provisions its own fixed compiler
-to evaluate configuration; the renderer runs as a prebuilt executable.
+The rendered manual is under `.docs-out/`: an HTML site with mirrored Markdown
+for each page and `llms.txt`, plus a PDF. Use `--markdown false` in the renderer
+task to opt out of the Markdown exports. These tasks do not need Nix or a
+globally installed Roc compiler. Blueprint installs its embedded fixed compiler
+to evaluate configuration without a GitHub bootstrap request; the renderer runs
+as a prebuilt executable. The optional tooling recipe retains its independent
+`nightly-2026-10-18-1df370f` pin.
+
+When migrating an earlier Blueprint configuration, update the CLI and platform
+together, run `blueprint check` and a full `blueprint update`, review Lock 2
+against the old lock, and remove generated `.blueprint/` state. Named lock
+updates require a current-format lock.
 
 Install the current Roc nightly separately to check the package:
 

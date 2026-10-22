@@ -171,8 +171,8 @@ described in xref:optional-workflows.adoc#documentation-site[Documentation site]
 [#experimental-native-docs-contract]
 == Experimental native documentation contract
 
-The `tools-0.1.0-rc.1` candidate starts a controlled migration to shared AsciiDoc
-websites and PDF manuals. The utility owns the common theme, navigation,
+The shared native renderer provides AsciiDoc websites, static Markdown exports
+and PDF manuals. Its source subset and presentation contract remain experimental. The utility owns the common theme, navigation,
 highlighting and validation policy. A repository supplies its content, metadata,
 entrypoint and prepared assets through the action inputs or CLI. Documentation
 configuration is not yet read from a separate `Blueprint.roc` record.

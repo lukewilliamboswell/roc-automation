@@ -29,7 +29,7 @@ main! = |_args| {
 	Stdout.line!("\n== Compiler pins")?
 	tag = match Pins.stable_tag(Path.read_utf8!("Blueprint.roc")?) {
 		Ok(found) => found
-		Err(NoStableCompiler) => return fail!("Blueprint.roc does not name roc-stable with Command(\"roc-stable\", \"rocpkgs.<tag>\")")
+		Err(NoStableCompiler) => return fail!("Blueprint.roc does not name roc-stable with Command(\"roc-stable\", \"nix#rocpkgs.<tag>\")")
 	}
 	for script in scripts {
 		source = Path.read_utf8!(Path.utf8(script))?

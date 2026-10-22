@@ -1,7 +1,7 @@
 = Native documentation preparation
 
 `roc-docs build` and `roc-docs prepare` run entirely in the released Roc binary.
-`Preparation.roc` is a pure adapter over roc-parser 2.1.0-rc.3's public AsciiDoc
+`Preparation.roc` is a pure adapter over roc-parser 3.0.0's public AsciiDoc
 syntax tree, virtual-file preprocessing and inline rendering APIs. Files and
 source-linked diagram registrations are supplied as inert data by
 `RepositoryBuild.roc`. No author input is executed and includes cannot fetch
@@ -81,7 +81,9 @@ Custom Asciidoctor YAML themes remain unsupported.
 
 Listing includes are read as inert UTF-8 files, with workspace containment,
 symlink checks, per-file and aggregate limits, and output-overlap rejection.
-Single positive `tag` selections and `indent=0` are supported. Missing/unbalanced
+Single positive `tag` selections and `indent=0` are supported. The wider
+selector API offered by roc-parser 3.0.0 does not expand this checked-listing
+contract: multiple/negative tags and line-range selection remain unsupported. Missing/unbalanced
 tags, nested include directives and delimiter injection reject. The preparation manifest records each include's document line, workspace path,
 selection options, original digest and selected-text digest. Example compilation
 and test execution remain the consumer's explicit CI stages.

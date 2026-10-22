@@ -5,23 +5,30 @@ import Renderer
 ## Static reader-facing Markdown from the same admitted page tree as HTML.
 ## Rewrite actual link targets, never prose, examples or external URLs.
 MarkdownExport :: [].{
+	page : Str, List(Str), Str, Str -> Try(Str, Str)
 	page = |source, routes, version, canonical| {
 		normalized = Renderer.normalize(Markdown.parse_str(source)).map_err(|e| Str.inspect(e))?
 		body = blocks(normalized, routes)?
 		Ok("> Documentation version: ${text(version)}. [HTML page](${destination(canonical)})\n\n${body}")
 	}
+	destination : Str -> Str
 	destination = |value| value.replace_each(" ", "%20").replace_each("(", "%28").replace_each(")", "%29").replace_each("<", "%3C").replace_each(">", "%3E").replace_each("\\", "%5C").replace_each("\"", "%22")
+	route : Str -> Str
 	route = |html| html.drop_suffix(".html").concat(".md")
+	discover : Str, Str -> Str
 	discover = |html, markdown| {
 		alternate = "<link rel=\"alternate\" type=\"text/markdown\" href=\"${Html.escape(markdown)}\"><link rel=\"describedby\" type=\"text/plain\" href=\"llms.txt\">"
 		visible = "<a href=\"${Html.escape(markdown)}\">View Markdown</a> "
 		Str.join_with(Str.join_with(html.split_on("</head>"), "${alternate}</head>").split_on("<div class=\"metadata\">"), "<div class=\"metadata\">${visible}")
 	}
+	index : Str, Str, List({ title : Str, route : Str }), Str -> Str
 	index = |title, version, pages, site_url| {
 		links = pages.map(|p| "- [${text(p.title)}](${destination(url(site_url, route(p.route)))})")
 		"# ${text(title)}\n\n> Documentation version: ${text(version)}. Static Markdown equivalents of the published HTML pages.\n\n## Documentation\n\n${Str.join_with(links, "\n")}\n"
 	}
+	url : Str, Str -> Str
 	url = |site_url, path| if (site_url == "") path else "${site_url.drop_suffix("/")}/${path}"
+	title : Str -> Str
 	title = |source| {
 		match Markdown.parse_str(source).find_first(
 			|block| match block {
@@ -33,6 +40,7 @@ MarkdownExport :: [].{
 			_ => "Documentation"
 		}
 	}
+	text : Str -> Str
 	text = |value| {
 		var $out = []
 		for b in value.to_utf8() {
@@ -45,6 +53,7 @@ MarkdownExport :: [].{
 	}
 }
 
+href : Str, List(Str) -> Str
 href = |value, routes| {
 	path = (value.split_on("#").first() ?? "").split_on("?").first() ?? ""
 	if routes.contains(path) {
