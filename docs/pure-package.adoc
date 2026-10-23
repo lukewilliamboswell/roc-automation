@@ -7,7 +7,7 @@ lock. The package compiler remains the latest nightly supplied by CI. No local
 installer, renderer build or Nix environment is needed for this path.
 
 The working example is in `examples/pure-package/`. It uses Blueprint
-`0.7.0`, the matching platform URL and the published experimental
+`0.8.0`, the matching platform URL and the published experimental
 `tools-0.2.0` renderer. Upgrade a utility by changing its recipe and reviewing
 its new lock entries. The utility release and fixed tooling compiler do not
 control which nightly tests the package.
@@ -77,7 +77,7 @@ Python 3.10 or later on the runner; the renderer executable uses none of these
 tools to parse or render documents.
 
 Install the release binary matching the platform URL, following
-https://github.com/lukewilliamboswell/roc-blueprint/blob/0.7.0/docs/getting-started.adoc[Blueprint's installation instructions].
+https://github.com/lukewilliamboswell/roc-blueprint/blob/0.8.0/docs/getting-started.adoc[Blueprint's installation instructions].
 Then run these commands from the example directory, or from your repository
 after adopting its files:
 
@@ -97,7 +97,7 @@ action's full SHA fixes its reviewed Blueprint installer and checksum registry;
 it reads the Blueprint release from the platform URL rather than another
 workflow version pin.
 
-Blueprint 0.7 installs its embedded fixed configuration compiler into its
+Blueprint 0.8 installs its embedded fixed configuration compiler into its
 verified store before any Roc CLI is installed globally. No GitHub compiler
 bootstrap download is needed. This compiler is separate from the downloaded
 renderer and the floating package compiler; the example's fixed `roc-stable`
@@ -173,7 +173,7 @@ jobs, then restores each exact cache on another fresh runner. It compares actual
 executables with the lock and checks that warm tasks do not refetch utility or
 fixed compiler archives. A Nix sentinel fails any accidental Nix invocation.
 See
-https://github.com/lukewilliamboswell/roc-blueprint/blob/0.7.0/docs/no-provider.adoc#the-store-of-downloads[Blueprint's store rules]
+https://github.com/lukewilliamboswell/roc-blueprint/blob/0.8.0/docs/no-provider.adoc#the-store-of-downloads[Blueprint's store rules]
 for the detailed verification and rebuilding contract.
 
 == Pass an executable to a shared action
