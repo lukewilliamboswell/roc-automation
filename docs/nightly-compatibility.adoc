@@ -81,7 +81,7 @@ consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
 an environment that needs it. Leave both false for a runner that needs neither.
 Toolchain installation precedes the prerequisite command. Windows prerequisites
 must use native tools through `setup-command`, such as a checked-in Python setup
-script. Blueprint 0.7.0 publishes a native Windows binary;
+script. Blueprint 0.8.0 publishes a native Windows binary;
 `actions/setup-blueprint` does not install it on Windows runners yet
 (https://github.com/lukewilliamboswell/roc-automation/issues/59[#59]). Nix is not
 a Windows prerequisite backend. Requesting either shared installer on Windows
