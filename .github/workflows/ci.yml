@@ -301,7 +301,7 @@ jobs:
           assert subject["target"] == sys.argv[2] and subject["sha256"] == hashlib.sha256(open(subject["path"], "rb").read()).hexdigest()
           for sidecar in subject["sidecars"]:
               assert sidecar["sha256"] == hashlib.sha256(open(sidecar["path"], "rb").read()).hexdigest() and sidecar["size"] == os.path.getsize(sidecar["path"])
-          assert [gap["scope"] for gap in envelope["coverage"]] == ["native-closure", "sbom:roc-stable", "import:blueprint-core-sbom"], envelope["coverage"]
+          assert sorted(gap["scope"] for gap in envelope["coverage"]) == ["import:blueprint-core-sbom", "native-closure", "sbom:roc-stable"], envelope["coverage"]
           PY
       - name: Provoke the refusals a maintainer must see
         run: python3 tests/check_sbom_chain.py
