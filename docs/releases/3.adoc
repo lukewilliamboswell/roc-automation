@@ -1,5 +1,25 @@
 = roc-automation 3
 
+[#blueprint-08-adoption]
+== Blueprint 0.8 adoption
+
+The repository and the copyable pure-package starter use Blueprint 0.8.0, and
+`actions/setup-blueprint` admits its reviewed `blueprint` binaries on the three
+supported installer systems. The release keeps Spec major 3, Lock 2, lock report
+format 2 and the embedded configuration compiler `nightly-2026-10-21-5349569`,
+so a full `blueprint update` under 0.8.0 regenerated both committed locks without
+a change and no configuration migrates. Its additions are on the SBOM side: a
+native standalone SBOM tool per released system, `source` supplier documents
+admitted into native inventories, archive member listings and an evidence
+manifest beside each sidecar. This version does not consume them; the shared
+actions that do are tracked in
+https://github.com/lukewilliamboswell/roc-automation/issues/66[#66].
+
+Released utilities are unchanged: their sources and compiler pins did not move,
+so no tools release accompanies this adoption. Consumers take the admission by
+moving their `actions/setup-blueprint` reference to a revision on or after this
+change, as before.
+
 [#blueprint-parser-adoption]
 == Blueprint 0.7 and parser 3 adoption
 

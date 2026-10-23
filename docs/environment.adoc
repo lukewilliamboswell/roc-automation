@@ -57,7 +57,7 @@ config = [
 ]
 ----
 
-This example uses Blueprint 0.7: `Packages` declares its Nix package source,
+This example uses Blueprint 0.8: `Packages` declares its Nix package source,
 `Input` declares the flake input and `Overlays` selects its role in this environment.
 Source-qualified names such as `nix#gh` select the declared package source.
 Each setting has one job:
@@ -87,7 +87,7 @@ tooling compiler and which tools are needed, where a reviewer can read it.
 `Blueprint.lock` pins the overlay revision that supplies that release's download
 URL and hash, package sources, fetched programs and bundle sources used by
 sandboxed builds. Task-only bundle identities remain in their committed URLs.
-Blueprint 0.7 uses
+Blueprint 0.8 uses
 Spec major 3 and Lock 2; older lock formats require a full update as
 xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint] describes.
 
@@ -97,7 +97,7 @@ Commit the generated lock after review. Derived files and generated Nix stay in
 [#get-the-blueprint-binary]
 == Get `blueprint`
 
-Blueprint 0.7 needs Nix only for Nix-sourced tools and sandboxed builds. For
+Blueprint 0.8 needs Nix only for Nix-sourced tools and sandboxed builds. For
 those environments install https://nixos.org/download[Nix] first. There are two
 ways to get the `blueprint` command. Whichever you
 use, take the same roc-blueprint release as the platform URL in the
@@ -137,7 +137,7 @@ from source in CI.
 
 === What the command needs
 
-The binary needs neither Python nor Roc installed. Blueprint 0.7 embeds its
+The binary needs neither Python nor Roc installed. Blueprint 0.8 embeds its
 fixed configuration compiler, `nightly-2026-10-21-5349569`. On first use it
 installs the embedded archive into its content-addressed store and verifies the
 recorded hash before extraction. It reuses verified bytes on later runs and

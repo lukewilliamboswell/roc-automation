@@ -97,7 +97,7 @@ in one place while migrating configuration and locked inputs together:
 . Remove generated `.blueprint/` state when the release requires it.
 . Run the affected named tasks and merge after `ci.yml` passes.
 
-Blueprint 0.7 uses Spec major 3, Lock 2 and lock report format 2. Earlier locks
+Blueprint 0.8 uses Spec major 3, Lock 2 and lock report format 2, as 0.7 did. Earlier locks
 are refused by commands other than the full `blueprint update`; a named update
 requires a current lock. Keep the previous lock in history for comparison.
 Replace `Overlay(name, ref)` declarations with `Input(name, ref)`; the
