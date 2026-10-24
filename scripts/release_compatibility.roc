@@ -240,7 +240,7 @@ execute! = |selected, initial, directory| {
 		native_root = native!(root)
 		build_target = if target == "native" [] else ["--target=${target}"]
 		var $built = Bool.True
-		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${native_executable}"].concat(build_target)] {
+		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${native_executable}"].concat(build_target).concat(example.build_args ?? [])] {
 			$number = $number + 1
 			ran = logged!(directory, $number, argv, root, cache, [], 300_000)?
 			if ran.timed_out or ran.limited {
@@ -270,7 +270,7 @@ execute! = |selected, initial, directory| {
 					if ran.timed_out or ran.limited {
 						return Ok({ ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "example interrupted; inspect command ${$number.to_str()}" })
 					}
-					passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and ran.stderr == Str.to_utf8(case.stderr)
+					passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and ((case.stderr_match ?? "exact") == "ignore" or ran.stderr == Str.to_utf8(case.stderr))
 					$result = { ..$result, tested: $result.tested + 1, failed: $result.failed + if passed 0 else 1 }
 					if !passed {
 						write!(Path.join(directory, "${$number.to_str()}-expected.json"), Json.to_str(case))?

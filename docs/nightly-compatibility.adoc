@@ -217,7 +217,8 @@ formatter. An empty package cache starts each target's test.
 The suite contains 1–100 unique application paths under `examples/`, with
 1–100 uniquely named cases per application. The runner checks and builds each
 application once with the selected compiler, then runs each recorded case and
-compares stdout, stderr and exit code exactly. A failed application does not
+compares stdout and exit code exactly, and stderr exactly unless the case
+explicitly selects the bounded fuzz-statistics exception below. A failed application does not
 prevent diagnostics for later applications. Declared cases are the execution
 inventory; maintainers review the suite for representative coverage before
 publishing it. Passing is not a claim of security compliance or complete API
@@ -241,6 +242,21 @@ headless test where possible. A suite with no executed cases is never compatible
 
 == Preserve diagnostics on happy and unhappy paths
 
+An application may add `"build_args": ["--fuzz"]` to build a fuzz target.
+The optional list accepts only `--fuzz`, once; an absent or empty list keeps
+ordinary builds. The flag is passed only to `roc build`, never `roc check`.
+The runner retains ownership of the compiler, output path and target, so the
+suite cannot redirect output through additional compiler arguments.
+
+For libFuzzer's variable statistics, a case may set `"stderr_match": "ignore"`
+with `"stderr": ""`. Omission, or `"stderr_match": "exact"`, compares stderr
+byte for byte. Ignoring stderr still records its raw bytes, enforces the output
+limit and deadline, and compares stdout and exit status exactly. Keep fuzz smoke
+cases bounded, for example `"args": ["run", "corpus/listSort", "--time=1"]`;
+a target expected to find its failure can declare `"exit_code": 77`. Seed replay
+cases can retain exact stderr assertions. Neither a timeout nor truncated output
+can match an expected exit code.
+
 Compiler stdout and stderr are always displayed, including after exit code 0.
 Warnings remain nonfatal by default. Successful compilation does not imply that
 it was warning-free. The runner owns compiler execution instead of delegating
@@ -258,7 +274,7 @@ stdin, public environment, deadlines and expected output for failing cases.
 The ZIP inventory is retained too. Console rendering escapes workflow-command
 markers, carriage returns and terminal escapes; raw files preserve the original
 bytes. Compiler diagnostics and example stderr are separate: expected example
-stderr is compared with the case's specification.
+stderr follows the case's explicit comparison mode (exact by default).
 
 The `nightly-compatibility-summary-<attempt>` artifact contains `summary.json`:
 the selected identities, per-target results, counts and aggregate verdict. The

@@ -337,6 +337,12 @@ the checkout HEAD equals the event SHA before running consumer prerequisites.
 Successful diagnostics are
 preserved; console workflow-command markers are escaped rather than interpreted.
 
+Suite build arguments admit only a single `--fuzz`; the runner retains the
+compiler, output path and target. Cases may explicitly ignore variable stderr
+statistics with an empty expected stderr field. Raw diagnostics, process status,
+stdout and exit assertions, deadlines and output limits still apply, so ignored
+stderr cannot convert interruption into a compatibility pass.
+
 Aggregation checks every declared target's identity, counts and run attempt as
 inert JSON. No single matrix output can stand in for all targets. A cancelled or
 failed test job cannot produce a passing issue report even when old files exist.

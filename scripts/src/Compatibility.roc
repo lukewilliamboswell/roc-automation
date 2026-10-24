@@ -7,8 +7,8 @@ Compatibility := [].{
 	Asset : { id : U64, name : Str, size : U64, digest : Str }
 	Release : { id : U64, tag_name : Str, draft : Bool, prerelease : Bool, published_at : Str, assets : List(Asset) }
 	Selection : { schema_version : U64, repository : Str, nightly : Str, release : Str, release_id : U64, asset : Asset, runners : List(Str) }
-	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
-	App : { path : Str, target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), cases : List(Case) }
+	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, stderr_match : Try(Str, [Missing]), exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
+	App : { path : Str, build_args : Try(List(Str), [Missing]), target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), cases : List(Case) }
 	Suite : { schema_version : U64, release : Str, dependencies : List(Str), apps : List(App) }
 	Result : { schema_version : U64, repository : Str, nightly : Str, release : Str, asset_digest : Str, runner : Str, run_id : Str, run_attempt : Str, outcome : Str, tested : U64, failed : U64, skipped : U64, diagnostic_commands : U64, detail : Str }
 	Environment : { name : Str, value : Str }
@@ -75,6 +75,10 @@ Compatibility := [].{
 			return Err("duplicate suite applications")
 		}
 		for example in found.apps {
+			build_args = example.build_args ?? []
+			if build_args != [] and build_args != ["--fuzz"] {
+				return Err("build_args permits only --fuzz once; compiler, target and output are runner-owned")
+			}
 			target = example.target ?? "native"
 			runtime = example.run ?? []
 			if !GitHub.is_plain(target, "-_") or (target != "native" and runtime.is_empty()) or (!runtime.is_empty() and !runtime.any(|arg| arg.contains("{executable}"))) {
@@ -84,12 +88,12 @@ Compatibility := [].{
 				return Err("invalid application path or cases")
 			}
 			if !example.cases.all(
-				|case| case.name != "" and case.args.len() <= 100 and match case.skip {
+				|case| case.name != "" and case.args.len() <= 100 and ["exact", "ignore"].contains(case.stderr_match ?? "exact") and ((case.stderr_match ?? "exact") != "ignore" or case.stderr == "") and match case.skip {
 					Ok(skip) => skip.reason != "" and skip.issue.starts_with("https://github.com/")
 					Err(Missing) => Bool.True
 				},
 			) {
-				return Err("cases need unique names and skips need a reason and issue")
+				return Err("cases need unique names, skips need a reason and issue, and stderr_match must be exact or ignore (with empty stderr)")
 			}
 		}
 		Ok(found)

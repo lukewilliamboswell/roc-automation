@@ -184,6 +184,67 @@ else:
         self.assertEqual(ran.returncode, 0, ran.stderr)
         self.assertNotIn("report=success", outputs)
 
+    def test_fuzz_flag_is_build_only_and_stderr_can_be_explicitly_ignored(self):
+        self.spec["apps"][0]["build_args"] = ["--fuzz"]
+        self.case.update(stderr_match="ignore", exit_code=77, args=["run", "corpus", "--time=1"])
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="variable fuzz statistics", FAKE_CASE_EXIT="77")
+        self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
+        check = json.loads((directory / "2-command.json").read_text())
+        build = json.loads((directory / "3-command.json").read_text())
+        case = json.loads((directory / "4-command.json").read_text())
+        self.assertNotIn("--fuzz", check["argv"])
+        self.assertEqual(build["argv"][-1], "--fuzz")
+        self.assertEqual(case["argv"][-3:], ["run", "corpus", "--time=1"])
+        self.assertIn("variable fuzz statistics", (directory / "4-stderr.log").read_text())
+        # Ignoring stderr cannot hide the wrong exit status or stdout.
+        for change in ({"FAKE_CASE_EXIT": "0"}, {"FAKE_CASE_EXIT": "77"}):
+            if change["FAKE_CASE_EXIT"] == "77":
+                self.case["stdout"] = "incorrect"
+                self.make_archive()
+                self.refresh_selection()
+            ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="statistics", **change)
+            self.assertNotEqual(ran.returncode, 0)
+            self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
+
+    def test_fuzz_ignored_stderr_cannot_turn_interruption_into_expected_exit(self):
+        self.spec["apps"][0]["build_args"] = ["--fuzz"]
+        self.case.update(stderr_match="ignore")
+        for variable, code, outcome in (("FAKE_CASE_SLEEP", 124, "test-timeout"), ("FAKE_CASE_FLOOD", 125, "output-limit")):
+            with self.subTest(outcome=outcome):
+                self.case["exit_code"] = code
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", RA_CASE_TIMEOUT_MS="1000", **{variable: "1"})
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], outcome)
+                self.assert_no_success_report(directory)
+
+    def test_default_stderr_comparison_remains_exact(self):
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="unexpected")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
+
+    def test_unreviewed_build_flags_and_invalid_stderr_modes_fail_before_compiler(self):
+        for args in (["--output=elsewhere"], ["--target=wasm32"], ["--fuzz", "--fuzz"], ["--fuzz", "--opt=fast"], ["--help"]):
+            with self.subTest(args=args):
+                self.spec["apps"][0]["build_args"] = args
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertFalse((directory / "1-command.json").exists())
+        self.spec["apps"][0].pop("build_args")
+        for mode, expected in (("regex", ""), ("ignore", "an assertion that would be discarded")):
+            with self.subTest(mode=mode):
+                self.case.update(stderr_match=mode, stderr=expected)
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertFalse((directory / "1-command.json").exists())
+
     def test_compiler_failure_is_incompatible_and_keeps_diagnostics(self):
         ran, directory, _ = self.run_phase("test", FAKE_COMPILER_FAIL="1")
         self.assertNotEqual(ran.returncode, 0)
