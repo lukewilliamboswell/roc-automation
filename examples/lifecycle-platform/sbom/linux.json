@@ -1,0 +1,128 @@
+{
+  "profile": "blueprint-spdx-3.0-v1",
+  "components": [
+    {
+      "id": "product",
+      "name": "lifecycle-platform",
+      "version": "0.1.0",
+      "producer": "Organization: roc-automation contributors",
+      "license": "UPL-1.0",
+      "license_url": "",
+      "identity": "urn:roc-automation:fixture:lifecycle-platform:0.1.0",
+      "download": "NOASSERTION",
+      "sha256": "",
+      "modified": "",
+      "target": "x86_64-linux",
+      "origin": "reviewed"
+    },
+    {
+      "id": "zig-linux",
+      "name": "zig",
+      "version": "0.16.0",
+      "producer": "Organization: Zig Software Foundation",
+      "license": "MIT",
+      "license_url": "",
+      "identity": "",
+      "download": "",
+      "sha256": "",
+      "modified": "",
+      "target": "x86_64-linux",
+      "origin": "program:zig:x86_64-linux"
+    },
+    {
+      "id": "roc-stable-linux",
+      "name": "roc-stable",
+      "version": "nightly-2026-10-21-5349569",
+      "producer": "Organization: Roc contributors",
+      "license": "UPL-1.0",
+      "license_url": "",
+      "identity": "",
+      "download": "",
+      "sha256": "",
+      "modified": "",
+      "target": "x86_64-linux",
+      "origin": "program:roc-stable:x86_64-linux"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Subject",
+      "to": "product",
+      "relation": "contains",
+      "scope": "",
+      "basis": "The platform source/native host belongs to this reviewed fixture"
+    },
+    {
+      "from": "Subject",
+      "to": "zig-linux",
+      "relation": "dependsOn",
+      "scope": "build",
+      "basis": "This tool participates in the native host build or its bounded adapter"
+    },
+    {
+      "from": "Subject",
+      "to": "roc-stable-linux",
+      "relation": "dependsOn",
+      "scope": "build",
+      "basis": "This tool participates in the native host build or its bounded adapter"
+    }
+  ],
+  "coverage": [
+    {
+      "scope": "adapter-runtime-closure",
+      "status": "incomplete",
+      "reason": "The fixed Roc adapter uses the pinned basic-cli platform to invoke Zig; this inventory records the fetched compiler but not the adapter platform host closure",
+      "contact": "https://github.com/lukewilliamboswell/roc-automation/security/policy"
+    }
+  ],
+  "inputs": [
+    {
+      "input": "program:zig:x86_64-linux",
+      "component": "zig-linux",
+      "reason": "Pinned build tool for this native host; not shipped in the host archive"
+    },
+    {
+      "input": "program:roc-stable:x86_64-linux",
+      "component": "roc-stable-linux",
+      "reason": "Pinned build tool for this native host; not shipped in the host archive"
+    },
+    {
+      "input": "task:check-unit",
+      "component": "",
+      "reason": "The task is orchestration; its fetched build tools are accounted for separately and no task process ships"
+    },
+    {
+      "input": "task:check-runtime",
+      "component": "",
+      "reason": "The task is orchestration; its fetched build tools are accounted for separately and no task process ships"
+    },
+    {
+      "input": "task:build-linux",
+      "component": "",
+      "reason": "The task is orchestration; its fetched build tools are accounted for separately and no task process ships"
+    },
+    {
+      "input": "task:build-macos",
+      "component": "",
+      "reason": "The task is orchestration; its fetched build tools are accounted for separately and no task process ships"
+    },
+    {
+      "input": "task:build-windows",
+      "component": "",
+      "reason": "The task is orchestration; its fetched build tools are accounted for separately and no task process ships"
+    }
+  ],
+  "imported_documents": [],
+  "unavailable_sboms": [
+    {
+      "component": "zig-linux",
+      "reason": "Zig publishes no SBOM beside the pinned compiler archive",
+      "contact": "https://ziglang.org/security/"
+    },
+    {
+      "component": "roc-stable-linux",
+      "reason": "roc-lang/nightlies publishes no SBOM beside its compiler archives",
+      "contact": "https://github.com/roc-lang/roc/security/policy"
+    }
+  ]
+}

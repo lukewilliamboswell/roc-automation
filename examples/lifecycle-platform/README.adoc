@@ -1,0 +1,46 @@
+= lifecycle-platform
+
+A real, small Roc platform fixture with Linux x64, Apple Silicon macOS and
+Windows x64 native host builders and consumer runners. `release-topology.json`
+contains target and file data; it contains no release or lifecycle controller.
+The shared workflow owns the graph, exact artifact transport, bundling, SBOM
+jobs, notes, examples engine and publication.
+
+`Blueprint.roc` uses Blueprint 0.8.0. `scripts/Toolchain.roc` declares Zig 0.16.0
+and the fixed adapter compiler once, and the committed `Blueprint.lock` records
+actual bytes for every declared system. `scripts/native.roc` is a bounded
+product-specific adapter that compiles the scalar C host and archives it. Linux
+uses one libc-free host build for its glibc and musl archive entries; macOS and
+Windows have their own native builds. Native outputs are declared explicitly
+and copied into the platform before the shared bundler runs once.
+
+The platform declares Archive output: the package compiler builds a consumer
+archive containing the application and the selected native host. Each archived
+example's tiny `run-archive.sh` links that exact archive with archived
+`harness.c`, then executes the result. It performs only this product-specific
+native test, with no compiler selection, host rebuilding, packaging, release
+notes, inventories or publication. This native test harness is the narrow
+shell exception; it is not a copy of shared automation. Shared tooling bounds
+the case and manages descendants.
+
+Git Bash and clang are explicit runtime prerequisites. The `check-runtime`
+Blueprint task runs in each source and candidate target context. The harness
+also retains the actual clang identity on stderr for every case. This compiler
+builds only the ephemeral test harness; the published host uses the locked Zig
+compiler. Runner clang/SDK identity remains an ambient test-environment
+assumption, not a claim that the compiler or SDK is immutable. An incomplete
+adapter-runtime closure and missing upstream tool SBOMs are explicitly recorded
+in the reviewed compositions.
+
+`examples/main.roc` must exit zero. `examples/wrong.roc` must exit one; compiler
+or linker failures exit 125. Both run the same actual host contract. Only
+stderr comparison is ignored because it retains compiler identity/diagnostics;
+stdout and status are checked. The examples and their harness are archived
+unchanged except for declared platform URL substitution. A candidate never
+falls back to source host inputs or source runtime helpers.
+
+For local native evidence, run `blueprint run build-macos` on Apple Silicon,
+then build `examples/main.roc` with the selected package `roc` and run
+`bash examples/run-archive.sh <generated-archive>`. Run the wrong application too
+and require status one. Hosted Linux and Windows execution remains separate
+acceptance evidence; successful macOS execution does not establish those targets.

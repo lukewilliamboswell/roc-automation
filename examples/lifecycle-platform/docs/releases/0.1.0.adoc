@@ -1,0 +1,12 @@
+= lifecycle-platform 0.1.0
+
+This native platform exports an application's readonly integer through its
+actual platform ABI. Its target-built C host checks the value. Every consumer
+application is built once from the selected platform bundle; the archived
+runtime harness links that generated archive and runs it on its native target.
+The negative application must return one, so an always-successful host fails
+the fixture. Compiler/link errors return 125 and cannot satisfy that case.
+
+Candidate installation URLs:
+
+* platform: {platform-url}

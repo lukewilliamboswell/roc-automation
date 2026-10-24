@@ -1,0 +1,65 @@
+{
+  "profile": "blueprint-spdx-3.0-v1",
+  "components": [
+    {
+      "id": "product",
+      "name": "lifecycle-package-package",
+      "version": "0.1.0",
+      "producer": "Organization: roc-automation contributors",
+      "license": "UPL-1.0",
+      "license_url": "",
+      "identity": "urn:roc-automation:fixture:lifecycle-package-package:0.1.0",
+      "download": "NOASSERTION",
+      "sha256": "",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Subject",
+      "to": "product",
+      "relation": "contains",
+      "scope": "",
+      "basis": "This bundle contains the reviewed product source for package/main.roc"
+    }
+  ],
+  "coverage": [
+    {
+      "scope": "third-party-runtime-dependencies",
+      "status": "verified-empty",
+      "reason": "The reviewed source imports only Roc builtins; the example platform and shared tools do not ship in this source bundle",
+      "contact": "https://github.com/lukewilliamboswell/roc-automation/security/policy"
+    }
+  ],
+  "inputs": [
+    {
+      "input": "task:check-unit",
+      "component": "",
+      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
+    },
+    {
+      "input": "task:plan",
+      "component": "",
+      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
+    },
+    {
+      "input": "task:source",
+      "component": "",
+      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
+    },
+    {
+      "input": "task:prepare",
+      "component": "",
+      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
+    },
+    {
+      "input": "task:candidate",
+      "component": "",
+      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
+    }
+  ],
+  "imported_documents": [],
+  "unavailable_sboms": []
+}

@@ -1,0 +1,9 @@
+= lifecycle-package 0.1.0
+
+The first fixture release exercises the shared lifecycle through the public
+Roc API. Its examples use the exact candidate bundles, including sibling
+bundles where declared, and retain the working-tree expectations unchanged.
+
+Candidate installation URLs:
+
+* package: {package-url}

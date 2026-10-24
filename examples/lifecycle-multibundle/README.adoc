@@ -1,0 +1,26 @@
+= lifecycle-multibundle
+
+A complete shared-lifecycle consumer fixture. `release-topology.json` is data;
+it contains no shell commands or copied packaging, compiler lookup, notes,
+archive, examples-engine or publication controller. The `check-unit` Blueprint
+task owns only product unit tests. Working and archived examples use the same
+`examples/spec.json` expectations.
+
+Use Blueprint 0.8.0 and the checked-in lock. Supply the selected package compiler
+as `roc` and the exact reviewed `release-plan` and `release-operations` binaries
+on `PATH`. Before a tools release includes them, build those utilities from the
+same reviewed roc-automation commit used by the reusable workflow; do not invent
+binary digests or point a Fetch recipe at an unpublished release. The shared
+Blueprint task wrappers pass additional arguments through unchanged.
+
+`blueprint run check-unit` runs the independent product tests. The reusable
+lifecycle supplies the context/changes JSON and `RO_*` environment for the shared
+operations. The thin full-SHA caller is added with the workflow's final immutable
+revision. Source-only selection defers archive rehearsal only for the ordinary
+source directories listed in the topology; examples, recipes and topology
+changes require the full rehearsal.
+
+Authored notes are in `docs/releases/0.1.0.adoc`. SBOM compositions explicitly
+account for product source and task-only tooling; generated sidecars are bound
+to the actual final bundle bytes in a read-only job. A successful local unit
+check is not Linux candidate execution or publication evidence.
