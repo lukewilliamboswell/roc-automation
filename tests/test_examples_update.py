@@ -63,6 +63,8 @@ if os.environ.get('SYMLINK_SPEC'):
     p=Path(os.environ['SPEC']); p.unlink(); p.symlink_to(os.environ['SYMLINK_SPEC'])
 if os.environ.get('FLOOD'): sys.stdout.buffer.write(b'x'*11000000);sys.stdout.buffer.flush();time.sleep(2)
 if os.environ.get('SLEEP'): time.sleep(30)
+if os.environ.get('BUDGET_EXPECTATIONS'): sys.stdout.buffer.write(b'x'*1048577)
+if os.environ.get('BUDGET_ENCODING'): sys.stdout.buffer.write(b'\x00'*200000)
 if os.environ.get('INVALID_UTF8'): sys.stdout.buffer.write(b'\xff')
 else: sys.stdout.buffer.write(os.environ.get('ACTUAL_STDOUT','hello\n').encode())
 sys.stderr.buffer.write(os.environ.get('ACTUAL_STDERR','').encode())
@@ -145,6 +147,15 @@ sys.exit(int(os.environ.get('ACTUAL_EXIT','0')))
         self.assertEqual(actual["stderr"], "")
         self.assertEqual(actual["stderr_match"], "ignore")
         self.assertEqual(actual["exit_code"], 77)
+
+    def test_observations_and_encoded_spec_each_keep_the_input_budget(self):
+        for name in ("BUDGET_EXPECTATIONS", "BUDGET_ENCODING"):
+            with self.subTest(name=name):
+                before = self.write()
+                ran = self.run_update(**{name: "1"})
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertIn("budget", ran.stderr)
+                self.assertEqual(self.path.read_bytes(), before)
 
     def test_published_suite_marker_cannot_be_updated(self):
         self.spec["release"] = "1.2.3"
