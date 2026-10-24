@@ -211,7 +211,7 @@ DownstreamStatus := [].{
 	compatibility_badge : CompatibilityResult, Str -> Str
 	compatibility_badge = |result, checked| Json.to_str({ schemaVersion: 1, label: if result.date == "" "checked ${short_date(checked)}" else "run ${result.date}", message: result.message, color: result.color, cacheSeconds: 3600 })
 
-	repositories = ["aoc", "basic-ssg", "roc-ansi", "roc-blueprint", "roc-fuzz", "roc-graph-layout", "roc-pandoc", "roc-parser", "roc-pdf", "roc-platform-template-go", "roc-platform-template-rust", "roc-platform-template-zig", "roc-ray", "roc-signals", "roc-time", "roc-wasm4", "weaver"]
+	repositories = ["aoc", "basic-ssg", "roc-ansi", "roc-blueprint", "roc-fuzz", "roc-graph-layout", "roc-gui", "roc-pandoc", "roc-parser", "roc-pdf", "roc-platform-template-go", "roc-platform-template-rust", "roc-platform-template-zig", "roc-ray", "roc-signals", "roc-time", "roc-wasm4", "weaver"]
 	owner = "lukewilliamboswell"
 	upstream = "${owner}/roc-automation"
 
