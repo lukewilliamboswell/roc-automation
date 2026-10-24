@@ -12,7 +12,9 @@ actual bytes for every declared system. `scripts/native.roc` is a bounded
 product-specific adapter that compiles the scalar C host and archives it. Linux
 uses one libc-free host build for its glibc and musl archive entries; macOS and
 Windows have their own native builds. Native outputs are declared explicitly
-and copied into the platform before the shared bundler runs once.
+and copied into the platform before the shared bundler runs once. They are
+intermediate inputs rather than standalone release files: the complete platform
+bundle and its member inventory bind their exact bytes.
 
 The platform declares Archive output: the package compiler builds a consumer
 archive containing the application and the selected native host. Each archived

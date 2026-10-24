@@ -125,30 +125,6 @@
       "target": "source",
       "composition": "sbom/platform.json",
       "supplier_imports": ""
-    },
-    {
-      "subject": "platform/targets/x64glibc/libhost.a",
-      "target": "x86_64-linux",
-      "composition": "sbom/linux.json",
-      "supplier_imports": ""
-    },
-    {
-      "subject": "platform/targets/x64musl/libhost.a",
-      "target": "x86_64-linux",
-      "composition": "sbom/linux.json",
-      "supplier_imports": ""
-    },
-    {
-      "subject": "platform/targets/arm64mac/libhost.a",
-      "target": "aarch64-darwin",
-      "composition": "sbom/macos.json",
-      "supplier_imports": ""
-    },
-    {
-      "subject": "platform/targets/x64win/host.lib",
-      "target": "x86_64-windows",
-      "composition": "sbom/windows.json",
-      "supplier_imports": ""
     }
   ],
   "source_paths": [
