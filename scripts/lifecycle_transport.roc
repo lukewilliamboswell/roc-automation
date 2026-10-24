@@ -196,7 +196,10 @@ extract! = |manifest, raw, destination, python, helper| {
 		archive = (entries.first().map_err(|_| "missing raw artifact")?).absolute
 		# The helper rehashes the complete bounded raw ZIP and rejects all paths,
 		# types, collisions and expansion-limit violations before creating output.
-		ran = Cmd.new(OsStr.from_str(python)).args([helper, "--artifact", Path.display(archive), artifact.digest, Path.display(Path.join(destination, artifact.name))].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(2_000_000).manage_tree(Bool.True).run!().map_err(|_| "artifact verification did not complete")?
+		path = Env.var_str!("PATH").map_err(|_| "missing trusted archive helper tool path")?
+		# The inert parser needs no job credentials, OIDC endpoint or Python hooks.
+		# SystemRoot is retained only for the Windows Python runtime.
+		ran = Cmd.new(OsStr.from_str(python)).clear_envs().env_str("PATH", path).env_str("SystemRoot", Env.var_str!("SystemRoot") ?? "").args([helper, "--artifact", Path.display(archive), artifact.digest, Path.display(Path.join(destination, artifact.name))].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(2_000_000).manage_tree(Bool.True).run!().map_err(|_| "artifact verification did not complete")?
 		if ran.status != Exited(0) {
 			return Err("artifact verification refused selected bytes: ${Compatibility.console(Str.from_utf8_lossy(ran.stderr_bytes))}")
 		}
