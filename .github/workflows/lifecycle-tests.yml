@@ -45,12 +45,14 @@ jobs:
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_transport.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_transport_environment.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_package_compiler_action.py -v
-      - name: Build the trusted admission utility
-        if: runner.os != 'Windows'
+      - id: admission-tool
+        name: Build the trusted admission utility
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' && runner.os != 'Windows' }}
         env:
           TOOL_DIRECTORY: ${{ steps.tools.outputs.directory }}
         run: '"$TOOL_DIRECTORY/tooling/roc" build scripts/release_admit.roc --output="$RUNNER_TEMP/release-admit"'
-      - name: Test native operations and local expectation updates
+      - name: Test native operations
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
         env:
           ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
           ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}
@@ -58,9 +60,14 @@ jobs:
           PYTHON_COMMAND: ${{ steps.tools.outputs.python }}
         run: |
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_operations.py -v
-          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_examples_update.py -v
+      - name: Test local expectation updates
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        env:
+          ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}
+          PYTHON_COMMAND: ${{ steps.tools.outputs.python }}
+        run: '"$PYTHON_COMMAND" -m unittest discover -s tests -p test_examples_update.py -v'
       - name: Test independent admission
-        if: runner.os != 'Windows'
+        if: ${{ !cancelled() && steps.admission-tool.outcome == 'success' }}
         env:
           ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
           ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}

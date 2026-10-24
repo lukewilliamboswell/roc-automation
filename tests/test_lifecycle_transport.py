@@ -151,7 +151,7 @@ class LifecycleTransportTests(unittest.TestCase):
         (diagnostics / "stdout.log").write_text("::error::inert diagnostic")
         packed = self.root / "packed"
         self.run_tool("pack", trace, self.candidate, metadata, diagnostics, packed)
-        self.assertEqual(sorted(str(path.relative_to(packed)) for path in packed.rglob("*") if path.is_file()),
+        self.assertEqual(sorted(path.relative_to(packed).as_posix() for path in packed.rglob("*") if path.is_file()),
                          ["bundle-map.json", "diagnostics/stdout.log", "dist/bundle.tar.zst", "prepare-trace.json"])
         self.assertEqual((packed / "dist/bundle.tar.zst").read_bytes(), b"one built candidate")
         self.run_tool("pack", trace, self.candidate, metadata, diagnostics, packed, success=False)
