@@ -101,7 +101,7 @@ runs:
         version: nightly-new-compiler
         nightly-tag: ${{ inputs.nightly-tag }}
     - if: inputs.phase == 'test' && inputs.install-blueprint == 'true'
-      uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@2c563fdc7e07e76f30477769bc706bbc49dac36f
+      uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b709e369b7b450dc128820d900698ab15aa93612
       with:
         install-nix: ${{ inputs.install-nix }}
     - id: run
