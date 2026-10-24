@@ -179,7 +179,12 @@ rather than inferring another job's target from the runner.
 assembles bundles in dependency order and admits each sibling through Roc's
 content-addressed package cache. It replaces declared bundle placeholders and
 quoted local bundle paths, builds the examples ZIPs with their final release
-URLs, and invokes the shared renderer for documentation. The ZIP writer uses a
+URLs, and invokes the selected compiler's API generator once per bundle. Every
+API tree must contain its `index.html`. With authored manuals, the generated API
+trees are copied into each manual site under `api/<bundle-id>/`; copying does
+not regenerate them. Without a manual, each bundle gets its own
+`<bundle-prefix>-docs-<version>.zip`. The shared renderer still owns authored
+manual conversion, HTML and PDF; no second documentation parser is introduced. The ZIP writer uses a
 stable file order, fixed timestamps and permissions, and refuses unsafe names,
 case collisions and files that collide with directories. A repeated preparation
 in the same staging directory fails before rebuilding an asset.

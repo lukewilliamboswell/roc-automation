@@ -180,7 +180,7 @@ execute! = |stage| {
 				example = plan.topology.examples.find_first(|value| value.id == obligation.subject).map_err(|_| "unknown examples obligation")?
 				test_examples!(plan, example, obligation, workspace, directory, assets, compiler, stage == "candidate")?
 			}
-			"bundle" | "docs" if stage == "prepare" => {}
+			"bundle" | "api" | "docs" if stage == "prepare" => {}
 			"notes" if stage == "seal" => {}
 			_ => return Err("unsupported operation ${obligation.operation}; no success recorded")
 		}
@@ -324,6 +324,16 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 		_ = capture!(directory, "unbundle-${id}", [compiler, "unbundle", native!(file)], package_cache, [native!(cache)], [], 120_000)?
 	}
 	write!(Path.utf8(optional!("RO_BUNDLE_MAP", native!(Path.join(directory, "bundle-map.json")))), Json.to_str($bundles))?
+	for bundle in plan.topology.bundles {
+		api = Path.join(Path.join(directory, "api"), bundle.id)
+		mkdir!(Path.join(directory, "api"))?
+		_ = capture!(directory, "api-${bundle.id}", [compiler, "docs", bundle.root, "--output=${native!(api)}"], stage, [native!(cache)], [], 300_000)?
+		_ = BuildFiles.read!(BuildFiles.inside!(api, "index.html")?, 16_777_216)?
+		if plan.topology.documentation.is_empty() {
+			root = "${bundle.prefix}-docs-${release_version(plan)}"
+			zip_tree!(api, assets, root, "${root}.zip")?
+		}
+	}
 	for example in plan.topology.examples {
 		package_examples!(plan, example, workspace, directory, assets, $bundles)?
 	}
@@ -334,6 +344,17 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 	for doc in plan.topology.documentation {
 		output = Path.join(stage, ".release-docs-${doc.id}")
 		_ = capture!(directory, "docs-${doc.id}", [env!("RO_DOCS")?, "build", "--workspace", native!(stage), "--docs-directory", doc.directory, "--entrypoint", "index.adoc", "--output-directory", ".release-docs-${doc.id}", "--docs-version", release_version(plan), "--pdf-filename", "manual.pdf"], stage, [], [], 300_000)?
+		site = Path.join(output, "site")
+		for bundle in plan.topology.bundles {
+			api = Path.join(Path.join(directory, "api"), bundle.id)
+			for file in BuildFiles.list!(api)? {
+				path = "api/${bundle.id}/${file.path}"
+				if Path.exists!(BuildFiles.inside!(site, path)?).map_err(|e| Str.inspect(e))? {
+					return Err("manual conflicts with generated API path ${path}")
+				}
+				copy_file!(api, file.path, site, path)?
+			}
+		}
 		root = docs_name(plan, doc)
 		zip_tree!(Path.join(output, "site"), assets, root, "${root}.zip")?
 		if doc.pdf {

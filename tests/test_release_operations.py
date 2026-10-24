@@ -49,6 +49,9 @@ elif args[0]=='unbundle':
     archive=Path(args[1]); assert archive.read_bytes()==b'candidate bundle'
     extracted=Path.cwd()/archive.name.removesuffix('.tar.zst');extracted.mkdir(exist_ok=True)
     (extracted/'main.roc').write_text('package []\\n')
+elif args[0]=='docs':
+    out=Path(next(arg.split('=',1)[1] for arg in args if arg.startswith('--output=')));out.mkdir(parents=True)
+    if not os.environ.get('FAKE_API_MISSING_INDEX'): (out/'index.html').write_text('<p>API fixture</p>')
 elif args[0] in ('check','build'):
     for i,arg in enumerate(args):
         if arg=='--replace-dep':
@@ -149,6 +152,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         self.assertIn(bundles[0]["url"], staged)
         calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
         self.assertEqual(sum(call[0]=="bundle" for call in calls), 2)
+        self.assertEqual(sum(call[0]=="docs" for call in calls), 2)
         self.assertEqual(sum(call[0]=="unbundle" for call in calls), 2)
 
     def test_deterministic_archive_is_independent_of_staging_directory(self):
@@ -188,7 +192,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         ran = self.run_stage("seal")
         self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
         inventory = json.loads((self.directory / "release-inventory.json").read_text())
-        self.assertEqual(len(inventory["files"]), 6)
+        self.assertEqual(len(inventory["files"]), len(plan["assets"]) - 1)
         for record in inventory["files"]:
             content = (self.directory / record["path"]).read_bytes()
             self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (record["size"], record["sha256"]))
@@ -271,6 +275,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         with zipfile.ZipFile(archive) as zipped:
             self.assertIsNone(zipped.testzip())
             self.assertIn("sample-docs-0.0.1-dry-run/index.html", zipped.namelist())
+            self.assertIn("sample-docs-0.0.1-dry-run/api/package/index.html", zipped.namelist())
             self.assertNotIn("sample-docs-0.0.1-dry-run/site/index.html", zipped.namelist())
         self.assertEqual((self.directory / "sample-0.0.1-dry-run.pdf").read_bytes(), (self.scratch / "work/.release-docs-manual/manual.pdf").read_bytes())
 
@@ -295,6 +300,30 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
         self.assertFalse(any(call[0] in ("bundle", "bump") for call in calls))
         self.assertFalse((self.scratch / "validate-trace.json").exists())
+
+    @unittest.skipUnless(os.environ.get("ROC_PACKAGE_COMPILER"), "set ROC_PACKAGE_COMPILER to verify actual compiler API generation")
+    def test_real_compiler_builds_source_bundle_and_api_archive_once(self):
+        (self.workspace / "package/main.roc").write_text("package [Answer]\n")
+        (self.workspace / "package/Answer.roc").write_text("## The public answer.\nAnswer :: [].{ value = 42 }\n")
+        subprocess.run(["git", "add", "package"], cwd=self.workspace, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "-qm", "public API"], cwd=self.workspace, check=True)
+        self.context["sha"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.workspace, text=True).strip()
+        self.make_plan()
+        ran = self.run_stage("prepare", RO_COMPILER=os.environ["ROC_PACKAGE_COMPILER"])
+        self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        with zipfile.ZipFile(self.directory / "sample-docs-0.0.1-dry-run.zip") as zipped:
+            self.assertIsNone(zipped.testzip())
+            index = zipped.read("sample-docs-0.0.1-dry-run/index.html").decode()
+            self.assertIn("Answer", index)
+        trace = json.loads((self.scratch / "prepare-trace.json").read_text())
+        self.assertIn(dict(id="api-package", outcome="passed"), trace["obligations"])
+
+    def test_api_generator_without_an_index_cannot_complete_preparation(self):
+        ran = self.run_stage("prepare", FAKE_API_MISSING_INDEX="1")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertIn("index.html", ran.stderr)
+        self.assertFalse((self.scratch / "prepare-trace.json").exists())
+        self.assertFalse((self.directory / "sample-docs-0.0.1-dry-run.zip").exists())
 
     def test_dispatch_requires_explicit_previous_release_evidence_and_checks_bump(self):
         self.context.update(event="workflow_dispatch", ref="refs/heads/main", version="1.2.0")
