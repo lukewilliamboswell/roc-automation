@@ -184,6 +184,19 @@ else:
         self.assertEqual(ran.returncode, 0, ran.stderr)
         self.assertNotIn("report=success", outputs)
 
+    def test_duplicate_flat_and_nested_evidence_is_ambiguous(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        artifacts = self.root / "artifacts"
+        nested = artifacts / "compatibility-ubuntu-24.04"
+        nested.mkdir(parents=True)
+        shutil.copy(directory / "result.json", nested / "result.json")
+        shutil.copy(directory / "result.json", artifacts / "result.json")
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("outcome=setup-failed", outputs)
+        self.assertIn("report=none", outputs)
+
     def test_fuzz_flag_is_build_only_and_stderr_can_be_explicitly_ignored(self):
         self.spec["apps"][0]["build_args"] = ["--fuzz"]
         self.case.update(stderr_match="ignore", exit_code=77, args=["run", "corpus", "--time=1"])
