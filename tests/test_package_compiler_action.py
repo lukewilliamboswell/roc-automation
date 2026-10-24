@@ -18,7 +18,18 @@ class PackageCompilerActionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.launcher = None
+        cls.bash = shutil.which("bash")
         if os.name == "nt":
+            # Windows' System32 bash is a WSL launcher. Composite actions use
+            # Git for Windows' Bash, including its native path conversion.
+            git = shutil.which("git")
+            if not git:
+                raise RuntimeError("Git for Windows is required for action shell tests")
+            roots = list(Path(git).parents)[:3]
+            candidates = [root / member for root in roots for member in ("bin/bash.exe", "usr/bin/bash.exe")]
+            cls.bash = next((str(path) for path in candidates if path.is_file()), None)
+            if not cls.bash:
+                raise RuntimeError("Cannot locate Git for Windows' Bash")
             cls.launcher_temp = tempfile.TemporaryDirectory()
             cls.addClassCleanup(cls.launcher_temp.cleanup)
             cls.launcher = Path(cls.launcher_temp.name) / "launcher.exe"
@@ -45,7 +56,7 @@ class PackageCompilerActionTests(unittest.TestCase):
         self.assertEqual(len(BLOCKS), 2)
 
     def invoke(self, index, **extra):
-        return subprocess.run(["bash", "-c", BLOCKS[index]], cwd=self.workspace,
+        return subprocess.run([self.bash, "-c", BLOCKS[index]], cwd=self.workspace,
                               env={**self.env, **extra}, capture_output=True, text=True, timeout=15)
 
     def test_existing_workspace_entry_cannot_shadow_the_selected_download(self):
