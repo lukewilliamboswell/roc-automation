@@ -258,6 +258,11 @@ LifecyclePlan := [].{
 			{ id: "source-policy", stage: "source", runner: "ubuntu-24.04", operation: "policy", subject: "", target: "", task: "" },
 			{ id: "source-format", stage: "source", runner: "ubuntu-24.04", operation: "format", subject: "", target: "", task: "" },
 		]
+		if context.event == "workflow_dispatch" {
+			for bundle in topology.bundles {
+				$obligations = $obligations.append({ id: "version-${bundle.id}", stage: "validate", runner: "ubuntu-24.04", operation: "version-bump", subject: bundle.id, target: "source", task: "" })
+			}
+		}
 		for check in topology.checks {
 			if check.target_ids.is_empty() {
 				$obligations = $obligations.append({ id: "check-${check.id}", stage: "source", runner: "ubuntu-24.04", operation: check.kind, subject: check.id, target: "", task: check.task })
@@ -412,3 +417,12 @@ expect !LifecyclePlan.paths_disjoint(["hosts", "hosts/windows.a"])
 expect !LifecyclePlan.paths_disjoint(["HOSTS", "hosts/windows.a"])
 expect !LifecyclePlan.paths_disjoint(["file", "FILE"])
 expect LifecyclePlan.paths_disjoint(["hosts/linux.a", "hosts/windows.a"])
+
+expect match LifecyclePlan.full({ ..sample_context, event: "workflow_dispatch", ref: "refs/heads/main", version: "1.0.0" }, sample_topology) {
+	Ok(plan) => plan.obligations.keep_if(|item| item.stage == "validate").map(|item| item.id) == ["version-core"]
+	Err(_) => Bool.False
+}
+expect match LifecyclePlan.full(sample_context, sample_topology) {
+	Ok(plan) => !plan.obligations.any(|item| item.stage == "validate")
+	Err(_) => Bool.False
+}
