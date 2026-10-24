@@ -21,6 +21,7 @@ LifecyclePlan := [].{
 	AssetRule : { subject : Str, role : Str, target : Str, path : Str }
 	Plan : { schema : U64, context : Context, topology : Topology, full_rehearsal : Bool, obligations : List(Obligation), assets : List(AssetRule), bundle_order : List(Str) }
 	unique = Compatibility.unique
+	lower : Str -> Str
 	lower = |value| Str.from_utf8_lossy(value.to_utf8().map(|byte| if byte >= 'A' and byte <= 'Z' byte + 32 else byte))
 	id = |value| {
 		bytes = value.to_utf8()
@@ -28,6 +29,11 @@ LifecyclePlan := [].{
 		!bytes.is_empty() and bytes.len() <= 48 and first >= 'a' and first <= 'z' and bytes.all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9') or byte == '-')
 	}
 	digest = |value| value.to_utf8().len() == 64 and value.to_utf8().all(|byte| (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f'))
+	paths_disjoint : List(Str) -> Bool
+	paths_disjoint = |values| {
+		paths = values.map(lower)
+		unique(paths).len() == paths.len() and !paths.any(|left| paths.any(|right| left != right and right.starts_with("${left}/")))
+	}
 	sha = |value| value.to_utf8().len() == 40 and value.to_utf8().all(|byte| (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f'))
 	safe_path = |value| {
 		parts = value.split_on("/")
@@ -178,7 +184,7 @@ LifecyclePlan := [].{
 				$outputs = $outputs.append(output)
 			}
 		}
-		if unique($outputs.map(|x| lower(x.path))).len() != $outputs.len() {
+		if !paths_disjoint($outputs.map(|x| x.path)) {
 			return Err("native outputs have ambiguous producers or case collisions")
 		}
 		for check in topology.checks {
@@ -322,7 +328,7 @@ LifecyclePlan := [].{
 		if $obligations.len() > 256 or unique($obligations.map(|item| item.id)).len() != $obligations.len() {
 			return Err("obligation limit or duplicate ownership")
 		}
-		if unique($assets.map(|asset| lower(asset.path))).len() != $assets.len() {
+		if !paths_disjoint($assets.map(|asset| asset.path)) {
 			return Err("release asset path collision")
 		}
 		Ok({ schema: 1, context, topology, full_rehearsal, obligations: $obligations, assets: $assets, bundle_order: order })
@@ -401,3 +407,8 @@ expect match LifecyclePlan.full(sample_context, sample_topology) {
 expect LifecyclePlan.validate({ ..sample_topology, examples: [] }).is_err()
 expect LifecyclePlan.validate({ ..sample_topology, profile: "platform", target_matrix: sample_topology.target_matrix.append({ id: "windows", runner: "windows-2025", runtime_task: "" }) }).is_err()
 expect ["package/build.rs", "package/native.cmake", "package/build.py", "package/.cargo/config.toml"].all(|path| LifecyclePlan.rehearse(sample_context, sample_topology, { complete: Bool.True, files: [{ status: "modified", old_path: path, new_path: path }] }))
+
+expect !LifecyclePlan.paths_disjoint(["hosts", "hosts/windows.a"])
+expect !LifecyclePlan.paths_disjoint(["HOSTS", "hosts/windows.a"])
+expect !LifecyclePlan.paths_disjoint(["file", "FILE"])
+expect LifecyclePlan.paths_disjoint(["hosts/linux.a", "hosts/windows.a"])
