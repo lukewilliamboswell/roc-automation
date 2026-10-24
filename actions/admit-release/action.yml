@@ -5,11 +5,17 @@ inputs:
     description: discover selects transports; extract verifies raw archives; assemble consolidates inert files; collect admits evidence
     required: true
   trusted-seed:
-    description: Bounded trusted plan context JSON, never a candidate-produced authorization flag
-    required: true
+    description: Bounded trusted plan context JSON for discover/collect, never a candidate authorization flag
+    default: ''
   topology:
-    description: Exact reviewed topology JSON bound by the seed digest
-    required: true
+    description: Exact reviewed topology JSON for discover/collect, bound by the seed digest
+    default: ''
+  admission-file:
+    description: Fresh independent admission report for provenance verification
+    default: ''
+  attestation-bundle:
+    description: Bounded retained attestation bundle for all exact admitted subjects
+    default: ''
   raw-downloads:
     description: Raw artifact archive directory downloaded by immutable IDs with service digest checking
     default: ''
@@ -29,6 +35,9 @@ inputs:
     description: Token for read-only GitHub evidence GET requests; no token is given to bootstrap
     default: ${{ github.token }}
 outputs:
+  provenance-report:
+    description: Retained per-subject verification receipt index
+    value: ${{ steps.admit.outputs.provenance-report }}
   artifact-ids:
     description: Comma-separated immutable artifact IDs independently selected from the actual run
     value: ${{ steps.admit.outputs.artifact-ids }}
@@ -53,7 +62,7 @@ runs:
         INPUT_PHASE: ${{ inputs.phase }}
       run: |
         case "$INPUT_PHASE" in
-          discover|extract|assemble|collect) ;;
+          discover|extract|assemble|collect|verify-provenance) ;;
           *) echo "::error::unsupported admission controller phase"; exit 1 ;;
         esac
     - name: Install Nix
@@ -111,7 +120,7 @@ runs:
         esac
 
     - id: admit
-      if: inputs.phase == 'discover' || inputs.phase == 'collect'
+      if: inputs.phase == 'discover' || inputs.phase == 'collect' || inputs.phase == 'verify-provenance'
       name: Independently observe or admit inert evidence
       shell: bash
       env:
@@ -119,6 +128,8 @@ runs:
         BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
         INPUT_PHASE: ${{ inputs.phase }}
         INPUT_TRUSTED_SEED: ${{ inputs.trusted-seed }}
+        INPUT_ADMISSION_FILE: ${{ inputs.admission-file }}
+        INPUT_ATTESTATION_BUNDLE: ${{ inputs.attestation-bundle }}
         INPUT_TOPOLOGY: ${{ inputs.topology }}
         INPUT_TRACES: ${{ inputs.traces }}
         INPUT_CANDIDATE: ${{ inputs.candidate }}
@@ -130,11 +141,14 @@ runs:
           discover)
             "$BLUEPRINT" run release-admit -- discover "$INPUT_TRUSTED_SEED" "$INPUT_TOPOLOGY" "$INPUT_OUTPUT_DIRECTORY"
             ;;
+          verify-provenance)
+            "$BLUEPRINT" run release-admit -- verify-provenance "$INPUT_ADMISSION_FILE" "$INPUT_ATTESTATION_BUNDLE" "$INPUT_CANDIDATE" "$INPUT_OUTPUT_DIRECTORY"
+            ;;
           collect)
             "$BLUEPRINT" run release-admit -- collect "$INPUT_TRUSTED_SEED" "$INPUT_TOPOLOGY" "$INPUT_TRACES" "$INPUT_CANDIDATE" "$INPUT_OUTPUT_DIRECTORY"
             ;;
           *)
-            echo "::error::phase must be discover or collect"
+            echo "::error::unsupported verification phase"
             exit 1
             ;;
         esac

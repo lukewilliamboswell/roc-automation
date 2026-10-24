@@ -82,3 +82,20 @@ Candidate execution still belongs on disposable read-only runners without
 sensitive workload data. Artifact-byte binding relies on the pinned downloader
 checking the selected service digest before extraction, and the caller's
 reviewed workflow pin remains its chosen shared-controller authority.
+
+The retained per-subject inventory is also bound to its actual SBOM artifact,
+producer transfer record and sidecar manifest. Independent checks compare its
+components, content identities, origin/target/modification records, scoped
+relationships, input dispositions, inspected inputs and coverage with both
+standard sidecars. Document creators must match the reviewed topology author;
+no author is inferred from repository ownership. The evidence envelope is
+bounded to 16 MiB, each inventory and SBOM to 1 MiB and the publication report
+to 1 MiB.
+
+`verify-provenance REPORT BUNDLE CANDIDATE OUTPUT` rehashes the exact admitted
+subjects before invoking the locked `gh attestation verify` on each with the
+local retained bundle. Policy fixes the repository, source digest/ref, reusable
+signer workflow and its reviewed digest, SLSA provenance v1 predicate and
+hosted-runner requirement. Unknown, failed or empty structured verification
+receipts stop publication. Receipts are retained as inert files in a fresh
+output directory. This checks provenance identity; it claims no SLSA level.

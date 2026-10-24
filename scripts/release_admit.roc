@@ -25,6 +25,7 @@ main! = |args| {
 		["admit", trusted, topology, jobs, evidence, candidate, output] => admit!(trusted, topology, jobs, evidence, candidate, output)
 		["collect", trusted, topology, traces, candidate, output] => collect!(trusted, topology, traces, candidate, output)
 		["discover", trusted, topology, output] => discover!(trusted, topology, output)
+		["verify-provenance", report, bundle, candidate, output] => verify_provenance!(report, bundle, candidate, output)
 		_ => Err("usage: release-admit admit TRUSTED TOPOLOGY JOBS EVIDENCE CANDIDATE OUTPUT | collect TRUSTED TOPOLOGY TRACES CANDIDATE OUTPUT_DIR")
 	}
 	match result {
@@ -76,9 +77,12 @@ admit! = |trusted_path, topology_path, jobs_path, evidence_path, candidate, outp
 	}
 	topology = LifecyclePlan.parse_topology(topology_text)?
 	jobs = LifecycleAdmission.parse_observations(read!(jobs_path, 4194304)?)?
-	evidence = LifecycleAdmission.parse_evidence(read!(evidence_path, 1048576)?)?
+	evidence = LifecycleAdmission.parse_evidence(read!(evidence_path, 16777216)?)?
 	actual = tree!(candidate)?
 	report = LifecycleAdmission.validate(trusted, topology, jobs, evidence, actual)?
+	if Json.to_str(report).to_utf8().len() > 1048576 {
+		return Err("ADMIT_LIMIT: report exceeds the supported 1 MiB handoff")
+	}
 	validate_sboms!(trusted, topology, evidence, candidate)?
 	write!(output, Json.to_str(report))?
 	Stdout.line!("PASS admitted exact source/run/workflow, obligations, artifacts and candidate bytes").map_err(|_| "cannot display result")
@@ -125,6 +129,24 @@ validate_sboms! = |trusted, topology, evidence, candidate| {
 			spdx = Path.display(BuildFiles.inside!(root, "${subject.path}.spdx.json")?)
 			cdx = Path.display(BuildFiles.inside!(root, "${subject.path}.cdx.json")?)
 			LifecycleSbom.validate({ path: subject.path, size: subject.size, sha256: subject.sha256, target: subject.target }, LifecycleAdmission.release_version(trusted.context), trusted.context.repository, trusted.context.sha, read!(manifest, 1048576)?, read!(spdx, 1048576)?, read!(cdx, 1048576)?, composition.text, supplier_text, evidence.files.map(|file| { path: file.path, size: file.size, sha256: file.sha256 }))?
+			inventory_document = producer_record.inventory_document
+			if Sha256.hex(inventory_document.to_utf8()) != producer_record.inventory_sha256 or !evidence.artifacts.any(|artifact| artifact.job_id == claim.job_id and artifact.run_attempt == claim.run_attempt and artifact.metadata.any(|item| item.path == "diagnostics/sbom-inventory.json" and item.sha256 == producer_record.inventory_sha256 and item.size == inventory_document.to_utf8().len())) {
+				return Err("SBOM_INVENTORY: resolved inventory is not bound to the actual producing artifact")
+			}
+			manifest_text = read!(manifest, 1048576)?
+			manifest_raw = LifecycleSbom.decode(manifest_text)?
+			producer_raw = LifecycleSbom.decode(producer_record.document)?
+			producer_subject = LifecycleSbom.array_field(producer_raw, "subjects")?.first().map_err(|_| "SBOM_PRODUCER: missing subject")?
+			if LifecycleSbom.string_field(manifest_raw, "inventory_sha256") != Ok(producer_record.inventory_sha256) or LifecycleSbom.string_field(producer_subject, "inventory_sha256") != Ok(producer_record.inventory_sha256) {
+				return Err("SBOM_INVENTORY: manifest or transfer record references different resolved inventory bytes")
+			}
+			producer_generator = LifecycleJson.field(producer_raw, "generator")?
+			manifest_context = LifecycleJson.field(manifest_raw, "context")?
+			if LifecycleSbom.string_field(producer_generator, "created") != LifecycleSbom.string_field(manifest_context, "created") or LifecycleSbom.string_field(producer_generator, "generator") != LifecycleSbom.string_field(manifest_context, "generator") {
+				return Err("SBOM_CONTEXT: producer and manifest document context differs")
+			}
+			LifecycleSbom.author(topology.sbom_author, read!(spdx, 1048576)?, read!(cdx, 1048576)?)?
+			LifecycleSbom.inventory({ path: subject.path, size: subject.size, sha256: subject.sha256, target: subject.target }, manifest_text, read!(spdx, 1048576)?, read!(cdx, 1048576)?, inventory_document)?
 		}
 		$mapping_index = $mapping_index + 1
 	}
@@ -326,6 +348,9 @@ snapshot! = |trusted_path, topology_path| {
 		$page = $page + 1
 	}
 	observations = { complete: Bool.True, jobs: $jobs, artifacts: $remote_artifacts }
+	if Json.to_str(observations).to_utf8().len() > 4194304 {
+		return Err("ADMIT_LIMIT: actual API observations exceed 4 MiB")
+	}
 	var $producing_attempt = 0.U64
 	for job in $jobs {
 		if plan.obligations.any(
@@ -477,7 +502,8 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 				[only] => only
 				_ => return Err("SBOM_PRODUCER: SBOM job must have one exact obligation")
 			}
-			$producer_evidence = $producer_evidence.append({ id, sha256: Sha256.hex(document.to_utf8()), document })
+			inventory_document = read!(Path.display(BuildFiles.inside!(root, "diagnostics/sbom-inventory.json")?), 1048576)?
+			$producer_evidence = $producer_evidence.append({ id, sha256: Sha256.hex(document.to_utf8()), document, inventory_sha256: Sha256.hex(inventory_document.to_utf8()), inventory_document })
 		}
 
 		$artifacts = $artifacts.append({ id: artifact.id, digest: artifact.digest, job_id: artifact.job_id, run_attempt: artifact.attempt, trace_sha256: Sha256.hex(text.to_utf8()), obligations: artifact.obligations, files: trace.files, metadata: $metadata })
@@ -486,6 +512,9 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 	evidence : LifecycleAdmission.Evidence
 	evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: snapshot.producing_attempt.to_str(), compiler: context.compiler, version: LifecycleAdmission.release_version(context), topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, obligations: $obligations, artifacts: $artifacts, files: $files, producer_evidence: $producer_evidence }
 	report = LifecycleAdmission.validate(trusted, snapshot.topology, snapshot.observations, evidence, actual)?
+	if Json.to_str(report).to_utf8().len() > 1048576 or Json.to_str(evidence).to_utf8().len() > 16777216 {
+		return Err("ADMIT_LIMIT: report or evidence exceeds the supported handoff bounds")
+	}
 	validate_sboms!(trusted, snapshot.topology, evidence, candidate)?
 	write!("${output}/evidence.json", Json.to_str(evidence))?
 	write!("${output}/admission.json", Json.to_str(report))?
@@ -515,4 +544,54 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 append! = |path, text| {
 	old = Path.read_utf8!(path).map_err(|_| "cannot read workflow output file")?
 	Path.write_utf8!(path, old.concat(text)).map_err(|_| "cannot append workflow output")
+}
+
+## Verification uses the locked gh CLI and local retained bundle, with source,
+## reusable workflow and subject identities constrained independently of claims.
+verify_provenance! = |report_path, bundle_path, candidate, output| {
+	report = LifecycleAdmission.parse_report(read!(report_path, 1048576)?)?
+	if env!("GITHUB_EVENT_NAME")? != "workflow_dispatch" or !LifecyclePlan.sha(report.workflow_sha) or report.workflow_ref != "lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml@${report.workflow_sha}" {
+		return Err("PROVENANCE_CONTEXT: only the selected dispatched reusable workflow can verify publication provenance")
+	}
+	source_ref = env!("GITHUB_REF")?
+	if !source_ref.starts_with("refs/heads/") or !LifecyclePlan.safe_path(source_ref.drop_prefix("refs/heads/")) {
+		return Err("PROVENANCE_CONTEXT: unsafe source ref")
+	}
+	actual = tree!(candidate)?
+	if actual.len() != report.assets.len() or !report.assets.all(|expected| actual.any(|file| file.path == expected.path and file.size == expected.size and file.sha256 == expected.sha256)) {
+		return Err("PROVENANCE_BYTES: exact admitted files changed before provenance verification")
+	}
+	notes = actual.find_first(|file| file.path == "release-notes.md").map_err(|_| "PROVENANCE_BYTES: missing admitted notes")?
+	LifecycleAdmission.publication(report, env!("GITHUB_REPOSITORY")?, env!("GITHUB_SHA")?, env!("GITHUB_RUN_ID")?, report.version, notes.sha256, actual.map(|file| { ..file, path: LifecycleAdmission.basename(file.path) }))?
+	# Check the bundle as inert bounded regular bytes before gh receives it.
+	_ = read!(bundle_path, 33554432)?
+	if Path.exists!(Path.utf8(output)).map_err(|_| "PROVENANCE_OUTPUT: cannot inspect receipts directory")? {
+		return Err("PROVENANCE_OUTPUT: receipts directory must be fresh")
+	}
+	Path.create_all!(Path.utf8(output)).map_err(|_| "PROVENANCE_OUTPUT: cannot create receipts directory")?
+	var $receipts = []
+	var $index = 0.U64
+	for file in report.assets {
+		path = BuildFiles.inside!(Path.utf8(candidate), file.path)?
+		argv = ["attestation", "verify", Path.display(path), "--bundle", bundle_path, "--repo", report.repository, "--signer-workflow", "lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml", "--signer-digest", report.workflow_sha, "--source-digest", report.source_sha, "--source-ref", source_ref, "--deny-self-hosted-runners", "--predicate-type", "https://slsa.dev/provenance/v1", "--format", "json"]
+		result = Cmd.new("gh").args(argv.map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120000).output_limit(4194304).manage_tree(Bool.True).run!().map_err(|_| "PROVENANCE_VERIFY: bounded verifier failed")?
+		if result.status != Exited(0) {
+			return Err("PROVENANCE_VERIFY: subject, source or workflow verification rejected; no publication")
+		}
+		text = Str.from_utf8(result.stdout_bytes).map_err(|_| "PROVENANCE_VERIFY: verifier returned non-UTF-8 receipt")?
+		receipt = LifecycleJson.decode_limit(text, 4194304).map_err(LifecycleJson.message)?
+		if LifecycleJson.array(receipt).map_ok(|items| items.is_empty()) != Ok(Bool.False) {
+			return Err("PROVENANCE_VERIFY: missing structured verification receipt")
+		}
+		name = "${$index.to_str()}-receipt.json"
+		write!("${output}/${name}", text)?
+		$receipts = $receipts.append({ path: file.path, sha256: file.sha256, receipt: name, receipt_sha256: Sha256.hex(text.to_utf8()) })
+		$index = $index + 1
+	}
+	write!("${output}/provenance.json", Json.to_str({ schema_version: 1.U64, repository: report.repository, source_sha: report.source_sha, run_id: report.run_id, workflow_sha: report.workflow_sha, predicate_type: "https://slsa.dev/provenance/v1", receipts: $receipts }))?
+	match Env.var_str!("GITHUB_OUTPUT") {
+		Ok(path) if path != "" => append!(Path.utf8(path), "provenance-report=${output}/provenance.json\n")?
+		_ => {}
+	}
+	Stdout.line!("PASS verified provenance for every exact admitted subject using source and reusable-workflow policy").map_err(|_| "cannot display provenance result")
 }

@@ -13,7 +13,7 @@ LifecycleAdmission := [].{
 	File : { path : Str, role : Str, subject : Str, target : Str, size : U64, sha256 : Str }
 	Obligation : { id : Str, job_id : U64, run_attempt : U64 }
 	Artifact : { id : U64, digest : Str, job_id : U64, run_attempt : U64, trace_sha256 : Str, obligations : List(Str), files : List(Str), metadata : List({ path : Str, size : U64, sha256 : Str }) }
-	Evidence : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, obligations : List(Obligation), artifacts : List(Artifact), files : List(File), producer_evidence : List({ id : Str, sha256 : Str, document : Str }) }
+	Evidence : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, obligations : List(Obligation), artifacts : List(Artifact), files : List(File), producer_evidence : List({ id : Str, sha256 : Str, document : Str, inventory_sha256 : Str, inventory_document : Str }) }
 	ObservedFile : { path : Str, size : U64, sha256 : Str }
 	Report : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, policy_version : Str, schema_profile : Str, verdict : Str, publish : Bool, assets : List(File), notes_sha256 : Str, artifacts : List(Artifact) }
 
@@ -143,7 +143,7 @@ LifecycleAdmission := [].{
 
 	parse_evidence : Str -> Try(Evidence, Str)
 	parse_evidence = |text| {
-		raw = LifecycleJson.decode_limit(text, 1048576).map_err(LifecycleJson.message)?
+		raw = LifecycleJson.decode_limit(text, 16777216).map_err(LifecycleJson.message)?
 		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "obligations", "artifacts", "files", "producer_evidence"])?
 		for item in LifecycleJson.array(LifecycleJson.field(raw, "obligations")?)? {
 			LifecycleJson.object(item, ["id", "job_id", "run_attempt"])?
@@ -151,7 +151,7 @@ LifecycleAdmission := [].{
 		check_artifacts(LifecycleJson.array(LifecycleJson.field(raw, "artifacts")?)?)?
 		check_files(LifecycleJson.array(LifecycleJson.field(raw, "files")?)?)?
 		for record in LifecycleJson.array(LifecycleJson.field(raw, "producer_evidence")?)? {
-			LifecycleJson.object(record, ["id", "sha256", "document"])?
+			LifecycleJson.object(record, ["id", "sha256", "document", "inventory_sha256", "inventory_document"])?
 		}
 		parsed : Try(Evidence, _)
 		parsed = Json.parse(text)
@@ -273,7 +273,7 @@ fixture_context : LifecyclePlan.Context
 fixture_context = { event: "workflow_dispatch", ref: "refs/heads/main", default_branch: "main", repository: "owner/sample", sha: Str.repeat("a", 40), run_id: "10", run_attempt: "2", compiler: "nightly-2026-10-23-18478ff", version: "1.0.0", full_dry_run: Bool.False, topology_sha256: Str.repeat("b", 64) }
 
 fixture_topology : LifecyclePlan.Topology
-fixture_topology = { schema: 1, name: "sample", profile: "package", bundles: [{ id: "package", root: "package/main.roc", prefix: "sample", placeholder: "package-url", depends_on: [] }], examples: [{ id: "examples", directory: "examples", spec: "examples/spec.json", bundles: ["package"], target_ids: ["linux"] }], documentation: [], target_matrix: [{ id: "linux", runner: "ubuntu-24.04", runtime_task: "" }], adapters: [], checks: [{ id: "unit", task: "check-unit", kind: "unit", target_ids: [] }], sboms: [{ subject: "package", target: "source", composition: "sbom/composition.json", supplier_imports: "" }], source_paths: ["package"] }
+fixture_topology = { schema: 1, sbom_author: "Organization: roc-automation contributors", name: "sample", profile: "package", bundles: [{ id: "package", root: "package/main.roc", prefix: "sample", placeholder: "package-url", depends_on: [] }], examples: [{ id: "examples", directory: "examples", spec: "examples/spec.json", bundles: ["package"], target_ids: ["linux"] }], documentation: [], target_matrix: [{ id: "linux", runner: "ubuntu-24.04", runtime_task: "" }], adapters: [], checks: [{ id: "unit", task: "check-unit", kind: "unit", target_ids: [] }], sboms: [{ subject: "package", target: "source", composition: "sbom/composition.json", supplier_imports: "" }], source_paths: ["package"] }
 
 fixture_trusted : LifecycleAdmission.Trusted
 fixture_trusted = { context: fixture_context, changes: { complete: Bool.False, files: [] }, server_url: "https://github.com", run_head_sha: fixture_context.sha, workflow_ref: "lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml@${Str.repeat("c", 40)}", workflow_sha: Str.repeat("c", 40), publish: Bool.True, compositions: [] }

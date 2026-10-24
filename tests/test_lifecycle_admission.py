@@ -51,6 +51,7 @@ class AdmissionTests(unittest.TestCase):
         self.composition = dict(profile='blueprint-spdx-3.0-v1', components=[], relationships=[],
                                 coverage=[], inputs=[], unavailable_sboms=[])
         self.artifact_files = {}
+        self.inventory_documents = {}
         for rule in self.plan['assets']:
             if rule['role'] not in ('spdx.json', 'cdx.json', 'sbom-manifest.json'):
                 self.put(rule['path'].replace('{hash}', 'a'*44), b'exact tested bytes\n')
@@ -106,14 +107,18 @@ class AdmissionTests(unittest.TestCase):
                     subjects=[dict(name=Path(subject['path']).name, path='candidate/'+subject['path'],
                                    size=subject['size'], sha256=subject['sha256'], target=subject['target'], version='1.0.0',
                                    url='https://github.com/'+self.context['repository']+'/releases/download/1.0.0/'+Path(subject['path']).name,
-                                   inventory_sha256='d'*64,
+                                   inventory_sha256=digest(self.inventory_documents[subject['path']].encode()),
                                    sidecars=[dict(name=Path(file['path']).name, path='candidate/'+file['path'], size=file['size'], sha256=file['sha256'],
                                                   format={'spdx.json':'SPDX-3.0.1','cdx.json':'CycloneDX-1.7','sbom-manifest.json':'manifest'}[file['role']]) for file in sidecars])],
                     dependencies=[], coverage=[])
                 document = json.dumps(producer)
-                self.producer_evidence.append(dict(id=first['id'], sha256=digest(document.encode()), document=document))
+                inventory_document = self.inventory_documents[subject['path']]
+                self.producer_evidence.append(dict(id=first['id'], sha256=digest(document.encode()), document=document,
+                                                   inventory_document=inventory_document, inventory_sha256=digest(inventory_document.encode())))
                 (directory/'diagnostics').mkdir()
                 (directory/'diagnostics/sbom-evidence.json').write_text(document)
+                (directory/'diagnostics/sbom-inventory.json').write_text(inventory_document)
+                self.artifacts[-1]['metadata'].append(dict(path='diagnostics/sbom-inventory.json', size=len(inventory_document.encode()), sha256=digest(inventory_document.encode())))
                 self.artifacts[-1]['metadata'].append(dict(path='diagnostics/sbom-evidence.json', size=len(document.encode()), sha256=digest(document.encode())))
             for path in paths:
                 target = directory/path
@@ -137,26 +142,37 @@ class AdmissionTests(unittest.TestCase):
         sha = digest((self.candidate/path).read_bytes())
         ns = 'https://github.com/'+self.context['repository']+'/sbom/1.0.0/'+self.context['sha']+'/'+name+'/revision-1'
         identity = ns+'#Subject'
-        graph = [dict(type='CreationInfo', **{'@id':'_:creationinfo'}, specVersion='3.0.1', created='2026-10-24T00:00:00Z'),
-                 dict(type='SpdxDocument', spdxId=ns+'#document', creationInfo='_:creationinfo', rootElement=[ns+'#sbom']),
-                 dict(type='software_Sbom', spdxId=ns+'#sbom', creationInfo='_:creationinfo', rootElement=[identity]),
+        inventory_document = json.dumps(dict(target=target, components=[], relationships=[], coverage=[], inputs=[], inspected=[]))
+        self.inventory_documents[path] = inventory_document
+        semantic_document = json.dumps(dict(profile='blueprint-spdx-3.0-v1', revision='1', target=target,
+                                             coverage=[], dispositions=[], inspected=[]))
+        reviewed_author = self.topology.get('sbom_author', 'Organization: roc-automation contributors')
+        author_kind, author_name = reviewed_author.split(': ', 1)
+        graph = [dict(type='CreationInfo', **{'@id':'_:creationinfo'}, specVersion='3.0.1', created='2026-10-24T00:00:00Z', createdBy=[ns+'#author']),
+                 dict(type=author_kind, spdxId=ns+'#author', name=author_name),
+                 dict(type='SpdxDocument', spdxId=ns+'#spdx/document', creationInfo='_:creationinfo', rootElement=[ns+'#spdx/sbom']),
+                 dict(type='software_Sbom', spdxId=ns+'#spdx/sbom', creationInfo='_:creationinfo', rootElement=[identity]),
                  dict(type='software_Package', spdxId=identity, creationInfo='_:creationinfo', name=name,
                       software_packageVersion='1.0.0', comment=json.dumps(dict(target=target, digest_kind='final-deliverable-sha256')),
                       verifiedUsing=[dict(type='Hash', algorithm='sha256', hashValue=sha)])]
+        graph.append(dict(type='Annotation', spdxId=ns+'#spdx/annotation', creationInfo='_:creationinfo',
+                          contentType='application/json', subject=ns+'#spdx/document', statement=semantic_document))
         spdx = {'@context':'https://spdx.org/rdf/3.0.1/spdx-context.jsonld', '@graph':graph}
         properties = [dict(name='blueprint:target', value=target), dict(name='blueprint:digest-kind', value='final-deliverable-sha256')]
         component = dict(type='file', **{'bom-ref':'Subject'}, name=name, version='1.0.0', hashes=[dict(alg='SHA-256', content=sha)], properties=properties)
         cdx = dict(bomFormat='CycloneDX', specVersion='1.7', serialNumber='urn:uuid:00000000-0000-0000-0000-000000000001', version=1,
-                   metadata=dict(component=component, properties=[dict(name='blueprint:namespace', value=ns),
-                       dict(name='blueprint:evidence', value=json.dumps(dict(profile='blueprint-spdx-3.0-v1', target=target, coverage=[], dispositions=[])))]),
+                   metadata=dict(timestamp='2026-10-24T00:00:00Z', component=component, properties=[dict(name='blueprint:namespace', value=ns),
+                       dict(name='blueprint:evidence', value=semantic_document)]),
                    components=[], dependencies=[dict(ref='Subject', dependsOn=[])])
+        if author_kind == 'Person': cdx['metadata']['authors'] = [dict(name=author_name)]
+        else: cdx['metadata']['manufacturer'] = dict(name=author_name)
         for suffix, value in [('.spdx.json', spdx), ('.cdx.json', cdx)]:
             self.put(path+suffix, json.dumps(value).encode())
         sidecars = [dict(filename=name+suffix, format=fmt, sha256=digest((self.candidate/(path+suffix)).read_bytes()),
                          size=(self.candidate/(path+suffix)).stat().st_size)
                     for suffix, fmt in [('.spdx.json','spdx-3.0.1'), ('.cdx.json','cyclonedx-1.7')]]
         manifest = dict(profile='blueprint-spdx-3.0-v1', subject=dict(filename=name, version='1.0.0', target=target, sha256=sha,
-                         size=(self.candidate/path).stat().st_size), inventory_sha256='d'*64,
+                         size=(self.candidate/path).stat().st_size), inventory_sha256=digest(inventory_document.encode()),
                         context=dict(namespace=ns, revision='1', created='2026-10-24T00:00:00Z', generator='Tool: blueprint-sbom-0.8.0'), sidecars=sidecars)
         self.put(path+'.sbom-manifest.json', json.dumps(manifest).encode())
 
@@ -416,6 +432,89 @@ sys.stdout.write(value if isinstance(value,str) else json.dumps(value))
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b'SBOM_FORMATS', result.stderr)
+
+    def test_fully_rehashed_inventory_cannot_change_accounting(self):
+        record = self.producer_evidence[0]
+        inventory = json.loads(record['inventory_document'])
+        inventory['inspected'].append('program:undeclared-input')
+        record['inventory_document'] = json.dumps(inventory)
+        record['inventory_sha256'] = digest(record['inventory_document'].encode())
+        producer = json.loads(record['document'])
+        producer['subjects'][0]['inventory_sha256'] = record['inventory_sha256']
+        record['document'] = json.dumps(producer)
+        artifact = next(item for item in self.artifacts if record['id'] in item['obligations'])
+        metadata = next(item for item in artifact['metadata'] if item['path'] == 'diagnostics/sbom-inventory.json')
+        metadata.update(size=len(record['inventory_document'].encode()), sha256=record['inventory_sha256'])
+        name = producer['subjects'][0]['name']+'.sbom-manifest.json'
+        path = next(item['path'] for item in self.files if Path(item['path']).name == name)
+        manifest = json.loads((self.candidate/path).read_text())
+        manifest['inventory_sha256'] = record['inventory_sha256']
+        self.put(path, json.dumps(manifest).encode()); self.rebind(path); self.refresh_producers()
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b'SBOM_INVENTORY', result.stderr)
+
+    def provenance_fake(self, *, reject=False, empty=False):
+        import sys
+        bindir = self.root/'verify-bin'; bindir.mkdir(exist_ok=True)
+        executable = bindir/'gh'
+        executable.write_text('#!'+sys.executable+'\n'+"""import json, os, sys
+args=sys.argv[1:]
+with open(os.environ['FAKE_VERIFY_LOG'],'a') as output: output.write(json.dumps(args)+'\\n')
+assert args[:2] == ['attestation','verify'], args
+expected={'--repo':os.environ['GITHUB_REPOSITORY'],'--signer-workflow':'lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml','--signer-digest':'c'*40,'--source-digest':os.environ['GITHUB_SHA'],'--source-ref':os.environ['GITHUB_REF'],'--predicate-type':'https://slsa.dev/provenance/v1','--format':'json'}
+for key,value in expected.items():
+    if args[args.index(key)+1] != value: raise SystemExit(1)
+assert '--deny-self-hosted-runners' in args
+if os.environ.get('FAKE_VERIFY_REJECT') == '1': raise SystemExit(1)
+print('[]' if os.environ.get('FAKE_VERIFY_EMPTY') == '1' else '[{"verified":true}]')
+""")
+        executable.chmod(0o755)
+        self.verify_env = dict(os.environ, PATH=str(bindir)+os.pathsep+os.environ['PATH'],
+            GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main',
+            GITHUB_SHA=self.context['sha'], GITHUB_REPOSITORY=self.context['repository'], GITHUB_RUN_ID='10',
+            FAKE_VERIFY_LOG=str(self.root/'verify.log'), FAKE_VERIFY_REJECT='1' if reject else '0',
+            FAKE_VERIFY_EMPTY='1' if empty else '0')
+        (self.root/'attestation.jsonl').write_text('{}\n')
+
+    def verify(self):
+        return subprocess.run([BINARY,'verify-provenance',str(self.root/'report.json'),
+            str(self.root/'attestation.jsonl'),str(self.candidate),str(self.root/'receipts')],
+            capture_output=True, env=self.verify_env, timeout=30)
+
+    def test_provenance_constrains_every_exact_subject_source_and_signer_and_retains_receipts(self):
+        self.assertEqual(self.invoke().returncode, 0)
+        self.provenance_fake()
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in (self.root/'verify.log').read_text().splitlines()]
+        self.assertEqual(len(calls), len(self.files))
+        receipts = json.loads((self.root/'receipts/provenance.json').read_text())['receipts']
+        self.assertEqual({item['path'] for item in receipts}, {item['path'] for item in self.files})
+        self.assertTrue(all((self.root/'receipts'/item['receipt']).is_file() for item in receipts))
+
+    def test_provenance_rejects_changed_bytes_before_any_request(self):
+        self.assertEqual(self.invoke().returncode, 0)
+        self.provenance_fake()
+        self.put(self.files[0]['path'], b'different bytes after admission')
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root/'verify.log').exists())
+
+    def test_provenance_rejects_unknown_empty_and_wrong_source_workflow_policy(self):
+        self.assertEqual(self.invoke().returncode, 0)
+        self.provenance_fake(reject=True)
+        self.assertNotEqual(self.verify().returncode, 0)
+        shutil.rmtree(self.root/'receipts')
+        self.provenance_fake(empty=True)
+        self.assertNotEqual(self.verify().returncode, 0)
+        shutil.rmtree(self.root/'receipts')
+        self.provenance_fake()
+        report = json.loads((self.root/'report.json').read_text())
+        report['workflow_sha'] = 'b'*40
+        report['workflow_ref'] = report['workflow_ref'].replace('c'*40,'b'*40)
+        write_json(self.root/'report.json',report)
+        self.assertNotEqual(self.verify().returncode, 0)
 
 
 @unittest.skipUnless(BINARY and PLANNER, 'set native admission and planner binaries')

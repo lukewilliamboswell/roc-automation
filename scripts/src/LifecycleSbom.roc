@@ -8,6 +8,11 @@ LifecycleSbom := [].{
 	Subject : { path : Str, size : U64, sha256 : Str, target : Str }
 	Sidecar : { path : Str, size : U64, sha256 : Str }
 	Coverage : { scope : Str, status : Str, reason : Str, contact : Str }
+	Component : { id : Str, name : Str, producer : Str, version : Str, identity : Str, download : Str, sha256 : Str, license : Str, license_url : Str, modified : Str, target : Str, origin : Str }
+	Edge : { from : Str, to : Str, relation : Str, scope : Str, basis : Str }
+	Disposition : { input : Str, component : Str, reason : Str }
+	Inventory : { target : Str, components : List(Component), relationships : List(Edge), coverage : List(Coverage), inputs : List(Disposition), inspected : List(Str) }
+	SemanticEvidence : { profile : Str, revision : Str, target : Str, coverage : List(Coverage), dispositions : List(Disposition), inspected : List(Str) }
 	Manifest : { profile : Str, subject : { filename : Str, version : Str, target : Str, sha256 : Str, size : U64 }, inventory_sha256 : Str, context : { namespace : Str, revision : Str, created : Str, generator : Str }, sidecars : List({ filename : Str, format : Str, sha256 : Str, size : U64 }) }
 
 	validate : Subject, Str, Str, Str, Str, Str, Str, Str, Str, List(Sidecar) -> Try({}, Str)
@@ -250,6 +255,38 @@ LifecycleSbom := [].{
 		}
 		Ok({})
 	}
+	author : Str, Str, Str -> Try({}, Str)
+	author = |reviewed, spdx_text, cdx_text| {
+		kind = if reviewed.starts_with("Person: ") "Person" else if reviewed.starts_with("Organization: ") "Organization" else return Err("SBOM_AUTHOR: unsupported reviewed document author")
+		name = reviewed.drop_prefix("${kind}: ")
+		if name == "" {
+			return Err("SBOM_AUTHOR: reviewed document author must name an agent")
+		}
+		graph = array_field(decode(spdx_text)?, "@graph")?
+		creation = graph.find_first(|item| string_field(item, "type") == Ok("CreationInfo")).map_err(|_| "SBOM_AUTHOR: missing creation information")?
+		author_id = match array_field(creation, "createdBy")? {
+			[only] => string(only)?
+			_ => return Err("SBOM_AUTHOR: exact reviewed author must create the document")
+		}
+		agent = graph.find_first(|item| string_field(item, "spdxId") == Ok(author_id)).map_err(|_| "SBOM_AUTHOR: missing document creator")?
+		if string_field(agent, "type") != Ok(kind) or string_field(agent, "name") != Ok(name) {
+			return Err("SBOM_AUTHOR: SPDX creator differs from reviewed topology")
+		}
+		metadata = LifecycleJson.field(decode(cdx_text)?, "metadata")?
+		if kind == "Person" {
+			person = match array_field(metadata, "authors")? {
+				[only] => only
+				_ => return Err("SBOM_AUTHOR: exact reviewed CycloneDX author required")
+			}
+			if string_field(person, "name") != Ok(name) {
+				return Err("SBOM_AUTHOR: CycloneDX author differs from reviewed topology")
+			}
+		} else if string_field(LifecycleJson.field(metadata, "manufacturer")?, "name") != Ok(name) {
+			return Err("SBOM_AUTHOR: CycloneDX manufacturer differs from reviewed topology")
+		}
+		Ok({})
+	}
+
 	consistent_formats : Str, LifecycleJson, LifecycleJson -> Try({}, Str)
 	consistent_formats = |namespace, spdx_document, cdx_document| {
 		spdx_nodes = array_field(spdx_document, "@graph")?.keep_if(|item| string_field(item, "type") == Ok("software_Package"))
@@ -268,6 +305,100 @@ LifecycleSbom := [].{
 			if spdx_hashes.len() > 1 or cdx_hashes.len() > 1 or spdx_hashes != cdx_hashes {
 				return Err("SBOM_FORMATS: component content identities differ between sidecars")
 			}
+		}
+		Ok({})
+	}
+
+	inventory : Subject, Str, Str, Str, Str -> Try({}, Str)
+	inventory = |subject, manifest_text, spdx_text, cdx_text, inventory_text| {
+		raw = decode(inventory_text)?
+		LifecycleJson.object(raw, ["target", "components", "relationships", "coverage", "inputs", "inspected"])?
+		for item in array_field(raw, "components")? {
+			LifecycleJson.object(item, ["id", "name", "producer", "version", "identity", "download", "sha256", "license", "license_url", "modified", "target", "origin"])?
+		}
+		for item in array_field(raw, "relationships")? {
+			LifecycleJson.object(item, ["from", "to", "relation", "scope", "basis"])?
+		}
+		for item in array_field(raw, "coverage")? {
+			LifecycleJson.object(item, ["scope", "status", "reason", "contact"])?
+		}
+		for item in array_field(raw, "inputs")? {
+			LifecycleJson.object(item, ["input", "component", "reason"])?
+		}
+		parsed : Try(Inventory, _)
+		parsed = Json.parse(inventory_text)
+		resolved = parsed.map_err(|_| "SBOM_INVENTORY: invalid resolved inventory types")?
+		ids = ["Subject"].concat(resolved.components.map(|component| component.id))
+		if resolved.target != subject.target or !unique(ids) or !unique(resolved.inspected) or !unique(resolved.inputs.map(|item| item.input)) or resolved.inputs.len() != resolved.inspected.len() or !resolved.inputs.all(|item| resolved.inspected.contains(item.input) and item.reason != "" and (item.component == "" or ids.contains(item.component))) {
+			return Err("SBOM_INVENTORY: target, identities or input accounting differs")
+		}
+		for relationship in resolved.relationships {
+			if !ids.contains(relationship.from) or !ids.contains(relationship.to) or relationship.basis == "" or !["contains", "dependsOn", "generates", "patchedBy", "hasVariant", "copiedTo", "other"].contains(relationship.relation) or (relationship.scope != "" and !["build", "test", "development", "runtime"].contains(relationship.scope)) {
+				return Err("SBOM_INVENTORY: invalid relationship or scope")
+			}
+		}
+		manifest = decode(manifest_text)?
+		manifest_context = LifecycleJson.field(manifest, "context")?
+		namespace = string_field(manifest_context, "namespace")?
+		cdx_document = decode(cdx_text)?
+		metadata = LifecycleJson.field(cdx_document, "metadata")?
+		components_ = components(array_field(cdx_document, "components")?, 0)?
+		if components_.len() != resolved.components.len() {
+			return Err("SBOM_INVENTORY: sidecar component set differs from resolved inventory")
+		}
+		for declared in resolved.components {
+			emitted = components_.find_first(|item| string_field(item, "bom-ref") == Ok(declared.id)).map_err(|_| "SBOM_INVENTORY: resolved component omitted")?
+			if string_field(emitted, "name") != Ok(declared.name) or (string_field(emitted, "version") ?? "") != declared.version {
+				return Err("SBOM_INVENTORY: resolved component identity differs")
+			}
+			hashes = optional_array_field(emitted, "hashes")?.keep_if(|item| string_field(item, "alg") == Ok("SHA-256")).map(|item| string_field(item, "content") ?? "")
+			if (declared.sha256 != "" and (!LifecyclePlan.digest(declared.sha256) or hashes != [declared.sha256])) or (declared.sha256 == "" and !hashes.is_empty()) {
+				return Err("SBOM_INVENTORY: resolved component content identity differs")
+			}
+			props = array_field(emitted, "properties")?
+			if property(props, "blueprint:origin")? != declared.origin or property(props, "blueprint:target")? != declared.target or property(props, "blueprint:modifications")? != declared.modified {
+				return Err("SBOM_INVENTORY: resolved origin, target or modifications differ")
+			}
+		}
+		encoded_relationships = optional_array_field(cdx_document, "properties")?.keep_if(|item| string_field(item, "name") == Ok("blueprint:relationship"))
+		if encoded_relationships.len() != resolved.relationships.len() {
+			return Err("SBOM_INVENTORY: relationship evidence set differs")
+		}
+		var $relationships = []
+		for item in encoded_relationships {
+			text = string_field(item, "value")?
+			LifecycleJson.object(decode(text)?, ["from", "to", "relation", "scope", "basis"])?
+			parsed_edge : Try(Edge, _)
+			parsed_edge = Json.parse(text)
+			edge = parsed_edge.map_err(|_| "SBOM_INVENTORY: invalid encoded relationship")?
+			if !resolved.relationships.contains(edge) or $relationships.contains(edge) {
+				return Err("SBOM_INVENTORY: substituted or duplicate relationship")
+			}
+			$relationships = $relationships.append(edge)
+		}
+		semantic_text = property(array_field(metadata, "properties")?, "blueprint:evidence")?
+		semantic_raw = decode(semantic_text)?
+		LifecycleJson.object(semantic_raw, ["profile", "revision", "target", "coverage", "dispositions", "inspected"])?
+		semantic_parsed : Try(SemanticEvidence, _)
+		semantic_parsed = Json.parse(semantic_text)
+		semantic = semantic_parsed.map_err(|_| "SBOM_INVENTORY: invalid embedded accounting evidence")?
+		if semantic.profile != "blueprint-spdx-3.0-v1" or semantic.target != resolved.target or semantic.revision != string_field(manifest_context, "revision")? or semantic.coverage != resolved.coverage or semantic.dispositions != resolved.inputs or semantic.inspected != resolved.inspected {
+			return Err("SBOM_INVENTORY: coverage or input accounting differs from resolved inventory")
+		}
+		graph = array_field(decode(spdx_text)?, "@graph")?
+		annotation = match graph.keep_if(|item| string_field(item, "type") == Ok("Annotation") and string_field(item, "contentType") == Ok("application/json") and string_field(item, "subject") == Ok("${namespace}#spdx/document")) {
+			[only] => only
+			_ => return Err("SBOM_INVENTORY: SPDX accounting annotation missing or ambiguous")
+		}
+		spdx_semantic : Try(SemanticEvidence, _)
+		spdx_semantic = Json.parse(string_field(annotation, "statement")?)
+		if spdx_semantic != Ok(semantic) {
+			return Err("SBOM_INVENTORY: sidecars disagree on resolved coverage/input accounting")
+		}
+		created = string_field(manifest_context, "created")?
+		creation = graph.find_first(|item| string_field(item, "type") == Ok("CreationInfo")).map_err(|_| "SBOM_INVENTORY: missing creation information")?
+		if string_field(creation, "created") != Ok(created) or string_field(metadata, "timestamp") != Ok(created) {
+			return Err("SBOM_INVENTORY: document creation context differs")
 		}
 		Ok({})
 	}
