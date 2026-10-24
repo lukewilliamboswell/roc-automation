@@ -40,7 +40,6 @@ by full SHA from a thin consumer `release.yml`. Its `workflow_call` inputs are:
 |===
 | Input | Type | Meaning
 | contract | number | Exactly 1; unknown versions fail before candidate execution.
-| topology | string | Bounded JSON object described below; data, never expressions or commands.
 | version | string | Dispatch version; empty on PR. PR always uses `0.0.1-dry-run`.
 | full-dry-run | boolean | Default false; can add full rehearsal but cannot remove an obligation.
 |===
@@ -71,7 +70,10 @@ publication credential. An environment name in YAML proves no protection rule.
 
 == Topology contract 1
 
-The JSON input is UTF-8, at most 64 KiB, rejects duplicate keys and unknown
+The committed `release-topology.json` at the event SHA is fetched as inert data
+by the planner and independently by admission. Caller outputs or expressions
+cannot replace it or shorten the required matrix. Its JSON is UTF-8, at most
+64 KiB, rejects duplicate keys and unknown
 fields at every level, and accepts no nulls or implicit coercion. Collections
 are bounded to 32 bundles, 16 targets, 32 adapters and 256 obligations. IDs
 use `[a-z][a-z0-9-]{0,47}` and are unique within their collection. Paths are
