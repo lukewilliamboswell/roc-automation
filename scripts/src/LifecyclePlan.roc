@@ -350,6 +350,7 @@ LifecyclePlan := [].{
 				}
 			}
 			for example in topology.examples {
+				$obligations = $obligations.append({ id: "examples-${example.id}", stage: "prepare", runner: "ubuntu-24.04", operation: "package-examples", subject: example.id, target: "source", task: "" })
 				name = if topology.examples.len() == 1 topology.name else "${topology.name}-${example.id}"
 				$assets = $assets.append({ subject: example.id, role: "examples", target: "source", path: "${name}-examples-${selected_version}.zip" })
 			}
@@ -522,5 +523,14 @@ expect match LifecyclePlan.full(sample_context, sample_topology) {
 }
 expect match LifecyclePlan.full(sample_context, { ..sample_topology, documentation: [{ id: "manual", directory: "docs", pdf: Bool.True }] }) {
 	Ok(plan) => plan.obligations.keep_if(|item| item.operation == "api").len() == 1 and plan.assets.keep_if(|item| item.role == "documentation").len() == 1 and plan.assets.any(|item| item.subject == "manual" and item.path == "sample-docs-0.0.1-dry-run.zip")
+	Err(_) => Bool.False
+}
+
+expect match LifecyclePlan.full(sample_context, sample_topology) {
+	Ok(plan) => plan.obligations.keep_if(|item| item.operation == "package-examples").map(|item| item.id) == ["examples-examples"]
+	Err(_) => Bool.False
+}
+expect match LifecyclePlan.plan(sample_context, sample_topology, sample_changes) {
+	Ok(plan) => !plan.obligations.any(|item| item.operation == "package-examples")
 	Err(_) => Bool.False
 }
