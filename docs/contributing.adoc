@@ -92,8 +92,9 @@ from the consumer manual.
 are `expect` tests that `blueprint run check` runs;
 xref:contributing.adoc#change-an-action-that-is-a-roc-script[Change an action that is a Roc script]
 says how they are built and tested. The documentation action invokes the native
-renderer through its shell wrapper. Other controllers and the independent test
-harnesses use Python. Python 3.10 or later and the standard library are sufficient
+renderer through its shell wrapper. The lifecycle controllers are Roc scripts with pure decision modules under
+`scripts/src/`. The bounded archive companion and independent test harnesses
+use Python. Python 3.10 or later and the standard library are sufficient
 for their tests:
 
 [source,sh]

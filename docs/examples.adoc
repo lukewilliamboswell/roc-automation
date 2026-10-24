@@ -76,10 +76,10 @@ and compare it on every run. Examples are run by the same driver as the
 integration tests; see
 xref:testing.adoc#integration-tests[Integration tests].
 
-* Keep expected output under `tests/`, in one specification the scripts read:
+* Keep expected output in one versioned specification the shared engine reads:
   the arguments each example runs with, its standard input where it has one,
   and the exact output expected.
-* The check script runs every example and fails on a difference.
+* The shared engine runs source, candidate and published cases and fails on a difference.
 * The shared utility has an explicit local `update` operation to rewrite expected
   output, so that an intended change is a reviewed diff.
 * An example that cannot run in CI, such as one needing a display or a console

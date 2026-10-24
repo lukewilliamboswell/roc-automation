@@ -52,8 +52,9 @@ establish search depth, performance or complete test coverage.
 | The `expect` tests of the modules under `scripts/src/`
 |===
 
-The `check` task runs all of these, so a contributor runs the same set with
-`blueprint run check` before opening a pull request.
+Local `check` composes these checks for contributors. The shared lifecycle
+assigns each declared task one obligation owner, so CI does not repeat an
+umbrella task that hides packaging or archive rehearsal.
 
 == Heavy runs stay out of pull-request CI
 
@@ -103,7 +104,9 @@ this chapter ask whether the program is correct, not how fast it is.
 Use `--opt=speed` only where the optimised build is the thing under test: a
 benchmark's measured run, a long fuzzing campaign, or a release artifact that
 ships optimised. A benchmark's smoke run in pull-request CI uses `--opt=dev`
-like everything else.
+like everything else. The admitted `--fuzz` build mode requires the compiler's
+LLVM backend and uses `--opt=speed`, including bounded replay smoke cases; its
+build mode is independent of the workload budget.
 
 == Unit tests
 

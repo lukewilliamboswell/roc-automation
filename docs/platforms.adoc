@@ -1,7 +1,7 @@
 = Maintain a platform
 
 A platform follows the same model as a package: the same environment, layout,
-examples archive and three workflows, and no compiler pin in the platform or its examples. This
+examples archive and shared lifecycle, and no compiler pin in the platform or its examples. This
 chapter covers what a platform adds, which is a native host. A host brings
 generated bindings, a target matrix, and build inputs that are too expensive or
 too sensitive to rebuild on every pull request.
@@ -18,6 +18,23 @@ on archive presence. The target matrix establishes those exercised combinations;
 it does not establish that native host code or FFI behavior is memory-safe or
 that every downstream application is compatible.
 
+== Native lifecycle adapters
+
+Declare native builds, binding checks and runtime tasks in the committed
+`release-topology.json`. The shared lifecycle schedules each build adapter once
+on its declared builder and passes explicit target IDs, output paths and the
+absolute selected compiler to the bounded Blueprint task. Source checks and
+common bundle assembly consume the transported host files. Host linker inputs
+remain intermediates inside their owning source bundle; admission compares their
+sizes and hashes with actual bundle members. A separately published binary has
+an explicit per-target `test-binary` task that consumes its sealed bytes.
+
+Keep product native recipes and ABI decisions with the maintainer. Shared
+transport does not make a cross build a native execution test. Candidate cases
+run the distributed bundle on each advertised consuming runner. The separate
+linker-input publication controller retains its existing reviewed producer and
+publication boundary.
+
 == Host bindings
 
 A host is compiled against bindings that `roc glue` generates from
@@ -31,8 +48,9 @@ reviewer sees every change to the interface as a diff.
 
 === Check the bindings in pull-request CI
 
-`ci.yml` has one job that regenerates the bindings with the latest nightly and
-requires the committed file to match:
+A declared `check-bindings` adapter belongs to the shared lifecycle's Source
+stage. It regenerates bindings with the once-selected nightly and requires the
+committed file to match:
 
 . Obtain the glue specification that belongs to the resolved nightly, from that
   nightly's source archive, and verify the archive's digest.
@@ -40,7 +58,7 @@ requires the committed file to match:
   nightly.
 . Run `git diff --exit-code` on the committed bindings.
 
-This check runs on pull requests and on pushes to the default branch. It does
+This check runs with source validation on pull requests and release dispatches. It does
 not run in `nightly.yml`: a released host is fixed, and what
 xref:workflows.adoc#nightly-compatibility[nightly compatibility] asks is whether
 applications still build and run against it.
@@ -59,7 +77,7 @@ needs host code to change with it.
 . Review the diff. A changed layout or signature needs matching host changes.
 . Build the host for every target and run the examples.
 . Open a pull request containing the bindings and any host changes. Merge after
-  `ci.yml` passes.
+  the lifecycle aggregate passes.
 . If the released platform no longer works with the new nightly,
   `nightly.yml` has already reported it. Release a new platform version.
 

@@ -18,6 +18,46 @@ inputs, missing companions and target behavior in those tests. An executable
 version does not make every future schema compatible, and cross-compilation
 alone does not demonstrate native execution support.
 
+== Shared lifecycle executable interface
+
+The lifecycle uses contract version 1. Each executable accepts `--version`,
+returning the utility version, contract version and fixed build compiler pin;
+a pin is a recipe identity, not observed compiler provenance. The same Roc
+implementations serve local Blueprint tasks and read-only workflow jobs.
+
+[cols="1,3",options="header"]
+|===
+| Utility | Operations
+| `release-plan` | `plan CONTEXT TOPOLOGY CHANGES OUTPUT`; strict inert inputs derive source/full obligations, assets, intermediates and bundle order.
+| `release-operations` | `validate`, `host`, `source`, `prepare`, `seal`, `candidate`; each executes the selected runner's exact obligations from `RO_PLAN`.
+| `lifecycle-github` | `plan` observes immutable event/source context and resolves one compiler; `resolve PLAN STAGES OUTPUT` selects actual same-run transport IDs.
+| `lifecycle-transport` | `extract` verifies raw ZIP digest and safe members; `assemble` copies traced bytes; `assemble-public` excludes host intermediates; `restore` supplies only declared native outputs without overwriting source files; `pack` stages explicit public files and bounded inert diagnostics.
+| `release-admit` | `discover`, `collect`, `verify-provenance`; trusted pinned code independently observes actual GitHub identities, validates files and retains evidence before publication.
+|===
+
+The fixture configurations under `examples/lifecycle-package`,
+`examples/lifecycle-multibundle` and `examples/lifecycle-platform` show topology,
+compositions, cases and bounded tasks. They expect explicitly supplied lifecycle
+executables. Adopt a published release through Blueprint's verified provisioning
+contract; do not invent release URLs or substitute unreviewed moving downloads.
+The shared workflow's read-only bootstrap instead builds its own utilities from
+its exact reviewed action commit. Privileged admission uses the controller's own
+locked environment and never evaluates the consumer Blueprint.
+
+Operations use `RO_WORKSPACE` for the immutable checkout, `RO_DIRECTORY` for a
+fresh stage directory, `RO_CANDIDATE` for explicit candidate files and `RO_RUNNER`
+for the selected runner. `RO_COMPILER` is the absolute selected package compiler;
+`RO_BLUEPRINT`, `RO_POLICY` and `RO_DOCS` identify the required external tools.
+The ZIP companion is supplied by `RA_PYTHON` and `RA_ARCHIVE_HELPER`. Local
+invocations supply these explicitly, retaining logs and traces for review.
+A stage returns success only after its required work completes; failures return
+nonzero and cannot emit a passing trace. These traces are candidate claims until
+independent admission checks their actual producers and bytes.
+
+The shared lifecycle graph and evidence controls are described in
+xref:workflows.adoc#the-three-workflows[Shared validation, release and nightly workflows]
+and xref:security-model.adoc#independent-lifecycle-admission[Independent lifecycle admission].
+
 == Start from a working consumer
 
 Copy `examples/pure-package/`, including its hidden `.github` directory, to a

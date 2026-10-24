@@ -104,7 +104,7 @@ The reusable workflow validates this data before using it to construct a matrix.
   shared supported runner table; runtime task is empty or an adapter ID.
   Package profile has one Linux target and no native adapter.
 | adapters | Records of `id`, `task`, `operation`, `builder`, `target_ids`, `outputs`.
-  Operation is `build-host`, `test-host`, `check-bindings` or `runtime`.
+  Operation is `build-host`, `test-host`, `test-binary`, `check-bindings` or `runtime`.
   `builder` is a supported runner label; one adapter invocation can produce
   outputs for several runtime targets. Task names are Blueprint task identifiers,
   never command text. Outputs
