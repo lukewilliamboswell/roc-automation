@@ -255,10 +255,12 @@ LifecyclePlan := [].{
 		Ok($ordered)
 	}
 
+	mandatory : Topology, Str -> Bool
 	mandatory = |topology, path| {
 		base = path.split_on("/").last() ?? ""
 		path.starts_with(".github/") or path.starts_with("actions/") or path.starts_with("scripts/") or path.starts_with("sbom/") or path.starts_with("tools/") or path.starts_with("docs/releases/") or path.starts_with("examples/") or path == "Blueprint.roc" or path == "Blueprint.lock" or path == "rust-toolchain.toml" or path == "Cargo.lock" or path == "Cargo.toml" or path == "build.zig" or path == "build.zig.zon" or path == "release-topology.json" or path == "AGENTS.md" or base == "spec.json" or base == "composition.json" or base == "build.rs" or base == "CMakeLists.txt" or base == "Makefile" or base == "flake.nix" or base.ends_with(".cmake") or base.ends_with(".nix") or base.ends_with(".py") or base.ends_with(".sh") or base.ends_with(".ps1") or base.starts_with("rust-toolchain") or path.contains("/.cargo/") or base.contains("lock") or topology.examples.any(|example| path == example.spec or path == example.directory or path.starts_with("${example.directory}/")) or topology.documentation.any(|doc| path == doc.directory or path.starts_with("${doc.directory}/")) or topology.sboms.any(|mapping| path == mapping.composition or path == mapping.supplier_imports)
 	}
+	rehearse : Context, Topology, Changes -> Bool
 	rehearse = |context, topology, changes| context.event == "workflow_dispatch" or context.full_dry_run or !changes.complete or changes.files.is_empty() or changes.files.any(
 		|change| {
 			if !["added", "modified", "removed", "renamed"].contains(change.status) {
