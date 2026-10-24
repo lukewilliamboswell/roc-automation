@@ -99,3 +99,7 @@ class LifecycleWorkflowTests(unittest.TestCase):
             self.assertLess(body.index('setup-package-compiler@'), body.index('actions/checkout@'))
         self.assertIn('lifecycle-native-inputs', self.jobs['source'])
         self.assertIn('lifecycle-native-inputs', self.jobs['prepare'])
+
+    def test_shell_programs_receive_paths_through_the_environment(self):
+        for command in re.findall(r'^\s*run: (.+)$', self.source, re.M):
+            self.assertNotIn('${{', command)

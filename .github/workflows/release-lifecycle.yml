@@ -123,7 +123,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -155,7 +154,7 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.operations.outputs.trace }}
           DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" "-" "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -204,7 +203,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -236,7 +234,7 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.operations.outputs.trace }}
           DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" "-" "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -285,7 +283,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -300,7 +297,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONTROLLER: ${{ steps.tool.outputs.github-binary }}
-        run: '"$CONTROLLER" resolve "${{ runner.temp }}/lifecycle-plan/plan.json" host "${{ runner.temp }}/transport.json"'
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" host "$RUNNER_TEMP/transport.json"'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: steps.upstream.outputs.has-artifacts == 'true'
         with:
@@ -314,17 +311,17 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           PYTHON: ${{ steps.tool.outputs.python }}
           HELPER: ${{ steps.tool.outputs.archive-helper }}
-        run: '"$CONTROLLER" extract "${{ runner.temp }}/transport.json" "${{ runner.temp }}/lifecycle-raw" "${{ runner.temp }}/lifecycle-evidence" "$PYTHON" "$HELPER"'
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
       - name: Assemble unchanged declared artifact files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" assemble "${{ runner.temp }}/lifecycle-evidence" "${{ runner.temp }}/lifecycle-native-inputs"'
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$RUNNER_TEMP/lifecycle-native-inputs"'
       - name: Restore declared native outputs without replacing checkout files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" restore "${{ runner.temp }}/lifecycle-plan/plan.json" "${{ runner.temp }}/lifecycle-native-inputs" "$GITHUB_WORKSPACE"'
+        run: '"$CONTROLLER" restore "$RUNNER_TEMP/lifecycle-plan/plan.json" "$RUNNER_TEMP/lifecycle-native-inputs" "$GITHUB_WORKSPACE"'
       - id: operations
         env:
           RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
@@ -347,7 +344,7 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.operations.outputs.trace }}
           DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" "-" "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -393,7 +390,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -408,7 +404,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONTROLLER: ${{ steps.tool.outputs.github-binary }}
-        run: '"$CONTROLLER" resolve "${{ runner.temp }}/lifecycle-plan/plan.json" host "${{ runner.temp }}/transport.json"'
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" host "$RUNNER_TEMP/transport.json"'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: steps.upstream.outputs.has-artifacts == 'true'
         with:
@@ -422,17 +418,17 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           PYTHON: ${{ steps.tool.outputs.python }}
           HELPER: ${{ steps.tool.outputs.archive-helper }}
-        run: '"$CONTROLLER" extract "${{ runner.temp }}/transport.json" "${{ runner.temp }}/lifecycle-raw" "${{ runner.temp }}/lifecycle-evidence" "$PYTHON" "$HELPER"'
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
       - name: Assemble unchanged declared artifact files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" assemble "${{ runner.temp }}/lifecycle-evidence" "${{ runner.temp }}/lifecycle-native-inputs"'
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$RUNNER_TEMP/lifecycle-native-inputs"'
       - name: Restore declared native outputs without replacing checkout files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" restore "${{ runner.temp }}/lifecycle-plan/plan.json" "${{ runner.temp }}/lifecycle-native-inputs" "$GITHUB_WORKSPACE"'
+        run: '"$CONTROLLER" restore "$RUNNER_TEMP/lifecycle-plan/plan.json" "$RUNNER_TEMP/lifecycle-native-inputs" "$GITHUB_WORKSPACE"'
       - id: operations
         env:
           RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
@@ -455,7 +451,7 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.operations.outputs.trace }}
           DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" "${{ runner.temp }}/lifecycle-stage/bundle-map.json" "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "$RUNNER_TEMP/lifecycle-stage/bundle-map.json" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -504,7 +500,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -518,7 +513,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONTROLLER: ${{ steps.tool.outputs.github-binary }}
-        run: '"$CONTROLLER" resolve "${{ runner.temp }}/lifecycle-plan/plan.json" prepare "${{ runner.temp }}/transport.json"'
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" prepare "$RUNNER_TEMP/transport.json"'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: steps.upstream.outputs.has-artifacts == 'true'
         with:
@@ -532,17 +527,17 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           PYTHON: ${{ steps.tool.outputs.python }}
           HELPER: ${{ steps.tool.outputs.archive-helper }}
-        run: '"$CONTROLLER" extract "${{ runner.temp }}/transport.json" "${{ runner.temp }}/lifecycle-raw" "${{ runner.temp }}/lifecycle-evidence" "$PYTHON" "$HELPER"'
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
       - name: Assemble unchanged declared artifact files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" assemble "${{ runner.temp }}/lifecycle-evidence" "${{ github.workspace }}/.roc-automation-candidate"'
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
       - id: subject
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           INDEX: ${{ matrix.index }}
-        run: '"$CONTROLLER" subject "${{ runner.temp }}/lifecycle-plan/plan.json" "$INDEX" "${{ github.workspace }}/.roc-automation-candidate"'
+        run: '"$CONTROLLER" subject "$RUNNER_TEMP/lifecycle-plan/plan.json" "$INDEX" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
       - if: matrix.supplier_imports != ''
         uses: lukewilliamboswell/roc-automation/actions/fetch-dependency-sboms@f9a85a63a5c597dbaa20358403757f727079b575
         with:
@@ -564,12 +559,12 @@ jobs:
           INDEX: ${{ matrix.index }}
           EVIDENCE: ${{ steps.sidecars.outputs.evidence }}
           INVENTORY: ${{ steps.sidecars.outputs.inventory }}
-        run: '"$CONTROLLER" sbom-trace "${{ runner.temp }}/lifecycle-plan/plan.json" "$INDEX" "${{ github.workspace }}/.roc-automation-candidate" "$EVIDENCE" "$INVENTORY" "${{ runner.temp }}/lifecycle-stage"'
+        run: '"$CONTROLLER" sbom-trace "$RUNNER_TEMP/lifecycle-plan/plan.json" "$INDEX" "$GITHUB_WORKSPACE/.roc-automation-candidate" "$EVIDENCE" "$INVENTORY" "$RUNNER_TEMP/lifecycle-stage"'
       - env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.trace.outputs.trace }}
           DIAGNOSTICS: ${{ steps.trace.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" - "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" - "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -604,7 +599,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -618,7 +612,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONTROLLER: ${{ steps.tool.outputs.github-binary }}
-        run: '"$CONTROLLER" resolve "${{ runner.temp }}/lifecycle-plan/plan.json" prepare,sbom "${{ runner.temp }}/transport.json"'
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" prepare,sbom "$RUNNER_TEMP/transport.json"'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: steps.upstream.outputs.has-artifacts == 'true'
         with:
@@ -632,12 +626,12 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           PYTHON: ${{ steps.tool.outputs.python }}
           HELPER: ${{ steps.tool.outputs.archive-helper }}
-        run: '"$CONTROLLER" extract "${{ runner.temp }}/transport.json" "${{ runner.temp }}/lifecycle-raw" "${{ runner.temp }}/lifecycle-evidence" "$PYTHON" "$HELPER"'
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
       - name: Assemble unchanged declared artifact files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" assemble "${{ runner.temp }}/lifecycle-evidence" "${{ github.workspace }}/.roc-automation-candidate"'
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
       - id: operations
         env:
           RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
@@ -661,7 +655,7 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.operations.outputs.trace }}
           DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" "-" "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -710,7 +704,6 @@ jobs:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -724,7 +717,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONTROLLER: ${{ steps.tool.outputs.github-binary }}
-        run: '"$CONTROLLER" resolve "${{ runner.temp }}/lifecycle-plan/plan.json" prepare,seal "${{ runner.temp }}/transport.json"'
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" prepare,seal "$RUNNER_TEMP/transport.json"'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: steps.upstream.outputs.has-artifacts == 'true'
         with:
@@ -738,12 +731,12 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           PYTHON: ${{ steps.tool.outputs.python }}
           HELPER: ${{ steps.tool.outputs.archive-helper }}
-        run: '"$CONTROLLER" extract "${{ runner.temp }}/transport.json" "${{ runner.temp }}/lifecycle-raw" "${{ runner.temp }}/lifecycle-evidence" "$PYTHON" "$HELPER"'
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
       - name: Assemble unchanged declared artifact files
         if: steps.upstream.outputs.has-artifacts == 'true'
         env:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
-        run: '"$CONTROLLER" assemble "${{ runner.temp }}/lifecycle-evidence" "${{ github.workspace }}/.roc-automation-candidate"'
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
       - id: operations
         env:
           RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
@@ -767,7 +760,7 @@ jobs:
           CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
           TRACE: ${{ steps.operations.outputs.trace }}
           DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
-        run: '"$CONTROLLER" pack "$TRACE" "${{ github.workspace }}/.roc-automation-candidate" "-" "$DIAGNOSTICS" "${{ runner.temp }}/lifecycle-upload"'
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
       - id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -1023,7 +1016,7 @@ jobs:
           DOCUMENTATION: ${{ inputs.pages-documentation }}
           RA_PYTHON: ${{ steps.tool.outputs.python }}
           RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
-        run: '"$CONTROLLER" restore "$ADMISSION" "${{ runner.temp }}/lifecycle-plan/topology.json" "$DOCUMENTATION" "${{ github.workspace }}/.roc-automation-candidate" "${{ runner.temp }}/restored-pages"'
+        run: '"$CONTROLLER" restore "$ADMISSION" "$RUNNER_TEMP/lifecycle-plan/topology.json" "$DOCUMENTATION" "$GITHUB_WORKSPACE/.roc-automation-candidate" "$RUNNER_TEMP/restored-pages"'
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
           name: lifecycle-pages-${{ github.run_attempt }}

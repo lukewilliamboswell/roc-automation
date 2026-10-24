@@ -40,13 +40,13 @@ class AdmissionTests(unittest.TestCase):
                             run_id='10', run_attempt='2')
         self.topology_bytes = json.dumps(self.topology).encode()
         self.context['topology_sha256'] = digest(self.topology_bytes)
-        self.trusted = dict(context=self.context, changes=dict(complete=False, files=[]),
+        self.admission_seed = dict(context=self.context, changes=dict(complete=False, files=[]),
                             server_url='https://github.com', run_head_sha=self.context['sha'],
                             workflow_ref='lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml@' + 'c'*40,
                             workflow_sha='c'*40, publish=True, compositions=[])
         (self.root / 'topology.json').write_bytes(self.topology_bytes)
         write_json(self.root / 'context.json', self.context)
-        write_json(self.root / 'changes.json', self.trusted['changes'])
+        write_json(self.root / 'changes.json', self.admission_seed['changes'])
         subprocess.run([PLANNER, 'plan', str(self.root/'context.json'), str(self.root/'topology.json'),
                         str(self.root/'changes.json'), str(self.root/'plan.json')], check=True, capture_output=True)
         self.plan = json.loads((self.root/'plan.json').read_text())
@@ -88,12 +88,12 @@ class AdmissionTests(unittest.TestCase):
             if rule['role'] in ('bundle', 'binary'):
                 self.sbom(rule['path'].replace('{hash}', 'a'*44), rule['target'])
         composition_text = json.dumps(self.composition)
-        self.trusted['compositions'] = []
+        self.admission_seed['compositions'] = []
         for mapping in self.topology['sboms']:
             for path, text in [(mapping['composition'], composition_text),
                                (mapping['supplier_imports'], json.dumps(dict(profile='roc-automation-sbom-imports-v1', imported_documents=[])))]:
-                if path and not any(item['path'] == path for item in self.trusted['compositions']):
-                    self.trusted['compositions'].append(dict(path=path, text=text, sha256=digest(text.encode())))
+                if path and not any(item['path'] == path for item in self.admission_seed['compositions']):
+                    self.admission_seed['compositions'].append(dict(path=path, text=text, sha256=digest(text.encode())))
         self.files = [dict(path=rule['path'].replace('{hash}', 'a'*44), role=rule['role'],
                            subject=rule['subject'], target=rule['target'],
                            size=(self.candidate/rule['path'].replace('{hash}', 'a'*44)).stat().st_size,
@@ -162,8 +162,8 @@ class AdmissionTests(unittest.TestCase):
         self.evidence = dict(schema_version=1, profile='roc-automation-release-evidence-v1',
                              repository=self.context['repository'], source_sha=self.context['sha'], run_id='10',
                              producing_attempt='1', compiler=self.context['compiler'], version='1.0.0',
-                             topology_sha256=self.context['topology_sha256'], workflow_ref=self.trusted['workflow_ref'],
-                             workflow_sha=self.trusted['workflow_sha'], obligations=self.claims,
+                             topology_sha256=self.context['topology_sha256'], workflow_ref=self.admission_seed['workflow_ref'],
+                             workflow_sha=self.admission_seed['workflow_sha'], obligations=self.claims,
                              artifacts=self.artifacts, files=self.files, intermediates=self.intermediates, producer_evidence=self.producer_evidence)
 
     def adapt_topology(self, topology):
@@ -252,8 +252,8 @@ class AdmissionTests(unittest.TestCase):
                         context=dict(namespace=ns, revision='1', created='2026-10-24T00:00:00Z', generator='Tool: blueprint-sbom-0.8.0'), sidecars=sidecars)
         self.put(path+'.sbom-manifest.json', json.dumps(manifest).encode())
 
-    def invoke(self, *, evidence=None, observations=None, trusted=None, raw_evidence=None):
-        write_json(self.root/'trusted.json', trusted or self.trusted)
+    def invoke(self, *, evidence=None, observations=None, admission_seed=None, raw_evidence=None):
+        write_json(self.root/'trusted.json', admission_seed or self.admission_seed)
         write_json(self.root/'jobs.json', observations or self.observations)
         write_json(self.root/'evidence.json', evidence or self.evidence)
         if raw_evidence is not None:
@@ -358,7 +358,7 @@ class AdmissionTests(unittest.TestCase):
 
     def fake_api(self):
         """Only trusted GET observations; there is no live API or candidate code."""
-        workflow = self.trusted['workflow_ref']
+        workflow = self.admission_seed['workflow_ref']
         responses = {
             'repos/'+self.context['repository']: 'main',
             'repos/'+self.context['repository']+'/contents/release-topology.json?ref='+self.context['sha']: self.topology_bytes.decode(),
@@ -376,7 +376,7 @@ class AdmissionTests(unittest.TestCase):
             'repos/'+self.context['repository']+'/actions/runs/10/artifacts?per_page=100&page=1':
                 dict(total_count=len(self.remotes), artifacts=self.remotes),
         }
-        for item in self.trusted['compositions']:
+        for item in self.admission_seed['compositions']:
             responses['repos/'+self.context['repository']+'/contents/'+item['path']+'?ref='+self.context['sha']] = item['text']
         bindir = self.root/'bin'; bindir.mkdir(exist_ok=True)
         shim = bindir/'gh'
@@ -403,7 +403,7 @@ sys.stdout.write(value if isinstance(value,str) else json.dumps(value))
                             GH_TOKEN='test-token-is-never-an-argument',
                             FAKE_GH_RESPONSES=str(self.root/'api.json'), FAKE_GH_LOG=str(self.root/'api.log'))
         (self.root/'github-output').write_text('')
-        seed = {**self.trusted, 'workflow_ref':'', 'workflow_sha':'', 'compositions':[]}
+        seed = {**self.admission_seed, 'workflow_ref':'', 'workflow_sha':'', 'compositions':[]}
         write_json(self.root/'seed.json', seed)
 
     def api_invoke(self, command='discover'):
@@ -417,9 +417,9 @@ sys.stdout.write(value if isinstance(value,str) else json.dumps(value))
         self.fake_api()
         result = self.api_invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
-        trusted = json.loads((self.root/'admitted/trusted.json').read_text())
-        self.assertEqual(trusted['workflow_sha'], 'c'*40)
-        self.assertEqual(trusted['workflow_ref'], self.trusted['workflow_ref'])
+        admission_seed = json.loads((self.root/'admitted/trusted.json').read_text())
+        self.assertEqual(admission_seed['workflow_sha'], 'c'*40)
+        self.assertEqual(admission_seed['workflow_ref'], self.admission_seed['workflow_ref'])
         transport = json.loads((self.root/'admitted/transport.json').read_text())
         self.assertEqual(transport['producing_attempt'], 1)
         self.assertEqual({item['id'] for item in transport['artifacts']}, {item['id'] for item in self.remotes})
@@ -464,9 +464,9 @@ sys.stdout.write(value if isinstance(value,str) else json.dumps(value))
         write_json(self.root/'seed.json', seed)
         result = self.api_invoke('collect')
         self.assertEqual(result.returncode, 0, result.stderr)
-        trusted = json.loads((self.root/'admitted/trusted.json').read_text())
+        admission_seed = json.loads((self.root/'admitted/trusted.json').read_text())
         report = json.loads((self.root/'admitted/admission.json').read_text())
-        self.assertEqual(trusted['context']['run_attempt'], '2')
+        self.assertEqual(admission_seed['context']['run_attempt'], '2')
         self.assertEqual(report['producing_attempt'], '1')
 
     def test_only_bounded_diagnostics_and_prepare_bundle_map_are_allowed_as_metadata(self):

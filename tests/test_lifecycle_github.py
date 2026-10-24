@@ -21,7 +21,7 @@ assert args[:3] == ["api", "--method", "GET"], args
 path = args[3]
 with open(os.environ["GH_LOG"], "a") as log: log.write(json.dumps(args)+"\\n")
 if path == os.environ.get("FAIL_PATH"): sys.exit(1)
-if "/contents/release-topology.json?ref=" in path: sys.stdout.write(os.environ["REVIEWED_TOPOLOGY"])
+if "/contents/release-topology.json?ref=" in path: sys.stdout.buffer.write(os.environ["REVIEWED_TOPOLOGY"].encode("utf-8"))
 elif "/git/matching-refs/" in path: print(os.environ.get("TAG_REFS", "[]"))
 elif "/contents/docs/releases/" in path: print(os.environ.get("NOTES_KIND", "regular"))
 elif path.endswith("/artifacts?per_page=100"): print(os.environ.get("ARTIFACTS", "[]"))
@@ -104,6 +104,13 @@ class LifecycleGitHubTests(unittest.TestCase):
         ran = self.run_collector(INPUT_PAGES_DOCUMENTATION="unknown-manual")
         self.assertNotEqual(ran.returncode, 0)
         self.assertIn("must be declared", ran.stderr)
+
+    def test_topology_digest_and_retained_file_bind_the_exact_response_bytes(self):
+        response = self.topology.replace("\n", "\r\n").encode("utf-8")
+        ran = self.run_collector(REVIEWED_TOPOLOGY=response.decode("utf-8"))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertEqual(self.plan()["context"]["topology_sha256"], hashlib.sha256(response).hexdigest())
+        self.assertEqual((self.root / "evidence/topology.json").read_bytes(), response)
 
     def test_changed_live_pr_cannot_select_from_a_later_diff(self):
         ran = self.run_collector(LIVE_HEAD="d" * 40)
