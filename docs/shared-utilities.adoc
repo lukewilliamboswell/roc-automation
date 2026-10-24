@@ -168,6 +168,12 @@ bundle, or a verified first-release result. `host` runs each declared native
 builder once. `source` owns policy, formatting, selected product checks and
 working-tree examples. These tasks must not hide an archive rehearsal inside an
 ordinary check; the shared plan gives rehearsal its own obligation.
+Each task receives `RO_COMPILER`, the current `RO_TARGET`, selected target IDs
+as JSON in `RO_TARGET_IDS`, declared output records as JSON in `RO_OUTPUTS`,
+and `RO_OUTPUT_DIRECTORY`. Host builders write their declared paths under the
+workspace root; other tasks receive a dedicated private scratch output directory.
+A multi-target host builder receives its declared target list and output records
+rather than inferring another job's target from the runner.
 
 `prepare` copies the bounded tracked regular-file inventory into private staging,
 assembles bundles in dependency order and admits each sibling through Roc's
@@ -183,7 +189,15 @@ After the separate read-only SBOM actions have produced the required sidecars,
 URLs, and hashes the complete files into `release-inventory.json`. The inventory
 cannot hash itself; independent admission hashes that final file separately.
 For a PR, the highest authored SemVer notes are rendered with the synthetic
-release version. A dispatch uses the exact version's authored notes.
+release version. A dispatch uses the exact version's authored notes. The title
+must be `= <product> <authored-version>`, every declared bundle placeholder must
+be used, and undeclared or unresolved URL placeholders fail. Substitution occurs
+in a private copy before rendering; the committed notes stay unchanged. The
+`Compilers` section records the actual package compiler output and the actual
+shared utility compiler output captured by the fixed bootstrap step, supplied
+as `RO_TOOLING_COMPILER_VERSION`. Neither value is inferred from a consumer's
+header pin, and a Blueprint configuration compiler is not mislabeled as either
+role.
 
 `candidate` extracts the exact examples ZIP with the existing bounded archive
 admission helper. It compares its complete source file inventory and expected

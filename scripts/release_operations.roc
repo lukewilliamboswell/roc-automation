@@ -120,12 +120,16 @@ execute! = |stage| {
 		return Err("no selected obligations for this stage and runner")
 	}
 	previous = if stage == "validate" previous!(plan)? else { first_release: Bool.True, bundles: [] }
+	if stage == "validate" {
+		notes = read!(BuildFiles.inside!(workspace, "docs/releases/${release_version(plan)}.adoc")?)?
+		_ = validate_notes(plan.topology, release_version(plan), notes)?
+	}
 	var $records = []
 	if stage == "prepare" {
 		prepare!(plan, workspace, directory, assets, compiler)?
 	}
 	if stage == "seal" {
-		seal!(plan, workspace, directory, assets)?
+		seal!(plan, workspace, directory, assets, version)?
 	}
 	for obligation in selected {
 		match obligation.operation {
@@ -146,10 +150,28 @@ execute! = |stage| {
 				_ = capture!(directory, obligation.id, [compiler, "fmt", "--check"].concat($roots), workspace, [], [], 300_000)?
 			}
 			"unit" | "source" | "native" | "build-host" | "test-host" | "check-bindings" | "runtime" => {
-				_ = capture!(directory, obligation.id, [optional!("RO_BLUEPRINT", "blueprint"), "run", obligation.task], workspace, [], [], 600_000)?
+				adapter = if ["build-host", "test-host", "check-bindings", "runtime"].contains(obligation.operation) plan.topology.adapters.find_first(|entry| entry.id == obligation.subject) else Err(NotFound)
+				outputs = match adapter {
+					Ok(value) => value.outputs
+					Err(_) => []
+				}
+				target_ids = if obligation.target != "" [obligation.target] else match adapter {
+					Ok(value) => value.target_ids
+					Err(_) => []
+				}
+				output_directory = if obligation.operation == "build-host" workspace else Path.join(directory, "adapter-${obligation.id}")
+				mkdir!(output_directory)?
+				variables = [
+					{ name: "RO_TARGET", value: obligation.target },
+					{ name: "RO_TARGET_IDS", value: Json.to_str(target_ids) },
+					{ name: "RO_OUTPUTS", value: Json.to_str(outputs) },
+					{ name: "RO_COMPILER", value: compiler },
+					{ name: "RO_OUTPUT_DIRECTORY", value: native!(output_directory) },
+				]
+				_ = capture_with!(directory, obligation.id, [optional!("RO_BLUEPRINT", "blueprint"), "run", obligation.task], workspace, [], [], 600_000, variables)?
 				if obligation.operation == "build-host" {
-					adapter = plan.topology.adapters.find_first(|value| value.id == obligation.subject).map_err(|_| "unknown adapter")?
-					for output in adapter.outputs {
+					builder_adapter = plan.topology.adapters.find_first(|value| value.id == obligation.subject).map_err(|_| "unknown adapter")?
+					for output in builder_adapter.outputs {
 						copy_file!(workspace, output.path, assets, output.path)?
 					}
 				}
@@ -256,21 +278,7 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 		return Err("preparation workspace already exists; candidate assets build once")
 	}
 	mkdir!(stage)?
-	listed = capture!(directory, "tracked-files", ["git", "ls-files", "--cached", "-z"], workspace, [], [], 30_000)?
-	paths = listed.split_on("\u(0000)").keep_if(|path| path != "")
-	if paths.len() > 10000 {
-		return Err("release source inventory exceeds file limit")
-	}
-	var $total = 0
-	for path in paths {
-		input = BuildFiles.inside!(workspace, path)?
-		bytes = BuildFiles.read!(input, 50_000_000)?
-		$total = $total + bytes.len()
-		if $total > 200_000_000 {
-			return Err("release workspace exceeds byte limit")
-		}
-		BuildFiles.write_bytes!(stage, path, bytes)?
-	}
+	paths = stage_tracked!(workspace, stage, directory, "tracked-files")?
 	for adapter in plan.topology.adapters {
 		for output in adapter.outputs {
 			# Host artifacts have been transported back into the exact checkout paths.
@@ -322,12 +330,31 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 		output = Path.join(stage, ".release-docs-${doc.id}")
 		_ = capture!(directory, "docs-${doc.id}", [env!("RO_DOCS")?, "build", "--workspace", native!(stage), "--docs-directory", doc.directory, "--entrypoint", "index.adoc", "--output-directory", ".release-docs-${doc.id}", "--docs-version", release_version(plan), "--pdf-filename", "manual.pdf"], stage, [], [], 300_000)?
 		root = docs_name(plan, doc)
-		zip_tree!(output, assets, root, "${root}.zip")?
+		zip_tree!(Path.join(output, "site"), assets, root, "${root}.zip")?
 		if doc.pdf {
 			copy_file!(output, "manual.pdf", assets, pdf_name(plan, doc))?
 		}
 	}
 	Ok({})
+}
+
+stage_tracked! = |workspace, stage, directory, id| {
+	listed = capture!(directory, id, ["git", "ls-files", "--cached", "-z"], workspace, [], [], 30_000)?
+	paths = listed.split_on("\u(0000)").keep_if(|path| path != "")
+	if paths.len() > 10000 {
+		return Err("release source inventory exceeds file limit")
+	}
+	var $total = 0
+	for path in paths {
+		input = BuildFiles.inside!(workspace, path)?
+		bytes = BuildFiles.read!(input, 50_000_000)?
+		$total = $total + bytes.len()
+		if $total > 200_000_000 {
+			return Err("release workspace exceeds byte limit")
+		}
+		BuildFiles.write_bytes!(stage, path, bytes)?
+	}
+	Ok(paths)
 }
 
 zip_tree! = |source, directory, root, filename| {
@@ -368,7 +395,10 @@ package_examples! = |plan, example, workspace, directory, assets, bundles| {
 
 ## Bounded, descendant-managed execution retains diagnostics on every exit and
 ## clears ambient child tokens. Cache routing is explicit and never global.
-capture! = |directory, id, argv, cwd, cache, input, timeout| {
+capture! = |directory, id, argv, cwd, cache, input, timeout| capture_with!(directory, id, argv, cwd, cache, input, timeout, [])
+
+capture_with! : Path, Str, List(Str), Path, List(Str), List(U8), U64, List(Compatibility.Environment) => Try(Str, Str)
+capture_with! = |directory, id, argv, cwd, cache, input, timeout, variables| {
 	match argv {
 		[program, .. as args] => {
 			base = Cmd.new(OsStr.from_str(program)).args(args.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout_ms(timeout).output_limit(10_000_000).manage_tree(Bool.True).env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1")
@@ -377,7 +407,7 @@ capture! = |directory, id, argv, cwd, cache, input, timeout| {
 				[path] => base.env_str("ROC_CACHE_DIR", path).env_str("XDG_CACHE_HOME", path)
 				_ => return Err("invalid cache route")
 			}
-			ran = command.run!()
+			ran = variables.fold(command, |value, entry| value.env_str(entry.name, entry.value)).run!()
 			(stdout, stderr, status) = match ran {
 				Ok(value) => (value.stdout_bytes, value.stderr_bytes, if value.status == Exited(0) "passed" else "failed")
 				Err(Timeout(partial)) => (partial.stdout_bytes, partial.stderr_bytes, "timeout")
@@ -386,7 +416,7 @@ capture! = |directory, id, argv, cwd, cache, input, timeout| {
 			}
 			Path.write_bytes!(Path.join(Path.join(directory, "diagnostics"), "${id}-stdout.log"), stdout).map_err(|e| Str.inspect(e))?
 			Path.write_bytes!(Path.join(Path.join(directory, "diagnostics"), "${id}-stderr.log"), stderr).map_err(|e| Str.inspect(e))?
-			write!(Path.join(Path.join(directory, "diagnostics"), "${id}-command.json"), Json.to_str({ argv, cwd: native!(cwd), status }))?
+			write!(Path.join(Path.join(directory, "diagnostics"), "${id}-command.json"), Json.to_str({ argv, cwd: native!(cwd), status, context: variables }))?
 			Stdout.line!("${Compatibility.console(Json.to_str(argv))}\n${Compatibility.console(Str.from_utf8_lossy(stdout))}${Compatibility.console(Str.from_utf8_lossy(stderr))}").map_err(|e| Str.inspect(e))?
 			if status != "passed" {
 				return Err("${id}: ${status}; see retained diagnostics")
@@ -448,8 +478,8 @@ resolved_path = |rule, bundles| {
 	Ok("${bundle.path}${suffix}")
 }
 
-seal! : LifecyclePlan.Plan, Path, Path, Path => Try({}, Str)
-seal! = |plan, workspace, directory, assets| {
+seal! : LifecyclePlan.Plan, Path, Path, Path, Str => Try({}, Str)
+seal! = |plan, workspace, directory, assets, package_compiler_output| {
 	bundles = read_bundles!(plan, directory, assets)?
 	if Path.exists!(Path.join(assets, "release-notes.md")).map_err(|e| Str.inspect(e))? {
 		return Err("release notes already sealed")
@@ -461,14 +491,34 @@ seal! = |plan, workspace, directory, assets| {
 		$files = $files.append({ path, role: rule.role, subject: rule.subject, target: rule.target, size: bytes.len(), sha256: Sha256.hex(bytes) })
 	}
 	notes_version = if plan.context.event == "pull_request" latest_notes!(workspace)? else release_version(plan)
-	_ = BuildFiles.inside!(workspace, "docs/releases/${notes_version}.adoc")?
+	notes_path = "docs/releases/${notes_version}.adoc"
+	original_notes = read!(BuildFiles.inside!(workspace, notes_path)?)?
+	_ = validate_notes(plan.topology, notes_version, original_notes)?
+	resolved_notes = rewrite_placeholders(original_notes, plan.topology, bundles)
+	if !unresolved_urls(resolved_notes).is_empty() {
+		return Err("release notes retain an unresolved bundle URL placeholder")
+	}
+	tooling_compiler_output = env!("RO_TOOLING_COMPILER_VERSION")?.trim()
+	if tooling_compiler_output == "" {
+		return Err("the observed shared utility compiler version is missing")
+	}
+	stage = Path.join(directory, "notes-work")
+	if Path.exists!(stage).map_err(|e| Str.inspect(e))? {
+		return Err("release notes staging already exists")
+	}
+	mkdir!(stage)?
+	_ = stage_tracked!(workspace, stage, directory, "notes-files")?
+	BuildFiles.write_text!(stage, notes_path, resolved_notes)?
 	output_name = ".release-notes-${plan.context.run_id}-${plan.context.run_attempt}"
-	output = Path.join(workspace, output_name)
-	_ = capture!(directory, "release-notes", [env!("RO_DOCS")?, "build", "--workspace", native!(workspace), "--docs-directory", "docs/releases", "--entrypoint", "${notes_version}.adoc", "--output-directory", output_name, "--docs-version", release_version(plan), "--markdown", "true"], workspace, [], [], 300_000)?
-	authored = rewrite_placeholders(read!(BuildFiles.inside!(output, "index.md")?)?, plan.topology, bundles)
+	output = Path.join(stage, output_name)
+	_ = capture!(directory, "release-notes", [env!("RO_DOCS")?, "build", "--workspace", native!(stage), "--docs-directory", "docs/releases", "--entrypoint", "${notes_version}.adoc", "--output-directory", output_name, "--docs-version", release_version(plan), "--markdown", "true"], stage, [], [], 300_000)?
+	authored = read!(BuildFiles.inside!(output, "site/index.md")?)?
+	if !unresolved_urls(authored).is_empty() {
+		return Err("rendered notes retain an unresolved bundle URL placeholder")
+	}
 	urls = bundles.map(|file| "- ${file.id}: ${file.url}")
 	digests = $files.map(|file| "${file.sha256}  ${file.path}")
-	notes = "${authored}\n\nBuilt with Roc `${plan.context.compiler}` from `${plan.context.sha}`.\n\n${Str.join_with(urls, "\n")}\n\nSHA-256 of the tested release files:\n\n```\n${Str.join_with(digests, "\n")}\n```\n"
+	notes = "${authored}\n\nSource: `${plan.context.sha}`.\n\n## Compilers\n\nPackage compiler:\n\n```text\n${package_compiler_output.trim()}\n```\n\nShared utility build compiler:\n\n```text\n${tooling_compiler_output}\n```\n\n${Str.join_with(urls, "\n")}\n\nSHA-256 of the tested release files:\n\n```\n${Str.join_with(digests, "\n")}\n```\n"
 	if Path.exists!(Path.join(assets, "release-notes.md")).map_err(|e| Str.inspect(e))? {
 		return Err("release notes already sealed")
 	}
@@ -600,3 +650,21 @@ emit_output! = |text| {
 		Err(_) => Ok({})
 	}
 }
+
+validate_notes = |topology, version, source| {
+	if (source.split_on("\n").first() ?? "").trim() != "= ${topology.name} ${version}" {
+		return Err("release notes title must be '= ${topology.name} ${version}'")
+	}
+	for bundle in topology.bundles {
+		if !source.contains("{${bundle.placeholder}}") {
+			return Err("release notes must use {${bundle.placeholder}}")
+		}
+	}
+	declared = topology.bundles.map(|bundle| bundle.placeholder)
+	if unresolved_urls(source).any(|placeholder| !declared.contains(placeholder)) {
+		return Err("release notes use an undeclared bundle URL placeholder")
+	}
+	Ok({})
+}
+
+unresolved_urls = |source| source.split_on("{").drop_first(1).map(|tail| tail.split_on("}").first() ?? "").keep_if(|name| name.ends_with("-url"))
