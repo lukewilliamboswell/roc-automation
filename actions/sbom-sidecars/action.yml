@@ -6,7 +6,7 @@ inputs:
     description: The release files to describe, one relative workspace path per line; an explicit list, never a glob
     required: true
   version:
-    description: Release version of every listed file, such as 0.12.0 or 0.12.0-rc1
+    description: SemVer release version of every listed file, including hyphenated prereleases such as 0.0.1-dry-run; build metadata is unsupported
     required: true
   target:
     description: Blueprint system of the listed files, such as x86_64-linux, or source for a source bundle
@@ -33,7 +33,7 @@ inputs:
     description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
     default: 'false'
   archive-members:
-    description: For a source target with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself
+    description: For source-target .tar.zst bundles, generate a component per member the composition does not account for, or reviewed to require complete reviewed accounting; other files use the composition without member enumeration
     default: generate
   roc-binary:
     description: Roc compiler that runs the tool app bundle, needed only when the Blueprint release records no native tool binary for the runner; it must be the release the record names

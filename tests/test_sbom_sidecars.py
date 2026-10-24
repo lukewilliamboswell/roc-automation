@@ -515,6 +515,33 @@ class EndToEndTests(unittest.TestCase):
         commands = [call["args"][3] if call["args"][0] == "run" else call["args"][0] for call in self.calls()]
         self.assertEqual(commands, ["version", "inspect", "bind", "check"])
 
+    def test_source_release_with_bundle_zip_and_pdf_keeps_per_subject_inventories(self):
+        for name, content in (("examples.zip", b"PK examples"), ("manual.pdf", b"%PDF manual")):
+            (self.workspace / "dist" / name).write_bytes(content)
+        with self.with_features("members"):
+            values = self.run_action(INPUT_TARGET="source", INPUT_VERSION="0.0.1-dry-run",
+                                     INPUT_FILES="dist/bundle.tar.zst\ndist/examples.zip\ndist/manual.pdf", FAKE_FEATURES="members")
+        calls = [call["args"][3:] for call in self.calls() if call["args"][:1] == ["run"]]
+        self.assertEqual([Path(call[1]).name for call in calls if call[0] == "members"], ["bundle.tar.zst"])
+        inspections = [call for call in calls if call[0] == "inspect"]
+        self.assertEqual(len(inspections), 2)
+        self.assertEqual(sum("--members" in call for call in inspections), 1)
+        subjects = json.loads(Path(values["evidence"]).read_text())["subjects"]
+        self.assertEqual(len(subjects), 3)
+        self.assertTrue(all(subject["version"] == "0.0.1-dry-run" for subject in subjects))
+        inventories = {subject["name"]: subject["inventory_sha256"] for subject in subjects}
+        self.assertEqual(inventories["examples.zip"], inventories["manual.pdf"])
+        self.assertNotEqual(inventories["bundle.tar.zst"], inventories["manual.pdf"])
+        self.assertEqual(len(values["assets"].splitlines()), 9)
+
+    def test_release_semver_preserves_hyphens_and_rejects_numeric_leading_zeroes(self):
+        for version in ("0.0.1-dry-run", "1.2.3-rc.1", "1.2.3-1a.0.x-y", "1.2.3"):
+            with self.subTest(version=version):
+                self.assertIsNotNone(sidecars.VERSION.fullmatch(version))
+        for version in ("01.2.3", "1.2.3-01", "1.2.3-rc.01", "1.2.3-", "1.2.3-a..b", "1.2.3+build.1"):
+            with self.subTest(version=version):
+                self.assertIsNone(sidecars.VERSION.fullmatch(version))
+
     def test_a_tool_that_writes_manifests_has_them_checked_and_listed(self):
         with self.with_features("manifest"):
             values = self.run_action(INPUT_FILES="dist/app", INPUT_SPDX_2_3="true", FAKE_FEATURES="manifest")

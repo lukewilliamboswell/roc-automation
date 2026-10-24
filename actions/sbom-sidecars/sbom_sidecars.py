@@ -37,7 +37,11 @@ MAX_JSON_BYTES = 1024 * 1024
 MAX_FILES = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
 SYSTEM = re.compile(r"[a-z0-9_]+-[a-z0-9]+")
-VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?")
+VERSION = re.compile(
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+)
 AGENT = re.compile(r"(Organization|Person): \S.*")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 IMPORT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
@@ -482,16 +486,17 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
 
     inventories: dict[Path, Path] = {}
     inventory_path = staging / "inventory.json"
-    if not with_members:
+    composition_files = [file for file in files if not (with_members and file.name.endswith(".tar.zst"))]
+    if composition_files:
         # One inventory for every listed file of this target.
         write_json(staging / "composition.json", composition)
         inventory = inspect(staging / "composition.json", inventory_path, None)
-        inventories = {file: inventory_path for file in files}
+        inventories = {file: inventory_path for file in composition_files}
     written: dict[Path, list[tuple[Path, str]]] = {}
     manifests: dict[Path, tuple[Path, str]] = {}
     for index, file in enumerate(files):
         directory = private_directory(staging / f"subject-{index}")
-        if with_members:
+        if with_members and file.name.endswith(".tar.zst"):
             # The archive is the authority on a source bundle's contents: list
             # it, account for every member, and inspect this file's inventory.
             listing_path = directory / "members.json"
