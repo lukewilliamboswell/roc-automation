@@ -340,7 +340,18 @@ archive is inspected for regular file types, canonical paths, duplicates,
 collisions and extraction limits before it is unpacked. The reviewed Python
 standard-library helper enforces the same checks on every OS, including Windows
 device names, trailing-dot aliases and case-insensitive implicit-directory
-collisions. It never imports archive code. Child deadlines manage Windows Job
+collisions. It never imports archive code.
+
+The same helper has an explicit `--artifact` profile
+for workflow transport ZIPs: it omits only the examples-specific single-root
+and `spec.json` requirements. Digest, size, entry-kind, canonical-path,
+case/parent collision and CRC checks remain shared, and failed extraction
+removes the newly created partial tree. Artifact transport tests cover inert
+trace/file uploads and malformed inventories; this establishes extraction
+safety, not the authority or correctness of the files. Lifecycle admission
+still binds each file to its expected producer, source and role.
+
+Child deadlines manage Windows Job
 Objects or Unix process groups, and public environment overrides cannot replace
 reserved variables under any spelling of their case. Archived code and native
 prerequisite code run only in the read-only test job, with checkout credentials

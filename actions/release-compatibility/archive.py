@@ -1,4 +1,4 @@
-"""Verify and extract an inert examples ZIP identically on Windows and Unix.
+"""Verify and extract inert examples or workflow-artifact ZIPs on every host.
 
 Only the standard library is needed. Nothing in the archive is executed here.
 The entire inventory is validated before the destination directory is created.
@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import sys
 import zipfile
@@ -29,10 +30,12 @@ def canonical(name):
     return name
 
 
-def inventory(archive, root):
-    canonical(root)
-    if "/" in root:
-        raise ValueError("invalid ZIP root")
+def inventory(archive, root=None):
+    """One inventory validator; only suite mode requires a root and spec.json."""
+    if root is not None:
+        canonical(root)
+        if "/" in root:
+            raise ValueError("invalid ZIP root")
     entries = archive.infolist()
     if not entries or len(entries) > MAX_ENTRIES:
         raise ValueError("examples ZIP entry limit exceeded")
@@ -43,7 +46,7 @@ def inventory(archive, root):
         if entry.orig_filename != entry.filename:
             raise ValueError("ZIP member contains a NUL")
         name = canonical(entry.filename.removesuffix("/"))
-        if name != root and not name.startswith(root + "/"):
+        if root is not None and name != root and not name.startswith(root + "/"):
             raise ValueError("ZIP member escapes the declared root")
         key = name.lower()
         if key in seen:
@@ -77,7 +80,7 @@ def inventory(archive, root):
             raise ValueError("examples ZIP expansion limit exceeded")
         (directories if directory else files).add(key)
         directories.update("/".join(parts[:length]).lower() for length in range(1, len(parts)))
-    if files & directories or not any(entry.filename == root + "/spec.json" for entry in entries):
+    if files & directories or (root is not None and not any(entry.filename == root + "/spec.json" for entry in entries)):
         raise ValueError("ZIP lacks spec.json or has file/directory collisions")
     return entries
 
@@ -97,31 +100,38 @@ def prepare(source, digest, root, destination):
         print(json.dumps([dict(name=entry.filename, size=entry.file_size) for entry in entries]), flush=True)
         # Refuse pre-existing output, including symlinks; never merge trees.
         destination.mkdir(mode=0o700)
-        for entry in entries:
-            target = destination.joinpath(*entry.filename.removesuffix("/").split("/"))
-            if entry.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(entry) as incoming, target.open("xb") as outgoing:
-                remaining = entry.file_size
-                while remaining:
-                    chunk = incoming.read(min(65536, remaining))
-                    if not chunk:
-                        raise ValueError("truncated ZIP member")
-                    outgoing.write(chunk)
-                    remaining -= len(chunk)
-                if incoming.read(1):
-                    raise ValueError("ZIP member exceeded declared size")
-            # Preserve only executable permission, never set-id or other flags.
-            target.chmod(0o755 if entry.external_attr >> 16 & 0o111 else 0o644)
+        try:
+            for entry in entries:
+                target = destination.joinpath(*entry.filename.removesuffix("/").split("/"))
+                if entry.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(entry) as incoming, target.open("xb") as outgoing:
+                    remaining = entry.file_size
+                    while remaining:
+                        chunk = incoming.read(min(65536, remaining))
+                        if not chunk:
+                            raise ValueError("truncated ZIP member")
+                        outgoing.write(chunk)
+                        remaining -= len(chunk)
+                    if incoming.read(1):
+                        raise ValueError("ZIP member exceeded declared size")
+                # Preserve only executable permission, never set-id or other flags.
+                target.chmod(0o755 if entry.external_attr >> 16 & 0o111 else 0o644)
+        except BaseException:
+            shutil.rmtree(destination)
+            raise
 
 
 def main():
     try:
         if len(sys.argv) != 5:
-            raise ValueError("expected archive, digest, root and destination")
-        prepare(*sys.argv[1:])
+            raise ValueError("expected archive, digest, root and destination; or --artifact archive digest destination")
+        if sys.argv[1] == "--artifact":
+            prepare(sys.argv[2], sys.argv[3], None, sys.argv[4])
+        else:
+            prepare(*sys.argv[1:])
     except (OSError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile) as error:
         print("ZIP verification failed: " + str(error), file=sys.stderr)
         return 1
