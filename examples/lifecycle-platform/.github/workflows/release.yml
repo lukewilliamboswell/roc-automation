@@ -20,7 +20,7 @@ jobs:
       id-token: write
       attestations: write
       pages: write
-    uses: lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml@749e8115f6cb05485935e05d4107eaa4fb30c40d
+    uses: lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml@3786bcabfd021402475d726c63c7194833d1235e
     with:
       contract: 1
       version: ${{ inputs.version || '' }}
