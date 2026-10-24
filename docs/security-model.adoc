@@ -374,7 +374,8 @@ Successful diagnostics are
 preserved; console workflow-command markers are escaped rather than interpreted.
 
 Suite build arguments admit only a single `--fuzz`; the runner retains the
-compiler, output path and target. Cases may explicitly ignore variable stderr
+compiler, output path and target, and selects the LLVM speed backend needed
+for that admitted fuzz mode. Cases may explicitly ignore variable stderr
 statistics with an empty expected stderr field. Raw diagnostics, process status,
 stdout and exit assertions, deadlines and output limits still apply, so ignored
 stderr cannot convert interruption into a compatibility pass.

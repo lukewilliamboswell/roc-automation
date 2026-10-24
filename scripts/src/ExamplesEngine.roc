@@ -105,7 +105,7 @@ run_examples! = |suite, compiler, initial, root, directory, cache, replace_args,
 		native_root = native!(root)
 		build_target = if target == "native" [] else ["--target=${target}"]
 		var $built = Bool.True
-		for argv in [[compiler, "check", example.path, "--no-cache"].concat(replace_args), [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${native_executable}"].concat(build_target).concat(example.build_args ?? []).concat(replace_args)] {
+		for argv in [[compiler, "check", example.path, "--no-cache"].concat(replace_args), [compiler, "build", example.path, "--no-cache", if (example.build_args ?? []) == ["--fuzz"] "--opt=speed" else "--opt=dev", "--output=${native_executable}"].concat(build_target).concat(example.build_args ?? []).concat(replace_args)] {
 			$number = $number + 1
 			ran = log_command!(directory, $number, argv, root, cache, [], 300_000)?
 			if ran.timed_out or ran.limited {

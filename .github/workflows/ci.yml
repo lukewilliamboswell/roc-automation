@@ -68,6 +68,34 @@ jobs:
           ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner.exe
           ROC_COMPATIBILITY_SMOKE_EXPECTED: incompatible
         run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
+      - name: Isolate the consumed compiler before the fuzz smoke compiler install
+        if: (runner.os == 'Linux' && runner.arch == 'X64') || (runner.os == 'macOS' && runner.arch == 'ARM64')
+        run: |
+          compiler_directory="$(dirname "$(command -v roc)")"
+          case "$(basename "$compiler_directory")" in
+            roc_nightly-*) mv "$compiler_directory" "$RUNNER_TEMP/compatibility-smoke-compiler" ;;
+            *) echo 'Unexpected package compiler directory' >&2; exit 2 ;;
+          esac
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        if: (runner.os == 'Linux' && runner.arch == 'X64') || (runner.os == 'macOS' && runner.arch == 'ARM64')
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-23-18478ff
+      - id: fuzz
+        name: Build real fuzz targets and verify replay, failures and limits
+        if: (runner.os == 'Linux' && runner.arch == 'X64') || (runner.os == 'macOS' && runner.arch == 'ARM64')
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner
+          ROC_FUZZ_SMOKE_EVIDENCE: ${{ runner.temp }}/fuzz-smoke-evidence
+          ROC_FUZZ_SMOKE_NIGHTLY: nightly-2026-10-23-18478ff
+        run: '"$PYTHON_COMMAND" tests/run_fuzz_compatibility_smoke.py'
+      - name: Retain real fuzz smoke diagnostics
+        if: always() && ((runner.os == 'Linux' && runner.arch == 'X64') || (runner.os == 'macOS' && runner.arch == 'ARM64')) && steps.fuzz.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fuzz-smoke-${{ matrix.runner }}
+          path: ${{ runner.temp }}/fuzz-smoke-evidence/
+          if-no-files-found: warn
   controller-tests:
     runs-on: ubuntu-24.04
     steps:

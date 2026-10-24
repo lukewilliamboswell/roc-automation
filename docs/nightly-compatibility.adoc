@@ -243,6 +243,8 @@ headless test where possible. A suite with no executed cases is never compatible
 An application may add `"build_args": ["--fuzz"]` to build a fuzz target.
 The optional list accepts only `--fuzz`, once; an absent or empty list keeps
 ordinary builds. The flag is passed only to `roc build`, never `roc check`.
+Fuzz builds use the runner-owned LLVM mode `--opt=speed`; ordinary builds retain `--opt=dev`. The
+compiler rejects `--fuzz` with the dev backend.
 The runner retains ownership of the compiler, output path and target, so the
 suite cannot redirect output through additional compiler arguments.
 
@@ -252,7 +254,11 @@ byte for byte. Ignoring stderr still records its raw bytes, enforces the output
 limit and deadline, and compares stdout and exit status exactly. Keep fuzz smoke
 cases bounded, for example `"args": ["run", "corpus/listSort", "--time=1"]`;
 a target expected to find its failure can declare `"exit_code": 77`. Seed replay
-cases can retain exact stderr assertions. Neither a timeout nor truncated output
+cases can retain exact stderr assertions. CI also runs a tiny fixture against the
+released roc-fuzz platform with a real compiler: clean replay, a one-second run
+and an expected 77, followed by unexpected-crash, output-limit and deadline
+refusals. Its supported Linux x64 and macOS arm64 targets retain raw diagnostic
+evidence; the released fixture makes no Windows claim. Neither a timeout nor truncated output
 can match an expected exit code.
 
 Compiler stdout and stderr are always displayed, including after exit code 0.

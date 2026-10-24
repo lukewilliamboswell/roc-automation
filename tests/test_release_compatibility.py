@@ -162,6 +162,7 @@ else:
         self.assertNotIn("::error::", ran.stdout)
         self.assertIn("::error::", (directory / "2-stderr.log").read_text())
         self.assertIn("compiler stdout detail", (directory / "2-stdout.log").read_text())
+        self.assertIn("--opt=dev", json.loads((directory / "3-command.json").read_text())["argv"])
 
     def test_single_artifact_flattened_download_is_aggregated(self):
         ran, directory, _ = self.run_phase("test")
@@ -209,6 +210,8 @@ else:
         case = json.loads((directory / "4-command.json").read_text())
         self.assertNotIn("--fuzz", check["argv"])
         self.assertEqual(build["argv"][-1], "--fuzz")
+        self.assertIn("--opt=speed", build["argv"])
+        self.assertNotIn("--opt=dev", build["argv"])
         self.assertEqual(case["argv"][-3:], ["run", "corpus", "--time=1"])
         self.assertIn("variable fuzz statistics", (directory / "4-stderr.log").read_text())
         # Ignoring stderr cannot hide the wrong exit status or stdout.
