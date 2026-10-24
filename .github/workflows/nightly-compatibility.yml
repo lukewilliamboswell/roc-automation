@@ -57,7 +57,7 @@ jobs:
     steps:
       # No consumer checkout or code in the selection job.
       - id: select
-        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: select
           nightly-tag: ${{ inputs.nightly-tag }}
@@ -101,7 +101,7 @@ jobs:
       - id: test
         name: Check, build and run the published suite
         continue-on-error: true
-        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: test
           nightly-tag: ${{ needs.select.outputs.nightly }}
@@ -157,7 +157,7 @@ jobs:
           path: ${{ runner.temp }}/nightly-evidence
       - id: aggregate
         name: Classify target evidence
-        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/release-compatibility@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: aggregate
           selection: ${{ runner.temp }}/nightly-selection/selection.json

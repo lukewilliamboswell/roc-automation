@@ -76,7 +76,7 @@ jobs:
           CONTRACT: ${{ inputs.contract }}
         run: test "$CONTRACT" = 1
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: plan github
       - id: plan
@@ -112,13 +112,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: operations github transport
           build-policy: 'false'
           build-docs: 'false'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -129,7 +129,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: operations
@@ -192,13 +192,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: operations github transport
           build-policy: 'false'
           build-docs: 'false'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -209,7 +209,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: operations
@@ -272,13 +272,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: operations github transport
           build-policy: ${{ matrix.runner == 'ubuntu-24.04' }}
           build-docs: 'false'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -289,7 +289,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: upstream
@@ -379,13 +379,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: operations github transport
           build-policy: 'false'
           build-docs: 'true'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -396,7 +396,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: upstream
@@ -489,13 +489,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: github transport
           build-policy: 'false'
           build-docs: 'false'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -506,7 +506,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: upstream
@@ -539,13 +539,13 @@ jobs:
           INDEX: ${{ matrix.index }}
         run: '"$CONTROLLER" subject "$RUNNER_TEMP/lifecycle-plan/plan.json" "$INDEX" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
       - if: matrix.supplier_imports != ''
-        uses: lukewilliamboswell/roc-automation/actions/fetch-dependency-sboms@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/fetch-dependency-sboms@c5b39354bad04e460eaf4de408fb481373055837
         with:
           target: ${{ matrix.target }}
           composition: ${{ matrix.composition }}
           output: ${{ matrix.supplier_imports }}
       - id: sidecars
-        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@c5b39354bad04e460eaf4de408fb481373055837
         with:
           files: ${{ steps.subject.outputs.files }}
           version: ${{ needs.plan.outputs.version }}
@@ -588,13 +588,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: operations github transport
           build-policy: 'false'
           build-docs: 'true'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -605,7 +605,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: upstream
@@ -693,13 +693,13 @@ jobs:
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: operations github transport
           build-policy: 'false'
           build-docs: 'false'
       - id: compiler
-        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
         with:
           nightly-tag: ${{ needs.plan.outputs.compiler }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -710,7 +710,7 @@ jobs:
           artifact-ids: ${{ needs.plan.outputs.artifact-id }}
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
-      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
         with:
           install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
       - id: upstream
@@ -800,7 +800,7 @@ jobs:
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
       - id: discover
-        uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: discover
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -812,7 +812,7 @@ jobs:
           digest-mismatch: error
           skip-decompress: true
           path: ${{ runner.temp }}/lifecycle-raw
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: extract
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -820,7 +820,7 @@ jobs:
           transport-manifest: ${{ runner.temp }}/admission/transport.json
           raw-downloads: ${{ runner.temp }}/lifecycle-raw
           output-directory: ${{ runner.temp }}/lifecycle-evidence
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: assemble
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -829,7 +829,7 @@ jobs:
           candidate: ${{ github.workspace }}/.roc-automation-candidate
           output-directory: ${{ runner.temp }}/admission
       - id: admitted
-        uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: collect
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -891,7 +891,7 @@ jobs:
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
       - id: discover
-        uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: discover
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -903,7 +903,7 @@ jobs:
           digest-mismatch: error
           skip-decompress: true
           path: ${{ runner.temp }}/lifecycle-raw
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: extract
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -911,7 +911,7 @@ jobs:
           transport-manifest: ${{ runner.temp }}/admission/transport.json
           raw-downloads: ${{ runner.temp }}/lifecycle-raw
           output-directory: ${{ runner.temp }}/lifecycle-evidence
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: assemble
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -920,7 +920,7 @@ jobs:
           candidate: ${{ github.workspace }}/.roc-automation-candidate
           output-directory: ${{ runner.temp }}/admission
       - id: admitted
-        uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: collect
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -932,7 +932,7 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: ${{ steps.admitted.outputs.explicit-assets }}
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: verify-provenance
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -941,7 +941,7 @@ jobs:
           admission-file: ${{ steps.admitted.outputs.admission-file }}
           attestation-bundle: ${{ steps.provenance.outputs.bundle-path }}
           output-directory: ${{ runner.temp }}/verified-provenance
-      - uses: lukewilliamboswell/roc-automation/actions/publish-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/publish-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           version: ${{ needs.plan.outputs.version }}
           prerelease: ${{ contains(needs.plan.outputs.version, '-') }}
@@ -963,7 +963,7 @@ jobs:
       actions: read
     steps:
       - id: tool
-        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
         with:
           tools: pages
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -972,7 +972,7 @@ jobs:
           digest-mismatch: error
           path: ${{ runner.temp }}/lifecycle-plan
       - id: discover
-        uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: discover
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -984,7 +984,7 @@ jobs:
           digest-mismatch: error
           skip-decompress: true
           path: ${{ runner.temp }}/lifecycle-raw
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: extract
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -992,7 +992,7 @@ jobs:
           transport-manifest: ${{ runner.temp }}/admission/transport.json
           raw-downloads: ${{ runner.temp }}/lifecycle-raw
           output-directory: ${{ runner.temp }}/lifecycle-evidence
-      - uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: assemble
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
@@ -1001,7 +1001,7 @@ jobs:
           candidate: ${{ github.workspace }}/.roc-automation-candidate
           output-directory: ${{ runner.temp }}/admission
       - id: admitted
-        uses: lukewilliamboswell/roc-automation/actions/admit-release@b4d1baa4362405044db5427f222137f118a5bbd1
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
         with:
           phase: collect
           trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
