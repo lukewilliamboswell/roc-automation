@@ -10,8 +10,8 @@ BuildFiles :: [].{
 	## Unix backslashes remain filename bytes and are rejected by safe_path.
 	relative_path : Str, Str, Bool -> Try(Str, Str)
 	relative_path = |root, child, windows| {
-		base = if windows root.replace_each("\\", "/") else root
-		text = if windows child.replace_each("\\", "/") else child
+		base = if (windows) root.replace_each("\\", "/") else root
+		text = if (windows) child.replace_each("\\", "/") else child
 		prefix = "${base}/"
 		if !text.starts_with(prefix) {
 			return Err("filesystem returned a path outside the declared root")
