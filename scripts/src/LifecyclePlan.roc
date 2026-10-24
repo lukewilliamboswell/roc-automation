@@ -28,7 +28,9 @@ LifecyclePlan := [].{
 		first = bytes.first() ?? 0
 		!bytes.is_empty() and bytes.len() <= 48 and first >= 'a' and first <= 'z' and bytes.all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9') or byte == '-')
 	}
+	valid_target_id = |value| id(value.replace_each("_", "-"))
 	digest = |value| value.to_utf8().len() == 64 and value.to_utf8().all(|byte| (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f'))
+	reserved_asset = |value| value == "bundle-map.json" or (!value.contains("/") and value.ends_with("-trace.json")) or value == "diagnostics" or value.starts_with("diagnostics/")
 	paths_disjoint : List(Str) -> Bool
 	paths_disjoint = |values| {
 		paths = values.map(lower)
@@ -124,10 +126,13 @@ LifecyclePlan := [].{
 		if topology.schema != 1 or !id(topology.name) or !["package", "platform"].contains(topology.profile) or topology.bundles.is_empty() or topology.bundles.len() > 32 or topology.target_matrix.is_empty() or topology.target_matrix.len() > 16 or topology.adapters.len() > 32 or topology.checks.len() > 128 or topology.examples.is_empty() or topology.examples.len() > 64 or topology.documentation.len() > 32 or topology.sboms.len() > 128 or topology.source_paths.len() > 128 {
 			return Err("invalid topology identity or collection bounds")
 		}
-		for ids in [topology.bundles.map(|x| x.id), topology.target_matrix.map(|x| x.id), topology.adapters.map(|x| x.id), topology.checks.map(|x| x.id), topology.examples.map(|x| x.id), topology.documentation.map(|x| x.id)] {
+		for ids in [topology.bundles.map(|x| x.id), topology.adapters.map(|x| x.id), topology.checks.map(|x| x.id), topology.examples.map(|x| x.id), topology.documentation.map(|x| x.id)] {
 			if !ids.all(id) or unique(ids).len() != ids.len() {
 				return Err("invalid or duplicate topology IDs")
 			}
+		}
+		if !topology.target_matrix.all(|target| valid_target_id(target.id)) or unique(topology.target_matrix.map(|target| target.id)).len() != topology.target_matrix.len() {
+			return Err("invalid or duplicate target IDs")
 		}
 		bundles = topology.bundles.map(|x| x.id)
 		target_ids = topology.target_matrix.map(|x| x.id)
@@ -140,7 +145,7 @@ LifecyclePlan := [].{
 			}
 		}
 		for bundle in topology.bundles {
-			if !safe_path(bundle.root) or !bundle.root.ends_with(".roc") or !id(bundle.prefix) or !id(bundle.placeholder) or bundle.depends_on.len() > 32 or unique(bundle.depends_on).len() != bundle.depends_on.len() or bundle.depends_on.any(|dependency| dependency == bundle.id or !bundles.contains(dependency)) {
+			if !safe_path(bundle.root) or reserved_asset(bundle.root) or !bundle.root.ends_with(".roc") or !id(bundle.prefix) or !id(bundle.placeholder) or bundle.depends_on.len() > 32 or unique(bundle.depends_on).len() != bundle.depends_on.len() or bundle.depends_on.any(|dependency| dependency == bundle.id or !bundles.contains(dependency)) {
 				return Err("invalid bundle root, prefix, placeholder or dependency")
 			}
 		}
@@ -178,7 +183,7 @@ LifecyclePlan := [].{
 				return Err("only build-host may declare outputs")
 			}
 			for output in adapter.outputs {
-				if !["host", "binary"].contains(output.role) or !adapter.target_ids.contains(output.target) or !safe_path(output.path) {
+				if !["host", "binary"].contains(output.role) or !adapter.target_ids.contains(output.target) or !safe_path(output.path) or reserved_asset(output.path) {
 					return Err("invalid native output role, path or target")
 				}
 				$outputs = $outputs.append(output)
@@ -273,6 +278,14 @@ LifecyclePlan := [].{
 				}
 			}
 		}
+		if full_rehearsal {
+			for target in topology.target_matrix {
+				if target.runtime_task != "" {
+					adapter = topology.adapters.find_first(|item| item.id == target.runtime_task).map_err(|_| "unknown runtime adapter")?
+					$obligations = $obligations.append({ id: "runtime-${adapter.id}-${target.id}", stage: "candidate", runner: target.runner, operation: "runtime", subject: adapter.id, target: target.id, task: adapter.task })
+				}
+			}
+		}
 		for example in topology.examples {
 			for target_id in example.target_ids {
 				target = topology.target_matrix.find_first(|value| value.id == target_id).map_err(|_| "unknown example target")?
@@ -288,7 +301,9 @@ LifecyclePlan := [].{
 			} else {
 				for target_id in adapter.target_ids {
 					target = topology.target_matrix.find_first(|value| value.id == target_id).map_err(|_| "unknown adapter target")?
-					$obligations = $obligations.append({ id: "adapter-${adapter.id}-${target.id}", stage: "source", runner: target.runner, operation: adapter.operation, subject: adapter.id, target: target.id, task: adapter.task })
+					if adapter.operation != "runtime" or target.runtime_task == adapter.id {
+						$obligations = $obligations.append({ id: "adapter-${adapter.id}-${target.id}", stage: "source", runner: target.runner, operation: adapter.operation, subject: adapter.id, target: target.id, task: adapter.task })
+					}
 				}
 			}
 		}
@@ -333,7 +348,7 @@ LifecyclePlan := [].{
 		if $obligations.len() > 256 or unique($obligations.map(|item| item.id)).len() != $obligations.len() {
 			return Err("obligation limit or duplicate ownership")
 		}
-		if !paths_disjoint($assets.map(|asset| asset.path)) {
+		if !paths_disjoint($assets.map(|asset| asset.path)) or $assets.any(|asset| reserved_asset(asset.path)) {
 			return Err("release asset path collision")
 		}
 		Ok({ schema: 1, context, topology, full_rehearsal, obligations: $obligations, assets: $assets, bundle_order: order })
@@ -425,4 +440,25 @@ expect match LifecyclePlan.full({ ..sample_context, event: "workflow_dispatch", 
 expect match LifecyclePlan.full(sample_context, sample_topology) {
 	Ok(plan) => !plan.obligations.any(|item| item.stage == "validate")
 	Err(_) => Bool.False
+}
+
+expect LifecyclePlan.valid_target_id("x86_64-linux") and LifecyclePlan.valid_target_id("aarch64-darwin") and !LifecyclePlan.id("x86_64-linux")
+expect !LifecyclePlan.valid_target_id("_linux") and !LifecyclePlan.valid_target_id("x86/64")
+expect ["bundle-map.json", "source-trace.json", "diagnostics", "diagnostics/test.log"].all(LifecyclePlan.reserved_asset)
+expect !LifecyclePlan.reserved_asset("platform/targets/libhost.a")
+expect {
+	target = { id: "x86_64-linux", runner: "ubuntu-24.04", runtime_task: "native-runtime" }
+	adapter = { id: "native-runtime", task: "check-runtime", operation: "runtime", builder: "ubuntu-24.04", target_ids: [target.id], outputs: [] }
+	topology = { ..sample_topology, profile: "platform", target_matrix: [target], examples: [{ id: "examples", directory: "examples", spec: "examples/spec.json", bundles: ["core"], target_ids: [target.id] }], adapters: [adapter] }
+	match LifecyclePlan.full(sample_context, topology) {
+		Ok(plan) => plan.obligations.keep_if(|item| item.stage == "candidate").map(|item| item.id) == ["runtime-native-runtime-x86_64-linux", "archive-examples-x86_64-linux"]
+		Err(_) => Bool.False
+	}
+}
+expect {
+	adapter = { id: "native-runtime", task: "check-runtime", operation: "runtime", builder: "ubuntu-24.04", target_ids: ["linux"], outputs: [] }
+	match LifecyclePlan.full(sample_context, { ..sample_topology, profile: "platform", adapters: [adapter] }) {
+		Ok(plan) => !plan.obligations.any(|item| item.operation == "runtime")
+		Err(_) => Bool.False
+	}
 }
