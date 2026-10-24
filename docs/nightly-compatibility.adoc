@@ -79,15 +79,13 @@ checkout in the read-only test job; it must provision dependencies, not rebuild
 the package or replace archived examples. `install-blueprint: true` installs the
 consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
 an environment that needs it. Leave both false for a runner that needs neither.
-Toolchain installation precedes the prerequisite command. Windows prerequisites
-must use native tools through `setup-command`, such as a checked-in Python setup
-script. Blueprint 0.8.0 publishes a native Windows binary;
-`actions/setup-blueprint` does not install it on Windows runners yet
-(https://github.com/lukewilliamboswell/roc-automation/issues/59[#59]). Nix is not
-a Windows prerequisite backend. Requesting either shared installer on Windows
-fails explicitly.
-For a mixed matrix, keep both installers disabled and let a portable setup script
-select the native provisioning steps for each operating system. A prerequisite
+Toolchain installation precedes the prerequisite command. Windows can use
+`install-blueprint: true` with native `Fetch` tool recipes in `Blueprint.roc`;
+see xref:platforms.adoc[Platforms] for the native host guide. Nix is not a Windows
+prerequisite backend, and `install-nix: true` on Windows fails explicitly.
+A mixed Linux/macOS/Windows matrix can use Blueprint's portable Fetch tools
+with `install-nix: false`, or leave both installers disabled and use an
+explicit portable native provisioning command. A prerequisite
 failure is a setup failure, never a compatibility pass.
 
 `test-environment` is a JSON array of public name/value records, for example

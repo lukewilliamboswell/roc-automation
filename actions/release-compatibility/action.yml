@@ -74,8 +74,8 @@ runs:
         INSTALL_BLUEPRINT: ${{ inputs.install-blueprint }}
         INSTALL_NIX: ${{ inputs.install-nix }}
       run: |
-        if [[ "$RUNNER_OS" == Windows && ( "$INSTALL_BLUEPRINT" == true || "$INSTALL_NIX" == true ) ]]; then
-          echo '::error::Windows prerequisites must use native setup-command tools; Blueprint and Nix have no supported Windows installer.'
+        if [[ "$RUNNER_OS" == Windows && "$INSTALL_NIX" == true ]]; then
+          echo '::error::Windows prerequisites may use Blueprint Fetch tools; Nix is not supported on Windows.'
           exit 1
         fi
     # Build the controller with its fixed tooling compiler before installing the
