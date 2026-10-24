@@ -53,12 +53,28 @@ class CompatibilityPackagingTests(unittest.TestCase):
                                   str(artifact / "compatibility-tests/tests"), "-v"],
                                  cwd=artifact, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-            expected_tests = sum(unittest.defaultTestLoader.discover(str(ROOT / "tests"), pattern=pattern).countTestCases() for pattern in ("test_release_compatibility.py", "test_compatibility_archive.py"))
-            self.assertIn(f"Ran {expected_tests} tests", ran.stderr)
-            if os.name == "nt":
-                self.assertIn("OK (skipped=2)", ran.stderr)
-                self.assertIn("POSIX executable permission admission", ran.stderr)
-                self.assertIn("Windows reports process termination as an exit code", ran.stderr)
+            discovered = unittest.TestSuite(unittest.defaultTestLoader.discover(str(ROOT / "tests"), pattern=pattern)
+                                            for pattern in ("test_release_compatibility.py", "test_compatibility_archive.py"))
+            self.assertIn(f"Ran {discovered.countTestCases()} tests", ran.stderr)
+            # Track the suite's declared platform skips rather than freezing a
+            # count that goes stale when new portable regressions are added.
+            # Runtime SkipTest calls remain unexpected and fail this comparison.
+            def cases(suite):
+                for case in suite:
+                    if isinstance(case, unittest.TestSuite):
+                        yield from cases(case)
+                    else:
+                        yield case
+            expected_skips = []
+            for case in cases(discovered):
+                method = getattr(case, case._testMethodName)
+                skipped = type(case) if getattr(type(case), "__unittest_skip__", False) else method
+                if getattr(skipped, "__unittest_skip__", False):
+                    expected_skips.append((case, skipped.__unittest_skip_why__))
+            if expected_skips:
+                self.assertIn(f"OK (skipped={len(expected_skips)})", ran.stderr)
+                for case, reason in expected_skips:
+                    self.assertIn(f"{case.id()}) ... skipped {reason!r}", ran.stderr)
             else:
                 self.assertNotRegex(ran.stderr, r"\.\.\. skipped|\(skipped=")
             self.assertFalse((artifact / "actions").exists())
