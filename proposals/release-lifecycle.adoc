@@ -345,11 +345,14 @@ retry, replaced candidate generation, existing draft/tag, expired artifacts and
 ambiguous publication responses. Exact distributed utilities run without their
 source checkout or implementation compiler on every claimed execution platform.
 
-Completion requires a PR dry run and an explicitly authorized fixture dispatch
-with equal intended asset roles, plus publication readback proving the tested
-files were uploaded unchanged. Product releases, environment/settings changes
-and adopter merges retain their normal authorization. No runtime, native
-support, attestation level or compliance claim follows from configuration alone.
+Completion of this tooling PR requires its read-only PR checks and exact-artifact
+regressions. On 2026-10-24 the maintainer removed the live protected fixture-dispatch
+and publication-readback acceptance run from this PR's completion criteria. The
+implemented admission, provenance verification and publisher readback safeguards
+remain required at runtime. This PR makes no claim of a successful protected
+publication. Product releases, environment/settings changes and adopter merges
+retain their normal authorization. No runtime, native support, attestation level
+or compliance claim follows from configuration alone.
 
 The accepted chapter narratives and linked risk index own normative guidance;
 this proposal remains the reviewed design and acceptance record for #83. Keep
