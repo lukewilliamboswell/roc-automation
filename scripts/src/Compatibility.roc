@@ -71,6 +71,12 @@ Compatibility := [].{
 		if found.schema_version != 1 or found.release != selected.release or found.apps.is_empty() or found.apps.len() > 100 or found.dependencies.is_empty() or !found.dependencies.all(|url| url.starts_with(prefix) and path(url.drop_prefix(prefix)) and url.ends_with(".tar.zst")) {
 			return Err("suite must describe this release, its immutable bundle URLs and 1–100 applications")
 		}
+		validate_apps(found)
+	}
+
+	validate_apps : Suite -> Try(Suite, Str)
+	validate_apps = |found| {
+		if found.apps.is_empty() or found.apps.len() > 100 { return Err("suite needs 1–100 applications") }
 		if unique(found.apps.map(|example| example.path)).len() != found.apps.len() {
 			return Err("duplicate suite applications")
 		}
