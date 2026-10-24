@@ -1,3 +1,4 @@
+import parser.AsciiDoc
 import cli.Path
 import BuildFiles
 import BuildOptions
@@ -82,8 +83,8 @@ SourceIncludes :: [].{
 		Ok({ files: $out, origins: $origins })
 	}
 
-	## Single positive tag selection and optional common-indent removal. Missing,
-	## overlapping and unbalanced markers reject; no guessed partial examples.
+	## The shared selector owns line/tag selection and indentation. Keep listing
+	## admission strict: no ignored options, malformed markers or partial fallback.
 	select : Str, Str -> Try(Str, Str)
 	select = |source, settings| {
 		if source.contains("\r") {
@@ -91,6 +92,7 @@ SourceIncludes :: [].{
 		}
 		var $tag = ""
 		var $dedent = False
+		var $has_lines = False
 		for entry in settings.split_on(",") {
 			option = entry.trim()
 			if option.starts_with("tag=") and $tag == "" {
@@ -100,45 +102,53 @@ SourceIncludes :: [].{
 				}
 			} else if option == "indent=0" and !$dedent {
 				$dedent = True
-			}
-			else if option != "" {
+			} else if option.starts_with("lines=") and !$has_lines {
+				$has_lines = True
+				if option.drop_prefix("lines=").trim() == "" {
+					return Err("empty listing line selection")
+				}
+			} else if option != "" {
 				return Err("unsupported or duplicate listing include option: ${option}")
 			}
 		}
-		var $active = $tag == ""
-		var $seen = False
-		var $out = []
-		for line in source.drop_suffix("\n").split_on("\n") {
-			if $tag != "" and line.trim().ends_with("tag::${$tag}[]") {
-				if $active or $seen {
-					return Err("duplicate or nested selected tag")
+		# The parser gives lines= precedence over tag=. Refuse an ignored selector
+		# rather than letting a typo change the displayed example silently.
+		if $has_lines and $tag != "" {
+			return Err("listing include cannot combine lines and tag selectors")
+		}
+		# Retain the checked-listing contract of exactly one positive tag region.
+		if $tag != "" {
+			var $active = False
+			var $seen = False
+			for line in source.split_on("\n") {
+				if line.trim().ends_with("tag::${$tag}[]") {
+					if $active or $seen {
+						return Err("duplicate or nested selected tag")
+					}
+					$active = True
+					$seen = True
+				} else if line.trim().ends_with("end::${$tag}[]") {
+					if !$active {
+						return Err("unmatched selected tag end")
+					}
+					$active = False
 				}
-				$active = True
-				$seen = True
-			} else if $tag != "" and line.trim().ends_with("end::${$tag}[]") {
-				if !$active {
-					return Err("unmatched selected tag end")
-				}
-				$active = False
-			} else if $active {
-				$out = $out.append(line)
+			}
+			if !$seen or $active {
+				return Err("missing or unclosed selected tag")
 			}
 		}
-		if $tag != "" and (!$seen or $active) {
-			return Err("missing or unclosed selected tag")
-		}
-		if $dedent {
-			width = $out.keep_if(|l| l.trim() != "").fold(
-				1048576.U64,
-				|n, line| {
-					spaces = line.to_utf8().find_first_index(|b| b != ' ' and b != '\t') ?? line.to_utf8().len()
-					if (spaces < n) spaces else n
-				},
-			)
-			if width != 1048576 {
-				$out = $out.map(|line| if (line.trim() == "") "" else Str.from_utf8_lossy(line.to_utf8().drop_first(width)))
+		selection = AsciiDoc.select_include(source, settings)
+		if !selection.problems.is_empty() {
+			problem = match selection.problems.first() {
+				Ok(MissingTag(tag)) => "missing tag: ${tag}"
+				Ok(UnclosedTag(tag)) => "unclosed tag: ${tag}"
+				Ok(UnmatchedEnd(tag)) => "unmatched tag end: ${tag}"
+				Ok(InvalidLines(lines)) => "invalid lines: ${lines}"
+				_ => "empty selection"
 			}
+			return Err("invalid listing selection: ${problem}")
 		}
-		Ok(Str.join_with($out, "\n").concat("\n"))
+		Ok(selection.text.concat("\n"))
 	}
 }

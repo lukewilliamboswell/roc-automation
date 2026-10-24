@@ -67,7 +67,7 @@ the day a new compiler breaks something.
 | Declared in `Blueprint.roc`, pinned by `Blueprint.lock`, identical for contributors and CI.
 
 | Automation
-| Released utilities through Blueprint tasks; product-specific Roc scripts under `scripts/` run by `roc-stable` where needed.
+| Shared lifecycle planning, transport, build/test obligations and admission; released utilities through Blueprint tasks and bounded product-specific scripts where needed.
 
 | Repository examples
 | Depend on the working tree by relative path.
@@ -142,24 +142,13 @@ provides `roc-stable` and no `roc`, so the two names never collide.
 
 == What each workflow answers
 
-.The three workflows and the question each one answers
-[mermaid]
-....
-flowchart LR
-    PR[Pull request] --> CI[ci.yml]
-    CI --> Q1[Does this change work with today's compiler?]
-    D[Maintainer dispatch] --> REL[release.yml]
-    REL --> Q2[Do these exact bytes work? Then publish them once.]
-    S[Daily schedule] --> N[nightly.yml]
-    N --> Q3[Does the latest release still work with today's compiler?]
-....
-
-`ci.yml` tests the working tree. `release.yml` tests and publishes artifacts.
-`nightly.yml` tests what users already have. Each can fail without the others
-being wrong: a new nightly can break `ci.yml` on an untouched pull request, and
-`nightly.yml` can fail while the default branch is green because the fix has not
-been released. xref:workflows.adoc#the-three-workflows[The three workflows]
-describes each in full.
+A thin `release.yml` calls the shared lifecycle at a reviewed full commit SHA.
+It owns source validation, conditional PR rehearsal and complete dispatch
+publication. `nightly.yml` remains separate and tests what users already have.
+A new nightly can break an untouched PR; published-release compatibility can
+fail while the default branch is green because its fix has not been released.
+xref:workflows.adoc#the-three-workflows[Shared validation, release and nightly workflows]
+describes their ownership and evidence.
 
 [#a-pure-roc-package]
 == A pure Roc package
@@ -180,10 +169,10 @@ own CI is there to find. It therefore tests on one runner.
 | Concern | A pure Roc package
 
 | Runners
-| One. `ci.yml`, the test job of `release.yml` and `nightly.yml` each run on `ubuntu-latest` only.
+| One Linux target for the lifecycle's source/candidate tests and published-release compatibility.
 
 | Required status checks
-| The job names themselves. With no matrix there is no aggregate job.
+| The stable `Lifecycle / Validation verdict` aggregate, also for a one-target package; confirm the actual caller-prefixed name on a PR.
 
 | Examples
 | Run on a published platform, such as basic-cli, and are tested on the one runner.
@@ -192,8 +181,8 @@ own CI is there to find. It therefore tests on one runner.
 | xref:platforms.adoc#maintain-a-platform[Maintain a platform] and xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request]: host bindings, native build inputs, rebuild selection and `actions/publish-build-inputs`.
 |===
 
-Everything else applies unchanged: the two compilers, the Blueprint
-environment, the Roc scripts, the three workflows, and what a release contains.
+Everything else applies unchanged: the compiler roles, Blueprint environment,
+shared lifecycle and nightly callers, reviewed topology and release contents.
 
 The cost is stated here so that it is a decision and not an accident: a
 compiler defect that appears on one target only is not detected by this
@@ -217,14 +206,14 @@ by full commit SHA. A repository keeps only what knows its own package.
 | `actions/setup-blueprint`: install Nix and the verified `blueprint` binary
 | `Blueprint.roc` and `Blueprint.lock`
 
-| `actions/nightly-report`: keep the nightly tracking issue
-| The test job of `nightly.yml`, its matrix and its schedule
+| The shared nightly compatibility workflow and tracking-issue controller
+| Its thin caller, schedule and product-specific native prerequisites
 
 | `actions/build-docs`: render an AsciiDoc manual as a site and PDF
 | `docs/*.adoc`
 
-| `actions/publish-release`: stage a draft release, verify every asset, then publish
-| What a release contains, and the jobs that build and test it
+| The shared release lifecycle, independent admission and draft/upload/readback publisher
+| Committed `release-topology.json`, bundle roots, example expectations, authored notes, compositions and bounded native tasks
 
 | `actions/publish-build-inputs`: publish linker inputs from a pull request
 | The producer workflow and its build recipe
@@ -233,7 +222,7 @@ by full commit SHA. A repository keeps only what knows its own package.
 | The settings themselves, applied by a maintainer
 
 | This manual
-| Thin caller workflows, `scripts/`, tests and expected output
+| Thin full-SHA caller workflows, product scripts, tests and expected output
 |===
 
 xref:actions.adoc#shared-actions[Shared actions] is the reference for each

@@ -12,6 +12,7 @@ import cli.Path
 import cli.Stdout
 import cli.Stderr
 import src/Compatibility
+import src/ExamplesEngine
 
 ## Native/source utility shared by the action. Each invocation uses an empty,
 ## private RA_DIRECTORY; metadata and diagnostics remain inert artifacts.
@@ -63,7 +64,7 @@ output! = |text| {
 ## Requests are always GET. Only selection and asset download inherit GH_TOKEN.
 get! = |path, jq| {
 	ran = Cmd.new("gh").args(["api", "--method", "GET", path, "--jq", jq].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(60_000).output_limit(20_000_000).manage_tree(Bool.True).run!().map_err(|_| "GitHub request timed out or could not run")?
-	if ran.status == Exited(0) Ok(Str.from_utf8_lossy(ran.stdout_bytes)) else Err("GitHub could not supply release metadata")
+	if (ran.status == Exited(0)) Ok(Str.from_utf8_lossy(ran.stdout_bytes)) else Err("GitHub could not supply release metadata")
 }
 
 select! = || {
@@ -79,7 +80,7 @@ select! = || {
 	if !Compatibility.valid_repository(repository) or !Compatibility.path(package_name) or package_name.contains("/") or !Compatibility.valid_runners(chosen_runners) or (requested != "" and (!Compatibility.tag(requested) or !requested.starts_with("nightly-"))) or (requested_release != "" and !Compatibility.version(requested_release)) {
 		return Err("invalid selection inputs")
 	}
-	nightly = if requested == "" get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
+	nightly = if (requested == "") get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
 	var $releases = []
 	var $complete = Bool.False
 	pages : List(U64)
@@ -117,63 +118,9 @@ selection! = || {
 ## Child stdout/stderr are captured separately, saved byte-for-byte on every
 ## exit, then displayed even after success. Compiler warnings are never used
 ## as a substitute for its exit status.
-command! = |argv, cwd, cache, input, timeout| {
-	match argv {
-		[program, .. as arguments] => {
-			environment : Try(List(Compatibility.Environment), _)
-			environment = Json.parse(env!("RA_ENVIRONMENT")?)
-			entries = environment.map_err(|_| "test environment must be a JSON array of name/value records")?
-			if !Compatibility.valid_environment(entries) {
-				return Err("test environment overrides a reserved variable or repeats a name")
-			}
-			base = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout_ms(timeout).output_limit(10_000_000).manage_tree(Bool.True)
-				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env_str("XDG_CACHE_HOME", native!(cache)).env_str("ROC_CACHE_DIR", native!(cache))
-			ran = entries.fold(base, |command, entry| command.env_str(entry.name, entry.value)).run!()
-			Ok(
-				match ran {
-					Ok(value) => {
-						status: match value.status {
-							Exited(_) => "exited"
-							Signaled(_) => "signaled"
-						},
-						signal: match value.status {
-							Signaled(signal) => signal
-							Exited(_) => 0
-						},
-						error: "",
-						# Only the exited status carries a comparable exit code.
-						code: match value.status {
-							Exited(code) => code
-							_ => 255
-						},
-						stdout: value.stdout_bytes,
-						stderr: value.stderr_bytes,
-						timed_out: Bool.False,
-						limited: Bool.False,
-					}
-					Err(Timeout(partial)) => { status: "timeout", signal: 0, error: "", code: 124, stdout: partial.stdout_bytes, stderr: partial.stderr_bytes, timed_out: Bool.True, limited: Bool.False }
-					Err(OutputLimit(partial)) => { status: "output-limit", signal: 0, error: "", code: 125, stdout: partial.stdout_bytes, stderr: partial.stderr_bytes, timed_out: Bool.False, limited: Bool.True }
-					Err(IO(error)) => { status: "io-error", signal: 0, error: IOErr.to_str(error), code: 126, stdout: [], stderr: [], timed_out: Bool.False, limited: Bool.False }
-				},
-			)
-		}
-		[] => Err("empty command")
-	}
-}
+command! = ExamplesEngine.command!
 
-logged! : Path, U64, List(Str), Path, Path, List(U8), U64 => Try({ status : Str, signal : I32, error : Str, code : I32, stdout : List(U8), stderr : List(U8), timed_out : Bool, limited : Bool }, Str)
-logged! = |directory, number, argv, cwd, cache, input, timeout| {
-	ran = command!(argv, cwd, cache, input, timeout)?
-	prefix = "${number.to_str()}"
-	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: native!(cwd), cache: native!(cache), stdin: Str.from_utf8_lossy(input), environment: env!("RA_ENVIRONMENT")?, timeout_ms: timeout, status: ran.status, signal: ran.signal, error: ran.error, code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
-	Path.write_bytes!(Path.join(directory, "${prefix}-stdout.log"), ran.stdout).map_err(|_| "cannot preserve stdout")?
-	Path.write_bytes!(Path.join(directory, "${prefix}-stderr.log"), ran.stderr).map_err(|_| "cannot preserve stderr")?
-	Stdout.line!("\n${Compatibility.console(Json.to_str(argv))} (${ran.status}, code ${ran.code.to_str()}, signal ${ran.signal.to_str()}: ${Compatibility.console(ran.error)})\n${Compatibility.console(Str.from_utf8_lossy(ran.stdout))}${Compatibility.console(Str.from_utf8_lossy(ran.stderr))}").map_err(|_| "cannot display diagnostics")?
-	if ran.status == "io-error" {
-		return Err("command ${prefix} could not complete: ${ran.error}; inspect command logs")
-	}
-	Ok(ran)
-}
+logged! = ExamplesEngine.logged!
 
 test! = || {
 	selected = selection!()?
@@ -188,7 +135,7 @@ test! = || {
 	}
 	write!(Path.join(directory, "result.json"), Json.to_str(finished))?
 	Stdout.line!(Compatibility.console(Json.to_str(finished))).map_err(|_| "cannot display result")?
-	if finished.outcome == "compatible" Ok({}) else Err("${finished.outcome}: ${finished.detail}")
+	if (finished.outcome == "compatible") Ok({}) else Err("${finished.outcome}: ${finished.detail}")
 }
 
 execute! = |selected, initial, directory| {
@@ -224,63 +171,16 @@ execute! = |selected, initial, directory| {
 		Ok(value) if value > 0 and value <= 120_000 => value
 		_ => return Err("case timeout must be 1–120000 milliseconds")
 	}
-	version = logged!(directory, 1, [compiler, "version"], root, cache, [], 30_000)?
-	if version.status != "exited" or version.code != 0 or !Str.from_utf8_lossy(version.stdout).contains(selected.nightly) {
-		return Err("installed compiler identity does not match the selected nightly")
-	}
-	var $result = { ..initial, detail: "", outcome: "compatible" }
-	var $number = 1
-	for example in suite.apps {
-		if !Compatibility.app_source(read!(Path.join(root, example.path))?, suite.dependencies) {
-			return Err("example must directly reference the declared published bundle and must not pin its compiler")
-		}
-		target = example.target ?? "native"
-		executable = Path.join(directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else if initial.runner.starts_with("windows-") ".exe" else ""}")
-		native_executable = native!(executable)
-		native_root = native!(root)
-		build_target = if target == "native" [] else ["--target=${target}"]
-		var $built = Bool.True
-		for argv in [[compiler, "check", example.path, "--no-cache"], [compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${native_executable}"].concat(build_target)] {
-			$number = $number + 1
-			ran = logged!(directory, $number, argv, root, cache, [], 300_000)?
-			if ran.timed_out or ran.limited {
-				return Ok({ ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "compiler interrupted; inspect command ${$number.to_str()}" })
-			}
-			$result = { ..$result, diagnostic_commands: $result.diagnostic_commands + 1 }
-			if ran.status != "exited" or ran.code != 0 {
-				$built = Bool.False
-			}
-		}
-		if !$built {
-			$result = { ..$result, failed: $result.failed + 1 }
-		}
-		for case in example.cases {
-			match case.skip {
-				Ok(skip) => {
-					$result = { ..$result, skipped: $result.skipped + 1 }
-					Stdout.line!("SKIP ${Compatibility.console(case.name)}: ${Compatibility.console(skip.reason)} (${Compatibility.console(skip.issue)})").map_err(|_| "cannot report skip")?
-				}
-				Err(Missing) if $built => {
-					$number = $number + 1
-					runtime = match example.run {
-						Ok(argv) if !argv.is_empty() => argv.map(|arg| arg.replace_each("{executable}", native_executable).replace_each("{suite}", native_root))
-						_ => [native_executable]
-					}
-					ran = logged!(directory, $number, runtime.concat(case.args), root, cache, Str.to_utf8(case.stdin), case_timeout)?
-					if ran.timed_out or ran.limited {
-						return Ok({ ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "example interrupted; inspect command ${$number.to_str()}" })
-					}
-					passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and ran.stderr == Str.to_utf8(case.stderr)
-					$result = { ..$result, tested: $result.tested + 1, failed: $result.failed + if passed 0 else 1 }
-					if !passed {
-						write!(Path.join(directory, "${$number.to_str()}-expected.json"), Json.to_str(case))?
-					}
-				}
-				_ => {}
-			}
-		}
-	}
-	Ok({ ..$result, outcome: Compatibility.classify($result.tested, $result.failed, $result.skipped) })
+	ExamplesEngine.run!(suite, compiler, initial, root, directory, cache, [], case_timeout, Bool.True)
+}
+
+## Path.type! uses the host's lstat-style metadata, including dangling links.
+## Only NotFound means absence; inaccessible or nonregular entries are invalid.
+result_entry! : Path => [Absent, Regular, Invalid]
+result_entry! = |path| match Path.type!(path) {
+	Ok(IsFile) => Regular
+	Err(PathErr(NotFound, _)) => Absent
+	_ => Invalid
 }
 
 aggregate! = || {
@@ -290,9 +190,32 @@ aggregate! = || {
 	artifacts = Path.utf8(env!("RA_ARTIFACTS")?)
 	var $results = []
 	for runner in selected.runners {
+		nested_directory = Path.join(artifacts, "compatibility-${runner}")
+		nested_path = Path.join(nested_directory, "result.json")
+		flat_path = Path.join(artifacts, "result.json")
+		# Inspect presence/types before reading any result. Invalid UTF-8, a
+		# directory or a dangling link must not look like an absent layout.
+		root_safe = match Path.type!(artifacts) {
+			Ok(IsDir) => Bool.True
+			_ => Bool.False
+		}
+		nested = if (root_safe) match Path.type!(nested_directory) {
+			Ok(IsDir) => result_entry!(nested_path)
+			Err(PathErr(NotFound, _)) => Absent
+			_ => Invalid
+		} else Invalid
+		flat = if (root_safe) result_entry!(flat_path) else Invalid
+		source = match (nested, flat) {
+			(Regular, Absent) => read!(nested_path)
+			# download-artifact flattens a pattern matching exactly one artifact.
+			# Only a one-target selection can use that layout; identity and
+			# current-attempt checks below remain identical.
+			(Absent, Regular) if selected.runners.len() == 1 => read!(flat_path)
+			_ => Err("missing, ambiguous or unsafe result layout")
+		}
 		parsed : Try(Compatibility.Result, _)
-		parsed = match read!(Path.join(artifacts, "compatibility-${runner}/result.json")) {
-			Ok(source) => Json.parse(source)
+		parsed = match source {
+			Ok(text) => Json.parse(text)
 			Err(_) => Err(Missing)
 		}
 		match parsed {
@@ -303,7 +226,7 @@ aggregate! = || {
 		}
 	}
 	classified = Compatibility.aggregate(selected, env!("GITHUB_RUN_ID")?, env!("GITHUB_RUN_ATTEMPT")?, $results)
-	decision = if classified.report == "success" and env!("RA_TEST_RESULT")? != "success" { outcome: "setup-failed", report: "none" } else classified
+	decision = if (classified.report == "success" and env!("RA_TEST_RESULT")? != "success") { outcome: "setup-failed", report: "none" } else classified
 	write!(Path.join(directory, "summary.json"), Json.to_str({ selection: selected, results: $results, outcome: decision.outcome, report: decision.report }))?
 	output!("outcome=${decision.outcome}\nreport=${decision.report}\n")?
 	# No example output is copied into the job summary or privileged issue job.

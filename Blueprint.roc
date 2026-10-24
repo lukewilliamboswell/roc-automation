@@ -27,7 +27,7 @@ config = [
 				"https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 			]),
 			# Programs the scripts start.
-			Tools(["nix#coreutils", "nix#gh"]),
+			Tools(["nix#coreutils", "nix#gh", "nix#zstd", "nix#python3"]),
 		],
 	),
 	Shell("default", [Use("dev")]),
@@ -40,6 +40,13 @@ config = [
 	Task("downstream-status", [Use("dev"), Run(["scripts/downstream_status.roc", "--"])]),
 	# Canonical published-release compatibility utility, also built by its action.
 	Task("release-compatibility", [Use("dev"), Run(["scripts/release_compatibility.roc", "--"])]),
+	# The same released operations run locally and behind the shared lifecycle.
+	Task("release-plan", [Use("dev"), Run(["scripts/release_plan.roc", "--"])]),
+	Task("release-admit", [Use("dev"), Run(["scripts/release_admit.roc", "--"])]),
+	Task("release-operations", [Use("dev"), Run(["scripts/release_operations.roc", "--"])]),
+	Task("lifecycle-github", [Use("dev"), Run(["scripts/lifecycle_github.roc", "--"])]),
+	Task("lifecycle-pages", [Use("dev"), Run(["scripts/lifecycle_pages.roc", "--"])]),
+	Task("lifecycle-transport", [Use("dev"), Run(["scripts/lifecycle_transport.roc", "--"])]),
 	# The two shared actions that are Roc scripts. Each action runs its task
 	# from its own checkout of this repository, with its inputs in the
 	# environment, and Blueprint.lock fixes everything the task starts.

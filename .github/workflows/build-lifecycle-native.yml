@@ -1,0 +1,90 @@
+name: Build native lifecycle utilities
+# Read-only native builds complement the Linux musl artifacts in release-tools.
+# The calling release pipeline tests the downloaded exact files without sources.
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  build:
+    name: Build lifecycle utilities (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            system: aarch64-darwin
+            extension: ''
+          - runner: windows-2025
+            system: x86_64-windows
+            extension: .exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the immutable event source before building
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-09-258ab27
+      - name: Build every native lifecycle entrypoint
+        env:
+          SYSTEM: ${{ matrix.system }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for source in release_plan release_admit release_operations lifecycle_github lifecycle_transport lifecycle_pages; do
+            tool="${source//_/-}"
+            roc build "scripts/$source.roc" --output="dist/$tool-$SYSTEM$EXTENSION"
+          done
+      - name: Check the exact native version interfaces
+        env:
+          SYSTEM: ${{ matrix.system }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          set -euo pipefail
+          python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then python=python; fi
+          "$python" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          version_source = Path('scripts/src/ToolVersion.roc').read_text(encoding='utf-8')
+          versions = re.findall(r'^\s*version = "([^"\r\n]+)"\s*$', version_source, re.MULTILINE)
+          if len(versions) != 1:
+              raise SystemExit('Expected one reviewed utility version')
+          version = versions[0]
+          pin = 'nightly-2026-10-09-258ab27'
+          for tool in ('release-plan', 'release-admit', 'release-operations', 'lifecycle-github', 'lifecycle-transport', 'lifecycle-pages'):
+              binary = Path('dist', tool + '-' + os.environ['SYSTEM'] + os.environ['EXTENSION']).resolve()
+              result = subprocess.run([str(binary), '--version'], check=True, capture_output=True, text=True, timeout=30)
+              record = json.loads(result.stdout)
+              expected = dict(tool=tool, version=version, contract_version=1, build_compiler_pin=pin)
+              if not isinstance(record, dict) or type(record.get('contract_version')) is not int or record != expected:
+                  raise SystemExit('Unexpected native version interface: ' + tool)
+              print(tool + ': version ' + version + ', contract 1')
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lifecycle-tool-${{ matrix.system }}
+          if-no-files-found: error
+          path: |
+            dist/release-plan-${{ matrix.system }}${{ matrix.extension }}
+            dist/release-admit-${{ matrix.system }}${{ matrix.extension }}
+            dist/release-operations-${{ matrix.system }}${{ matrix.extension }}
+            dist/lifecycle-github-${{ matrix.system }}${{ matrix.extension }}
+            dist/lifecycle-transport-${{ matrix.system }}${{ matrix.extension }}
+            dist/lifecycle-pages-${{ matrix.system }}${{ matrix.extension }}

@@ -7,8 +7,8 @@ Compatibility := [].{
 	Asset : { id : U64, name : Str, size : U64, digest : Str }
 	Release : { id : U64, tag_name : Str, draft : Bool, prerelease : Bool, published_at : Str, assets : List(Asset) }
 	Selection : { schema_version : U64, repository : Str, nightly : Str, release : Str, release_id : U64, asset : Asset, runners : List(Str) }
-	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
-	App : { path : Str, target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), cases : List(Case) }
+	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stdout_match : Try(Str, [Missing]), stderr : Str, stderr_match : Try(Str, [Missing]), exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
+	App : { path : Str, build_args : Try(List(Str), [Missing]), target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), cases : List(Case) }
 	Suite : { schema_version : U64, release : Str, dependencies : List(Str), apps : List(App) }
 	Result : { schema_version : U64, repository : Str, nightly : Str, release : Str, asset_digest : Str, runner : Str, run_id : Str, run_attempt : Str, outcome : Str, tested : U64, failed : U64, skipped : U64, diagnostic_commands : U64, detail : Str }
 	Environment : { name : Str, value : Str }
@@ -24,6 +24,7 @@ Compatibility := [].{
 	## External compiler/runtime interfaces receive the host's path separators;
 	## Windows compiler cache identities compare their literal root prefixes.
 	native_path = |value, windows| if windows value.replace_each("/", "\\") else value
+	compiler_matches = |output, expected| (output.split_on("\n").first() ?? "").trim().replace_each("\t", " ").split_on(" ").contains(expected)
 	valid_repository = GitHub.valid_repository
 
 	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26", "windows-2022", "windows-2025"]
@@ -71,10 +72,22 @@ Compatibility := [].{
 		if found.schema_version != 1 or found.release != selected.release or found.apps.is_empty() or found.apps.len() > 100 or found.dependencies.is_empty() or !found.dependencies.all(|url| url.starts_with(prefix) and path(url.drop_prefix(prefix)) and url.ends_with(".tar.zst")) {
 			return Err("suite must describe this release, its immutable bundle URLs and 1–100 applications")
 		}
+		validate_apps(found)
+	}
+
+	validate_apps : Suite -> Try(Suite, Str)
+	validate_apps = |found| {
+		if found.schema_version != 1 or found.apps.is_empty() or found.apps.len() > 100 {
+			return Err("suite schema 1 needs 1–100 applications")
+		}
 		if unique(found.apps.map(|example| example.path)).len() != found.apps.len() {
 			return Err("duplicate suite applications")
 		}
 		for example in found.apps {
+			build_args = example.build_args ?? []
+			if build_args != [] and build_args != ["--fuzz"] {
+				return Err("build_args permits only --fuzz once; compiler, target and output are runner-owned")
+			}
 			target = example.target ?? "native"
 			runtime = example.run ?? []
 			if !GitHub.is_plain(target, "-_") or (target != "native" and runtime.is_empty()) or (!runtime.is_empty() and !runtime.any(|arg| arg.contains("{executable}"))) {
@@ -84,12 +97,12 @@ Compatibility := [].{
 				return Err("invalid application path or cases")
 			}
 			if !example.cases.all(
-				|case| case.name != "" and case.args.len() <= 100 and match case.skip {
+				|case| case.name != "" and ["exact", "strip-sgr-and-cr"].contains(case.stdout_match ?? "exact") and case.args.len() <= 100 and ["exact", "ignore"].contains(case.stderr_match ?? "exact") and ((case.stderr_match ?? "exact") != "ignore" or case.stderr == "") and match case.skip {
 					Ok(skip) => skip.reason != "" and skip.issue.starts_with("https://github.com/")
 					Err(Missing) => Bool.True
 				},
 			) {
-				return Err("cases need unique names and skips need a reason and issue")
+				return Err("cases need unique names and valid skips; stdout_match must be exact or strip-sgr-and-cr, stderr_match exact or ignore (with empty stderr)")
 			}
 		}
 		Ok(found)
@@ -175,3 +188,7 @@ expect !Compatibility.valid_environment([{ name: "SystemRoot", value: "x" }])
 
 expect Compatibility.native_path("D:\\a\\temp/output/empty-cache", Bool.True) == "D:\\a\\temp\\output\\empty-cache"
 expect Compatibility.native_path("/tmp/output/empty-cache", Bool.False) == "/tmp/output/empty-cache"
+
+expect Compatibility.compiler_matches("Roc compiler version nightly-example\n", "nightly-example")
+expect !Compatibility.compiler_matches("Roc compiler version nightly-example-extra\n", "nightly-example")
+expect !Compatibility.compiler_matches("other\nnightly-example", "nightly-example")

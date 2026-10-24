@@ -1,0 +1,1040 @@
+name: Shared validation and release lifecycle
+# Consumer configuration is inert release-topology.json at the exact event SHA.
+# Every candidate runs read-only. Publication independently observes and rechecks
+# the complete same-run evidence and never checks out or executes candidate code.
+on:
+  workflow_call:
+    inputs:
+      contract:
+        description: Supported lifecycle contract (1)
+        type: number
+        default: 1
+      version:
+        description: Dispatch version; empty for a pull-request dry run
+        type: string
+        default: ''
+      full-dry-run:
+        description: Force complete PR rehearsal; cannot remove required work
+        type: boolean
+        default: false
+      pages-documentation:
+        description: Declared documentation ID to restore after publication; empty disables Pages
+        type: string
+        default: ''
+      install-nix:
+        description: Provision Nix on Unix for consumer Blueprint environments that select Nix tools
+        type: boolean
+        default: false
+    outputs:
+      verdict:
+        description: Validated source, validated candidate, or failed; information only
+        value: ${{ jobs.verdict.outputs.verdict }}
+      source:
+        description: Exact tested event commit
+        value: ${{ jobs.plan.outputs.source }}
+      compiler:
+        description: One selected package compiler
+        value: ${{ jobs.plan.outputs.compiler }}
+      version:
+        description: Selected synthetic or dispatched version
+        value: ${{ jobs.plan.outputs.version }}
+      evidence-artifact-id:
+        description: Retained independently admitted evidence, empty for deferred rehearsal
+        value: ${{ jobs.admit.outputs.artifact-id }}
+      evidence-artifact-digest:
+        description: Service digest of the retained evidence artifact
+        value: ${{ jobs.admit.outputs.artifact-digest }}
+permissions: {}
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && format('roc-release-{0}', github.repository) || format('roc-validation-{0}', github.ref) }}
+  cancel-in-progress: false
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source: ${{ steps.plan.outputs.source }}
+      compiler: ${{ steps.plan.outputs.compiler }}
+      version: ${{ steps.plan.outputs.version }}
+      full-rehearsal: ${{ steps.plan.outputs.full-rehearsal }}
+      has-host: ${{ steps.plan.outputs.has-host }}
+      host-matrix: ${{ steps.plan.outputs.host-matrix }}
+      source-matrix: ${{ steps.plan.outputs.source-matrix }}
+      candidate-matrix: ${{ steps.plan.outputs.candidate-matrix }}
+      sbom-matrix: ${{ steps.plan.outputs.sbom-matrix }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Require the reviewed interface version
+        env:
+          CONTRACT: ${{ inputs.contract }}
+        run: test "$CONTRACT" = 1
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: plan github
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_FULL_DRY_RUN: ${{ inputs.full-dry-run }}
+          INPUT_PAGES_DOCUMENTATION: ${{ inputs.pages-documentation }}
+          RO_PLAN_BINARY: ${{ steps.tool.outputs.plan-binary }}
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-plan
+          CONTROLLER: ${{ steps.tool.outputs.github-binary }}
+        run: '"$CONTROLLER" plan'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-plan/
+          if-no-files-found: error
+          include-hidden-files: true
+
+  validate:
+    name: Validate release
+    needs: [plan]
+    if: >-
+      always() && needs.plan.result == 'success' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: operations github transport
+          build-policy: 'false'
+          build-docs: 'false'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: operations
+        env:
+          RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-stage
+          RO_CANDIDATE: ${{ github.workspace }}/.roc-automation-candidate
+          RO_RUNNER: ubuntu-24.04
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          RO_BLUEPRINT: blueprint
+          RO_SELF: ${{ steps.tool.outputs.operations-binary }}
+          RO_POLICY: ${{ steps.tool.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tool.outputs.docs-binary }}
+          RO_TOOLING_COMPILER_VERSION: ${{ steps.tool.outputs.tooling-compiler-version }}
+          RO_PREVIOUS: ${{ runner.temp }}/lifecycle-plan/prior.json
+          RA_ENVIRONMENT: '[]'
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$RO_SELF" validate'
+      - name: Stage explicit files and inert diagnostics for immutable upload
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.operations.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-validate-ubuntu-24.04-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Retain unsuccessful command diagnostics
+        if: failure() && steps.operations.outputs.diagnostics != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-failure-validate-ubuntu-24.04-${{ github.run_attempt }}
+          path: |
+            ${{ steps.operations.outputs.diagnostics }}/**/*.log
+            ${{ steps.operations.outputs.diagnostics }}/**/*.json
+            ${{ steps.operations.outputs.diagnostics }}/**/*.txt
+            ${{ steps.operations.outputs.diagnostics }}/**/*.jsonl
+          if-no-files-found: warn
+
+  host:
+    name: Host (${{ matrix.runner }})
+    needs: [plan, validate]
+    if: >-
+      always() && needs.plan.result == 'success' && ((github.event_name == 'workflow_dispatch' && needs.validate.result == 'success') || (github.event_name == 'pull_request' && needs.validate.result == 'skipped')) && needs.plan.outputs.has-host == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.host-matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: operations github transport
+          build-policy: 'false'
+          build-docs: 'false'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: operations
+        env:
+          RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-stage
+          RO_CANDIDATE: ${{ github.workspace }}/.roc-automation-candidate
+          RO_RUNNER: ${{ matrix.runner }}
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          RO_BLUEPRINT: blueprint
+          RO_SELF: ${{ steps.tool.outputs.operations-binary }}
+          RO_POLICY: ${{ steps.tool.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tool.outputs.docs-binary }}
+          RO_TOOLING_COMPILER_VERSION: ${{ steps.tool.outputs.tooling-compiler-version }}
+          RO_PREVIOUS: ${{ runner.temp }}/lifecycle-plan/prior.json
+          RA_ENVIRONMENT: '[]'
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$RO_SELF" host'
+      - name: Stage explicit files and inert diagnostics for immutable upload
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.operations.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-host-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Retain unsuccessful command diagnostics
+        if: failure() && steps.operations.outputs.diagnostics != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-failure-host-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.operations.outputs.diagnostics }}/**/*.log
+            ${{ steps.operations.outputs.diagnostics }}/**/*.json
+            ${{ steps.operations.outputs.diagnostics }}/**/*.txt
+            ${{ steps.operations.outputs.diagnostics }}/**/*.jsonl
+          if-no-files-found: warn
+
+  source:
+    name: Source (${{ matrix.runner }})
+    needs: [plan, validate, host]
+    if: >-
+      always() && needs.plan.result == 'success' && ((github.event_name == 'workflow_dispatch' && needs.validate.result == 'success') || (github.event_name == 'pull_request' && needs.validate.result == 'skipped')) && ((needs.plan.outputs.has-host == 'true' && needs.host.result == 'success') || (needs.plan.outputs.has-host == 'false' && needs.host.result == 'skipped'))
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.source-matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: operations github transport
+          build-policy: ${{ matrix.runner == 'ubuntu-24.04' }}
+          build-docs: 'false'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: upstream
+        if: needs.plan.outputs.has-host == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROLLER: ${{ steps.tool.outputs.github-binary }}
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" host "$RUNNER_TEMP/transport.json"'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        with:
+          artifact-ids: ${{ steps.upstream.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - name: Verify raw ZIPs before extraction
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          PYTHON: ${{ steps.tool.outputs.python }}
+          HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
+      - name: Assemble unchanged declared artifact files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$RUNNER_TEMP/lifecycle-native-inputs"'
+      - name: Restore declared native outputs without replacing checkout files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" restore "$RUNNER_TEMP/lifecycle-plan/plan.json" "$RUNNER_TEMP/lifecycle-native-inputs" "$GITHUB_WORKSPACE"'
+      - id: operations
+        env:
+          RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-stage
+          RO_CANDIDATE: ${{ github.workspace }}/.roc-automation-candidate
+          RO_RUNNER: ${{ matrix.runner }}
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          RO_BLUEPRINT: blueprint
+          RO_SELF: ${{ steps.tool.outputs.operations-binary }}
+          RO_POLICY: ${{ steps.tool.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tool.outputs.docs-binary }}
+          RO_TOOLING_COMPILER_VERSION: ${{ steps.tool.outputs.tooling-compiler-version }}
+          RO_PREVIOUS: ${{ runner.temp }}/lifecycle-plan/prior.json
+          RA_ENVIRONMENT: '[]'
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$RO_SELF" source'
+      - name: Stage explicit files and inert diagnostics for immutable upload
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.operations.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-source-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Retain unsuccessful command diagnostics
+        if: failure() && steps.operations.outputs.diagnostics != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-failure-source-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.operations.outputs.diagnostics }}/**/*.log
+            ${{ steps.operations.outputs.diagnostics }}/**/*.json
+            ${{ steps.operations.outputs.diagnostics }}/**/*.txt
+            ${{ steps.operations.outputs.diagnostics }}/**/*.jsonl
+          if-no-files-found: warn
+
+  prepare:
+    name: Prepare (ubuntu-24.04)
+    needs: [plan, source, host]
+    if: >-
+      always() && needs.plan.result == 'success' && needs.plan.outputs.full-rehearsal == 'true' && needs.source.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: operations github transport
+          build-policy: 'false'
+          build-docs: 'true'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: upstream
+        if: needs.plan.outputs.has-host == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROLLER: ${{ steps.tool.outputs.github-binary }}
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" host "$RUNNER_TEMP/transport.json"'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        with:
+          artifact-ids: ${{ steps.upstream.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - name: Verify raw ZIPs before extraction
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          PYTHON: ${{ steps.tool.outputs.python }}
+          HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
+      - name: Assemble unchanged declared artifact files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$RUNNER_TEMP/lifecycle-native-inputs"'
+      - name: Restore declared native outputs without replacing checkout files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" restore "$RUNNER_TEMP/lifecycle-plan/plan.json" "$RUNNER_TEMP/lifecycle-native-inputs" "$GITHUB_WORKSPACE"'
+      - id: operations
+        env:
+          RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-stage
+          RO_CANDIDATE: ${{ github.workspace }}/.roc-automation-candidate
+          RO_RUNNER: ubuntu-24.04
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          RO_BLUEPRINT: blueprint
+          RO_SELF: ${{ steps.tool.outputs.operations-binary }}
+          RO_POLICY: ${{ steps.tool.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tool.outputs.docs-binary }}
+          RO_TOOLING_COMPILER_VERSION: ${{ steps.tool.outputs.tooling-compiler-version }}
+          RO_PREVIOUS: ${{ runner.temp }}/lifecycle-plan/prior.json
+          RA_ENVIRONMENT: '[]'
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$RO_SELF" prepare'
+      - name: Stage explicit files and inert diagnostics for immutable upload
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.operations.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "$RUNNER_TEMP/lifecycle-stage/bundle-map.json" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-prepare-ubuntu-24.04-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Retain unsuccessful command diagnostics
+        if: failure() && steps.operations.outputs.diagnostics != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-failure-prepare-ubuntu-24.04-${{ github.run_attempt }}
+          path: |
+            ${{ steps.operations.outputs.diagnostics }}/**/*.log
+            ${{ steps.operations.outputs.diagnostics }}/**/*.json
+            ${{ steps.operations.outputs.diagnostics }}/**/*.txt
+            ${{ steps.operations.outputs.diagnostics }}/**/*.jsonl
+          if-no-files-found: warn
+
+  sbom:
+    name: SBOM (${{ matrix.index }})
+    needs: [plan, prepare]
+    if: >-
+      !cancelled() && needs.plan.outputs.full-rehearsal == 'true' && needs.prepare.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.sbom-matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: github transport
+          build-policy: 'false'
+          build-docs: 'false'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROLLER: ${{ steps.tool.outputs.github-binary }}
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" prepare "$RUNNER_TEMP/transport.json"'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        with:
+          artifact-ids: ${{ steps.upstream.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - name: Verify raw ZIPs before extraction
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          PYTHON: ${{ steps.tool.outputs.python }}
+          HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
+      - name: Assemble unchanged declared artifact files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
+      - id: subject
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          INDEX: ${{ matrix.index }}
+        run: '"$CONTROLLER" subject "$RUNNER_TEMP/lifecycle-plan/plan.json" "$INDEX" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
+      - if: matrix.supplier_imports != ''
+        uses: lukewilliamboswell/roc-automation/actions/fetch-dependency-sboms@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          target: ${{ matrix.target }}
+          composition: ${{ matrix.composition }}
+          output: ${{ matrix.supplier_imports }}
+      - id: sidecars
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          files: ${{ steps.subject.outputs.files }}
+          version: ${{ needs.plan.outputs.version }}
+          target: ${{ matrix.target }}
+          composition: ${{ matrix.composition }}
+          imports: ${{ matrix.supplier_imports }}
+          author: ${{ matrix.author }}
+      - id: trace
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          INDEX: ${{ matrix.index }}
+          EVIDENCE: ${{ steps.sidecars.outputs.evidence }}
+          INVENTORY: ${{ steps.sidecars.outputs.inventory }}
+        run: '"$CONTROLLER" sbom-trace "$RUNNER_TEMP/lifecycle-plan/plan.json" "$INDEX" "$GITHUB_WORKSPACE/.roc-automation-candidate" "$EVIDENCE" "$INVENTORY" "$RUNNER_TEMP/lifecycle-stage"'
+      - env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.trace.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.trace.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" - "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-sbom-${{ matrix.index }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+
+  seal:
+    name: Seal
+    needs: [plan, prepare, sbom]
+    if: >-
+      !cancelled() && needs.plan.outputs.full-rehearsal == 'true' && needs.sbom.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: operations github transport
+          build-policy: 'false'
+          build-docs: 'true'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROLLER: ${{ steps.tool.outputs.github-binary }}
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" prepare,sbom "$RUNNER_TEMP/transport.json"'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        with:
+          artifact-ids: ${{ steps.upstream.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - name: Verify raw ZIPs before extraction
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          PYTHON: ${{ steps.tool.outputs.python }}
+          HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
+      - name: Assemble unchanged declared artifact files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
+      - id: operations
+        env:
+          RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-stage
+          RO_CANDIDATE: ${{ github.workspace }}/.roc-automation-candidate
+          RO_RUNNER: ubuntu-24.04
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          RO_BLUEPRINT: blueprint
+          RO_SELF: ${{ steps.tool.outputs.operations-binary }}
+          RO_POLICY: ${{ steps.tool.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tool.outputs.docs-binary }}
+          RO_TOOLING_COMPILER_VERSION: ${{ steps.tool.outputs.tooling-compiler-version }}
+          RO_PREVIOUS: ${{ runner.temp }}/lifecycle-plan/prior.json
+          RA_ENVIRONMENT: '[]'
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+          RO_BUNDLE_MAP: ${{ runner.temp }}/lifecycle-evidence/lifecycle-prepare-ubuntu-24.04-${{ github.run_attempt }}/bundle-map.json
+        run: '"$RO_SELF" seal'
+      - name: Stage explicit files and inert diagnostics for immutable upload
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.operations.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-seal-ubuntu-24.04-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Retain unsuccessful command diagnostics
+        if: failure() && steps.operations.outputs.diagnostics != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-failure-seal-ubuntu-24.04-${{ github.run_attempt }}
+          path: |
+            ${{ steps.operations.outputs.diagnostics }}/**/*.log
+            ${{ steps.operations.outputs.diagnostics }}/**/*.json
+            ${{ steps.operations.outputs.diagnostics }}/**/*.txt
+            ${{ steps.operations.outputs.diagnostics }}/**/*.jsonl
+          if-no-files-found: warn
+
+  candidate:
+    name: Candidate (${{ matrix.runner }})
+    needs: [plan, seal]
+    if: >-
+      !cancelled() && needs.plan.outputs.full-rehearsal == 'true' && needs.seal.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.candidate-matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: operations github transport
+          build-policy: 'false'
+          build-docs: 'false'
+      - id: compiler
+        uses: lukewilliamboswell/roc-automation/actions/setup-package-compiler@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          nightly-tag: ${{ needs.plan.outputs.compiler }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          install-nix: ${{ inputs.install-nix && runner.os != 'Windows' }}
+      - id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROLLER: ${{ steps.tool.outputs.github-binary }}
+        run: '"$CONTROLLER" resolve "$RUNNER_TEMP/lifecycle-plan/plan.json" prepare,seal "$RUNNER_TEMP/transport.json"'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        with:
+          artifact-ids: ${{ steps.upstream.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - name: Verify raw ZIPs before extraction
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          PYTHON: ${{ steps.tool.outputs.python }}
+          HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$CONTROLLER" extract "$RUNNER_TEMP/transport.json" "$RUNNER_TEMP/lifecycle-raw" "$RUNNER_TEMP/lifecycle-evidence" "$PYTHON" "$HELPER"'
+      - name: Assemble unchanged declared artifact files
+        if: steps.upstream.outputs.has-artifacts == 'true'
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+        run: '"$CONTROLLER" assemble "$RUNNER_TEMP/lifecycle-evidence" "$GITHUB_WORKSPACE/.roc-automation-candidate"'
+      - id: operations
+        env:
+          RO_PLAN: ${{ runner.temp }}/lifecycle-plan/plan.json
+          RO_DIRECTORY: ${{ runner.temp }}/lifecycle-stage
+          RO_CANDIDATE: ${{ github.workspace }}/.roc-automation-candidate
+          RO_RUNNER: ${{ matrix.runner }}
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          RO_BLUEPRINT: blueprint
+          RO_SELF: ${{ steps.tool.outputs.operations-binary }}
+          RO_POLICY: ${{ steps.tool.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tool.outputs.docs-binary }}
+          RO_TOOLING_COMPILER_VERSION: ${{ steps.tool.outputs.tooling-compiler-version }}
+          RO_PREVIOUS: ${{ runner.temp }}/lifecycle-plan/prior.json
+          RA_ENVIRONMENT: '[]'
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+          RO_BUNDLE_MAP: ${{ runner.temp }}/lifecycle-evidence/lifecycle-prepare-ubuntu-24.04-${{ github.run_attempt }}/bundle-map.json
+        run: '"$RO_SELF" candidate'
+      - name: Stage explicit files and inert diagnostics for immutable upload
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.transport-binary }}
+          TRACE: ${{ steps.operations.outputs.trace }}
+          DIAGNOSTICS: ${{ steps.operations.outputs.diagnostics }}
+        run: '"$CONTROLLER" pack "$TRACE" "$GITHUB_WORKSPACE/.roc-automation-candidate" "-" "$DIAGNOSTICS" "$RUNNER_TEMP/lifecycle-upload"'
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-candidate-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lifecycle-upload/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Retain unsuccessful command diagnostics
+        if: failure() && steps.operations.outputs.diagnostics != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-failure-candidate-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.operations.outputs.diagnostics }}/**/*.log
+            ${{ steps.operations.outputs.diagnostics }}/**/*.json
+            ${{ steps.operations.outputs.diagnostics }}/**/*.txt
+            ${{ steps.operations.outputs.diagnostics }}/**/*.jsonl
+          if-no-files-found: warn
+
+  admit:
+    name: Admission
+    needs: [plan, candidate]
+    if: >-
+      !cancelled() && needs.plan.outputs.full-rehearsal == 'true' && needs.candidate.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - id: discover
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: discover
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          output-directory: ${{ runner.temp }}/admission
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ steps.discover.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: extract
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          transport-manifest: ${{ runner.temp }}/admission/transport.json
+          raw-downloads: ${{ runner.temp }}/lifecycle-raw
+          output-directory: ${{ runner.temp }}/lifecycle-evidence
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: assemble
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          traces: ${{ runner.temp }}/lifecycle-evidence
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          output-directory: ${{ runner.temp }}/admission
+      - id: admitted
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: collect
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          traces: ${{ runner.temp }}/lifecycle-evidence
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          output-directory: ${{ runner.temp }}/admission
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lifecycle-admission-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/admission/
+          if-no-files-found: error
+
+  verdict:
+    name: Validation verdict
+    if: always()
+    needs: [plan, validate, host, source, prepare, sbom, seal, candidate, admit]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      verdict: ${{ steps.result.outputs.verdict }}
+    steps:
+      - id: result
+        name: Require every selected stage and distinguish inapplicable stages
+        env:
+          SUCCESS_VERDICT: ${{ needs.plan.outputs.full-rehearsal == 'true' && 'validated-candidate' || 'validated-source' }}
+          PASSED: >-
+            ${{ needs.plan.result == 'success' &&
+                ((github.event_name == 'workflow_dispatch' && needs.validate.result == 'success') || (github.event_name == 'pull_request' && needs.validate.result == 'skipped')) &&
+                ((needs.plan.outputs.has-host == 'true' && needs.host.result == 'success') || (needs.plan.outputs.has-host == 'false' && needs.host.result == 'skipped')) &&
+                needs.source.result == 'success' &&
+                ((needs.plan.outputs.full-rehearsal == 'true' && needs.prepare.result == 'success' && needs.sbom.result == 'success' && needs.seal.result == 'success' && needs.candidate.result == 'success' && needs.admit.result == 'success') ||
+                 (needs.plan.outputs.full-rehearsal == 'false' && needs.prepare.result == 'skipped' && needs.sbom.result == 'skipped' && needs.seal.result == 'skipped' && needs.candidate.result == 'skipped' && needs.admit.result == 'skipped')) }}
+        run: |
+          verdict=failed
+          if [ "$PASSED" = true ]; then verdict="$SUCCESS_VERDICT"; fi
+          printf 'verdict=%s\n' "$verdict" >> "$GITHUB_OUTPUT"
+          test "$PASSED" = true
+
+  publish:
+    name: Publish
+    needs: [plan, admit, verdict]
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      needs.verdict.result == 'success' && needs.admit.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - id: discover
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: discover
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          output-directory: ${{ runner.temp }}/admission
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ steps.discover.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: extract
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          transport-manifest: ${{ runner.temp }}/admission/transport.json
+          raw-downloads: ${{ runner.temp }}/lifecycle-raw
+          output-directory: ${{ runner.temp }}/lifecycle-evidence
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: assemble
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          traces: ${{ runner.temp }}/lifecycle-evidence
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          output-directory: ${{ runner.temp }}/admission
+      - id: admitted
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: collect
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          traces: ${{ runner.temp }}/lifecycle-evidence
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          output-directory: ${{ runner.temp }}/admission
+      - id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ steps.admitted.outputs.explicit-assets }}
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: verify-provenance
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          admission-file: ${{ steps.admitted.outputs.admission-file }}
+          attestation-bundle: ${{ steps.provenance.outputs.bundle-path }}
+          output-directory: ${{ runner.temp }}/verified-provenance
+      - uses: lukewilliamboswell/roc-automation/actions/publish-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          version: ${{ needs.plan.outputs.version }}
+          prerelease: ${{ contains(needs.plan.outputs.version, '-') }}
+          target: ${{ github.sha }}
+          notes-file: ${{ steps.admitted.outputs.notes-file }}
+          assets: ${{ steps.admitted.outputs.explicit-assets }}
+          admission-file: ${{ steps.admitted.outputs.admission-file }}
+          require-admission: 'true'
+
+  pages-restore:
+    name: Restore published documentation
+    needs: [plan, publish]
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && needs.publish.result == 'success' && inputs.pages-documentation != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - id: tool
+        uses: lukewilliamboswell/roc-automation/actions/lifecycle-tool@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          tools: pages
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.plan.outputs.artifact-id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/lifecycle-plan
+      - id: discover
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: discover
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          output-directory: ${{ runner.temp }}/admission
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ steps.discover.outputs.artifact-ids }}
+          digest-mismatch: error
+          skip-decompress: true
+          path: ${{ runner.temp }}/lifecycle-raw
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: extract
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          transport-manifest: ${{ runner.temp }}/admission/transport.json
+          raw-downloads: ${{ runner.temp }}/lifecycle-raw
+          output-directory: ${{ runner.temp }}/lifecycle-evidence
+      - uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: assemble
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          traces: ${{ runner.temp }}/lifecycle-evidence
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          output-directory: ${{ runner.temp }}/admission
+      - id: admitted
+        uses: lukewilliamboswell/roc-automation/actions/admit-release@c5b39354bad04e460eaf4de408fb481373055837
+        with:
+          phase: collect
+          trusted-seed: ${{ runner.temp }}/lifecycle-plan/trusted-seed.json
+          topology: ${{ runner.temp }}/lifecycle-plan/topology.json
+          traces: ${{ runner.temp }}/lifecycle-evidence
+          candidate: ${{ github.workspace }}/.roc-automation-candidate
+          output-directory: ${{ runner.temp }}/admission
+      - id: site
+        env:
+          CONTROLLER: ${{ steps.tool.outputs.pages-binary }}
+          ADMISSION: ${{ steps.admitted.outputs.admission-file }}
+          DOCUMENTATION: ${{ inputs.pages-documentation }}
+          RA_PYTHON: ${{ steps.tool.outputs.python }}
+          RA_ARCHIVE_HELPER: ${{ steps.tool.outputs.archive-helper }}
+        run: '"$CONTROLLER" restore "$ADMISSION" "$RUNNER_TEMP/lifecycle-plan/topology.json" "$DOCUMENTATION" "$GITHUB_WORKSPACE/.roc-automation-candidate" "$RUNNER_TEMP/restored-pages"'
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          name: lifecycle-pages-${{ github.run_attempt }}
+          path: ${{ steps.site.outputs.site-directory }}
+
+  pages-deploy:
+    name: Deploy published documentation
+    needs: [pages-restore]
+    if: always() && github.event_name == 'workflow_dispatch' && needs.pages-restore.result == 'success'
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
+        with:
+          artifact_name: lifecycle-pages-${{ github.run_attempt }}

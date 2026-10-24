@@ -53,8 +53,35 @@ expect Preparation.prepare(
 	options,
 ).is_err()
 
+# Book part headings are not the document title of the book. The actual
+# included chapter still owns its explicit ID and cross-reference route.
+expect Preparation.prepare(
+	[
+		{ path: "index.adoc", source: "= Manual\n\n= Release notes\n\ninclude::releases/index.adoc[leveloffset=+1]\n" },
+		{ path: "releases/index.adoc", source: "[#releases]\n= Release notes\n\nRelease text.\n" },
+	],
+	options,
+).map_ok(|r| r.manual.contains("Release text.")) == Ok(True)
+
 expect manual("= Manual\n\n[cols=\"1,2\",options=\"header\"]\n|===\n| A | B\n| long\ncontinued | value\n|===\n").map_ok(|s| s.contains("| long continued | value |")) == Ok(True)
 expect Preparation.prepare(source("= Manual\n\nlink:api/index.html[API]\n"), { ..options, site_url: "https://example.com/project/" }).map_ok(|r| r.manual.contains("https://example.com/project/api/index.html")) == Ok(True)
+
+renamed_id_files = [
+	{ path: "index.adoc", source: "= Manual\n\ninclude::a.adoc[leveloffset=+1]\n\ninclude::b.adoc[leveloffset=+1]\n" },
+	{ path: "a.adoc", source: "= First\n\n[#shared]\n== Original heading\n" },
+	{ path: "b.adoc", source: "= Second\n\n[#shared]\n== Renamed heading\n" },
+]
+
+renamed_id_prepared = Preparation.prepare(renamed_id_files, options)
+expect renamed_id_prepared.map_ok(|r| r.manual.contains("{#b-shared}") and !r.manual.contains("anchor-alias") and !r.manual.contains("{#shared-2}")) == Ok(True)
+expect renamed_id_prepared.map_ok(
+	|r| r.pages.find_first(|p| p.route == "index.html").map_ok(
+		|p| match p.html {
+			Prepared(h) => h.body.contains("<span class=\"anchor-alias\" id=\"shared-2\"></span>") and h.body.contains("id=\"b-shared\"")
+			MarkdownSource => False
+		},
+	),
+) == Ok(Ok(True))
 
 expect manual("= Manual\n\n[cols=\",,\",options=\"header\"]\n|===\n| A | B | C\n| x | y | z\n|===\n").map_ok(|s| s.contains("| A | B | C |")) == Ok(True)
 

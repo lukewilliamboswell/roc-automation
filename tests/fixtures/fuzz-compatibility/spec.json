@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "release": "0.4.3",
+  "dependencies": [
+    "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.3/41NK5FShyGC9Z8HNpUdUeXMWwLmLNfFxsfmLvdPL4Fxb.tar.zst"
+  ],
+  "apps": [
+    {
+      "path": "examples/clean.roc",
+      "build_args": [
+        "--fuzz"
+      ],
+      "cases": [
+        {
+          "name": "replay-clean",
+          "args": [
+            "replay",
+            "examples/seeds/replay"
+          ],
+          "stdin": "",
+          "stdout": "",
+          "stderr": "",
+          "stderr_match": "ignore",
+          "exit_code": 0
+        },
+        {
+          "name": "one-second-smoke",
+          "args": [
+            "run",
+            "examples/corpus",
+            "--time=1",
+            "--seed=1"
+          ],
+          "stdin": "",
+          "stdout": "",
+          "stderr": "",
+          "stderr_match": "ignore",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "path": "examples/failure.roc",
+      "build_args": [
+        "--fuzz"
+      ],
+      "cases": [
+        {
+          "name": "replay-expected-failure",
+          "args": [
+            "replay",
+            "examples/seeds/replay"
+          ],
+          "stdin": "",
+          "stdout": "",
+          "stderr": "",
+          "stderr_match": "ignore",
+          "exit_code": 77
+        }
+      ]
+    }
+  ]
+}

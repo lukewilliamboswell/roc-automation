@@ -185,10 +185,28 @@ URLs and anchors deliberately when replacing a site.
 
 Chapter includes are bounded local `.adoc` or `.md` sources. Listings may include
 checked source and `.expected` files anywhere inside the workspace. Single
-`tag=name` selections and `indent=0` are supported; escaping paths, symlinks,
-missing tags and output overlap reject. Keep the original examples in compile/test
-checks: rendering reads their bytes and does not execute or verify their behavior.
-Ambiguous chapter provenance still rejects.
+`tag=name` selections and line selections (`lines=N`, `lines=A..B`,
+semicolon-separated entries or open-ended ranges) support optional `indent=0`.
+This lets manuals quote slices of checked stdout without adding tag markers to
+files compared byte-for-byte. The shared parser selects the text; the renderer
+rejects every reported selection problem, unknown/duplicate options and combined
+line/tag selectors, so invalid ranges cannot fall back to guessed examples.
+Regression fixtures compare roc-parser guide excerpts with independent slices
+and preserve the previous publication on invalid input. Escaping paths, symlinks,
+missing or ambiguous tags and output overlap reject. Keep the original examples
+in compile/test checks: rendering reads their bytes and does not execute or verify their behavior.
+Chapter provenance matches a file's first document heading, so a book part
+heading that repeats an included chapter's title is not another document.
+Two included documents with the same title remain ambiguous and reject;
+regressions cover both cases.
+
+Renaming a heading can break existing URL fragments. Keep canonical chapter
+identities stable; HTML also retains noncolliding historical title and duplicate
+explicit-ID occurrence aliases. An alias cannot replace a primary ID or duplicate
+an earlier alias. Native and browser regressions check legacy fragments, current
+routes and uniqueness; PDF and Markdown retain their canonical destinations.
+These aliases do not infer every historical site URL, so review migration links
+explicitly.
 
 Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared
 Mermaid registrations. An optional validated SVG companion improves the website;

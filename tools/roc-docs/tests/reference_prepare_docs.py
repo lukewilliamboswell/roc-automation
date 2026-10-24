@@ -217,12 +217,15 @@ class Converter:
         text = re.sub(r'`[^`]+`', protect, text)
         text = re.sub(r'\+\{([^}]+)\}\+', lambda m: '`{' + m[1] + '}`', text)
         def ref(target, label):
-            if '#' in target:
-                source, anchor = target.split('#', 1)
+            if '#' in target or target.endswith('.adoc'):
+                source, _, anchor = target.partition('#')
                 source = (source if any(s == source for s, _ in self.labels) else (Path(item.source).parent / source).as_posix()) if source else item.source
             else:
                 source, anchor = '', target
-            candidates = [(s, a, t) for (s, a), t in self.labels.items() if a == anchor and (not source or source == s)]
+            # A chapter-only reference resolves to its first indexed heading,
+            # including an explicit heading ID. Retain authored anchor matching
+            # for shorthand and chapter#anchor references.
+            candidates = [(s, a, t) for (s, a), t in self.labels.items() if (a == anchor or (source and not anchor)) and (not source or source == s)]
             if not candidates:
                 raise ValueError(f'Unknown anchor {target} at {item.source}:{item.number}')
             # Prefer local chapter for shorthand references, otherwise first stable manual occurrence.

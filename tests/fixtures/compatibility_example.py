@@ -8,7 +8,10 @@ sys.stdout.reconfigure(newline="\n")
 if os.environ.get("FAKE_CASE_SIGNAL"):
     import signal
     os.kill(os.getpid(), signal.SIGTERM)
-print("hello", flush=True)
+sys.stdout.write(os.environ.get("FAKE_CASE_STDOUT", "hello\n"))
+sys.stdout.flush()
+if os.environ.get("FAKE_CASE_STDERR"):
+    print(os.environ["FAKE_CASE_STDERR"], file=sys.stderr)
 if os.environ.get("FAKE_CHILD_MARKER"):
     subprocess.Popen([sys.executable, "-c",
                       "import time,pathlib;time.sleep(1.5);pathlib.Path("

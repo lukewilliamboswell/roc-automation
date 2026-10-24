@@ -1,0 +1,361 @@
+= Shared validation and release lifecycle contract
+
+Status: reviewed implementation contract under #83. The maintainer authorized
+contract, implementation and the corresponding manual ownership changes together
+in one PR on 2026-10-24, superseding the separate contract-merge gate. This
+proposal records the chosen design and acceptance; it does not establish hosted
+execution or adopter deployment. Package, multi-bundle and bounded native
+fixtures belong to this implementation. Downstream pilot migrations and adopter
+releases are follow-ups with their own authorization.
+
+== Ownership and the change being reviewed
+
+The shared reusable workflow owns event eligibility, compiler resolution,
+selection, job dependencies, matrices, transport, aggregate status and the
+protected publish job. Released Roc utilities own planning, preparation,
+archive equivalence, examples execution, notes and inventories. Blueprint
+provisions those exact utilities locally and in CI. Consumers keep topology,
+product sources, cases, authored notes, compositions, and bounded native tasks.
+They retain no copy of compiler lookup, packaging, selection or publishing.
+
+Relative to `docs/overview.adoc` and `docs/workflows.adoc`, this moves the
+release build/test job graph into shared ownership and combines source CI and
+release dry-run obligations into one run. The pure-package profile also gains
+one stable aggregate check. Relative to `docs/platforms.adoc`, native adapters
+retain product build behavior while the shared workflow owns scheduling and
+builder/runner transport. Compiler policy, dispatch authorization, immutable
+releases, environment restrictions and interrupted-publication recovery stay
+as stated in `docs/security-model.adoc` and `docs/settings.adoc`.
+
+No new approval step is implied. A dispatch on the default branch authorizes
+release; the `release` environment needs a required reviewer where the project
+has multiple maintainers. Settings must be independently checked and exercised.
+No timing experiments form acceptance evidence.
+
+== Entry point and versioned interface
+
+The shared entry point is `.github/workflows/release-lifecycle.yml`, called
+by full SHA from a thin consumer `release.yml`. Its `workflow_call` inputs are:
+
+[cols="1,1,3",options="header"]
+|===
+| Input | Type | Meaning
+| contract | number | Exactly 1; unknown versions fail before candidate execution.
+| version | string | Dispatch version; empty on PR. PR always uses `0.0.1-dry-run`.
+| full-dry-run | boolean | Default false; can add full rehearsal but cannot remove an obligation.
+| pages-documentation | string | Declared manual ID restored after final publication; empty disables Pages.
+| install-nix | boolean | Default false; optional provisioning for Unix consumer tasks, always false on Windows.
+| install-nix | boolean | Optional Unix provisioning for candidate Blueprint environments; never changes controller authority.
+|===
+
+No arbitrary shell, workflow path, publisher override, permission override or
+inherited secrets are accepted. Outputs are the constrained verdict, selected
+source/compiler/version, and retained evidence artifact ID/digest. These are
+information for humans and downstream read-only consumers, never standalone
+publication authorization. The called job is `Validation verdict`. Pin the caller job name to `Lifecycle`
+and configure the actual required check `Lifecycle / Validation verdict`,
+then confirm it on a real PR; reusable job check names include the caller prefix.
+
+The caller declares `permissions: {}` and gives its reusable-workflow calling
+job `contents: write`, `actions: read`, `attestations: write` and `id-token: write`. This is a permission ceiling:
+the called workflow declares `permissions: {}` and every executing candidate
+job has only `contents: read`. Trusted read-only admission has `contents: read`
+and `actions: read`; only publication gets `contents: write` and
+`environment: release`. No candidate job gets OIDC. The caller cannot place
+`environment` on the calling job; it belongs inside the called workflow.
+
+GitHub documents the
+https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations[supported caller keywords and permission ceiling]
+and
+https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows[full-SHA references and environment-secret behavior].
+Secrets configured in an environment must not include a candidate-visible
+publication credential. An environment name in YAML proves no protection rule.
+
+== Topology contract 1
+
+The committed `release-topology.json` at the event SHA is fetched as inert data
+by the planner and independently by admission. Caller outputs or expressions
+cannot replace it or shorten the required matrix. Its JSON is UTF-8, at most
+64 KiB, rejects duplicate keys and unknown
+fields at every level, and accepts no nulls or implicit coercion. Collections
+are bounded to 32 bundles, 16 targets, 32 adapters and 256 obligations. IDs
+use `[a-z][a-z0-9-]{0,47}` (target IDs also permit underscores) and are unique
+within their collection. Paths are
+canonical workspace-relative slash paths, at most 240 bytes, without empty,
+dot, parent, absolute, backslash, drive, control or Windows device components.
+Files must be regular; directory traversal refuses symlinks and special files.
+The reusable workflow validates this data before using it to construct a matrix.
+
+[cols="1,3",options="header"]
+|===
+| Field | Shape and constraint
+| schema | Exactly integer 1.
+| name | Product ID used in filenames and authored notes titles.
+| sbom_author | Reviewed `Person:` or `Organization:` document author; never inferred from a repository owner.
+| profile | `package` or `platform`.
+| bundles | Records of `id`, `root`, `prefix`, `placeholder`, `depends_on`.
+  Roots are distinct `.roc` files. Prefixes are distinct stable product IDs;
+  placeholders are distinct names such as `package-url`, without braces.
+  `depends_on` names other bundle IDs; reject cycles and unknown/self edges.
+| examples | Records of `id`, `directory`, `spec`, `bundles`, `target_ids`.
+  Specs retain their own versioned execution/expectation contract; no cases
+  are duplicated here. Bundle and target references must exist.
+| documentation | Records of `id`, `directory`, `pdf` (boolean). An empty list
+  means no manual. The shared renderer owns rendering and deterministic archives.
+| target_matrix | Records of `id`, `runner`, `runtime_task`. Runners come from the
+  shared supported runner table; runtime task is empty or an adapter ID.
+  Package profile has one Linux target and no native adapter.
+| adapters | Records of `id`, `task`, `operation`, `builder`, `target_ids`, `outputs`.
+  Operation is `build-host`, `test-host`, `test-binary`, `check-bindings` or `runtime`.
+  `builder` is a supported runner label; one adapter invocation can produce
+  outputs for several runtime targets. Task names are Blueprint task identifiers,
+  never command text. Outputs
+  declare role/target/path, not candidate-selected globs. No outputs for test tasks.
+| checks | Records of `id`, `task`, `kind`, `target_ids`. Kinds are `unit`,
+  `source` or `native`; an empty target list runs once on Linux. Native checks
+  name their target IDs. A task has exactly one obligation owner and must not
+  hide packaging or archive rehearsal.
+| sboms | Records of `subject`, `target`, `composition`, `supplier_imports`.
+  Composition and supplier imports name reviewed regular files; supplier imports
+  may be empty. A bundle subject is its bundle ID with target `source`; a native
+  output subject is its declared path with its declared target.
+  Every bundle/public binary subject must have exactly one applicable mapping;
+  host linker intermediates are represented by their owning bundle inventory.
+| source_paths | Relative directory prefixes whose ordinary source changes
+  may defer archive rehearsal. These do not override the shared mandatory paths.
+|===
+
+Notes follow `docs/releases/<version>.adoc`; no duplicate notes manifest or
+provisioning lock is introduced. The full dry run chooses the highest authored
+notes version while binding all generated URLs and subjects to the synthetic
+version. A dispatch requires the exact version's notes, SemVer without build
+metadata, no existing tag/release/draft, and `roc bump --expect` against the
+latest released bundle for each root. The first release records that no prior
+bundle exists; it must not silently ignore a failed lookup.
+
+One examples suite uses `<name>-examples-<version>.zip`; several use
+`<name>-<suite-id>-examples-<version>.zip`, allowing nightly callers to select
+`<name>-<suite-id>` without a second naming convention. One manual uses
+`<name>-docs-<version>.zip` and `<name>-<version>.pdf`; several add the manual ID
+after the name.
+
+The planner derives the complete asset set: each bundle under its original
+content-addressed filename/prefix, each examples ZIP, documentation ZIP and
+optional PDF, each declared public native binary, required sidecars/manifests,
+rendered notes and the final release inventory. Host linker outputs are separate
+intermediates consumed into exactly one owning bundle; they are not public
+standalone assets. It orders bundles topologically and replaces only declared
+sibling dependency URLs. Unknown roles, ambiguous producers and duplicate or
+case-colliding paths fail. A native adapter cannot add a required target or
+remove an expected file. Platform bundles are assembled once from the complete
+host set; runner jobs consume them without rebuilding hosts.
+
+The schema does not duplicate Blueprint environments, lock digests, example
+cases or component inventories. Additive fields require an explicit supported
+contract revision rather than silent interpretation by an older utility.
+
+== Stages and execution ownership
+
+. Plan validates event, source, topology, version and source changes; resolves
+  one package nightly and emits immutable obligations. Dispatch refuses an
+  existing tag/release/draft and missing exact authored notes before expensive
+  builds.
+. Validate release runs only on dispatch and checks the version bump once per
+  bundle against the latest released bundle, or records a verified first release.
+. Host invokes each native build adapter once on its builder, including every
+  declared cross target. Source/native tests and bundle assembly consume those
+  exact transported outputs.
+. Source runs policy/format, declared checks, working-tree examples and native
+  correctness. Each obligation has one owner; no task hides another rehearsal.
+. Prepare builds API reference, docs, example archives and bundles once from the
+  complete host set, with dependency bundles ordered and shared across runners.
+. SBOM runs one separate read-only mapping job per subject/target and retains
+  exact producer evidence and inventory alongside both formats and manifests.
+. Seal consolidates the complete public inventory and renders notes once after
+  sidecar generation. It does not promote host intermediates into public assets.
+. Candidate downloads exact artifacts and tests them on each declared runner.
+  Examples use loopback dependencies and a fresh cache, permitting only declared
+  URL changes with unchanged expectations. Each public binary has a mandatory
+  per-target `test-binary` consuming obligation. Cross-compilation does not
+  substitute for actual target link/run evidence.
+. Admit uses trusted pinned code with no candidate checkout or executable cache.
+  It reconstructs expected work from reviewed topology and actual GitHub records,
+  checks original producers, rehashes files and compares host intermediates with
+  the actual owning tar members. Candidate pass reports remain inert claims.
+. Validation verdict always runs, requires every selected success and distinguishes
+  source-only validation from full candidate rehearsal. PR admission cannot publish.
+. Publish independently repeats admission in `environment: release`, attests the
+  full explicit public set and verifies every provenance subject against the
+  expected workflow/source identities before draft/upload/readback publication.
+  It checks out nothing, evaluates no candidate Blueprint, restores no candidate
+  executable cache, and rebuilds or renders nothing.
+. Optional Pages restore follows final publication. Trusted code verifies the
+  selected admitted documentation ZIP and restores its inert canonical site
+  bytes; deployment receives no source or executable build cache.
+
+Shared executable operations are implemented under #46/#49, and the examples
+engine under #48. Reuse policy/docs/SBOM/compatibility utilities and the existing
+publisher. The independent validator and admission changes belong to #62.
+Do not create another generator, provisioner, extractor or envelope family.
+New operations follow the repository's Roc executable architecture.
+
+== Central selection
+
+Always run source/unit/working-tree cases, relevant native correctness and
+inexpensive topology/contract validation. Full rehearsal is mandatory for
+workflow/action, packaging, adapter, toolchain, Blueprint/lock, topology,
+examples/spec, release-note and shared policy changes, for unknown paths, and
+for explicit opt-in. Only ordinary changes entirely within reviewed source
+prefixes may defer archive rehearsal. Declarations cannot exempt mandatory
+categories. Mixed changes take the union of obligations. Renames inspect both
+old and new paths; deletions use the old path. Missing base, truncated pagination,
+unreadable file inventories or unsupported change types require full rehearsal.
+Changing the source-prefix mapping itself requires full rehearsal using the
+union of old and new mappings. A dispatch always runs every release obligation.
+
+No top-level path filter is allowed. `Validation verdict` uses `if: always()`
+and compares required obligations with actual results. An optional stage can
+be inapplicable only because the trusted planner marked it so. Skipped,
+missing, cancelled or timed-out required jobs fail. A selector failure fails
+the aggregate, even if it produced no matrix. Deferred archive work means a
+packaging failure can first appear at release dispatch; source success never
+proves the untested archive works.
+
+GitHub's
+https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks[required-check guidance]
+explains why skipped workflows can leave required checks pending. Adoption
+must exercise a deliberately failing PR and configure the actual stable check.
+
+== Evidence and independent admission
+
+Extend #62's versioned envelope; do not repurpose the existing
+`roc-automation-sbom-evidence-v1` producer record into authorization. The
+lifecycle binding carries repository/server, event source SHA, version/tag,
+compiler/toolchain identities, topology digest, shared policy/schema/tool
+versions, actual called workflow revision, and each obligation/producer job ID,
+run ID and producing attempt. File entries carry canonical path, role, subject,
+target, size and SHA-256. Artifact entries separately carry immutable artifact
+ID, service digest, producer job/attempt and the exact file entries they contain.
+Notes, sibling URLs, SBOM subjects/manifests and declared file roles must bind
+to the same final candidate set. Reject undeclared/missing/duplicate files,
+size/hash/target swaps and inconsistent manifests or relationship references.
+
+All API lists are completely paginated. Admission reads actual job conclusions
+for the recorded attempts, the actual run's immutable source and referenced
+workflow records, and reviewed topology as inert data. Neither a candidate plan
+nor a shortened candidate matrix establishes the required set. Failure to obtain
+any identity is unknown and blocks publication.
+
+Two GitHub details require care rather than copying the issue's shorthand:
+
+* `job.workflow_ref` and `job.workflow_sha` are not job-context properties in
+  the https://docs.github.com/en/actions/reference/workflows-and-actions/contexts[context reference].
+  `job_workflow_ref` and `job_workflow_sha` are
+  https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-with-reusable-workflows[OIDC claims].
+  Candidate jobs must not gain OIDC merely to fill those fields. Admission
+  cross-checks the literal full-SHA caller reference against the run API's
+  `referenced_workflows` immutable records and the approved shared workflow
+  path/SHA. Missing/ambiguous records block. Authenticated OIDC claims, if used
+  by a separately privileged attestor, are verified rather than copied from
+  candidate output. The publisher action checkout SHA is never product source.
+* Upload-artifact v4+ makes immutable artifacts and returns artifact ID/digest.
+  GitHub's general
+  https://docs.github.com/en/actions/tutorials/store-and-share-data[artifact tutorial]
+  describes warning behavior, while the pinned
+  https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts[v8 downloader]
+  defaults to an error. Set `digest-mismatch: error` explicitly and retain
+  exact artifact-ID/service-digest checks plus rehashing every bounded extracted
+  regular file against the expected inventory. No warning-only downloader
+  result or candidate checksum list is authorization.
+
+The mechanism reduces evidence substitution and incomplete-matrix publication;
+it does not prove that a reviewed compiler, adapter, supplier graph or product
+is benign. Read-only runner code can access its own workspace/network and
+influence outputs. Use disposable runners without sensitive workload data.
+Bound all input reads, extraction, output capture and child lifetimes; preserve
+successful diagnostics and warnings, escape console workflow commands, and
+terminate descendants on timeout. Reuse existing safety primitives where
+compatible, including Windows path/case rules. Routine verification uses the supported reviewed evidence/profile invariants
+and exact hashes, without live advisory/schema services. Official schema checks
+remain distinct acceptance evidence rather than a claim inferred from a profile
+label.
+
+== State, concurrency and recovery
+
+Observable state is the workflow run, jobs, artifacts, draft and tag; add no
+state branch, tracking issue or release-request file. Legal progress is planned,
+validated, built, tested, admitted, publishing, published. Any required failure
+or cancellation stops progression. Missing retained artifacts mean expired,
+never an invitation to rebuild inside publication.
+
+Only `workflow_dispatch` on the default branch can publish. PRs use the event's
+exact test SHA consistently and publish nothing. Dispatch records `github.sha`
+once; later branch movement cannot change it. No cross-run promotion exists.
+The scheduled published-release compatibility entry point remains separate;
+publication does not demand that its recorded nightly is still latest.
+
+Use one release concurrency group per repository with `cancel-in-progress:
+false`; PR groups are separate. The caller must not duplicate the same group
+at both nesting levels, which can cancel/deadlock its own called run. GitHub's
+https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency[concurrency contract]
+allows a default single pending slot; replacement of a pending dispatch built
+nothing and requires redispatch. Existing tags/releases and immutable assets
+provide the additional refusal against duplicate publication.
+
+A publish-only rerun has a new current attempt while its build/test artifacts
+retain their producing attempts. Validate the original exact artifact IDs,
+digests and successful producer/test job IDs, and the unchanged admitted
+candidate. Do not require producing attempts to equal the publisher attempt.
+Re-running build/test creates a new candidate generation that invalidates old
+admission; never mix its files with old target outcomes. If original identities
+or retained bytes cannot be established, dispatch fresh. A published immutable
+release is never amended. An existing draft/tag or ambiguous API result follows
+`docs/workflows.adoc` recovery: inspect first, delete only the failed unpublished
+draft as an explicit maintainer operation, then retry the intact run or dispatch
+fresh. No automated draft deletion or asset replacement is introduced.
+
+The specialized linker-input controller retains its exact-current-PR-head,
+allowed-producer and provenance contract. Its `producer-run` input is not
+ordinary-release artifact promotion.
+
+== Delivery and acceptance
+
+The combined PR reviews this contract, implementation and corresponding manual
+ownership changes. It supplies pure-package, multi-bundle and bounded native
+fixtures under `examples/`, one shared workflow, reusable operations and
+independent admission. Downstream pilot migrations of ansi/weaver, roc-time, gui
+and Blueprint, and remaining platforms are follow-ups; their adopter merges and
+product releases are not implied by this tooling PR. Go/Zig caller pin and
+`producer-run` wiring retain the separate linker-input controller's contract.
+
+Fixture invocations trace obligation ID, source/compiler/target and candidate
+file identities. Assert one build per asset per run and one execution per
+selected obligation, except explicitly named reproducibility checks. Cover
+standalone/directory examples, ANSI/CRLF handling, two sibling bundles, source
+and native subjects and reviewed supplier gaps. A shared fix must pass every
+profile without changing consumer orchestration. Every migration lists deleted
+common scripts and jobs; a new template alone is not completion.
+
+Failure fixtures cover wrong repository/source/compiler/version/workflow/run
+and attempt; shortened/missing/skipped/cancelled targets; unsafe/duplicate/
+missing/swapped assets; altered notes/specs/sidecars; failed extraction; output
+limits and descendant cleanup. Selection covers mixed/renamed/deleted/unknown
+paths, incomplete change APIs and explicit opt-in. Recovery covers publish-only
+retry, replaced candidate generation, existing draft/tag, expired artifacts and
+ambiguous publication responses. Exact distributed utilities run without their
+source checkout or implementation compiler on every claimed execution platform.
+
+Completion of this tooling PR requires its read-only PR checks and exact-artifact
+regressions. On 2026-10-24 the maintainer removed the live protected fixture-dispatch
+and publication-readback acceptance run from this PR's completion criteria. The
+implemented admission, provenance verification and publisher readback safeguards
+remain required at runtime. This PR makes no claim of a successful protected
+publication. Product releases, environment/settings changes and adopter merges
+retain their normal authorization. No runtime, native support, attestation level
+or compliance claim follows from configuration alone.
+
+The accepted chapter narratives and linked risk index own normative guidance;
+this proposal remains the reviewed design and acceptance record for #83. Keep
+implementation gaps, hosted acceptance observations and downstream migration
+tracking in the relevant issues, rather than a manual gap list. Configuration
+and local fixtures alone do not establish a successful hosted release.

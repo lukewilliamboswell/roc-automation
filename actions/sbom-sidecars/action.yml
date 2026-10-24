@@ -6,7 +6,7 @@ inputs:
     description: The release files to describe, one relative workspace path per line; an explicit list, never a glob
     required: true
   version:
-    description: Release version of every listed file, such as 0.12.0 or 0.12.0-rc1
+    description: SemVer release version of every listed file, including hyphenated prereleases such as 0.0.1-dry-run; build metadata is unsupported
     required: true
   target:
     description: Blueprint system of the listed files, such as x86_64-linux, or source for a source bundle
@@ -33,8 +33,11 @@ inputs:
     description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
     default: 'false'
   archive-members:
-    description: For a source target with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself
+    description: For source-target .tar.zst bundles, generate a component per member the composition does not account for, or reviewed to require complete reviewed accounting; other files use the composition without member enumeration
     default: generate
+  cache-binary:
+    description: Persist reviewed native SBOM tool bytes by release, runner system and SHA-256; every reuse is verified before execution
+    default: 'true'
   roc-binary:
     description: Roc compiler that runs the tool app bundle, needed only when the Blueprint release records no native tool binary for the runner; it must be the release the record names
     default: roc
@@ -43,6 +46,9 @@ inputs:
     default: blueprint
 
 outputs:
+  binary-cache-hit:
+    description: Whether the native tool was reused after its private copy matched the reviewed digest
+    value: ${{ steps.sidecars.outputs.binary-cache-hit }}
   assets:
     description: Every listed file and its sidecars, one relative path per line, for the test jobs and the publisher
     value: ${{ steps.sidecars.outputs.assets }}
@@ -77,9 +83,23 @@ outputs:
 runs:
   using: composite
   steps:
+    - id: prepare
+      name: Resolve the reviewed native SBOM tool cache identity
+      shell: bash
+      env:
+        INPUT_CACHE_BINARY: ${{ inputs.cache-binary }}
+        CONTROLLER: ${{ github.action_path }}/sbom_sidecars.py
+      run: python3 "$CONTROLLER" --prepare-cache
+    - name: Restore and save reviewed native SBOM tool bytes
+      if: inputs.cache-binary == 'true' && steps.prepare.outputs.binary-cache-key != ''
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.prepare.outputs.binary-cache-directory }}
+        key: ${{ steps.prepare.outputs.binary-cache-key }}
     - id: sidecars
       shell: bash
       env:
+        INPUT_CACHE_BINARY: ${{ inputs.cache-binary }}
         INPUT_FILES: ${{ inputs.files }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_TARGET: ${{ inputs.target }}

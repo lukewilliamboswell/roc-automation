@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "name": "lifecycle-multibundle",
+  "profile": "package",
+  "bundles": [
+    {
+      "id": "core",
+      "root": "core/main.roc",
+      "prefix": "lifecycle-multibundle-core",
+      "placeholder": "core-url",
+      "depends_on": []
+    },
+    {
+      "id": "greeting",
+      "root": "greeting/main.roc",
+      "prefix": "lifecycle-multibundle-greeting",
+      "placeholder": "greeting-url",
+      "depends_on": [
+        "core"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "id": "examples",
+      "directory": "examples",
+      "spec": "examples/spec.json",
+      "bundles": [
+        "core",
+        "greeting"
+      ],
+      "target_ids": [
+        "linux"
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "manual",
+      "directory": "docs",
+      "pdf": true
+    }
+  ],
+  "target_matrix": [
+    {
+      "id": "linux",
+      "runner": "ubuntu-24.04",
+      "runtime_task": ""
+    }
+  ],
+  "adapters": [],
+  "checks": [
+    {
+      "id": "unit",
+      "task": "check-unit",
+      "kind": "unit",
+      "target_ids": []
+    }
+  ],
+  "sboms": [
+    {
+      "subject": "core",
+      "target": "source",
+      "composition": "sbom/core.json",
+      "supplier_imports": ""
+    },
+    {
+      "subject": "greeting",
+      "target": "source",
+      "composition": "sbom/greeting.json",
+      "supplier_imports": ""
+    }
+  ],
+  "source_paths": [
+    "core",
+    "greeting"
+  ],
+  "sbom_author": "Organization: roc-automation contributors"
+}

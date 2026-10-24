@@ -91,6 +91,21 @@ class PrepareTests(unittest.TestCase):
         self.assertIn('[Home](index.html#manual)', page)
         self.assertIn('[Chapter](#chapter)', page)
 
+    def test_chapter_only_references_preserve_explicit_first_heading_and_routes(self):
+        self.write('index.adoc', '= Manual\n\ninclude::releases.adoc[leveloffset=+1]\n\nxref:releases/3.adoc[]\n')
+        self.write('releases.adoc', '[#history]\n= Releases\n\ninclude::releases/3.adoc[leveloffset=+1]\n')
+        self.write('releases/3.adoc', '[#v3]\n= Version three\n\n== Details\n')
+        self.write('usage.adoc', '= Usage\n\nxref:releases.adoc[History] and xref:releases/3.adoc[]\n')
+        self.prepare()
+        self.assertIn('[Version three](#v3)', (self.root/'prepared/manual.md').read_text())
+        page = (self.root/'prepared/pages/usage.md').read_text()
+        self.assertIn('[History](releases.html#history)', page)
+        self.assertIn('[Version three](releases.html#v3)', page)
+        self.write('usage.adoc', '= Usage\n\nxref:missing.adoc[]\n')
+        with self.assertRaisesRegex(ValueError, 'Unknown anchor missing.adoc'):
+            prep.prepare_docs(self.root, output_directory='bad-prepared')
+        self.assertFalse((self.root/'bad-prepared').exists())
+
     def test_table_continuation_sidebar_and_description_text(self):
         self.write('index.adoc', '= Manual\n\n.Sidebar\n****\nTerm:: Definition\ncontinued\n****\n\n[cols="1,2",options="header"]\n|===\n| A | B\n| cell\n| words\n  continue\n|===\n')
         manifest = self.prepare()

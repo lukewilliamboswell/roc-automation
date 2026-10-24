@@ -1,0 +1,163 @@
+name: Build shared lifecycle utilities
+description: Build immutable shared Roc utilities for read-only lifecycle jobs; never evaluates consumer configuration or runs a consumer task.
+inputs:
+  tools:
+    description: Space-separated subset of plan github transport operations pages; only these reviewed utility entrypoints can be built
+    default: plan github transport operations
+  build-policy:
+    description: Also build the pinned source policy utility in this read-only job
+    default: 'false'
+  build-docs:
+    description: Also build the pinned documentation renderer in this read-only job
+    default: 'false'
+outputs:
+  directory:
+    description: Private directory containing the exact native utility executables
+    value: ${{ steps.build.outputs.directory }}
+  plan-binary:
+    value: ${{ steps.build.outputs.plan-binary }}
+    description: Native release planner
+  github-binary:
+    value: ${{ steps.build.outputs.github-binary }}
+    description: Read-only GitHub context and artifact selector
+  transport-binary:
+    value: ${{ steps.build.outputs.transport-binary }}
+    description: Inert artifact transport utility
+  operations-binary:
+    value: ${{ steps.build.outputs.operations-binary }}
+    description: Source and candidate release operations
+  pages-binary:
+    value: ${{ steps.build.outputs.pages-binary }}
+    description: Inert admitted documentation archive restoration
+  tooling-compiler-version:
+    value: ${{ steps.build.outputs.tooling-compiler-version }}
+    description: Actual fixed compiler version used to build these utilities
+  archive-helper:
+    value: ${{ steps.build.outputs.archive-helper }}
+    description: Reviewed bounded ZIP verification runtime companion
+  python:
+    value: ${{ steps.build.outputs.python }}
+    description: Host Python interpreter for the reviewed ZIP companion
+  policy-binary:
+    value: ${{ steps.policy.outputs.binary }}
+    description: Native source policy utility when requested
+  docs-binary:
+    value: ${{ steps.docs.outputs.binary }}
+    description: Native renderer when requested
+runs:
+  using: composite
+  steps:
+    - name: Reject workspace compiler shadowing
+      shell: bash
+      run: |
+        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+        if compgen -G "$workspace/roc_nightly-*" > /dev/null; then
+          echo 'Unexpected pre-existing tooling compiler entry' >&2
+          exit 2
+        fi
+    - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      with:
+        version: nightly-new-compiler
+        nightly-tag: nightly-2026-10-09-258ab27
+    - id: build
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        set -euo pipefail
+        temp_root="$(cd "$RUNNER_TEMP" && pwd -P)"
+        directory="$(mktemp -d "$temp_root/roc-lifecycle.XXXXXX")"
+        extension=''
+        python=python3
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          directory="$(cygpath -m "$directory")"
+          extension=.exe
+          python=python
+        fi
+        for tool in $TOOLS; do
+          case "$tool" in
+            plan) source=release_plan ;;
+            github) source=lifecycle_github ;;
+            transport) source=lifecycle_transport ;;
+            operations) source=release_operations ;;
+            pages) source=lifecycle_pages ;;
+            *) echo 'Unsupported lifecycle utility' >&2; exit 2 ;;
+          esac
+          roc build "$ACTION_PATH/../../scripts/$source.roc" --output="$directory/$tool$extension"
+          echo "$tool-binary=$directory/$tool$extension" >> "$GITHUB_OUTPUT"
+        done
+        tooling_version="$(NO_COLOR=1 roc version)"
+        tooling_version="${tooling_version%$'\r'}"
+        case "$tooling_version" in
+          *$'\n'*|*$'\r'*) echo 'Unexpected multiline compiler identity' >&2; exit 2 ;;
+        esac
+        printf 'tooling-compiler-version=%s\n' "$tooling_version" >> "$GITHUB_OUTPUT"
+        # setup-roc discovers workspace compiler directories. Preserve this fixed
+        # tooling installation outside that search before installing the one
+        # selected product compiler; the product must not resolve to tooling.
+        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+        tooling="$(cd "$(dirname "$(command -v roc)")" && pwd -P)"
+        if [[ "$(dirname "$tooling")" != "$workspace" || -L "$tooling" ]]; then
+          echo 'Unexpected tooling compiler location' >&2
+          exit 2
+        fi
+        case "$(basename "$tooling")" in
+          roc_nightly-*) mv "$tooling" "$directory/tooling" ;;
+          *) echo 'Unexpected tooling compiler directory' >&2; exit 2 ;;
+        esac
+        {
+          echo "directory=$directory"
+          echo "archive-helper=$ACTION_PATH/../release-compatibility/archive.py"
+          echo "python=$python"
+        } >> "$GITHUB_OUTPUT"
+    - if: inputs.build-policy == 'true'
+      uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      with:
+        version: nightly-new-compiler
+        nightly-tag: nightly-2026-10-15-38e6c42
+    - id: policy
+      if: inputs.build-policy == 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        DIRECTORY: ${{ steps.build.outputs.directory }}
+      run: |
+        set -euo pipefail
+        roc build "$ACTION_PATH/../../tools/roc-policy/main.roc" --output="$DIRECTORY/roc-policy"
+        echo "binary=$DIRECTORY/roc-policy" >> "$GITHUB_OUTPUT"
+        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+        tooling="$(cd "$(dirname "$(command -v roc)")" && pwd -P)"
+        if [[ "$(dirname "$tooling")" != "$workspace" || -L "$tooling" ]]; then
+          echo 'Unexpected tooling compiler location' >&2
+          exit 2
+        fi
+        case "$(basename "$tooling")" in
+          roc_nightly-*) mv "$tooling" "$DIRECTORY/policy-tooling" ;;
+          *) echo 'Unexpected policy compiler directory' >&2; exit 2 ;;
+        esac
+    - if: inputs.build-docs == 'true'
+      uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      with:
+        version: nightly-new-compiler
+        nightly-tag: nightly-2026-10-21-5349569
+    - id: docs
+      if: inputs.build-docs == 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        DIRECTORY: ${{ steps.build.outputs.directory }}
+      run: |
+        set -euo pipefail
+        python3 "$ACTION_PATH/../../tools/roc-docs/tests/run_roc_tests.py" --build roc build "$ACTION_PATH/../../tools/roc-docs/main.roc" --output="$DIRECTORY/roc-docs"
+        echo "binary=$DIRECTORY/roc-docs" >> "$GITHUB_OUTPUT"
+        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+        tooling="$(cd "$(dirname "$(command -v roc)")" && pwd -P)"
+        if [[ "$(dirname "$tooling")" != "$workspace" || -L "$tooling" ]]; then
+          echo 'Unexpected tooling compiler location' >&2
+          exit 2
+        fi
+        case "$(basename "$tooling")" in
+          roc_nightly-*) mv "$tooling" "$DIRECTORY/docs-tooling" ;;
+          *) echo 'Unexpected renderer compiler directory' >&2; exit 2 ;;
+        esac

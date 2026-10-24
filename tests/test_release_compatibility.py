@@ -162,6 +162,231 @@ else:
         self.assertNotIn("::error::", ran.stdout)
         self.assertIn("::error::", (directory / "2-stderr.log").read_text())
         self.assertIn("compiler stdout detail", (directory / "2-stdout.log").read_text())
+        self.assertIn("--opt=dev", json.loads((directory / "3-command.json").read_text())["argv"])
+
+    def test_single_artifact_flattened_download_is_aggregated(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        # download-artifact's one-match pattern writes directly to its path.
+        artifacts = self.root / "artifacts"
+        artifacts.mkdir()
+        shutil.copy(directory / "result.json", artifacts / "result.json")
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("report=success", outputs)
+        for change in ({"GITHUB_RUN_ATTEMPT": "2"}, {"RA_TEST_RESULT": "cancelled"}):
+            ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts), **change)
+            self.assertEqual(ran.returncode, 0, ran.stderr)
+            self.assertNotIn("report=success", outputs)
+        selected = json.loads(self.selection.read_text())
+        selected["runners"].append("macos-26")
+        self.selection.write_text(json.dumps(selected))
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertNotIn("report=success", outputs)
+
+    def test_duplicate_flat_and_nested_evidence_is_ambiguous(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = json.loads((directory / "result.json").read_text())
+        selected = json.loads(self.selection.read_text())
+        # Aggregate is platform independent: exercise each supported Windows
+        # identity here too, rather than silently creating an Ubuntu directory
+        # beside a flat Windows result on hosted Windows.
+        for runner in ("ubuntu-24.04", "windows-2022", "windows-2025"):
+            with self.subTest(runner=runner):
+                artifacts = self.root / ("duplicate-artifacts-" + runner)
+                nested = artifacts / ("compatibility-" + runner)
+                nested.mkdir(parents=True)
+                result["runner"] = runner
+                selected["runners"] = [runner]
+                self.selection.write_text(json.dumps(selected))
+                encoded = json.dumps(result)
+                (nested / "result.json").write_text(encoded)
+                (artifacts / "result.json").write_text(encoded)
+                ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                self.assertIn("outcome=setup-failed", outputs)
+                self.assertIn("report=none", outputs)
+
+    def assert_no_aggregate_report(self, artifacts):
+        ran, directory, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("outcome=setup-failed", outputs)
+        self.assertIn("report=none", outputs)
+        self.assertEqual(json.loads((directory / "summary.json").read_text())["results"], [])
+
+    def duplicate_layout_paths(self, name, bad_side):
+        artifacts = self.root / name
+        nested = artifacts / ("compatibility-" + self.env["RA_RUNNER"]) / "result.json"
+        nested.parent.mkdir(parents=True)
+        flat = artifacts / "result.json"
+        bad, good = (flat, nested) if bad_side == "flat" else (nested, flat)
+        return artifacts, bad, good
+
+    def test_malformed_or_non_utf8_duplicate_cannot_fall_back_to_valid_layout(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            for kind, content in (("malformed", b"{not json"), ("non-utf8", b"\xff")):
+                with self.subTest(side=side, kind=kind):
+                    artifacts, bad, good = self.duplicate_layout_paths(side + kind, side)
+                    good.write_bytes(result)
+                    bad.write_bytes(content)
+                    self.assert_no_aggregate_report(artifacts)
+
+    def test_directory_duplicate_is_present_and_cannot_fall_back(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            with self.subTest(side=side):
+                artifacts, bad, good = self.duplicate_layout_paths(side + "-directory", side)
+                good.write_bytes(result)
+                bad.mkdir()
+                self.assert_no_aggregate_report(artifacts)
+
+    @unittest.skipIf(os.name == "nt", "Unix FIFO metadata regression")
+    def test_special_duplicate_is_rejected_without_opening_it(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            with self.subTest(side=side):
+                artifacts, bad, good = self.duplicate_layout_paths(side + "-fifo", side)
+                good.write_bytes(result)
+                os.mkfifo(bad)
+                ran, directory, outputs = self.run_phase("aggregate", phase_timeout=2, RA_ARTIFACTS=str(artifacts))
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                self.assertIn("report=none", outputs)
+                self.assertEqual(json.loads((directory / "summary.json").read_text())["results"], [])
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks requires Windows developer privileges")
+    def test_link_or_dangling_duplicate_cannot_fall_back(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            for dangling in (False, True):
+                with self.subTest(side=side, dangling=dangling):
+                    artifacts, bad, good = self.duplicate_layout_paths(side + str(dangling), side)
+                    good.write_bytes(result)
+                    bad.symlink_to(self.root / "absent-result" if dangling else good)
+                    self.assert_no_aggregate_report(artifacts)
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks requires Windows developer privileges")
+    def test_sole_linked_file_or_layout_directory_is_not_admitted(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for kind in ("flat-file", "nested-file", "nested-directory", "artifact-directory"):
+            with self.subTest(kind=kind):
+                artifacts = self.root / ("sole-" + kind)
+                artifacts.mkdir()
+                if kind == "artifact-directory":
+                    (artifacts / "result.json").write_bytes(result)
+                    alias = self.root / "artifact-directory-alias"
+                    alias.symlink_to(artifacts, target_is_directory=True)
+                    self.assert_no_aggregate_report(alias)
+                elif kind == "nested-directory":
+                    actual = self.root / "actual-nested-directory"
+                    actual.mkdir()
+                    (actual / "result.json").write_bytes(result)
+                    (artifacts / ("compatibility-" + self.env["RA_RUNNER"])).symlink_to(actual, target_is_directory=True)
+                    self.assert_no_aggregate_report(artifacts)
+                else:
+                    target = self.root / ("actual-" + kind + ".json")
+                    target.write_bytes(result)
+                    path = artifacts / "result.json" if kind == "flat-file" else artifacts / ("compatibility-" + self.env["RA_RUNNER"]) / "result.json"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.symlink_to(target)
+                    self.assert_no_aggregate_report(artifacts)
+
+    def test_stdout_normalization_is_opt_in_and_logs_keep_raw_bytes(self):
+        ansi = "\x1b[31mhello\x1b[0m\r\n"
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDOUT=ansi)
+        self.assertNotEqual(ran.returncode, 0)
+        self.case["stdout_match"] = "strip-sgr-and-cr"
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDOUT=ansi)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual((directory / "4-stdout.log").read_bytes(), ansi.encode())
+
+    def test_ignored_stderr_or_expected_nonzero_cannot_hide_crash_markers(self):
+        for expected, actual, fuzz, marker, accepted in ((1, 1, False, "[ROC CRASHED]", False), (0, 0, False, "\x1b[31m[roc cra\rshed]\x1b[0m", False), (77, 77, True, "[roc crashed]", True), (77, 77, False, "[roc crashed]", False)):
+            with self.subTest(expected=expected, fuzz=fuzz):
+                self.case.update(exit_code=expected, stderr_match="ignore")
+                self.spec["apps"][0]["build_args"] = ["--fuzz"] if fuzz else []
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR=marker, FAKE_CASE_EXIT=str(actual))
+                self.assertEqual(ran.returncode == 0, accepted, ran.stdout + ran.stderr)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "compatible" if accepted else "incompatible")
+
+    def test_fuzz_flag_is_build_only_and_stderr_can_be_explicitly_ignored(self):
+        self.spec["apps"][0]["build_args"] = ["--fuzz"]
+        self.case.update(stderr_match="ignore", exit_code=77, args=["run", "corpus", "--time=1"])
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="variable fuzz statistics", FAKE_CASE_EXIT="77")
+        self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
+        check = json.loads((directory / "2-command.json").read_text())
+        build = json.loads((directory / "3-command.json").read_text())
+        case = json.loads((directory / "4-command.json").read_text())
+        self.assertNotIn("--fuzz", check["argv"])
+        self.assertEqual(build["argv"][-1], "--fuzz")
+        self.assertIn("--opt=speed", build["argv"])
+        self.assertNotIn("--opt=dev", build["argv"])
+        self.assertEqual(case["argv"][-3:], ["run", "corpus", "--time=1"])
+        self.assertIn("variable fuzz statistics", (directory / "4-stderr.log").read_text())
+        # Ignoring stderr cannot hide the wrong exit status or stdout.
+        for change in ({"FAKE_CASE_EXIT": "0"}, {"FAKE_CASE_EXIT": "77"}):
+            if change["FAKE_CASE_EXIT"] == "77":
+                self.case["stdout"] = "incorrect"
+                self.make_archive()
+                self.refresh_selection()
+            ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="statistics", **change)
+            self.assertNotEqual(ran.returncode, 0)
+            self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
+
+    def test_fuzz_ignored_stderr_cannot_turn_interruption_into_expected_exit(self):
+        self.spec["apps"][0]["build_args"] = ["--fuzz"]
+        self.case.update(stderr_match="ignore")
+        for variable, code, outcome in (("FAKE_CASE_SLEEP", 124, "test-timeout"), ("FAKE_CASE_FLOOD", 125, "output-limit")):
+            with self.subTest(outcome=outcome):
+                self.case["exit_code"] = code
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", RA_CASE_TIMEOUT_MS="1000", **{variable: "1"})
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], outcome)
+                self.assert_no_success_report(directory)
+
+    def test_default_stderr_comparison_remains_exact(self):
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="unexpected")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
+
+    def test_unreviewed_build_flags_and_invalid_stderr_modes_fail_before_compiler(self):
+        for args in (["--output=elsewhere"], ["--target=wasm32"], ["--fuzz", "--fuzz"], ["--fuzz", "--opt=fast"], ["--help"]):
+            with self.subTest(args=args):
+                self.spec["apps"][0]["build_args"] = args
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertFalse((directory / "1-command.json").exists())
+        self.spec["apps"][0].pop("build_args")
+        for mode, expected in (("regex", ""), ("ignore", "an assertion that would be discarded")):
+            with self.subTest(mode=mode):
+                self.case.update(stderr_match=mode, stderr=expected)
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertFalse((directory / "1-command.json").exists())
 
     def test_compiler_failure_is_incompatible_and_keeps_diagnostics(self):
         ran, directory, _ = self.run_phase("test", FAKE_COMPILER_FAIL="1")

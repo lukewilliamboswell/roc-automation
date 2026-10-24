@@ -25,6 +25,7 @@ SYSTEMS = {
     ("Linux", "X64"): "x86_64-linux",
     ("Linux", "ARM64"): "aarch64-linux",
     ("macOS", "ARM64"): "aarch64-darwin",
+    ("Windows", "X64"): "x86_64-windows",
 }
 MAX_BYTES = 256 * 1024 * 1024
 # The platform URL in a Blueprint.roc header names the release whose binary must evaluate it.
@@ -49,8 +50,13 @@ def checked_version(version: str) -> str:
     return version
 
 
+def executable_name(system: str) -> str:
+    return "blueprint.exe" if system == "x86_64-windows" else "blueprint"
+
+
 def asset_url(version: str, system: str) -> str:
-    return f"{RELEASES}/{checked_version(version)}/blueprint-{system}"
+    suffix = ".exe" if system == "x86_64-windows" else ""
+    return f"{RELEASES}/{checked_version(version)}/blueprint-{system}{suffix}"
 
 
 def version_in(config: str) -> str:
@@ -118,7 +124,7 @@ def sha256_of(path: Path) -> str:
 
 def private_directory(directory: Path) -> None:
     """Never follow a cache/install directory supplied as a symlink."""
-    if directory.is_symlink():
+    if directory.is_symlink() or (directory.exists() and getattr(directory.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
         raise ValueError("Blueprint cache/install directory must not be a symlink")
     directory.mkdir(parents=True, exist_ok=True)
     if not directory.is_dir():
@@ -126,16 +132,48 @@ def private_directory(directory: Path) -> None:
     directory.chmod(0o700)
 
 
+def open_cache(source: Path) -> int:
+    if os.name != "nt":
+        return os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    # OPEN_REPARSE_POINT opens the link itself, never its target. Python's
+    # os.open has no Windows equivalent of O_NOFOLLOW.
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    handle = create(str(source), 0x80000000, 1, None, 3, 0x00200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        error = ctypes.get_last_error()
+        if error in (2, 3):
+            raise FileNotFoundError(str(source))
+        raise ctypes.WinError(error)
+    try:
+        return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except BaseException:
+        close = kernel.CloseHandle
+        close.argtypes = [wintypes.HANDLE]
+        close.restype = wintypes.BOOL
+        close(handle)
+        raise
+
+
 def copy_cached(source: Path, destination: Path) -> bool:
     """Copy only a bounded regular file; admission uses the copied bytes' hash."""
     try:
-        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = open_cache(source)
     except FileNotFoundError:
         return False
     except OSError as error:
         raise ValueError("Blueprint executable cache must contain a regular file, never a symlink") from error
     with os.fdopen(descriptor, "rb") as cached:
         metadata = os.fstat(cached.fileno())
+        if getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise ValueError("Blueprint executable cache must contain a regular file, never a symlink")
         if not stat.S_ISREG(metadata.st_mode):
             raise ValueError("Blueprint executable cache must contain a regular file")
         if metadata.st_size > MAX_BYTES:
@@ -183,7 +221,7 @@ def install(version: str, system: str, expected: str, directory: Path, download:
         if cache_status is not None:
             cache_status.append(bool(hit))
         candidate.chmod(stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-        installed = directory / "blueprint"
+        installed = directory / executable_name(system)
         candidate.replace(installed)
         return installed
     finally:
@@ -198,7 +236,9 @@ def boolean_input(value: str, name: str) -> bool:
 
 def cache_settings(env: dict[str, str], version: str, system: str) -> tuple[str, str]:
     """Cache only Blueprint's verified download bytes, scoped by locked tool set."""
-    boolean_input(env.get("INPUT_INSTALL_NIX", "false"), "install-nix")
+    install_nix = boolean_input(env.get("INPUT_INSTALL_NIX", "false"), "install-nix")
+    if system == "x86_64-windows" and install_nix:
+        raise ValueError("install-nix is unavailable on native Windows; use Programs/Fetch/Expect environments")
     if not boolean_input(env.get("INPUT_CACHE", "false"), "cache"):
         return "", ""
     workload = env.get("INPUT_CACHE_WORKLOAD", "")
@@ -215,7 +255,14 @@ def cache_settings(env: dict[str, str], version: str, system: str) -> tuple[str,
     lock_digest = hashlib.sha256(content).hexdigest()
     installer_digest = hashlib.sha256(Path(__file__).read_bytes() + KNOWN_RELEASES.read_bytes()).hexdigest()
     workflow = hashlib.sha256(env.get("GITHUB_WORKFLOW", "local").encode()).hexdigest()[:16]
-    cache_home = env.get("XDG_CACHE_HOME") or str(Path(env["HOME"]) / ".cache")
+    cache_home = env.get("XDG_CACHE_HOME")
+    if not cache_home and system == "x86_64-windows":
+        cache_home = env.get("LOCALAPPDATA")
+    if not cache_home:
+        home = env.get("HOME")
+        if not home:
+            raise ValueError("Blueprint artifact caching requires XDG_CACHE_HOME, LOCALAPPDATA on Windows, or HOME")
+        cache_home = str(Path(home) / ".cache")
     if not Path(cache_home).is_absolute() or any(ord(c) < 32 or ord(c) == 127 for c in cache_home):
         raise ValueError("the Blueprint cache home must be an absolute path without control characters")
     artifacts = str(Path(cache_home) / "blueprint" / "v1" / "artifacts")

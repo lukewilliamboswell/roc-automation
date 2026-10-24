@@ -27,7 +27,12 @@ consumer configuration retain their own verification and trust requirements.
 Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
 installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
-The setup action builds nothing.
+The setup action builds nothing. It supports x64 and arm64 Linux, Apple Silicon
+macOS, and x64 Windows. Windows releases are recorded from Blueprint 0.6.0;
+the installed command is `blueprint.exe`. Leave `install-nix` false on Windows:
+a native Windows request for Nix fails before any binary download. Use
+`Programs`/`Fetch` and `Expect`, as the
+xref:platforms.adoc#provision-native-windows-hosts[native host guide] describes.
 
 The executable cache is enabled by default. Its exact identity includes the
 Blueprint release, runner system and reviewed SHA-256. Restored bytes are copied
@@ -71,6 +76,7 @@ workflow cannot disagree with it.
 | `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-darwin` | Reviewed SHA-256 of the binary for Apple Silicon macOS runners. Overrides the recorded value.
+| `sha256-x86_64-windows` | Reviewed SHA-256 of `blueprint-x86_64-windows.exe` for native x64 Windows runners. Overrides the recorded value.
 |===
 
 Outputs are `blueprint-path`, the absolute path of the installed binary,
@@ -355,6 +361,34 @@ generation fails. Repositories pinned to older action SHAs keep the behavior
 of those revisions; adopting this action removes the Docker backend and the
 `backend` and `theme-directory` inputs.
 
+[#lifecycle-integration]
+== Shared lifecycle integration
+
+Consumers call `.github/workflows/release-lifecycle.yml` at a reviewed full SHA;
+xref:workflows.adoc#the-three-workflows[the lifecycle chapter] describes the
+caller and required aggregate. Its wrappers keep the execution boundary explicit:
+
+* `actions/lifecycle-tool` builds only named shared utilities from its own action
+  revision, with fixed implementation compilers. It runs in read-only jobs and
+  returns executable/helper paths and the observed tooling compiler version.
+* `actions/setup-package-compiler` installs one exact resolved nightly before
+  candidate checkout, rejects existing workspace compiler entries, and retains
+  the installation outside the workspace. Its outputs are the absolute compiler
+  path and observed version; it never resolves a second latest nightly.
+* `actions/admit-release` uses its own locked tooling, with no consumer checkout
+  or Blueprint evaluation. Its `discover`, `extract`, `assemble`, `collect` and
+  `verify-provenance` phases handle bounded inert metadata and files. Exact
+  artifact IDs/digests and the complete admitted file list carry the handoff.
+
+The shared publisher repeats independent admission after the protected release
+job starts, attests and verifies every explicit subject, and invokes the
+publisher below with `require-admission: true`. Optional Pages restoration runs
+read-only after publication and supplies only the verified site directory to a
+separate deploy job. Local fixtures and wrapper configuration do not establish
+that a consuming repository's environment rules or protected dispatch worked;
+those require the actual observations described in
+xref:security-model.adoc#independent-lifecycle-admission[independent admission].
+
 [#publish-release]
 == `actions/publish-release`
 
@@ -387,10 +421,12 @@ publish:
           candidate/docs/*.pdf
 ----
 
-The job names the `release` environment, holds `contents: write` and nothing
-else, and has no checkout step. Its only inputs are the artifact the build job
-uploaded and the test jobs verified. What the assets are, how they are built and
-tested, and any attestation of them stay in the repository's earlier jobs.
+The action needs `contents: write` and runs without a consumer checkout. The
+example describes its low-level interface. Product repositories adopt the shared
+lifecycle caller: that workflow owns the build/test graph and gives its protected
+publication job the additional read and attestation permissions needed for
+independent admission and provenance verification. The publisher receives the
+resulting explicit file set and admission report.
 
 [cols="2,2,4",options="header"]
 |===
@@ -401,6 +437,8 @@ tested, and any attestation of them stay in the repository's earlier jobs.
 | `notes-file` | required | Path of the rendered release notes, which become the body of the release
 | `assets` | required | Globs of the tested files, one per line, relative to the workspace
 | `tag` | `version` | The tag to create: the version, or `<name>-<version>` in a repository that releases more than one thing
+| `admission-file` | empty | Independent exact-file admission report supplied by the shared lifecycle
+| `require-admission` | `false` | The shared lifecycle sets `true`; missing or mismatched source/run/version/notes/assets evidence is refused before publication
 | `target` | `${{ github.sha }}` | Full SHA of the tested commit the tag points at
 | `token` | `${{ github.token }}` | A token with `contents: write` on the repository
 |===
@@ -513,6 +551,7 @@ the composition stays the repository's reviewed file.
 | `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
 | `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
 | `archive-members` | `generate` | For a `source` target with a tool that lists archive members: generate a component for each member the composition does not account for, or `reviewed` to require the composition to account for every member itself
+| `cache-binary` | `true` | Persist only reviewed native tool bytes, with an exact release/system/SHA-256 key and verification on every reuse; `false` downloads afresh
 | `roc-binary` | `roc` | The Roc compiler that runs the tool app bundle, used only when the release records no native tool binary for the runner
 | `blueprint-binary` | `blueprint` | The installed Blueprint executable
 |===
@@ -524,6 +563,8 @@ per line, for the artifact upload, the test jobs, the attestation step's
 inventory the documents were rendered from; `evidence`, a
 `roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `tool-sha256`,
 `compiler`, `commit` and `created`, which release notes can record.
+`binary-cache-hit` reports reuse only after the private copied bytes match the
+reviewed digest; the artifact cache service's hit flag alone is not admission.
 
 The evidence envelope lists every file and sidecar by name, path, size,
 SHA-256, format, target and version, bound to the source repository and
@@ -553,9 +594,16 @@ The action does the following, in this order, and stops at the first failure.
   binaries, their reviewed SHA-256 per system, and the tool's features:
   `members`, when the tool lists a produced archive, and `manifest`, when
   `bind` writes an evidence manifest. A release without a record fails the
-  step. With a recorded binary for the runner, the action downloads
-  it into a private file, admits it only when its digest matches, and needs
-  no compiler. Otherwise `roc-binary` must report the recorded Roc release;
+  step. With a recorded binary for the runner, the action copies bounded regular
+  bytes from its exact executable cache into a private file, or downloads on a
+  miss. It hashes that private copy before making it executable and needs no
+  compiler. Corrupt regular bytes are replaced by a freshly verified download;
+  symlink and nonregular cache entries fail. `cache-binary: true` restores and
+  saves only these bytes with `actions/cache`, never an executable workspace,
+  composition, inventory or sidecar. The key includes release, system and
+  reviewed SHA-256. `cache-binary: false` disables reuse. The cache is separate
+  from Blueprint's Programs/Fetch store; a caller need not expose a private
+  installed-path override. Otherwise `roc-binary` must report the recorded Roc release;
   another compiler fails before anything runs.
 . *Bind to the tested commit.* The checkout's `HEAD` must equal the event
   commit. The documents' creation time is that commit's time, not the wall

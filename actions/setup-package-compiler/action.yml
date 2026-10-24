@@ -1,0 +1,82 @@
+name: Install the selected package compiler
+description: Install one resolved nightly before candidate checkout and retain its absolute identity outside the workspace; read-only jobs only.
+inputs:
+  nightly-tag:
+    description: Exact resolved nightly tag, never a moving latest selector
+    required: true
+outputs:
+  compiler-path:
+    description: Absolute native compiler path, independent of Blueprint task PATH
+    value: ${{ steps.relocate.outputs.compiler-path }}
+  version:
+    description: Observed installed compiler version
+    value: ${{ steps.relocate.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - name: Validate selection and reject workspace compiler shadowing
+      shell: bash
+      env:
+        NIGHTLY_TAG: ${{ inputs.nightly-tag }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$NIGHTLY_TAG" =~ ^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}$ ]]; then
+          echo 'An exact resolved nightly tag is required' >&2
+          exit 2
+        fi
+        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+        if compgen -G "$workspace/roc_nightly-*" > /dev/null; then
+          echo 'Workspace compiler entries could shadow the selected download; use a fresh job before checkout' >&2
+          exit 2
+        fi
+    - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      with:
+        version: nightly-new-compiler
+        nightly-tag: ${{ inputs.nightly-tag }}
+    - id: relocate
+      name: Retain the selected installation outside candidate checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        compiler="$(command -v roc)"
+        compiler_directory="$(cd "$(dirname "$compiler")" && pwd -P)"
+        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+        if [[ "$(dirname "$compiler_directory")" != "$workspace" ]]; then
+          echo 'Unexpected selected compiler location' >&2
+          exit 2
+        fi
+        case "$(basename "$compiler_directory")" in
+          roc_nightly-*) ;;
+          *) echo 'Unexpected selected compiler directory' >&2; exit 2 ;;
+        esac
+        temp_root="$(cd "$RUNNER_TEMP" && pwd -P)"
+        destination="$(mktemp -d "$temp_root/roc-package-compiler.XXXXXX")"
+        mv "$compiler_directory" "$destination/installation"
+        destination="$destination/installation"
+        extension=''
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          destination="$(cygpath -m "$destination")"
+          extension=.exe
+        fi
+        compiler="$destination/roc$extension"
+        version="$(NO_COLOR=1 "$compiler" version)"
+        version="${version%$'\r'}"
+        case "$version" in
+          *$'\n'*|*$'\r'*) echo 'Unexpected multiline compiler identity' >&2; exit 2 ;;
+        esac
+        {
+          echo "compiler-path=$compiler"
+          printf 'version=%s\n' "$version"
+        } >> "$GITHUB_OUTPUT"
+        echo "$destination" >> "$GITHUB_PATH"
+        {
+          echo "ROC_GLUE_DIR=$destination/glue"
+          for language in RUST ZIG C; do
+            case "$language" in RUST) filename=RustGlue.roc ;; ZIG) filename=ZigGlue.roc ;; C) filename=CGlue.roc ;; esac
+            if [[ -f "$destination/glue/$filename" ]]; then
+              echo "ROC_${language}_GLUE=$destination/glue/$filename"
+            else
+              echo "ROC_${language}_GLUE="
+            fi
+          done
+        } >> "$GITHUB_ENV"

@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "name": "lifecycle-platform",
+  "profile": "platform",
+  "bundles": [
+    {
+      "id": "platform",
+      "root": "platform/main.roc",
+      "prefix": "lifecycle-platform",
+      "placeholder": "platform-url",
+      "depends_on": []
+    }
+  ],
+  "examples": [
+    {
+      "id": "native",
+      "directory": "examples",
+      "spec": "examples/spec.json",
+      "bundles": [
+        "platform"
+      ],
+      "target_ids": [
+        "x86_64-linux",
+        "aarch64-darwin",
+        "x86_64-windows"
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "manual",
+      "directory": "docs",
+      "pdf": true
+    }
+  ],
+  "target_matrix": [
+    {
+      "id": "x86_64-linux",
+      "runner": "ubuntu-24.04",
+      "runtime_task": "native-runtime"
+    },
+    {
+      "id": "aarch64-darwin",
+      "runner": "macos-15",
+      "runtime_task": "native-runtime"
+    },
+    {
+      "id": "x86_64-windows",
+      "runner": "windows-2025",
+      "runtime_task": "native-runtime"
+    }
+  ],
+  "adapters": [
+    {
+      "id": "host-linux",
+      "task": "build-linux",
+      "operation": "build-host",
+      "builder": "ubuntu-24.04",
+      "target_ids": [
+        "x86_64-linux"
+      ],
+      "outputs": [
+        {
+          "role": "host",
+          "target": "x86_64-linux",
+          "path": "platform/targets/x64glibc/libhost.a"
+        },
+        {
+          "role": "host",
+          "target": "x86_64-linux",
+          "path": "platform/targets/x64musl/libhost.a"
+        }
+      ]
+    },
+    {
+      "id": "host-macos",
+      "task": "build-macos",
+      "operation": "build-host",
+      "builder": "macos-15",
+      "target_ids": [
+        "aarch64-darwin"
+      ],
+      "outputs": [
+        {
+          "role": "host",
+          "target": "aarch64-darwin",
+          "path": "platform/targets/arm64mac/libhost.a"
+        }
+      ]
+    },
+    {
+      "id": "host-windows",
+      "task": "build-windows",
+      "operation": "build-host",
+      "builder": "windows-2025",
+      "target_ids": [
+        "x86_64-windows"
+      ],
+      "outputs": [
+        {
+          "role": "host",
+          "target": "x86_64-windows",
+          "path": "platform/targets/x64win/host.lib"
+        }
+      ]
+    },
+    {
+      "id": "native-runtime",
+      "task": "check-runtime",
+      "operation": "runtime",
+      "builder": "ubuntu-24.04",
+      "target_ids": [
+        "x86_64-linux",
+        "aarch64-darwin",
+        "x86_64-windows"
+      ],
+      "outputs": []
+    }
+  ],
+  "checks": [
+    {
+      "id": "unit",
+      "task": "check-unit",
+      "kind": "unit",
+      "target_ids": []
+    }
+  ],
+  "sboms": [
+    {
+      "subject": "platform",
+      "target": "source",
+      "composition": "sbom/platform.json",
+      "supplier_imports": ""
+    }
+  ],
+  "source_paths": [
+    "platform",
+    "host"
+  ],
+  "sbom_author": "Organization: roc-automation contributors"
+}

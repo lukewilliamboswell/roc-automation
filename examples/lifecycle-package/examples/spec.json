@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "release": "working-tree",
+  "dependencies": [],
+  "apps": [
+    {
+      "path": "examples/main.roc",
+      "cases": [
+        {
+          "name": "public-api",
+          "args": [],
+          "stdin": "",
+          "stdout": "The answer is 42\n",
+          "stderr": "",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}

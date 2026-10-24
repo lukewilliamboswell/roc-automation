@@ -41,9 +41,12 @@ main! = |_args| {
 
 	Stdout.line!("\n== Scripts")?
 	# The modules without effects carry the tests of the scripts' logic.
-	for module_name in ["AppHeader", "Compatibility", "DownstreamStatus", "GitHub", "NightlyReport", "Pins", "PublishRelease", "Settings"] {
+	for module_name in ["AppHeader", "Compatibility", "DownstreamStatus", "GitHub", "NightlyReport", "Pins", "PublishRelease", "Settings", "LifecycleJson", "LifecyclePlan", "LifecycleAdmission", "LifecyclePages", "LifecycleSbom", "ReleaseArchive", "ReleaseMetadata", "ReleaseVersion", "ToolVersion"] {
 		run!(["test", "scripts/src/${module_name}.roc"])?
 	}
+	# Effects modules resolve their cli/docs imports through the actual app.
+	# Its transitive expects cover shared execution and local update decisions.
+	run!(["test", "scripts/release_operations.roc"])?
 	for script in scripts {
 		run!(["check", script])?
 	}

@@ -34,9 +34,10 @@ class SetupBlueprintTests(unittest.TestCase):
         self.assertEqual(setup.system_for("Linux", "X64"), "x86_64-linux")
         self.assertEqual(setup.system_for("Linux", "ARM64"), "aarch64-linux")
         self.assertEqual(setup.system_for("macOS", "ARM64"), "aarch64-darwin")
+        self.assertEqual(setup.system_for("Windows", "X64"), "x86_64-windows")
 
     def test_unreleased_systems_are_rejected(self):
-        for runner in (("Windows", "X64"), ("macOS", "X64"), ("Linux", "ARM"), ("", "")):
+        for runner in (("Windows", "ARM64"), ("macOS", "X64"), ("Linux", "ARM"), ("", "")):
             with self.subTest(runner=runner), self.assertRaisesRegex(ValueError, "no blueprint binary"):
                 setup.system_for(*runner)
 
@@ -80,7 +81,10 @@ class SetupBlueprintTests(unittest.TestCase):
         for version, checksums in releases.items():
             with self.subTest(version=version):
                 self.assertTrue(setup.VERSION.fullmatch(version))
-                self.assertEqual(set(checksums), set(setup.SYSTEMS.values()))
+                expected = set(setup.SYSTEMS.values())
+                if version in ("0.4.0", "0.4.1", "0.5.0", "0.6.0-rc1"):
+                    expected.remove("x86_64-windows")
+                self.assertEqual(set(checksums), expected)
                 for checksum in checksums.values():
                     self.assertTrue(setup.SHA256.fullmatch(checksum))
 
@@ -226,11 +230,60 @@ class SetupBlueprintTests(unittest.TestCase):
     def test_main_fails_before_downloading_on_an_unsupported_runner(self):
         seen = []
         with tempfile.TemporaryDirectory() as temporary:
-            env = {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64", "RUNNER_TEMP": temporary, "INPUT_VERSION": "0.4.0"}
+            env = {"RUNNER_OS": "Windows", "RUNNER_ARCH": "ARM64", "RUNNER_TEMP": temporary, "INPUT_VERSION": "0.4.0"}
             with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", serving(BINARY, seen)):
                 with self.assertRaisesRegex(ValueError, "no blueprint binary"):
                     setup.main()
         self.assertEqual(seen, [])
+
+    def test_windows_no_inputs_admits_recorded_release_as_exe_and_reuses_cache(self):
+        for version in ("0.6.0", "0.7.0", "0.8.0"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "workspace").mkdir()
+                (root / "workspace" / "Blueprint.roc").write_text(config(version))
+                known = {version: {"x86_64-windows": DIGEST}}
+                extra = {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64"}
+                seen = self.run_main(root, extra, known=known)
+                self.assertEqual(seen, [f"{setup.RELEASES}/{version}/blueprint-x86_64-windows.exe"])
+                installed = root / "temp/roc-automation-blueprint/blueprint.exe"
+                self.assertEqual(installed.read_bytes(), BINARY)
+                self.assertIn(f"blueprint-path={installed}\n", (root / "output").read_text())
+                self.assertEqual(self.run_main(root, extra, known=known), [])
+                self.assertIn("binary-cache-hit=true\n", (root / "output").read_text())
+
+    def test_windows_wrong_digest_cannot_expose_executable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                self.run_main(root, {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64", "INPUT_VERSION": "0.8.0"},
+                              known={"0.8.0": {"x86_64-windows": OTHER}})
+            self.assertFalse((root / "path").exists())
+            self.assertFalse((root / "temp/roc-automation-blueprint/blueprint.exe").exists())
+
+    def test_windows_old_release_without_reviewed_binary_fails_before_fetch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "no reviewed SHA-256.*x86_64-windows"):
+                self.run_main(Path(temporary), {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64", "INPUT_VERSION": "0.4.0"})
+
+    def test_windows_nix_request_fails_before_download(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "install-nix is unavailable on native Windows"):
+                self.run_main(Path(temporary), {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64", "INPUT_VERSION": "0.8.0", "INPUT_INSTALL_NIX": "true"},
+                              known={"0.8.0": {"x86_64-windows": DIGEST}})
+
+    def test_windows_digest_input_overrides_only_windows(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            seen = self.run_main(Path(temporary), {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64", "INPUT_VERSION": "0.8.0",
+                                                  "INPUT_SHA256_X86_64_WINDOWS": DIGEST, "INPUT_SHA256_X86_64_LINUX": OTHER}, known={})
+            self.assertTrue(seen[0].endswith("blueprint-x86_64-windows.exe"))
+
+    def test_reviewed_windows_digests_match_released_checksum_records(self):
+        expected = {"0.6.0": "baa46f4c80c24ac841306b76c53d9657ee3bdb039f428681a5c6f49ed5b85cae",
+                    "0.7.0": "57cfbe8ce9650665c5d087ffdc6a2d21406dafe5826c5461cc88a096b5397f9b",
+                    "0.8.0": "05932e4ee67990c565debf8f78ff88af3b972ae7b5d9598292ebfe1e8639a859"}
+        for version, digest in expected.items():
+            self.assertEqual(setup.expected_sha256({}, setup.known_releases(), version, "x86_64-windows"), digest)
 
 
 class ArtifactCacheTests(unittest.TestCase):
@@ -277,8 +330,17 @@ class ArtifactCacheTests(unittest.TestCase):
 
     def test_rc1_version_selection_and_reviewed_registry_cover_native_runners(self):
         self.assertEqual(setup.version_in(config("0.6.0-rc1")), "0.6.0-rc1")
-        for system in setup.SYSTEMS.values():
+        for system in ("x86_64-linux", "aarch64-linux", "aarch64-darwin"):
             self.assertRegex(setup.expected_sha256({}, setup.known_releases(), "0.6.0-rc1", system), r"^[0-9a-f]{64}$")
+
+    def test_windows_artifact_cache_uses_blueprints_localappdata_convention(self):
+        env = {**self.env, "LOCALAPPDATA": str(self.root / "local")}
+        del env["HOME"]
+        path, _ = setup.cache_settings(env, "0.8.0", "x86_64-windows")
+        self.assertEqual(Path(path), self.root / "local/blueprint/v1/artifacts")
+        env["XDG_CACHE_HOME"] = str(self.root / "xdg")
+        path, _ = setup.cache_settings(env, "0.8.0", "x86_64-windows")
+        self.assertEqual(Path(path), self.root / "xdg/blueprint/v1/artifacts")
 
 
 class ExecutableCacheTests(unittest.TestCase):
@@ -321,6 +383,7 @@ class ExecutableCacheTests(unittest.TestCase):
         self.assertEqual(list(self.directory.iterdir()), [])
         self.assertEqual(list(self.cache.iterdir()), [self.cache / "blueprint"])
 
+    @unittest.skipIf(os.name == "nt", "Windows uses ACLs instead of Unix file modes")
     def test_cache_file_permissions_are_never_used_as_execution_authority(self):
         installed = self.install()
         cached = self.cache / "blueprint"
@@ -357,6 +420,7 @@ class ExecutableCacheTests(unittest.TestCase):
                 path.unlink()
         self.assertEqual(list(outside.iterdir()), [])
 
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires Unix FIFO support")
     def test_nonregular_cache_entry_is_rejected(self):
         self.cache.mkdir(parents=True)
         os.mkfifo(self.cache / "blueprint")

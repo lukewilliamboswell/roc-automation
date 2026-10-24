@@ -1,0 +1,15 @@
+= Use the released example
+
+The release contains this example with its dependencies bound to the final bundle URLs.
+
+[source,roc]
+----
+include::../examples/main.roc[]
+----
+
+The documentation archive also contains the generated API reference.
+
+ifdef::backend-html5[]
+* link:api/core/index.html[core API]
+* link:api/greeting/index.html[greeting API]
+endif::[]

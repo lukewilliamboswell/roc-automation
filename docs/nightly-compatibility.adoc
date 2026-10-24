@@ -79,15 +79,13 @@ checkout in the read-only test job; it must provision dependencies, not rebuild
 the package or replace archived examples. `install-blueprint: true` installs the
 consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
 an environment that needs it. Leave both false for a runner that needs neither.
-Toolchain installation precedes the prerequisite command. Windows prerequisites
-must use native tools through `setup-command`, such as a checked-in Python setup
-script. Blueprint 0.8.0 publishes a native Windows binary;
-`actions/setup-blueprint` does not install it on Windows runners yet
-(https://github.com/lukewilliamboswell/roc-automation/issues/59[#59]). Nix is not
-a Windows prerequisite backend. Requesting either shared installer on Windows
-fails explicitly.
-For a mixed matrix, keep both installers disabled and let a portable setup script
-select the native provisioning steps for each operating system. A prerequisite
+Toolchain installation precedes the prerequisite command. Windows can use
+`install-blueprint: true` with native `Fetch` tool recipes in `Blueprint.roc`;
+see xref:platforms.adoc[Platforms] for the native host guide. Nix is not a Windows
+prerequisite backend, and `install-nix: true` on Windows fails explicitly.
+A mixed Linux/macOS/Windows matrix can use Blueprint's portable Fetch tools
+with `install-nix: false`, or leave both installers disabled and use an
+explicit portable native provisioning command. A prerequisite
 failure is a setup failure, never a compatibility pass.
 
 `test-environment` is a JSON array of public name/value records, for example
@@ -217,7 +215,9 @@ formatter. An empty package cache starts each target's test.
 The suite contains 1–100 unique application paths under `examples/`, with
 1–100 uniquely named cases per application. The runner checks and builds each
 application once with the selected compiler, then runs each recorded case and
-compares stdout, stderr and exit code exactly. A failed application does not
+compares the exit code exactly, stdout using its explicit mode (exact by default),
+and stderr exactly unless the case
+explicitly selects the bounded fuzz-statistics exception below. A failed application does not
 prevent diagnostics for later applications. Declared cases are the execution
 inventory; maintainers review the suite for representative coverage before
 publishing it. Passing is not a claim of security compliance or complete API
@@ -234,6 +234,12 @@ stdout/stderr capture and exact case comparison. The runtime must exercise the
 built artifact and exit after its assertions; merely building a cart or opening
 a window does not establish behavioral compatibility.
 
+Cases may select `"stdout_match": "strip-sgr-and-cr"` to compare stdout after
+removing SGR color escapes and carriage returns from both expected and actual
+bytes. Omission or `"exact"` preserves every byte, which remains the default for
+ANSI examples. No other control escapes are removed; raw diagnostic logs are
+unchanged. See xref:examples.adoc#update-local-expectations-explicitly[local expectation updates].
+
 A case may add `skip: {"reason":"...","issue":"https://github.com/..."}`.
 The app is still checked and built, and the skip is visible. Any skip prevents
 a complete pass and prevents closing the compatibility issue. Prefer a runnable
@@ -241,10 +247,48 @@ headless test where possible. A suite with no executed cases is never compatible
 
 == Preserve diagnostics on happy and unhappy paths
 
+An application may add `"build_args": ["--fuzz"]` to build a fuzz target.
+The optional list accepts only `--fuzz`, once; an absent or empty list keeps
+ordinary builds. The flag is passed only to `roc build`, never `roc check`.
+Fuzz builds use the runner-owned LLVM mode `--opt=speed`; ordinary builds retain `--opt=dev`. The
+compiler rejects `--fuzz` with the dev backend.
+The runner retains ownership of the compiler, output path and target, so the
+suite cannot redirect output through additional compiler arguments.
+
+For libFuzzer's variable statistics, a case may set `"stderr_match": "ignore"`
+with `"stderr": ""`. Omission, or `"stderr_match": "exact"`, compares stderr
+byte for byte. Ignoring stderr still records its raw bytes, enforces the output
+limit and deadline, and compares stdout and exit status exactly. Keep fuzz smoke
+cases bounded, for example `"args": ["run", "corpus/listSort", "--time=1"]`;
+a target expected to find its failure can declare `"exit_code": 77`. Seed replay
+cases can retain exact stderr assertions. CI also runs a tiny fixture against the
+released roc-fuzz platform with a real compiler: clean replay, a one-second run
+and an expected 77, followed by unexpected-crash, output-limit and deadline
+refusals. Its supported Linux x64 and macOS arm64 targets retain raw diagnostic
+evidence; the released fixture makes no Windows claim. Neither a timeout nor truncated output
+can match an expected exit code.
+
 Compiler stdout and stderr are always displayed, including after exit code 0.
 Warnings remain nonfatal by default. Successful compilation does not imply that
 it was warning-free. The runner owns compiler execution instead of delegating
 it to a driver that might discard captured success output.
+
+Crash markers (`[roc crashed]` and `[roc expect failed]`, ignoring ASCII case)
+are checked in raw output and independently in SGR/CR-normalized output, including
+ignored stderr. An ordinary expected nonzero exit cannot hide a crash. The one
+exception is an admitted `build_args: ["--fuzz"]` case that both expects and
+actually exits 77: libFuzzer uses that status for the intentional failure replay
+contract. Timeouts, signals and output limits never qualify for the exception.
+
+Aggregation accepts the per-artifact directory layout and, for exactly one
+declared runner, the flattened layout produced by a one-match artifact download.
+Both paths require the same repository, release, compiler, runner and current
+run-attempt identity; a flattened file cannot fill a multi-target inventory. Both
+layout paths are inspected before decoding. A second path remains ambiguous when
+it contains malformed JSON, invalid UTF-8, a directory or a dangling symlink;
+aggregation never falls back from that entry to the other layout. Results and
+layout directories must be regular files and real directories, respectively.
+Regression tests cover both duplicate directions and linked layout components.
 
 Each target artifact, `compatibility-<runner>`, retains raw stdout and stderr,
 command arguments, working directory, process status (normal exit, signal or
@@ -253,7 +297,7 @@ stdin, public environment, deadlines and expected output for failing cases.
 The ZIP inventory is retained too. Console rendering escapes workflow-command
 markers, carriage returns and terminal escapes; raw files preserve the original
 bytes. Compiler diagnostics and example stderr are separate: expected example
-stderr is compared with the case's specification.
+stderr follows the case's explicit comparison mode (exact by default).
 
 The `nightly-compatibility-summary-<attempt>` artifact contains `summary.json`:
 the selected identities, per-target results, counts and aggregate verdict. The

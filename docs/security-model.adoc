@@ -28,6 +28,20 @@ restored binaries still run the renderer acceptance tests. The deploy job only
 receives the resulting Pages artifact. It does not compile the renderer, execute
 documentation sources or restore a candidate-produced executable cache.
 
+Optional release Pages restoration selects an explicit manual ID from the
+reviewed topology after publication succeeds. The read-only `lifecycle-pages`
+utility binds the strict admission report to the dispatch repository, source
+and run, checks the original documentation ZIP's admitted size and digest, and
+uses the shared bounded archive verifier. It accepts only the declared sole
+site root with a nonempty regular `index.html`, then hands that unchanged site
+to the separate Pages deployment job. It evaluates no consumer Blueprint and
+runs no renderer or archived executable. This prevents an unrelated report,
+wrong manual or unsafe ZIP from replacing the intended site; it does not make
+archived HTML trustworthy. Publication success, the pinned controller and the
+Pages environment remain workflow assumptions. Regression tests reject wrong
+bindings, unsafe archives and missing roots, preserve an existing output on
+failure, and compare restored files with the actual prepared ZIP byte for byte.
+
 [#risk-execution-authority]
 == Risks and controls for execution authority
 
@@ -40,27 +54,32 @@ wrong identities and rejected transitions. This reduces the authority available
 to executed code; it does not isolate same-job processes or prove a trusted
 upstream compiler produced a harmless artifact.
 
-== The three workflows
+[#the-three-workflows]
+== Shared lifecycle and separate nightly authority
 
 [cols="2,2,3",options="header"]
 |===
-| Workflow and job | Token access | Runs repository code
+| Workflow and job | Token access | Runs candidate code
 
-| `ci.yml` test
-| `contents: read`
-| Yes, including pull-request code
+| Shared lifecycle Plan
+| `contents: read`, `actions: read`
+| No: pinned utility reads bounded immutable source/topology and GitHub metadata
 
-| `release.yml` build and test
-| `contents: read`
-| Yes
+| Lifecycle Validate, Host, Source, Prepare, SBOM, Seal and Candidate
+| `contents: read`, with `actions: read` for exact artifact observation/transport
+| Yes: source, compiler, native tasks, examples and repository Blueprint remain read-only
 
-| `release.yml` publish
-| `contents: write`, behind a protected environment
-| No: it runs `actions/publish-release` on artifacts produced by earlier jobs
+| Lifecycle Admit
+| `contents: read`, `actions: read`
+| No: pinned independent controller observes jobs/artifacts and handles bounded inert files
 
-| `release.yml` site deploy
-| `pages: write`, `id-token: write`
-| No: it deploys an artifact built by a read-only job
+| Lifecycle Publish
+| `contents: write`, `actions: read`, `attestations: write`, `id-token: write`, protected environment
+| No: independent re-admission, exact-subject attestation/verification and inert publisher
+
+| Optional site restore/deploy
+| Restore reads inert admitted files; deploy alone has `pages: write`, `id-token: write`
+| No candidate source execution or rebuild
 
 | `nightly.yml` test
 | `contents: read`
@@ -72,13 +91,20 @@ upstream compiler produced a harmless artifact.
 
 | `nightly.yml` report
 | `issues: write`
-| No: it runs `actions/nightly-report`
+| No: pinned `actions/nightly-report`
 |===
 
-The publish job accepts only a manual dispatch on the default branch, uses the
-event commit throughout, and consumes the artifacts of its own run. It never
-checks out the repository, so a script changed in the tested commit cannot run
-with release credentials.
+The shared lifecycle owns source checks and full release rehearsal, with a thin
+full-SHA consumer caller. The caller's permission ceiling must permit publication,
+but each executing candidate job has only read authority and no OIDC. The
+always-running verdict rejects failed, cancelled or missing selected jobs and
+accepts skipped stages only when planning made them inapplicable.
+
+Only manual dispatch on the actual default branch may publish, using the event
+commit and retained artifacts from its own run. The protected publisher checks
+out no candidate source, evaluates no candidate Blueprint, restores no candidate
+executable/package cache and executes none of the release files. Candidate data
+cannot select a controller, workflow, helper or privilege level.
 
 The nightly compatibility workflow has no contents, pull-request, actions or
 status write access in any job. It cannot commit, merge, dispatch or publish.
@@ -97,11 +123,11 @@ repository's own rules.
 [#what-the-jobs-with-write-access-run]
 === What the jobs with write access run
 
-The publish job and the report job hold the tokens that can change a
-repository's releases and issues. Each runs one shared action,
-`actions/publish-release` or `actions/nightly-report`, and each action is a Roc
-script that runs from the action's own copy of roc-automation, at the full
-commit SHA the workflow names. What runs in those two jobs is therefore:
+The publication and nightly report jobs hold the tokens that can change a
+repository's releases and issues. They run only pinned shared controllers from
+the action's own copy of roc-automation. Publication first invokes independent
+admission and exact-subject provenance verification, then `actions/publish-release`;
+reporting invokes `actions/nightly-report`. Their trusted runtime consists of:
 
 * Nix, installed by an install action that the shared action references by
   full commit SHA; that action fixes the Nix version and downloads its
@@ -112,7 +138,8 @@ commit SHA the workflow names. What runs in those two jobs is therefore:
   describes;
 * the environment that roc-automation's `Blueprint.lock` pins: `roc-stable`,
   which runs the script, the `gh` CLI, which makes every request, and coreutils,
-  which provides `sha256sum`;
+  which provides `sha256sum`, plus the reviewed Python archive helper and pinned
+  `zstd` used for inert archive/member verification;
 * the content-addressed basic-cli platform and its dependencies, named by the
   reviewed script headers and `RocPackages` URLs; and
 * the script and its modules under `scripts/` in roc-automation.
@@ -128,10 +155,11 @@ verified unbundling path, described below.
 
 Neither job checks out the calling repository, and neither action runs any of
 its code. The calling repository's `Blueprint.roc`, lock and scripts play no
-part. The report action reads no file from the job's workspace. The publish
-action reads the notes file and the asset files it is given, which an earlier
-job built: it sends the notes as text, and it hashes, uploads and compares the
-assets as bytes, and executes none of them.
+part. The report action reads no file from the job's workspace. The admission
+controller reads bounded candidate records and files, verifies them
+against independent observations and hashes the exact subjects. The publisher
+reads the resulting notes and explicit public asset set, sends notes as text,
+and hashes, uploads and compares assets as bytes. Neither executes them.
 
 The token is in the environment of the one step that runs the script, where
 `gh` reads it. It is never a command-line argument and is never printed, and
@@ -139,7 +167,7 @@ the scripts check every input before the first request.
 
 Nix does not hold the token. The install action would otherwise write the job's
 default token into Nix's configuration, for Nix to present to GitHub on its own
-fetches. These two actions clear that setting, and stop before installing
+fetches. These privileged controller actions clear that setting and stop before installing
 anything further if Nix still reports a token. Every input Nix fetches is public
 and pinned by the lock, so it needs none.
 
@@ -236,6 +264,15 @@ before use. Corrupt artifacts and their derived trees are discarded and refetche
 a mismatching download is not usable. Derived trees are rebuilt on a fresh
 runner rather than trusted from a cache. GitHub cache-hit status is not admission.
 Roc's package cache is separate and is not included by this action.
+On native Windows the installer rejects reparse-point cache files and directories,
+opens cache files without following a reparse point, and admits the copied bytes
+by the same digest before exposing `blueprint.exe`. Windows uses the runner
+account's filesystem ACLs rather than Unix mode bits. Artifact caching follows
+Blueprint's `XDG_CACHE_HOME`, then `LOCALAPPDATA`, then `HOME/.cache` convention.
+Native Windows tests exercise the installer and a real Blueprint task;
+unit tests reject wrong hashes, old releases without reviewed Windows bytes
+and requests for unavailable Nix. These controls assume the disposable runner
+account and its parent directories have not been compromised.
 
 `actions/blueprint-tool` runs a repository task and therefore belongs only in
 read-only build jobs. The task resolves a temporary program link before its
@@ -253,6 +290,58 @@ requiring `id-token: write` must remain an explicit caller choice; the artifact
 cache here requires no such token permission. See
 xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide].
 
+[#independent-lifecycle-admission]
+== Independent lifecycle admission
+
+A successful candidate job or consistent checksum list can still omit a target,
+misstate its producer or describe a different source. Admission reconstructs
+expected obligations from the committed `release-topology.json` fetched at the
+immutable tested source. It also fetches the actual run, fully paginated jobs and
+artifact records. It compares the caller's literal full-SHA reusable-workflow
+reference with the run's referenced workflow records. Candidate matrices, plans,
+trace fields and the publisher action's own checkout SHA cannot supply authority
+for the tested product source or called workflow identity.
+
+PR merge-source identity is checked against immutable commit parents and the
+actual run head. Source-only selection additionally requires a complete diff
+whose live head/base still matches that tested identity; uncertainty requires
+full work. A publish-only retry changes the observation attempt, not the original
+producer identity. Newly produced work invalidates the old generation, and
+missing/expired or ambiguous evidence blocks publication.
+
+Exact immutable artifact IDs and service digests select the bytes to download.
+Raw ZIP verification runs before bounded safe extraction; the trusted parser's
+child environment omits job credentials, OIDC request variables and Python
+configuration hooks. Every public file and host intermediate is rehashed and
+bound to its expected original successful job and trace. Another identical copy
+in Seal cannot replace the original producer. Tested native host bytes must also
+match their exact owning bundle members. Public binaries require a consuming
+`test-binary` obligation for every advertised target.
+
+Final inventories must match the independently expected version, context, bundle
+URLs and complete file set. Notes bind source, package/tooling compilers and final
+bundle URLs/digests. SBOM checks bind both formats, manifests, retained supplier
+imports and producer source/run/subject identities to actual bytes and reviewed
+compositions using the supported profile's graph and coverage invariants.
+Producer evidence is a nested input to the same release-evidence contract; it is
+not an authorization statement or a claim of general schema conformance.
+
+The write job repeats admission with trusted code before attesting the full
+explicit public set. It verifies each provenance subject against the expected
+repository, reusable workflow revision, source commit/ref and hosted runner
+policy, retaining structured receipts. Publication rehashes the admitted files
+before any write and downloads every uploaded asset before making the draft
+public. Unknown identities, malformed receipts and conflicting draft/tag state
+stop progression. Hashes and attestations establish their respective byte and
+signer bindings; they do not establish a SLSA level or trustworthy product code.
+
+Wrong-identity, shortened-matrix, stale-attempt, role/target swap, forged inventory,
+host-member and publisher failure tests exercise these boundaries. Local fixtures
+and mocked API/verifier tests do not prove a hosted dispatch, real signature
+verification or applied environment/settings protections; record those distinct
+observations when performing authorized acceptance runs. Reviewed compiler,
+native adapter and composition correctness remain explicit residual assumptions.
+
 == SBOM sidecars and supplier documents
 
 `actions/sbom-sidecars` and `actions/fetch-dependency-sboms` belong in jobs
@@ -269,7 +358,11 @@ The sidecar action selects the tool bundle by the Blueprint release that
 `actions/setup-blueprint/sbom-tools.json` fixed by the action's full SHA.
 A release that ships native tool binaries has their SHA-256 reviewed in the
 same record, and the binary is admitted by that digest, as `blueprint` is.
-Otherwise Roc verifies the app bundle's content hash from its URL before
+The native tool's persistent executable cache contains only bytes keyed by
+release, system and reviewed digest. Bounded regular bytes are copied privately
+and rehashed before every execution; corrupt bytes trigger a fresh verified
+download, while symlink and nonregular entries fail. Cache hits do not prove
+provenance or admit arbitrary executables. Otherwise Roc verifies the app bundle's content hash from its URL before
 running it, and the action requires the Roc release the record names. The tool makes no
 request while reporting. The fetch action is the one step that reaches the
 network: HTTPS only, bounded to Blueprint's 1 MiB limit, with a document's
@@ -292,7 +385,8 @@ who produced them, and `inspect` establishes that the composition is
 consistent with the Lock and the imports, not that it is complete. An
 attestation check of a supplier's sidecar belongs at admission, as
 xref:artifact-verification.adoc#separate-admission-from-routine-use[Verify released artifacts]
-describes, and the publisher-side validator remains separate work.
+describes. Lifecycle admission independently checks the release transfer binding;
+it does not infer supplier authorship from a digest or a producer pass flag.
 
 == Documentation deployment
 
@@ -327,7 +421,40 @@ archive is inspected for regular file types, canonical paths, duplicates,
 collisions and extraction limits before it is unpacked. The reviewed Python
 standard-library helper enforces the same checks on every OS, including Windows
 device names, trailing-dot aliases and case-insensitive implicit-directory
-collisions. It never imports archive code. Child deadlines manage Windows Job
+collisions. It never imports archive code.
+
+The same helper has an explicit `--artifact` profile
+for workflow transport ZIPs: it omits only the examples-specific single-root
+and `spec.json` requirements. Digest, size, entry-kind, canonical-path,
+case/parent collision and CRC checks remain shared, and failed extraction
+removes the newly created partial tree. Artifact transport tests cover inert
+trace/file uploads and malformed inventories; this establishes extraction
+safety, not the authority or correctness of the files. Lifecycle admission
+still binds each file to its expected producer, source and role.
+
+For a native platform, a successful host job must not stand in for proof that
+the distributed bundle contains its host. The helper's `--bundle` mode hashes
+the actual regular members of the digest-verified tar.zst file. The controller
+runs its own pinned `zstd`, bounds the decompressed temporary regular file to
+100 MB, and rejects links, special files, extension headers, duplicate/colliding
+paths and hidden trailing inventories before publishing the member JSON. It
+extracts and executes nothing from the bundle. Admission compares each declared
+host intermediate with its owning bundle member by path, size and SHA-256.
+Tests include PAX/GNU metadata, oversized streams, decoder cleanup and a real
+Roc-produced bundle. These checks establish byte membership, not that a host
+or its build tools behave correctly.
+
+Published native binaries also require an exact-target candidate test. The
+controller verifies their sealed source/run inventory and pre-test hashes,
+passes absolute paths and digests to the reviewed read-only adapter, and
+rehashes afterward. Wrong or missing bytes stop before the callback; input or
+inventory changes stop its passing trace. Source correctness has its own stage
+and carries no candidate-file claim. Black-box regressions cover the actual
+callback handoff, source-file substitution, missing/swapped bytes and mutation.
+The adapter's product assertions remain a review assumption; a successful task
+is not proof of complete behavioral coverage.
+
+Child deadlines manage Windows Job
 Objects or Unix process groups, and public environment overrides cannot replace
 reserved variables under any spelling of their case. Archived code and native
 prerequisite code run only in the read-only test job, with checkout credentials
@@ -337,6 +464,35 @@ the checkout HEAD equals the event SHA before running consumer prerequisites.
 Successful diagnostics are
 preserved; console workflow-command markers are escaped rather than interpreted.
 
+Suite build arguments admit only a single `--fuzz`; the runner retains the
+compiler, output path and target, and selects the LLVM speed backend needed
+for that admitted fuzz mode. Cases may explicitly ignore variable stderr
+statistics with an empty expected stderr field. Raw diagnostics, process status,
+stdout and exit assertions, deadlines and output limits still apply, so ignored
+stderr cannot convert interruption into a compatibility pass.
+
+Output matching defaults to exact bytes. Optional SGR/CR stdout normalization
+compares both sides without changing raw evidence. Crash markers are checked in
+raw and normalized stdout/stderr independently of comparison modes. Expected
+nonzero exits cannot hide a Roc crash; the bounded libFuzzer contract alone may
+expect and actually exit 77 from an admitted `--fuzz` build. Regressions cover
+colored markers, ordinary expected failures and that narrow replay exception.
+
+Expectation changes require a separate local operation with an explicit compiler;
+CI and release paths cannot invoke an update implicitly. Only the source spec
+marker `release: "working-tree"` admits editing; published version markers are
+refused even when downloaded locally. Every executed case
+must pass build, process status, exit, crash and UTF-8 checks before a spec is
+rewritten. Skips are preserved and all-skipped runs refuse edits. Unknown fields
+are rejected, unchanged specs retain their exact bytes, and a stale or symlinked
+spec stops the final atomic replacement. These controls prevent partial or
+accidental expectation changes; maintainers still review the intended output and
+control the local filesystem during the edit.
+
+Aggregation inspects result layout presence before decoding, so malformed or
+unreadable duplicate evidence cannot fall back to a passing file. File and
+directory types are checked without following symlink entries; regressions include
+invalid UTF-8, directories and dangling links in both layouts.
 Aggregation checks every declared target's identity, counts and run attempt as
 inert JSON. No single matrix output can stand in for all targets. A cancelled or
 failed test job cannot produce a passing issue report even when old files exist.

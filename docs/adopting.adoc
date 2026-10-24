@@ -64,7 +64,10 @@ integration, not every feature of the product or every future utility version.
   and `nightly.yml`, plus any
   xref:optional-workflows.adoc#optional-workflows[optional workflows] it needs.
   Call `actions/setup-blueprint` with no inputs, after the checkout; it
-  installs the release that `Blueprint.roc` names.
+  installs the release that `Blueprint.roc` names. A platform with a native
+  Windows host follows
+  xref:platforms.adoc#provision-native-windows-hosts[the host provisioning guide]
+  to keep tool versions in the same declarations on every OS.
 . *Repository settings.* Apply
   xref:settings.adoc#repository-settings[Repository settings], update the
   required check names, and delete branches that earlier automation owned.

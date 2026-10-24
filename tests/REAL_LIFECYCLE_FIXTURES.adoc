@@ -1,0 +1,70 @@
+= Real shared lifecycle fixture tests
+
+`run_lifecycle_fixture.py` is an independent test harness, not a product
+controller or a second release workflow. It invokes the actual shared planner,
+operations, existing supplier-fetch and SBOM-sidecar actions, Blueprint, policy
+checker, renderer and compilers. No product release or GitHub write is attempted.
+The source comes from an exact committed SHA in a temporary sparse clone;
+`--source` does not admit uncommitted fixture edits.
+
+Supply built reviewed executables explicitly, or set their corresponding
+`ROC_RELEASE_PLAN_BINARY`, `ROC_RELEASE_OPERATIONS_BINARY`, `RO_COMPILER`,
+`ROC_TOOLING_COMPILER`, `RO_BLUEPRINT`, `RO_POLICY`, `RO_DOCS` and `RA_ZSTD`
+environment variables. `RO_COMPILER` is the real selected package nightly;
+`ROC_TOOLING_COMPILER` is the fixed compiler that built the shared utilities.
+Blueprint must be the reviewed 0.8.0 executable. An optional `--sbom-tool` seeds
+only the actual action's executable-byte cache; both the test and the action
+still verify its reviewed release digest.
+
+[source,sh]
+----
+python3 tests/run_lifecycle_fixture.py \
+  --source /path/to/committed/roc-automation \
+  --output /path/to/new/evidence-directory \
+  --planner /path/to/release-plan \
+  --operations /path/to/release-operations \
+  --compiler /path/to/selected-nightly/roc \
+  --tooling-compiler /path/to/utility-build-nightly/roc \
+  --blueprint /path/to/blueprint \
+  --policy /path/to/roc-policy \
+  --docs /path/to/roc-docs \
+  --zstd /path/to/reviewed/zstd
+----
+
+The default selects all three `examples/lifecycle-*` profiles. `--profile`
+can select `package`, `multibundle` or `platform`. Output directories must be
+new. The test keeps tool digests, actual compiler version output, command logs,
+per-profile reports and an overall `report.json`; failures retain their logs.
+
+A test-only compiler receipt shim delegates every argument to the real
+compiler, preserving argument boundaries and exit status. Its append-only
+receipts prove one bundle and one API build per bundle and one consumer build
+per selected source or archive example on the current runner. Product unit
+tasks contain no release rehearsal. Shared traces must name every selected
+obligation once, and the final directory must contain exactly the declared
+public asset set. The sealed inventory must reproduce every file's size and
+SHA-256. SBOM generation uses the real reviewed native tool and checks its
+sidecars; native host intermediates are independently matched to actual bundle
+members through the shared inert archive helper.
+
+Before archive cases run, the harness moves only the source bundle trees into
+retained evidence. It preserves the original examples, Blueprint and native
+runtime tasks, so source/archive equivalence remains independently checkable.
+Archive cases must work from the distributed bundles without falling back to
+source packages or source hosts. After execution, every sealed public file
+must retain its original bytes.
+
+Execution scope is explicit. Package profiles currently declare an Ubuntu
+compatibility target; a macOS run can exercise their common preparation, real
+SBOMs, rendering and local source preflight but reports their Linux cases as
+unexecuted. The native profile executes only the source and candidate cases
+for the actual current host. Its other tiny host recipes may be cross-compiled
+to rehearse complete assembly, and are labelled as cross compilation rather
+than native execution. An OS/architecture-incompatible `--runner` label is rejected. The label selects
+a logical lane; the report records the actual local OS release and does not
+claim to have observed a GitHub runner image.
+
+The report is local test evidence about the reported scope. It does not claim
+that a live caller workflow, all native runners, repository environment rules,
+GitHub job observations, protected publication or release readback passed.
+Those require their own actual workflow and authorized fixture dispatch.

@@ -1,0 +1,22 @@
+= Selected package compiler boundary
+
+This action belongs only in disposable read-only jobs. A resolved nightly is
+still an upstream executable whose quality is not proved by its tag. This
+wrapper does not add provenance or digest verification to setup-roc's nightly
+download; the manual's compiler-hosting assumption remains.
+
+The pinned upstream installer discovers the first matching compiler directory
+in the workspace. A pre-existing candidate directory could therefore substitute
+another executable. Reject those entries before installation, install before
+candidate checkout, and move the complete selected installation to a private
+runner-temporary directory. Expose an absolute native executable path so a
+Blueprint environment cannot change which compiler a controller invocation
+uses. Preserve matching glue paths alongside that installation and clear stale
+language-specific paths when absent. Candidate tasks remain arbitrary code in
+the read-only job; this is source/tool identity control, not process isolation.
+
+`tests/test_package_compiler_action.py` executes the real guards and relocation
+step around inert bytes. It rejects unsafe tags and pre-existing directories,
+checks that no global installation is moved, and verifies preserved compiler
+and glue identity. Hosted lifecycle tests exercise the complete installer on
+supported systems; local shell regressions alone do not prove native support.

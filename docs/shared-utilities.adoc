@@ -18,6 +18,46 @@ inputs, missing companions and target behavior in those tests. An executable
 version does not make every future schema compatible, and cross-compilation
 alone does not demonstrate native execution support.
 
+== Shared lifecycle executable interface
+
+The lifecycle uses contract version 1. Each executable accepts `--version`,
+returning the utility version, contract version and fixed build compiler pin;
+a pin is a recipe identity, not observed compiler provenance. The same Roc
+implementations serve local Blueprint tasks and read-only workflow jobs.
+
+[cols="1,3",options="header"]
+|===
+| Utility | Operations
+| `release-plan` | `plan CONTEXT TOPOLOGY CHANGES OUTPUT`; strict inert inputs derive source/full obligations, assets, intermediates and bundle order.
+| `release-operations` | `validate`, `host`, `source`, `prepare`, `seal`, `candidate`; each executes the selected runner's exact obligations from `RO_PLAN`.
+| `lifecycle-github` | `plan` observes immutable event/source context and resolves one compiler; `resolve PLAN STAGES OUTPUT` selects actual same-run transport IDs.
+| `lifecycle-transport` | `extract` verifies raw ZIP digest and safe members; `assemble` copies traced bytes; `assemble-public` excludes host intermediates; `restore` supplies only declared native outputs without overwriting source files; `pack` stages explicit public files and bounded inert diagnostics.
+| `release-admit` | `discover`, `collect`, `verify-provenance`; trusted pinned code independently observes actual GitHub identities, validates files and retains evidence before publication.
+|===
+
+The fixture configurations under `examples/lifecycle-package`,
+`examples/lifecycle-multibundle` and `examples/lifecycle-platform` show topology,
+compositions, cases and bounded tasks. They expect explicitly supplied lifecycle
+executables. Adopt a published release through Blueprint's verified provisioning
+contract; do not invent release URLs or substitute unreviewed moving downloads.
+The shared workflow's read-only bootstrap instead builds its own utilities from
+its exact reviewed action commit. Privileged admission uses the controller's own
+locked environment and never evaluates the consumer Blueprint.
+
+Operations use `RO_WORKSPACE` for the immutable checkout, `RO_DIRECTORY` for a
+fresh stage directory, `RO_CANDIDATE` for explicit candidate files and `RO_RUNNER`
+for the selected runner. `RO_COMPILER` is the absolute selected package compiler;
+`RO_BLUEPRINT`, `RO_POLICY` and `RO_DOCS` identify the required external tools.
+The ZIP companion is supplied by `RA_PYTHON` and `RA_ARCHIVE_HELPER`. Local
+invocations supply these explicitly, retaining logs and traces for review.
+A stage returns success only after its required work completes; failures return
+nonzero and cannot emit a passing trace. These traces are candidate claims until
+independent admission checks their actual producers and bytes.
+
+The shared lifecycle graph and evidence controls are described in
+xref:workflows.adoc#the-three-workflows[Shared validation, release and nightly workflows]
+and xref:security-model.adoc#independent-lifecycle-admission[Independent lifecycle admission].
+
 == Start from a working consumer
 
 Copy `examples/pure-package/`, including its hidden `.github` directory, to a
@@ -151,3 +191,94 @@ xref:pure-package.adoc#pass-an-executable-to-a-shared-action[shared executable h
 Return a persistent resolved store path rather than the task's temporary link.
 Action code and privileged controllers remain pinned to full reviewed SHAs;
 candidate tasks and executables run only in jobs without write authority.
+
+[#release-operations]
+== Release operations and the examples engine
+
+`release-operations` runs candidate effects with read-only repository authority.
+Its `validate`, `host`, `source`, `prepare`, `seal` and `candidate` commands consume
+the planner's versioned plan. The workflow supplies the selected compiler and
+an exact event checkout; the executable verifies both before running a task.
+A task name comes from the reviewed topology, not shell text in a result file.
+Unknown selected operations fail without a passing trace.
+
+`validate` performs dispatch-only `roc bump --expect` checks before a host or
+release asset is built. It requires explicit previous-release evidence for every
+bundle, or a verified first-release result. `host` runs each declared native
+builder once. `source` owns policy, formatting, selected product checks and
+working-tree examples. These tasks must not hide an archive rehearsal inside an
+ordinary check; the shared plan gives rehearsal its own obligation.
+Each task receives `RO_COMPILER`, the current `RO_TARGET`, selected target IDs
+as JSON in `RO_TARGET_IDS`, declared output records as JSON in `RO_OUTPUTS`,
+and `RO_OUTPUT_DIRECTORY`. Host builders write their declared paths under the
+workspace root; other tasks receive a dedicated private scratch output directory.
+A multi-target host builder receives its declared target list and output records
+rather than inferring another job's target from the runner.
+
+`prepare` copies the bounded tracked regular-file inventory into private staging,
+assembles bundles in dependency order and admits each sibling through Roc's
+content-addressed package cache. It replaces declared bundle placeholders and
+quoted local bundle paths, builds the examples ZIPs with their final release
+URLs, and invokes the selected compiler's API generator once per bundle. Every
+API tree must contain its `index.html`. With authored manuals, the generated API
+trees are copied into each manual site under `api/<bundle-id>/`; copying does
+not regenerate them. Without a manual, each bundle gets its own
+`<bundle-prefix>-docs-<version>.zip`. The shared renderer still owns authored
+manual conversion, HTML and PDF; no second documentation parser is introduced. The ZIP writer uses a
+stable file order, fixed timestamps and permissions, and refuses unsafe names,
+case collisions and files that collide with directories. A repeated preparation
+in the same staging directory fails before rebuilding an asset.
+
+After the separate read-only SBOM actions have produced the required sidecars,
+`seal` renders the authored notes once, records the selected compiler and bundle
+URLs, and hashes the complete files into `release-inventory.json`. The inventory
+cannot hash itself; independent admission hashes that final file separately.
+For a PR, the highest authored SemVer notes are rendered with the synthetic
+release version. A dispatch uses the exact version's authored notes. The title
+must be `= <product> <authored-version>`, every declared bundle placeholder must
+be used, and undeclared or unresolved URL placeholders fail. Substitution occurs
+in a private copy before rendering; the committed notes stay unchanged. The
+`Compilers` section records the actual package compiler output and the actual
+shared utility compiler output captured by the fixed bootstrap step, supplied
+as `RO_TOOLING_COMPILER_VERSION`. Neither value is inferred from a consumer's
+header pin, and a Blueprint configuration compiler is not mislabeled as either
+role.
+
+`candidate` extracts the exact examples ZIP with the existing bounded archive
+admission helper. It compares its complete source file inventory and expected
+results with the working tree, permitting only the declared dependency URL
+changes. A managed loopback server exposes the bound bundle bytes while the
+compiler receives explicit `--replace-dep` routes. Each obligation starts with an
+empty package cache. The source, candidate and published-release paths share
+one compiler/case engine: successful diagnostics are retained, deadlines terminate
+descendants, and interruptions cannot match an expected program exit code.
+
+`RO_DIRECTORY` names private evidence/scratch; `RO_CANDIDATE` names the separate
+public asset directory. Explicit overlapping directories fail. `RO_BUNDLE_MAP`
+may identify the transported inert bundle mapping; every use rechecks its URLs,
+sizes and digests against the candidate files. The `trace`, `files` and
+`diagnostics` outputs identify the trace, explicit public file paths and a tree
+containing only diagnostic JSON and raw logs. Executables, extracted sources and
+caches remain outside that diagnostics tree. Transport copies those explicit
+files without rebuilding or archiving the scratch workspace.
+
+A published native executable has a separate `test-binary` candidate obligation
+for its exact target; source `test-host` correctness cannot replace that test.
+The controller reads the sealed `release-inventory.json`, checks its source,
+run, compiler and version binding, and hashes every declared binary before the
+adapter runs. `RO_TEST_FILES` is the JSON list of absolute candidate paths with
+size, SHA-256 and target; `RO_STAGE=candidate` distinguishes this handoff from
+source checks, which receive an empty test-file list. `RO_COMPILER` is the
+selected absolute executable path, and outputs belong in the private
+`RO_OUTPUT_DIRECTORY`. The command diagnostic retains those input identities.
+A missing, swapped or misbound file prevents the callback; changing a binary or
+its sealed inventory during the callback prevents a passing trace. Rebuilding
+or overwriting a test input is therefore not a way to substitute another binary.
+The callback still needs reviewed product assertions: supplying exact files and
+observing exit zero does not prove that its assertions cover every behavior.
+
+A trace records completed obligations and source/run identity; it is a claim,
+not publication authorization. The independent admission step reconstructs the
+required work and checks actual jobs and file bytes. These controls establish
+which reviewed cases ran against which files; they do not prove complete case
+coverage, the accuracy of a supplier's graph, or that candidate code is benign.

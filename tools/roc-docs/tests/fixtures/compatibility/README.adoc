@@ -13,3 +13,15 @@ The first cell wraps onto a line containing the next cell separators.
 
 Copyright © 2024 Luke Boswell and subsequent authors. These roc-ray excerpts
 are licensed under the Universal Permissive License (UPL), Version 1.0.
+
+`roc-parser-csv-guide.expected` is copied unchanged from roc-parser's
+`docs/examples/csv-guide.expected` at commit
+`c542066aae55f7c205853244a5aee912a5ed422e` (3.0.0).
+`roc-parser-csv-outputs.adoc` retains that revision's seven output listing blocks
+from `docs/csv.adoc`, including their original `lines=` directives, under a fixture
+title. The integration test independently slices the checked output bytes and
+compares HTML, Markdown and provenance digests. The fixture output remains inert;
+roc-parser owns compiling and comparing its example's stdout.
+
+Copyright © 2023 Luke Boswell and subsequent authors. These roc-parser excerpts
+are licensed under the Universal Permissive License (UPL), Version 1.0.

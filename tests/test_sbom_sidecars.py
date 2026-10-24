@@ -126,7 +126,7 @@ class PureTests(unittest.TestCase):
             self.assertEqual(sidecars.sbom_tool("0.7.0", path)["binaries"], {"x86_64-linux": "a" * 64})
             path.write_text(json.dumps({"0.7.0": {**good["0.7.0"], "binaries": {}}}))
             self.assertEqual(sidecars.sbom_tool("0.7.0", path)["binaries"], {})
-            for binaries in ({"x86_64-windows": "a" * 64}, {"x86_64-linux": "A" * 64}, {"x86_64-linux": "a" * 63}, ["a" * 64]):
+            for binaries in ({"x86_64-plan9": "a" * 64}, {"x86_64-linux": "A" * 64}, {"x86_64-linux": "a" * 63}, ["a" * 64]):
                 path.write_text(json.dumps({"0.7.0": {**good["0.7.0"], "binaries": binaries}}))
                 with self.subTest(binaries=binaries), self.assertRaisesRegex(ValueError, "released systems to 64 lowercase"):
                     sidecars.sbom_tool("0.7.0", path)
@@ -149,6 +149,79 @@ class PureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
                 sidecars.install_binary("0.7.0", "x86_64-linux", "0" * 64, Path(temporary) / "other", serving)
             self.assertEqual(list((Path(temporary) / "other").iterdir()), [])
+
+    def test_native_cache_verifies_every_reuse_and_repairs_corrupt_regular_bytes(self):
+        content = b"reviewed native tool"
+        digest = hashlib.sha256(content).hexdigest()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "cache" / digest
+            downloads = []
+            def serving(url, destination):
+                downloads.append(url)
+                destination.write_bytes(content)
+            status = []
+            for name in ("cold", "warm"):
+                installed = sidecars.install_binary("0.8.0", "x86_64-linux", digest, root / name, serving, cache, status)
+                self.assertEqual(installed.read_bytes(), content)
+            self.assertEqual(status, [False, True])
+            self.assertEqual(len(downloads), 1)
+            (cache / "blueprint-sbom").write_bytes(b"corruption")
+            installed = sidecars.install_binary("0.8.0", "x86_64-linux", digest, root / "repaired", serving, cache, status)
+            self.assertEqual(installed.read_bytes(), content)
+            self.assertEqual(status, [False, True, False])
+            self.assertEqual(len(downloads), 2)
+            self.assertEqual((cache / "blueprint-sbom").read_bytes(), content)
+
+    def test_native_cache_rejects_symlinks_nonregular_files_and_bad_downloads(self):
+        content = b"reviewed native tool"
+        digest = hashlib.sha256(content).hexdigest()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "cache" / digest
+            cache.mkdir(parents=True)
+            source = root / "source"
+            source.write_bytes(content)
+            entry = cache / "blueprint-sbom"
+            entry.symlink_to(source)
+            def unexpected(url, destination):
+                self.fail("unsafe cache entries must fail before fetching")
+            for kind in ("symlink", "directory"):
+                with self.subTest(kind=kind), self.assertRaises((ValueError, OSError)):
+                    sidecars.install_binary("0.8.0", "x86_64-linux", digest, root / kind, unexpected, cache)
+                if entry.is_symlink():
+                    entry.unlink()
+                    entry.mkdir()
+                else:
+                    entry.rmdir()
+            entry.write_bytes(b"corrupt cache")
+            def bad(url, destination):
+                destination.write_bytes(b"wrong downloaded bytes")
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                sidecars.install_binary("0.8.0", "x86_64-linux", digest, root / "bad", bad, cache)
+            self.assertEqual(list((root / "bad").iterdir()), [])
+            self.assertEqual(entry.read_bytes(), b"corrupt cache")
+            linked = root / "linked"
+            linked.symlink_to(cache, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                sidecars.install_binary("0.8.0", "x86_64-linux", digest, root / "linked-install", bad, linked)
+
+    def test_windows_native_tool_uses_exe_release_name(self):
+        self.assertEqual(sidecars.binary_name("x86_64-windows"), "blueprint-sbom-x86_64-windows.exe")
+        self.assertTrue(sidecars.binary_url("0.8.0", "x86_64-windows").endswith("/blueprint-sbom-x86_64-windows.exe"))
+        self.assertEqual(sidecars.sbom_tool("0.8.0")["binaries"]["x86_64-windows"], "67eb6cf4aaca91a5e463e6fcd17d5d2f184fef93d325d0be3cbe6f86781157fc")
+
+    def test_native_cache_identity_is_exact_and_can_be_disabled(self):
+        env = {"RUNNER_TEMP": "/tmp/runner"}
+        directory, key = sidecars.binary_cache_settings(env, "0.8.0", "x86_64-linux", "a" * 64)
+        self.assertIn("0.8.0", key)
+        self.assertIn("x86_64-linux", key)
+        self.assertIn("a" * 64, key)
+        self.assertNotEqual(key, sidecars.binary_cache_settings(env, "0.8.0", "x86_64-linux", "b" * 64)[1])
+        self.assertEqual(sidecars.binary_cache_settings({**env, "INPUT_CACHE_BINARY": "false"}, "0.8.0", "x86_64-linux", "a" * 64), ("", ""))
+        self.assertEqual(sidecars.binary_cache_settings(env, "0.7.0", "x86_64-linux", ""), ("", ""))
+        with self.assertRaisesRegex(ValueError, "cache-binary must be true or false"):
+            sidecars.binary_cache_settings({**env, "INPUT_CACHE_BINARY": "yes"}, "0.8.0", "x86_64-linux", "a" * 64)
 
     def test_an_unrecorded_release_is_refused_with_the_remedy(self):
         with self.assertRaisesRegex(ValueError, "records no SBOM tool for roc-blueprint 0.6.0"):
@@ -515,6 +588,33 @@ class EndToEndTests(unittest.TestCase):
         commands = [call["args"][3] if call["args"][0] == "run" else call["args"][0] for call in self.calls()]
         self.assertEqual(commands, ["version", "inspect", "bind", "check"])
 
+    def test_source_release_with_bundle_zip_and_pdf_keeps_per_subject_inventories(self):
+        for name, content in (("examples.zip", b"PK examples"), ("manual.pdf", b"%PDF manual")):
+            (self.workspace / "dist" / name).write_bytes(content)
+        with self.with_features("members"):
+            values = self.run_action(INPUT_TARGET="source", INPUT_VERSION="0.0.1-dry-run",
+                                     INPUT_FILES="dist/bundle.tar.zst\ndist/examples.zip\ndist/manual.pdf", FAKE_FEATURES="members")
+        calls = [call["args"][3:] for call in self.calls() if call["args"][:1] == ["run"]]
+        self.assertEqual([Path(call[1]).name for call in calls if call[0] == "members"], ["bundle.tar.zst"])
+        inspections = [call for call in calls if call[0] == "inspect"]
+        self.assertEqual(len(inspections), 2)
+        self.assertEqual(sum("--members" in call for call in inspections), 1)
+        subjects = json.loads(Path(values["evidence"]).read_text())["subjects"]
+        self.assertEqual(len(subjects), 3)
+        self.assertTrue(all(subject["version"] == "0.0.1-dry-run" for subject in subjects))
+        inventories = {subject["name"]: subject["inventory_sha256"] for subject in subjects}
+        self.assertEqual(inventories["examples.zip"], inventories["manual.pdf"])
+        self.assertNotEqual(inventories["bundle.tar.zst"], inventories["manual.pdf"])
+        self.assertEqual(len(values["assets"].splitlines()), 9)
+
+    def test_release_semver_preserves_hyphens_and_rejects_numeric_leading_zeroes(self):
+        for version in ("0.0.1-dry-run", "1.2.3-rc.1", "1.2.3-1a.0.x-y", "1.2.3"):
+            with self.subTest(version=version):
+                self.assertIsNotNone(sidecars.VERSION.fullmatch(version))
+        for version in ("01.2.3", "1.2.3-01", "1.2.3-rc.01", "1.2.3-", "1.2.3-a..b", "1.2.3+build.1"):
+            with self.subTest(version=version):
+                self.assertIsNone(sidecars.VERSION.fullmatch(version))
+
     def test_a_tool_that_writes_manifests_has_them_checked_and_listed(self):
         with self.with_features("manifest"):
             values = self.run_action(INPUT_FILES="dist/app", INPUT_SPDX_2_3="true", FAKE_FEATURES="manifest")
@@ -569,3 +669,14 @@ class EndToEndTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedReleaseVersionTests(unittest.TestCase):
+    def test_producer_and_roc_controllers_use_the_same_release_identity_table(self):
+        cases = json.loads((ROOT / "tests/fixtures/release-versions.json").read_text())
+        for version in cases["valid"]:
+            with self.subTest(version=version):
+                self.assertTrue(sidecars.valid_version(version))
+        for version in cases["invalid"]:
+            with self.subTest(version=version):
+                self.assertFalse(sidecars.valid_version(version))

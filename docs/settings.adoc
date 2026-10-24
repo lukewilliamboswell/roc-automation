@@ -32,9 +32,10 @@ Protect the default branch with a ruleset:
 
 * Require a pull request.
 * Require status checks to pass on the current commit, with the branch up to
-  date. Name the aggregate job of `ci.yml`, or its one job in a
-  xref:overview.adoc#a-pure-roc-package[pure Roc package], and the build job
-  of the `release.yml` dry run.
+  date. Name the shared lifecycle aggregate `Lifecycle / Validation verdict`
+  when the thin caller job is named `Lifecycle`, including for a
+  xref:overview.adoc#a-pure-roc-package[pure Roc package]. Confirm the actual
+  caller-prefixed check name from a real pull request.
 * Require signed commits.
 * Grant no bypass to any bot: neither an app nor a deploy key is on the
   ruleset's bypass list.

@@ -162,7 +162,10 @@ identify = |input, files, path, used, refs| {
 		n = node(block)
 		if n.context == "section" or n.context == "floating_title" {
 			if n.level == 1 {
-				candidates = files.keep_if(|f| f.source.split_on("\n").any(|line| line == "= ${n.title}"))
+				# A book may repeat a chapter title as a later part heading.
+				# Only a file's own first document heading identifies its origin;
+				# later headings in the book are not competing source documents.
+				candidates = files.keep_if(|f| f.source.split_on("\n").find_first(|line| line.starts_with("= ")) == Ok("= ${n.title}"))
 				if candidates.len() > 1 {
 					return Err("ambiguous source origin for included chapter ${n.title}")
 				}
@@ -237,9 +240,9 @@ code_sources = |files| {
 	Ok($found)
 }
 
-State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64, sources : List(Preparation.File) }
+State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64, sources : List(Preparation.File), aliases : List(Str) }
 
-initial = |options, raw, refs, routes, path, backend, sources| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0, sources }
+initial = |options, raw, refs, routes, path, backend, sources| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0, sources, aliases: [] }
 
 blocks : List(AsciiDoc.Block), State, U64 -> Try({ text : Str, state : State }, Str)
 blocks = |input, state, depth| {
@@ -679,20 +682,34 @@ html_blocks = |input, state, depth| {
 		match n.context {
 			"section" | "floating_title" => {
 				var $occurrences = 0.U64
+				var $id_occurrences = 0.U64
 				var $found = False
+				local_id = $state.refs.find_first(|r| r.id == n.id).map_ok(|r| r.local_id) ?? ""
 				for ref in $state.refs {
 					if !$found and ref.title == n.title {
 						$occurrences = $occurrences + 1
+					}
+					if !$found and ref.local_id == local_id {
+						$id_occurrences = $id_occurrences + 1
 					}
 					if ref.id == n.id {
 						$found = True
 					}
 				}
 				legacy = "${slug(n.title)}-${$occurrences.to_str()}"
-				alias = if ($occurrences > 1 and legacy != n.id and !$state.refs.any(|r| r.id == legacy)) "<span class=\"anchor-alias\" id=\"${Html.escape(legacy)}\"></span>" else ""
+				# Explicit IDs survive heading renames. Preserve their historical
+				# duplicate occurrence links as well as the existing title aliases.
+				candidates = (if ($occurrences > 1) [legacy] else []).concat(if ($id_occurrences > 1 and local_id != "") ["${local_id}-${$id_occurrences.to_str()}"] else [])
+				var $alias = ""
+				for candidate in unique(candidates) {
+					if !$state.refs.any(|r| r.id == candidate) and !$state.aliases.contains(candidate) {
+						$alias = "${$alias}<span class=\"anchor-alias\" id=\"${Html.escape(candidate)}\"></span>"
+						$state = { ..$state, aliases: $state.aliases.append(candidate) }
+					}
+				}
 				child = html_blocks(n.blocks, $state, depth + 1)?
 				$state = child.state
-				$text = "${alias}${Html.heading_html(n.level + 1, n.id, title)}\n${child.text}"
+				$text = "${$alias}${Html.heading_html(n.level + 1, n.id, title)}\n${child.text}"
 			}
 			"paragraph" => {
 				$text = "${block_title}<p>${html_inline(n.source, n.attrs, $state)?}</p>"

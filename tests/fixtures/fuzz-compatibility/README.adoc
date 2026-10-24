@@ -1,0 +1,43 @@
+= Real fuzz compatibility fixture
+
+This suite builds tiny targets with `roc build --fuzz` against the released
+roc-fuzz 0.4.3 platform, pinned by its content-addressed URL. Its API and native
+CLI were reviewed at release commit
+`1abb6f0f76fc3ed6016cdf5da4e16e8ed1cfdfc4`; no downstream script or workflow runs.
+The platform release asset's published SHA-256 is
+`d9bae1e93e6e94f3fafb4040861402dbab90af247023461d8e5451db4a3ae0f2`.
+Roc also verifies the bundle's content hash during normal provisioning.
+
+`spec.json` is the ordinary schema-1 compatibility contract: clean fixed-seed
+replay, a one-second clean libFuzzer smoke, and a fixed-seed deliberate failure
+that must exit 77. Both stdout and exit status remain exact. Variable libFuzzer
+statistics are explicitly ignored for comparison and retained as raw stderr.
+The LLVM optimization mode remains controller-owned; fuzz builds use
+`--opt=speed`, because the compiler rejects `--fuzz` with the ordinary dev backend.
+
+`tests/run_fuzz_compatibility_smoke.py` supplies only the release asset transport
+substitute used by the other compatibility smoke. The shared native utility
+performs real archive admission, compiler checks, builds and executions. Separate
+negative probes show that an unexpected 77 is incompatible, a crash message over
+the existing output bound is `output-limit`, and an outer 200 ms deadline is
+`test-timeout`, even with ignored stderr and a superficially matching expected
+exit. The unbounded inner-run setting is used only under that outer deadline;
+it never starts an unattended campaign.
+
+The pinned platform ships Linux x64 musl and macOS arm64 inputs. This fixture
+claims no Windows, Linux arm64, or Intel macOS coverage. A bounded clean run
+establishes runner integration, not absence of bugs in the compiler or platform.
+
+To run with the existing native runner and a real installed compiler:
+
+[source,sh]
+----
+ROC_COMPATIBILITY_BINARY=/path/to/runner \
+ROC_FUZZ_SMOKE_COMPILER=/path/to/roc \
+ROC_FUZZ_SMOKE_EVIDENCE=/tmp/fuzz-smoke-evidence \
+python3 tests/run_fuzz_compatibility_smoke.py
+----
+
+Use a fresh evidence directory for each invocation. It retains only the actual
+host/compiler identity, command/result
+JSON and raw diagnostic logs, never the temporary executables or package cache.

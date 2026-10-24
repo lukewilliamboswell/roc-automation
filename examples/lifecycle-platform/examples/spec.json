@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "release": "working-tree",
+  "dependencies": [],
+  "apps": [
+    {
+      "path": "examples/main.roc",
+      "run": [
+        "bash",
+        "{suite}/examples/run-archive.sh",
+        "{executable}"
+      ],
+      "cases": [
+        {
+          "name": "host-contract",
+          "args": [],
+          "stdin": "",
+          "stdout": "",
+          "stderr": "",
+          "stderr_match": "ignore",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "path": "examples/wrong.roc",
+      "run": [
+        "bash",
+        "{suite}/examples/run-archive.sh",
+        "{executable}"
+      ],
+      "cases": [
+        {
+          "name": "host-rejects-wrong-answer",
+          "args": [],
+          "stdin": "",
+          "stdout": "",
+          "stderr": "",
+          "stderr_match": "ignore",
+          "exit_code": 1
+        }
+      ]
+    }
+  ]
+}

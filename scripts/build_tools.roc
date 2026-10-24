@@ -36,6 +36,12 @@ tools = [
 	{ name: "nightly-report", script: "nightly_report" },
 	{ name: "publish-release", script: "publish_release" },
 	{ name: "release-compatibility", script: "release_compatibility" },
+	{ name: "release-plan", script: "release_plan" },
+	{ name: "release-admit", script: "release_admit" },
+	{ name: "release-operations", script: "release_operations" },
+	{ name: "lifecycle-github", script: "lifecycle_github" },
+	{ name: "lifecycle-pages", script: "lifecycle_pages" },
+	{ name: "lifecycle-transport", script: "lifecycle_transport" },
 ]
 
 # Both are built on one machine: the musl systems link statically and need no

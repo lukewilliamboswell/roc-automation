@@ -1,0 +1,155 @@
+name: Independently admit release evidence
+description: Reconstruct trusted jobs, transports, obligations and exact inert bytes before lifecycle publication.
+inputs:
+  phase:
+    description: discover selects transports; extract verifies raw archives; assemble consolidates inert files; collect admits evidence
+    required: true
+  trusted-seed:
+    description: Bounded trusted plan context JSON for discover/collect, never a candidate authorization flag
+    default: ''
+  topology:
+    description: Exact reviewed topology JSON for discover/collect, bound by the seed digest
+    default: ''
+  admission-file:
+    description: Fresh independent admission report for provenance verification
+    default: ''
+  attestation-bundle:
+    description: Bounded retained attestation bundle for all exact admitted subjects
+    default: ''
+  raw-downloads:
+    description: Raw artifact archive directory downloaded by immutable IDs with service digest checking
+    default: ''
+  transport-manifest:
+    description: Trusted discovery manifest selecting immutable archive IDs and digests
+    default: ''
+  traces:
+    description: Downloaded artifacts in directories named by their actual API artifact names
+    default: ''
+  candidate:
+    description: Complete final asset directory inside GITHUB_WORKSPACE for publication
+    default: ''
+  output-directory:
+    description: Private output directory for trusted observations, evidence and admission result
+    required: true
+  token:
+    description: Token for read-only GitHub evidence GET requests; no token is given to bootstrap
+    default: ${{ github.token }}
+outputs:
+  provenance-report:
+    description: Retained per-subject verification receipt index
+    value: ${{ steps.admit.outputs.provenance-report }}
+  artifact-ids:
+    description: Comma-separated immutable artifact IDs independently selected from the actual run
+    value: ${{ steps.admit.outputs.artifact-ids }}
+  producing-attempt:
+    description: Original producing generation, which can precede a publish-only retry
+    value: ${{ steps.admit.outputs.producing-attempt }}
+  admission-file:
+    description: Exact-file report reconstructed by trusted code in this job
+    value: ${{ steps.admit.outputs.admission-file }}
+  explicit-assets:
+    description: Complete admitted file paths relative to GITHUB_WORKSPACE
+    value: ${{ steps.admit.outputs.explicit-assets }}
+  notes-file:
+    description: Exact admitted notes path relative to GITHUB_WORKSPACE
+    value: ${{ steps.admit.outputs.notes-file }}
+runs:
+  using: composite
+  steps:
+    - name: Check controller phase
+      shell: bash
+      env:
+        INPUT_PHASE: ${{ inputs.phase }}
+      run: |
+        case "$INPUT_PHASE" in
+          discover|extract|assemble|collect|verify-provenance) ;;
+          *) echo "::error::unsupported admission controller phase"; exit 1 ;;
+        esac
+    - name: Install Nix
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      with:
+        extra_nix_config: access-tokens =
+
+    - name: Check that Nix holds no token
+      shell: bash
+      run: |
+        if [ -n "$(nix config show access-tokens | tr -d '[:space:]')" ]; then
+          echo "::error::Nix is configured with a GitHub access token; refusing to continue"
+          exit 1
+        fi
+
+    # The installer reads Blueprint.roc from GITHUB_WORKSPACE, installs under
+    # RUNNER_TEMP and adds that directory to GITHUB_PATH. Here it is given this
+    # repository's checkout, a directory of its own, and no PATH file, so the
+    # calling job's PATH and any blueprint it installed are left alone.
+    - id: blueprint
+      name: Download and verify blueprint
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_VERSION: ''
+        INPUT_SHA256_X86_64_LINUX: ''
+        INPUT_SHA256_AARCH64_LINUX: ''
+        INPUT_SHA256_AARCH64_DARWIN: ''
+      run: |
+        root="$(cd "$ACTION_PATH/../.." && pwd)"
+        GITHUB_WORKSPACE="$root" RUNNER_TEMP="$RUNNER_TEMP/roc-automation-admit-release" GITHUB_PATH=/dev/null \
+          python3 "$root/actions/setup-blueprint/setup_blueprint.py"
+
+    - name: Verify and extract or assemble inert transport
+      if: inputs.phase == 'extract' || inputs.phase == 'assemble'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+        INPUT_PHASE: ${{ inputs.phase }}
+        INPUT_RAW_DOWNLOADS: ${{ inputs.raw-downloads }}
+        INPUT_TRANSPORT_MANIFEST: ${{ inputs.transport-manifest }}
+        INPUT_TRACES: ${{ inputs.traces }}
+        INPUT_CANDIDATE: ${{ inputs.candidate }}
+        INPUT_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+      run: |
+        cd "$ACTION_PATH/../.."
+        case "$INPUT_PHASE" in
+          extract)
+            "$BLUEPRINT" run lifecycle-transport -- extract "$INPUT_TRANSPORT_MANIFEST" "$INPUT_RAW_DOWNLOADS" "$INPUT_OUTPUT_DIRECTORY" python3 "$ACTION_PATH/../release-compatibility/archive.py"
+            ;;
+          assemble)
+            "$BLUEPRINT" run lifecycle-transport -- assemble-public "$INPUT_TRACES" "$INPUT_CANDIDATE"
+            ;;
+        esac
+
+    - id: admit
+      if: inputs.phase == 'discover' || inputs.phase == 'collect' || inputs.phase == 'verify-provenance'
+      name: Independently observe or admit inert evidence
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+        INPUT_PHASE: ${{ inputs.phase }}
+        INPUT_TRUSTED_SEED: ${{ inputs.trusted-seed }}
+        INPUT_ADMISSION_FILE: ${{ inputs.admission-file }}
+        INPUT_ATTESTATION_BUNDLE: ${{ inputs.attestation-bundle }}
+        INPUT_TOPOLOGY: ${{ inputs.topology }}
+        INPUT_TRACES: ${{ inputs.traces }}
+        INPUT_CANDIDATE: ${{ inputs.candidate }}
+        INPUT_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        RA_ARCHIVE_HELPER: ${{ github.action_path }}/../release-compatibility/archive.py
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        cd "$ACTION_PATH/../.."
+        case "$INPUT_PHASE" in
+          discover)
+            "$BLUEPRINT" run release-admit -- discover "$INPUT_TRUSTED_SEED" "$INPUT_TOPOLOGY" "$INPUT_OUTPUT_DIRECTORY"
+            ;;
+          verify-provenance)
+            "$BLUEPRINT" run release-admit -- verify-provenance "$INPUT_ADMISSION_FILE" "$INPUT_ATTESTATION_BUNDLE" "$INPUT_CANDIDATE" "$INPUT_OUTPUT_DIRECTORY"
+            ;;
+          collect)
+            "$BLUEPRINT" run release-admit -- collect "$INPUT_TRUSTED_SEED" "$INPUT_TOPOLOGY" "$INPUT_TRACES" "$INPUT_CANDIDATE" "$INPUT_OUTPUT_DIRECTORY"
+            ;;
+          *)
+            echo "::error::unsupported verification phase"
+            exit 1
+            ;;
+        esac

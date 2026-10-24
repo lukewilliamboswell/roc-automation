@@ -1,95 +1,121 @@
-= The three workflows
+[#the-three-workflows]
+= Shared validation, release and nightly workflows
 
-Every package and platform repository has the same three workflows. Each answers
-one question, and none of them changes the repository.
+A thin consumer `release.yml` calls roc-automation's
+`.github/workflows/release-lifecycle.yml` at a reviewed full commit SHA. The
+shared workflow owns source validation and release rehearsal in the same run.
+`nightly.yml` remains a separate caller that tests published releases. Product
+repositories keep their sources, examples and expectations, authored notes,
+reviewed compositions, `Blueprint.roc` and lock, and bounded native tasks.
+They do not copy compiler resolution, matrices, packaging or publication logic.
 
 [cols="1,2,3,2",options="header"]
 |===
-| Workflow | Trigger | What it proves | Token access
+| Entry point | Trigger | Question | Token access
 
-| `ci.yml`
-| Pull request; push to the default branch
-| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly.
-| `contents: read`
+| Shared lifecycle through `release.yml`
+| Pull request
+| Does the selected source pass, and do the exact proposed archives work when full rehearsal is required?
+| Candidate jobs `contents: read`; trusted observation also `actions: read`
 
-| `release.yml`
-| Manual dispatch; pull request as a dry run
-| The exact bundle, examples archive and documentation proposed for publication work.
-| `contents: read`. The publish job alone has `contents: write`, behind a protected environment.
+| The same lifecycle
+| Manual dispatch on the default branch
+| Do the selected version and complete tested candidate qualify for publication?
+| Only the protected publication job has release and attestation write access
 
 | `nightly.yml`
 | Daily schedule; manual dispatch
-| The latest published release and its examples archive work with the latest nightly.
+| Does the latest published release work with one selected nightly?
 | Test jobs `contents: read`; the report job `issues: write`
 |===
 
-Rules that hold in all three:
+Every remote action and reusable workflow reference uses a full commit SHA.
+Top-level `permissions` is `{}`; each job receives only its required authority,
+and checkouts disable credential persistence. A candidate job never receives
+write or OIDC permission. A job that can publish checks out no candidate source,
+evaluates no candidate Blueprint and restores no candidate executable cache.
 
-* Every `uses:` reference is a full commit SHA.
-* Top-level `permissions` is `{}`, and each job states what it needs.
-* Checkout sets `persist-credentials: false`.
-* A job that runs repository code has no write access. A job with write access
-  runs no repository code.
-* The nightly tag is resolved once, in the first job, and passed to every other
-  job as the `nightly-tag` input of `roc-lang/setup-roc`. Matrix jobs never
-  each resolve "latest" for themselves, or one run could test several
-  compilers.
-* Each job calls a `blueprint run <task>` and holds no logic of its own.
+The lifecycle caller exposes the supported contract version, dispatch version,
+optional full dry run and optional Unix Nix provisioning. Its permission ceiling
+must allow contents, actions, attestation, OIDC and Pages permissions requested
+by the shared workflow, including when optional Pages is disabled;
+the shared workflow narrows every other job. Keep the caller job named
+`Lifecycle` and require the actual `Lifecycle / Validation verdict` check.
+Confirm that check name and the effective permission/environment restrictions on
+a real pull request; YAML alone establishes neither enforcement nor execution.
 
-Workflows beyond these three, such as a documentation site or scheduled fuzzing,
-are described in
+Additional documentation sites and scheduled fuzzing remain optional; see
 xref:optional-workflows.adoc#optional-workflows[Optional workflows].
 
 [#risk-release-evidence]
 == Risks and controls for release evidence
 
-A workflow can publish a different source revision or rebuild assets after
-testing, and a retry can combine files from unrelated attempts. Preserve source
-and artifact identity across the release. Build and test the selected commit,
-pass exact files through the run, and let a separately authorized publisher
-verify the inventory and downloaded asset hashes. Interrupted-publication rules
-refuse ambiguous replacement. Exercise dry runs and publisher failure transitions.
-These controls bind the delivered bytes to the selected evidence; they do not
-prove an independently reproducible build or the trustworthiness of a compiler.
+A shortened matrix, a successful job from another attempt or a final archive
+that replaces tested host bytes can make an incomplete candidate appear ready.
+Preserve source, producer and file identity throughout the operation. Shared
+planning derives obligations from reviewed topology, archive tests consume exact
+transported bytes, and independent admission reconstructs the expected work from
+immutable source and actual GitHub job/artifact records before publication.
+Original producers remain necessary even when Seal contains another copy of a
+file. Publication rehashes the admitted set and reads back every uploaded asset.
+
+Regression evidence includes missing/skipped/failed targets, changed generations,
+wrong source/run/workflow, path and digest swaps, native bundle member mismatches,
+contradictory inventories and interrupted publisher transitions. A PR dry run and
+an authorized fixture dispatch establish hosted behavior separately from those
+local tests. These controls do not prove a benign compiler, complete component
+discovery or an independently reproducible build.
 
 == Continuous integration
 
-`ci.yml` tests the working tree.
+The lifecycle's Source jobs own source policy/format checks, declared unit and
+native checks, working-tree examples and host-binding checks. A platform first
+builds each native adapter once on its declared builder; Source consumes those
+exact host outputs. A task has one obligation owner and must not hide a second
+archive build or rehearsal inside `check`.
 
-. Set up Blueprint and install the latest nightly, as in
-  xref:environment.adoc#use-the-environment-in-ci[Use the environment in CI].
-. Run `blueprint run check`.
+The committed `release-topology.json` at the event SHA declares bundle roots and
+dependencies, example suites, documentation, target runners, native adapters,
+checks and SBOM mappings. It is bounded inert JSON with exact supported keys,
+unique IDs and canonical paths. Plan and Admit fetch it independently; a candidate
+plan, matrix output or changed local file cannot remove required work.
 
-xref:testing.adoc#what-runs-on-every-pull-request[What runs on every pull request]
-lists what the `check` task covers.
+Plan resolves the latest published package compiler once. Read-only jobs install
+that exact nightly before candidate checkout, retain its installation outside
+the workspace and invoke its absolute path. Shared utilities use their own fixed
+implementation compiler. Notes record both identities.
 
-Keep routine CI and release dry runs fast: benchmark and fuzz programs build
-and run their explicit smoke mode, with at most one second of workload execution
-per target. Compilation has its own budget. Sustained searches and measured
-benchmarks run only in schedule/manual jobs with explicit event guards; see
+Ordinary source-only PR changes may defer archive rehearsal while retaining all
+selected source/native checks. Packaging, topology, workflows/actions, adapters,
+toolchains, Blueprint/lock, examples, documentation and release changes require
+full rehearsal. Renames, deletions, unknown or mixed paths, incomplete change
+APIs, or a PR head/base that no longer matches the tested merge source also
+require full rehearsal. Explicit full dry run can add work. Dispatch always
+requires the complete candidate.
+
+The always-running `Validation verdict` aggregate requires every selected job to
+succeed and accepts a skipped stage only when Plan made it inapplicable. It emits
+`validated-source` or `validated-candidate`; neither string authorizes publication.
+A pure package also uses this stable aggregate check, even with one Linux runner.
+Native repositories cover every advertised target through declared builders and
+actual consuming runners. A target-specific cross build alone is not a link/run
+test of that target.
+
+Keep routine checks and release dry runs bounded: benchmark and fuzz programs
+run their explicit smoke mode, with at most one second of workload execution per
+target. Sustained campaigns retain separate schedule/manual guards; see
 xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[Heavy runs stay out of pull-request CI].
 
-A xref:overview.adoc#a-pure-roc-package[pure Roc package] runs this as one job
-on `ubuntu-latest`, and that job's name is the required status check.
-
-A repository whose code can behave differently by target runs it as a matrix,
-one job per runner, and ends with a single aggregate job that requires every
-matrix job to have succeeded. The aggregate job's name is the required status
-check, so the ruleset does not need editing when the matrix changes.
-
-A platform adds the host-bindings check described in
-xref:platforms.adoc#host-bindings[Host bindings]. It runs here and nowhere else.
-
-A pull request can fail because a new nightly arrived, with no fault in the
-change itself. Compare with the latest `nightly.yml` run and with the default
-branch before treating a failure as a regression in the pull request.
+A new nightly can break an untouched PR. Compare the separate published-release
+compatibility run and the default branch before classifying that failure.
 
 == Release
 
-`release.yml` builds what a release would contain, tests those exact bytes, and
-publishes them once. A maintainer dispatches it from the default branch with a
-version. A pull request runs the same build and tests as a dry run and publishes
-nothing.
+The shared lifecycle builds what a release would contain, tests those exact
+bytes, independently admits the evidence and publishes once. A maintainer
+dispatches the thin caller from the default branch with a version. A full PR
+rehearsal uses `0.0.1-dry-run` and publishes nothing; an eligible source-only PR
+retains the source verdict described above.
 
 === What a release contains
 
@@ -114,7 +140,7 @@ One immutable GitHub release per version holds:
 | Release notes
 | An authored account of what changed, with the real bundle URLs and the compiler versions used.
 
-| `<asset-name>.spdx.json` or `<asset-name>.cdx.json`
+| `<asset-name>.spdx.json`, `<asset-name>.cdx.json` and `<asset-name>.sbom-manifest.json`
 | Machine-processable component inventory bound to each deliverable's digest, with target-specific relationships and declared coverage. See xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[the SBOM contract].
 
 | Signature/attestation evidence
@@ -203,14 +229,14 @@ therefore use a placeholder, and the workflow fills it in:
 * `+{package-url}+` stands for the released bundle's URL. A release with several
   bundles has one placeholder for each, named after the package, such as
   `+{tzdb-url}+`.
-* After building the bundles, `release.yml` renders the notes with each
+* After sidecar generation, Seal renders the notes with each
   placeholder set to the real URL, tag and hash. A placeholder that is left
   unresolved, or one the notes never use, fails the release.
 * The rendered notes become the body of the GitHub release, followed by a
   section headed "Compilers" that holds the output of `roc version` and
   `roc-stable version`. That record is the statement of what the release was
   built and tested with; no header pin makes it.
-* A dry run renders the notes too, so a mistake in them fails on the pull
+* A full dry run renders the notes too, so a mistake in them fails on the pull
   request. It renders one file: the notes for the highest version under
   `docs/releases/`, which are the notes of the next release whenever a pull
   request adds or edits them. It asks nothing of GitHub to choose that file.
@@ -220,59 +246,58 @@ release, and no follow-up pull request is needed.
 
 === The order of a release
 
-.A release tests exact bytes, then publishes once
-[mermaid]
-....
-flowchart TD
-    C[Tested commit on the default branch] --> B[Build bundle, examples archive, docs archive, manual]
-    B --> T[Test those exact files against a loopback bundle]
-    T -->|any failure| X[Stop: nothing is published]
-    T -->|pass| D[Create draft release at the tested commit]
-    D --> U[Upload every asset]
-    U --> V[Download each asset and verify name, size and hash]
-    V --> P[Publish the release]
-....
-
-. *Validate.* Require the default branch. Reject a version whose tag or release
-  already exists. Require `docs/releases/<version>.adoc`. Check the version
-  with `roc bump --expect`. Record the event commit and use that SHA in every
-  later job.
-. *Check.* Run `blueprint run check` on that commit.
-. *Build.* Build the bundle with the latest nightly, then the examples archive
-  with the real release URL, the documentation archive, and the manual.
-  Generate and locally validate the SBOM sidecars from the resolved build and
-  final artifacts. Render the release notes with the real bundle and SBOM URLs.
-  Upload them as workflow artifacts.
-. *Test.* On every supported target, download those artifacts and test them as
-  described in
-  xref:examples.adoc#build-and-test-the-exact-archive[Build and test the exact archive].
-. *Publish.* A separate job, with `contents: write` and a protected
-  environment, downloads the tested artifacts. It checks out nothing and runs no
-  repository script. It hands the version, the rendered notes and the asset
-  files to
-  xref:actions.adoc#publish-release[`actions/publish-release`], which stages a
-  draft at the tested commit, verifies every uploaded asset against the tested
-  file, and then publishes.
-. *Update the site.* For a final release, rebuild the documentation site so
-  that it points at the new release, and deploy it; see
-  xref:optional-workflows.adoc#what-the-site-points-at[What the site points at].
+. *Plan.* Validate the event, topology, requested version and immutable source;
+  resolve one compiler and derive the expected obligations. For dispatch, refuse
+  an existing tag, release or draft and require exact authored notes before
+  expensive candidate builds. PR selection determines whether later archive
+  stages apply.
+. *Validate release.* On dispatch, run `roc bump --expect` once per bundle against
+  the latest released bundle. A verified first release records that no prior
+  bundle exists; an unknown or failed lookup cannot become a first release.
+. *Host and Source.* Invoke each build adapter once on its builder, transport its
+  outputs by exact artifact identity, and run the selected source/native tests.
+  Host linker inputs are intermediates embedded in their owning platform bundle;
+  they are not standalone public release assets. Declared binaries are public.
+. *Prepare, SBOM and Seal.* Build bundle dependencies in order, replace only their
+  declared sibling URLs, generate API reference/docs and example archives once,
+  then generate/check sidecars in separate read-only mapping jobs. Seal combines
+  those exact public files and renders notes and the final inventory once.
+. *Candidate.* Download by exact artifact IDs, verify raw ZIP digests and bounded
+  paths before extraction, and test the examples through loopback bundle routing
+  with a fresh cache. Every public binary needs a declared `test-binary` consuming
+  test on its target; Source's host test does not substitute for that evidence.
+  Preserve unchanged expectations, exact native file hashes and per-target results.
+. *Admit and Verdict.* Pinned trusted code checks actual complete GitHub job and
+  artifact records, the caller's literal full-SHA workflow reference, original
+  producer traces and the full expected matrix. Rehash every public file and
+  intermediate. Inspect the actual bundle members to bind each tested host to
+  its owning archive, and compare inventories, notes and sidecars with the final
+  subjects. The aggregate gate rejects any missing required success.
+. *Publish.* In the protected `release` environment, independently rerun admission
+  without candidate checkout or Blueprint evaluation. Attest the explicit full
+  admitted set, including sidecars, and verify provenance for those exact hashes
+  against the expected reusable workflow/source identity. The pinned publisher
+  rehashes the same set, stages a draft, uploads every file, downloads each and
+  compares name, size and SHA-256 before publishing. No rebuild occurs here.
+. *Optional Pages restore.* After a final publication, restore a selected manual
+  from its admitted documentation ZIP and deploy those inert bytes separately.
+  Check its topology, release/version, digest and canonical site root. Do not run
+  candidate documentation sources or rebuild a released manual in deployment.
   A release candidate does not change the site.
 
-The publish job consumes the artifacts of its own run. It never rebuilds, and
-never resolves a moving branch.
-SBOM generation and validation belong to the read-only build task and its PR
-dry run; xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] implements
-them with the pinned Blueprint tool, and
-xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
-chains the suppliers' documents in. The shared publication action does not
-implement those steps; it uploads the supplied SBOM files as inert assets and
-verifies their transferred bytes. Pass the asset list the sidecar action
-returns to the upload, the attestation and the publisher, so a missing sidecar
-cannot hide behind a wildcard. Remote advisory rescans run separately from routine PR checks.
+Retain the explicit public asset set, final inventory, producer traces, independent
+admission report and provenance verification receipts. Sidecar producer evidence
+records source/run/subject bindings but authorizes nothing; the independent gate
+checks the retained bytes and reviewed composition itself. Remote advisory rescans
+remain separate from routine release checks.
 
-Enable immutable releases in the repository, so that a published release cannot
-gain, lose or replace an asset. Hash checks remain necessary even with immutable
-hosting.
+The publish job consumes its own run's retained artifacts, never a moving branch.
+A publish-only retry may use an earlier producing attempt after re-observing its
+successful jobs and exact artifact IDs. Any newly produced stage invalidates the
+older candidate generation; do not mix new assets with old target outcomes.
+Missing/expired evidence requires a fresh run rather than a privileged rebuild.
+Enable immutable releases so a published version cannot gain, lose or replace
+assets. Recovery still refuses ambiguous draft/tag or upload state.
 
 === Several bundles in one release
 
@@ -397,7 +422,7 @@ flowchart LR
   in the read-only test job.
 * Run on every target the release is tested on: the one runner of a
   xref:overview.adoc#a-pure-roc-package[pure Roc package], or the same matrix
-  as `ci.yml`.
+  as the lifecycle Source jobs.
 * A platform's host bindings are not checked here. A released host is fixed;
   what matters is whether its applications still build and run.
 
