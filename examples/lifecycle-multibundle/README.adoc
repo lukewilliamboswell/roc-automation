@@ -15,8 +15,10 @@ Blueprint task wrappers pass additional arguments through unchanged.
 
 `blueprint run check-unit` runs the independent product tests. The reusable
 lifecycle supplies the context/changes JSON and `RO_*` environment for the shared
-operations. The thin full-SHA caller is added with the workflow's final immutable
-revision. Source-only selection defers archive rehearsal only for the ordinary
+operations. The hidden `.github/workflows/release.yml` is the thin full-SHA caller; copy
+the complete fixture to a repository root to use it. Its permission ceiling
+allows publication and optional Pages, while each called job narrows authority.
+Configure the release and Pages environments before an authorized dispatch. Source-only selection defers archive rehearsal only for the ordinary
 source directories listed in the topology; examples, recipes and topology
 changes require the full rehearsal.
 

@@ -43,6 +43,8 @@ by full SHA from a thin consumer `release.yml`. Its `workflow_call` inputs are:
 | contract | number | Exactly 1; unknown versions fail before candidate execution.
 | version | string | Dispatch version; empty on PR. PR always uses `0.0.1-dry-run`.
 | full-dry-run | boolean | Default false; can add full rehearsal but cannot remove an obligation.
+| pages-documentation | string | Declared manual ID restored after final publication; empty disables Pages.
+| install-nix | boolean | Default false; optional provisioning for Unix consumer tasks, always false on Windows.
 | install-nix | boolean | Optional Unix provisioning for candidate Blueprint environments; never changes controller authority.
 |===
 

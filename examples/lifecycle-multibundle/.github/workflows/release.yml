@@ -1,0 +1,28 @@
+name: Release
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Authored release version
+        type: string
+        required: true
+      full-dry-run:
+        description: Force full rehearsal; dispatch always runs the complete lifecycle
+        type: boolean
+        default: false
+permissions: {}
+jobs:
+  Lifecycle:
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+      pages: write
+    uses: lukewilliamboswell/roc-automation/.github/workflows/release-lifecycle.yml@749e8115f6cb05485935e05d4107eaa4fb30c40d
+    with:
+      contract: 1
+      version: ${{ inputs.version || '' }}
+      full-dry-run: ${{ inputs.full-dry-run || false }}
+      pages-documentation: manual

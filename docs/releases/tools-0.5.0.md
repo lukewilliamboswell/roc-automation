@@ -1,7 +1,7 @@
 # Tools 0.5.0
 
 The shared lifecycle adds `release-plan`, `release-operations`,
-`lifecycle-github`, `lifecycle-transport` and `release-admit`. One selected
+`lifecycle-github`, `lifecycle-transport`, `lifecycle-pages` and `release-admit`. One selected
 package compiler and immutable plan drive source checks, native host adapters,
 common asset preparation, SBOM generation, sealing and tests of the exact
 candidate bytes. A reusable workflow supplies the job graph and one aggregate
@@ -15,7 +15,7 @@ runs reviewed pinned code without a consumer checkout, rechecks admission,
 verifies provenance and delegates draft staging and hash readback to the shared
 publisher. Optional Pages deployment restores the admitted documentation ZIP.
 
-The native release pipeline tests the exact Linux utilities using an independent
+The native release pipeline tests the exact Linux, Apple Silicon and Windows utilities using an independent
 harness without a source checkout or compiler. Additional native CI and real
 consumer fixtures record their actual target execution scope. Those tests do
 not establish consumer environment protection or protected release success;

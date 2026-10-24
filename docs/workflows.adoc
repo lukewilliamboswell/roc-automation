@@ -37,7 +37,8 @@ evaluates no candidate Blueprint and restores no candidate executable cache.
 
 The lifecycle caller exposes the supported contract version, dispatch version,
 optional full dry run and optional Unix Nix provisioning. Its permission ceiling
-must allow the shared protected publisher's contents and attestation permissions;
+must allow contents, actions, attestation, OIDC and Pages permissions requested
+by the shared workflow, including when optional Pages is disabled;
 the shared workflow narrows every other job. Keep the caller job named
 `Lifecycle` and require the actual `Lifecycle / Validation verdict` check.
 Confirm that check name and the effective permission/environment restrictions on

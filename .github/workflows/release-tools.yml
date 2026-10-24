@@ -15,6 +15,11 @@ concurrency:
   group: release-tools-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  lifecycle-native-build:
+    uses: lukewilliamboswell/roc-automation/.github/workflows/build-lifecycle-native.yml@e8adb8af1e9ae3b8c73b426694af5fdd47c3a76e
+    permissions:
+      contents: read
+
   policy-build:
     name: Build policy utility (${{ matrix.system }})
     strategy:
@@ -89,7 +94,7 @@ jobs:
 
   build:
     name: Build the tools
-    needs: [policy-build, docs-build]
+    needs: [policy-build, docs-build, lifecycle-native-build]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -113,6 +118,11 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: docs-tool-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: lifecycle-tool-*
           merge-multiple: true
           path: dist
       - name: Include documentation renderer font notices and standalone tests
@@ -351,9 +361,62 @@ jobs:
           python3 tools/docs-tests/test_cli.py -v
           python3 tools/docs-tests/test_build.py -v
 
+  lifecycle-native-test:
+    name: Test exact lifecycle artifacts (${{ matrix.system }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            system: aarch64-darwin
+            extension: ''
+          - runner: windows-2025
+            system: x86_64-windows
+            extension: .exe
+    runs-on: ${{ matrix.runner }}
+    permissions: {}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: tools
+          path: tools
+      - name: Verify the exact downloaded release set
+        working-directory: tools/dist
+        env:
+          SYSTEM: ${{ matrix.system }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            shasum -a 256 --check sha256sums.txt
+          else
+            sha256sum --check --strict sha256sums.txt
+          fi
+          chmod +x -- *-"$SYSTEM$EXTENSION"
+      - name: Test native utilities without consumer sources or a Roc compiler
+        working-directory: tools/lifecycle-tests
+        env:
+          ROC_RELEASE_PLAN_BINARY: ${{ github.workspace }}/tools/dist/release-plan-${{ matrix.system }}${{ matrix.extension }}
+          ROC_RELEASE_ADMIT_BINARY: ${{ runner.os != 'Windows' && format('{0}/tools/dist/release-admit-{1}', github.workspace, matrix.system) || '' }}
+          ROC_RELEASE_OPERATIONS_BINARY: ${{ github.workspace }}/tools/dist/release-operations-${{ matrix.system }}${{ matrix.extension }}
+          ROC_LIFECYCLE_GITHUB_BINARY: ${{ github.workspace }}/tools/dist/lifecycle-github-${{ matrix.system }}${{ matrix.extension }}
+          ROC_LIFECYCLE_TRANSPORT_BINARY: ${{ github.workspace }}/tools/dist/lifecycle-transport-${{ matrix.system }}${{ matrix.extension }}
+          ROC_LIFECYCLE_PAGES_BINARY: ${{ github.workspace }}/tools/dist/lifecycle-pages-${{ matrix.system }}${{ matrix.extension }}
+          RA_ARCHIVE_HELPER: ${{ github.workspace }}/tools/lifecycle-tests/actions/release-compatibility/archive.py
+        run: |
+          set -euo pipefail
+          python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then python=python; fi
+          if [[ "$RUNNER_OS" == macOS ]]; then command -v zstd || brew install zstd; fi
+          "$python" -m unittest discover -s tests -v
+
   publish:
     name: Publish the tools
-    needs: [build, test, policy-test, docs-test]
+    needs: [build, test, policy-test, docs-test, lifecycle-native-test]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: release
