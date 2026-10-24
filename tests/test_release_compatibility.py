@@ -198,6 +198,28 @@ else:
         self.assertIn("outcome=setup-failed", outputs)
         self.assertIn("report=none", outputs)
 
+    def test_stdout_normalization_is_opt_in_and_logs_keep_raw_bytes(self):
+        ansi = "\x1b[31mhello\x1b[0m\r\n"
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDOUT=ansi)
+        self.assertNotEqual(ran.returncode, 0)
+        self.case["stdout_match"] = "strip-sgr-and-cr"
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test", FAKE_CASE_STDOUT=ansi)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual((directory / "4-stdout.log").read_bytes(), ansi.encode())
+
+    def test_ignored_stderr_or_expected_nonzero_cannot_hide_crash_markers(self):
+        for expected, actual, fuzz, marker, accepted in ((1, 1, False, "[ROC CRASHED]", False), (0, 0, False, "\x1b[31m[roc cra\rshed]\x1b[0m", False), (77, 77, True, "[roc crashed]", True), (77, 77, False, "[roc crashed]", False)):
+            with self.subTest(expected=expected, fuzz=fuzz):
+                self.case.update(exit_code=expected, stderr_match="ignore")
+                self.spec["apps"][0]["build_args"] = ["--fuzz"] if fuzz else []
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR=marker, FAKE_CASE_EXIT=str(actual))
+                self.assertEqual(ran.returncode == 0, accepted, ran.stdout + ran.stderr)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "compatible" if accepted else "incompatible")
+
     def test_fuzz_flag_is_build_only_and_stderr_can_be_explicitly_ignored(self):
         self.spec["apps"][0]["build_args"] = ["--fuzz"]
         self.case.update(stderr_match="ignore", exit_code=77, args=["run", "corpus", "--time=1"])

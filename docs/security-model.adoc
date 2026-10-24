@@ -471,6 +471,24 @@ statistics with an empty expected stderr field. Raw diagnostics, process status,
 stdout and exit assertions, deadlines and output limits still apply, so ignored
 stderr cannot convert interruption into a compatibility pass.
 
+Output matching defaults to exact bytes. Optional SGR/CR stdout normalization
+compares both sides without changing raw evidence. Crash markers are checked in
+raw and normalized stdout/stderr independently of comparison modes. Expected
+nonzero exits cannot hide a Roc crash; the bounded libFuzzer contract alone may
+expect and actually exit 77 from an admitted `--fuzz` build. Regressions cover
+colored markers, ordinary expected failures and that narrow replay exception.
+
+Expectation changes require a separate local operation with an explicit compiler;
+CI and release paths cannot invoke an update implicitly. Only the source spec
+marker `release: "working-tree"` admits editing; published version markers are
+refused even when downloaded locally. Every executed case
+must pass build, process status, exit, crash and UTF-8 checks before a spec is
+rewritten. Skips are preserved and all-skipped runs refuse edits. Unknown fields
+are rejected, unchanged specs retain their exact bytes, and a stale or symlinked
+spec stops the final atomic replacement. These controls prevent partial or
+accidental expectation changes; maintainers still review the intended output and
+control the local filesystem during the edit.
+
 Aggregation checks every declared target's identity, counts and run attempt as
 inert JSON. No single matrix output can stand in for all targets. A cancelled or
 failed test job cannot produce a passing issue report even when old files exist.

@@ -80,11 +80,57 @@ xref:testing.adoc#integration-tests[Integration tests].
   the arguments each example runs with, its standard input where it has one,
   and the exact output expected.
 * The check script runs every example and fails on a difference.
-* The same script accepts `--update` to rewrite the expected output, so that an
-  intended change is a reviewed diff.
+* The shared utility has an explicit local `update` operation to rewrite expected
+  output, so that an intended change is a reviewed diff.
 * An example that cannot run in CI, such as one needing a display or a console
   runtime, is still checked and built, and the specification says so
   explicitly. It is never silently skipped.
+
+[#update-local-expectations-explicitly]
+== Update local expectations explicitly
+
+The version 1 suite uses the same bounded examples engine for working-tree,
+candidate and published execution. To update a working-tree spec, select the
+package compiler explicitly and invoke the released utility:
+
+[source,shell]
+----
+RO_COMPILER=/absolute/path/to/roc release-operations update tests/examples.json .
+----
+
+Local source specs must declare `"release": "working-tree"`; release preparation
+replaces that marker, and updating a published version is refused even when its
+files were downloaded locally. External platform dependencies remain allowed.
+The spec path is relative to the suite root (the last argument); application
+paths remain relative to that root. The compiler must report its actual nightly
+identity. The command exits 0 on success or no change, and 1 on invalid inputs or
+incomplete execution. It refuses truthy `CI` or `GITHUB_ACTIONS`. Normal checking,
+release preparation, candidate execution and nightly execution never call it.
+
+All apps are checked and built, and every unskipped case must complete with its
+expected exit status before any expectation changes. At least one case must
+execute. Build failure, interruption, output overflow, invalid UTF-8 or a Roc
+crash marker prevents the edit. Declared skips stay unchanged. Only stdout and
+exact stderr expectations change; arguments, stdin, exit codes, skips, comparison
+modes and ignored stderr remain as authored. The spec, observed expectation text and rewritten JSON each have a 1 MiB budget.
+Unknown fields, duplicate JSON keys
+and symlinked spec paths are rejected rather than dropped during rewriting.
+
+`stdout_match` is optional per case: `"exact"` is the default and preserves ANSI
+output byte for byte, including Roc ANSI examples. `"strip-sgr-and-cr"` removes
+only ANSI SGR sequences (`ESC [`, digits/semicolon/colon, `m`) and carriage returns
+from both expected and actual stdout. Other controls and incomplete escapes stay
+literal. Updates store normalized stdout only when that mode is selected. Stderr
+still follows its independent exact/ignore mode. Raw command logs are retained
+in the temporary diagnostic directory printed by the command.
+
+A no-op preserves the original spec bytes, including formatting and normalized
+equivalent expectations. Changed specs use stable two-space JSON formatting and
+an atomic same-filesystem rename, after rechecking the original regular-file
+type and SHA-256 following child execution. A child edit aborts the update. Local
+filesystem state is still assumed to be under the maintainer's control; this is
+an explicit editing operation rather than a privileged concurrency boundary.
+Review the resulting expectation diff before committing it.
 
 == The examples archive
 

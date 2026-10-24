@@ -100,3 +100,12 @@ in the manual. Report vulnerabilities as [SECURITY.md](SECURITY.md) describes.
 
 [Release notes](https://lukewilliamboswell.github.io/roc-automation/releases.html) · [UPL-1.0 license](LICENSE) ·
 [Third-party assets](THIRD_PARTY_LICENSES.md)
+
+Local example expectations use the version 1 shared suite contract. Run
+`RO_COMPILER=/absolute/path/to/roc release-operations update tests/examples.json .`
+with `release: "working-tree"` to update only stdout/stderr after complete bounded
+execution; CI and archived
+release execution never update specs. Exact bytes remain the default; optional
+`stdout_match: "strip-sgr-and-cr"` normalizes color and carriage returns explicitly.
+See [the examples manual](docs/examples.adoc#update-local-expectations-explicitly)
+for the editing contract and preserved fields.

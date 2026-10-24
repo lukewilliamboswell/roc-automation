@@ -20,6 +20,7 @@ import src/LifecyclePlan
 import src/ReleaseArchive
 import src/ReleaseMetadata
 import src/ExamplesEngine
+import src/ExamplesUpdate
 import docs.BuildFiles
 import docs.Sha256
 
@@ -32,6 +33,7 @@ main! = |arguments| {
 	}
 	args = arguments.map(OsStr.display)
 	result = match args {
+		["update", spec, root] => ExamplesUpdate.run!(spec, root)
 		["source"] => execute!("source")
 		["validate"] => execute!("validate")
 		["host"] => execute!("host")
@@ -39,7 +41,7 @@ main! = |arguments| {
 		["prepare"] => execute!("prepare")
 		["candidate"] => execute!("candidate")
 		["serve", directory, port_file] => serve!(Path.utf8(directory), Path.utf8(port_file))
-		_ => Err("expected validate, host, source, prepare, seal, candidate or internal serve DIRECTORY PORT_FILE")
+		_ => Err("expected update SPEC ROOT, validate, host, source, prepare, seal, candidate or internal serve DIRECTORY PORT_FILE")
 	}
 	match result {
 		Ok({}) => Ok({})

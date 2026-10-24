@@ -10,7 +10,10 @@ import Compatibility
 ## suites. Callers own immutable source/archive admission and dependency routes.
 ExamplesEngine := [].{
 	run! = |suite, compiler, initial, root, directory, cache, replace_args, timeout, published| run_examples!(suite, compiler, initial, root, directory, cache, replace_args, timeout, published, directory)
-	run_with_outputs! = run_examples!
+	run_with_outputs! = |suite, compiler, initial, root, directory, cache, routes, timeout, published, executables| run_examples!(suite, compiler, initial, root, directory, cache, routes, timeout, published, executables)
+	observe! = |suite, compiler, initial, root, directory, cache, timeout| execute_examples!(suite, compiler, initial, root, directory, cache, [], timeout, Bool.False, directory, Bool.True)
+	normalize = normalize
+	crashed = crashed
 	command! = run_command!
 	logged! = log_command!
 }
@@ -87,12 +90,18 @@ log_command! = |directory, number, argv, cwd, cache, input, timeout| {
 	Ok(ran)
 }
 
-run_examples! : Compatibility.Suite, Str, Compatibility.Result, Path, Path, Path, List(Str), U64, Bool, Path => Try(Compatibility.Result, Str)
-run_examples! = |suite, compiler, initial, root, directory, cache, replace_args, case_timeout, published, executable_directory| {
+run_examples! = |suite, compiler, initial, root, directory, cache, replace_args, case_timeout, published, executable_directory| execute_examples!(suite, compiler, initial, root, directory, cache, replace_args, case_timeout, published, executable_directory, Bool.False).map_ok(|value| value.result)
+
+Observed : { path : Str, name : Str, stdout : Str, stderr : Str }
+
+execute_examples! : Compatibility.Suite, Str, Compatibility.Result, Path, Path, Path, List(Str), U64, Bool, Path, Bool => Try({ result : Compatibility.Result, observed : List(Observed) }, Str)
+execute_examples! = |suite, compiler, initial, root, directory, cache, replace_args, case_timeout, published, executable_directory, updating| {
 	version = log_command!(directory, 1, [compiler, "version"], root, cache, [], 30_000)?
 	if version.status != "exited" or version.code != 0 or !Compatibility.compiler_matches(Str.from_utf8_lossy(version.stdout), initial.nightly) {
 		return Err("installed compiler identity does not match the selected nightly")
 	}
+	var $observed = []
+	var $observed_bytes = 0.U64
 	var $result = { ..initial, detail: "", outcome: "compatible" }
 	var $number = 1
 	for example in suite.apps {
@@ -109,10 +118,10 @@ run_examples! = |suite, compiler, initial, root, directory, cache, replace_args,
 			$number = $number + 1
 			ran = log_command!(directory, $number, argv, root, cache, [], 300_000)?
 			if ran.timed_out or ran.limited {
-				return Ok({ ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "compiler interrupted; inspect command ${$number.to_str()}" })
+				return Ok({ result: { ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "compiler interrupted; inspect command ${$number.to_str()}" }, observed: $observed })
 			}
 			$result = { ..$result, diagnostic_commands: $result.diagnostic_commands + 1 }
-			if ran.status != "exited" or ran.code != 0 {
+			if ran.status != "exited" or ran.code != 0 or crashed(ran.stdout) or crashed(ran.stderr) {
 				$built = Bool.False
 			}
 		}
@@ -133,9 +142,20 @@ run_examples! = |suite, compiler, initial, root, directory, cache, replace_args,
 					}
 					ran = log_command!(directory, $number, runtime.concat(case.args), root, cache, Str.to_utf8(case.stdin), case_timeout)?
 					if ran.timed_out or ran.limited {
-						return Ok({ ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "example interrupted; inspect command ${$number.to_str()}" })
+						return Ok({ result: { ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "example interrupted; inspect command ${$number.to_str()}" }, observed: $observed })
 					}
-					passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and ((case.stderr_match ?? "exact") == "ignore" or ran.stderr == Str.to_utf8(case.stderr))
+					stdout = if (case.stdout_match ?? "exact") == "strip-sgr-and-cr" normalize(ran.stdout) else ran.stdout
+					expected = if (case.stdout_match ?? "exact") == "strip-sgr-and-cr" normalize(Str.to_utf8(case.stdout)) else Str.to_utf8(case.stdout)
+					fuzz_failure = (example.build_args ?? []) == ["--fuzz"] and case.exit_code == 77 and ran.status == "exited" and ran.code == 77
+					valid_output = !updating or (Str.from_utf8(ran.stdout).is_ok() and Str.from_utf8(ran.stderr).is_ok())
+					passed = ran.status == "exited" and ran.code == case.exit_code and valid_output and (fuzz_failure or (!crashed(ran.stdout) and !crashed(ran.stderr))) and (updating or (stdout == expected and ((case.stderr_match ?? "exact") == "ignore" or ran.stderr == Str.to_utf8(case.stderr))))
+					if updating {
+						$observed_bytes = $observed_bytes + stdout.len() + if (case.stderr_match ?? "exact") == "ignore" 0 else ran.stderr.len()
+						if $observed_bytes > 1_048_576 {
+							return Err("local expectations exceed the 1 MiB spec budget")
+						}
+						$observed = $observed.append({ path: example.path, name: case.name, stdout: Str.from_utf8_lossy(stdout), stderr: if (case.stderr_match ?? "exact") == "ignore" "" else Str.from_utf8_lossy(ran.stderr) })
+					}
 					$result = { ..$result, tested: $result.tested + 1, failed: $result.failed + if passed 0 else 1 }
 					if !passed {
 						write!(Path.join(directory, "${$number.to_str()}-expected.json"), Json.to_str(case))?
@@ -145,5 +165,53 @@ run_examples! = |suite, compiler, initial, root, directory, cache, replace_args,
 			}
 		}
 	}
-	Ok({ ..$result, outcome: Compatibility.classify($result.tested, $result.failed, $result.skipped) })
+	Ok({ result: { ..$result, outcome: Compatibility.classify($result.tested, $result.failed, $result.skipped) }, observed: $observed })
 }
+
+## Remove only SGR escape sequences and carriage returns. Other controls stay
+## byte-for-byte; malformed/incomplete escape sequences are never swallowed.
+normalize : List(U8) -> List(U8)
+normalize = |bytes| {
+	var $out = []
+	var $i = 0
+	while $i < bytes.len() {
+		byte = bytes.get($i) ?? 0
+		if byte == 13 {
+			$i = $i + 1
+		} else if byte == 27 and bytes.get($i + 1) == Ok('[') {
+			var $end = $i + 2
+			while match bytes.get($end) {
+				Ok(b) => (b >= '0' and b <= '9') or b == ';' or b == ':'
+				_ => Bool.False
+			} {
+				$end = $end + 1
+			}
+			if bytes.get($end) == Ok('m') {
+				$i = $end + 1
+			}
+				else {
+					$out = $out.append(byte)
+					$i = $i + 1
+				}
+		} else {
+			$out = $out.append(byte)
+			$i = $i + 1
+		}
+	}
+	$out
+}
+
+crashed : List(U8) -> Bool
+crashed = |bytes| {
+	[bytes, normalize(bytes)].any(
+		|value| {
+			text = Str.from_utf8_lossy(value.map(|b| if b >= 'A' and b <= 'Z' b + 32 else b))
+			text.contains("[roc crashed]") or text.contains("[roc expect failed]")
+		},
+	)
+}
+
+expect normalize([27, '[', '3', '1', 'm', 'x', 13, 10, 27, '[', 'm']) == ['x', 10]
+expect normalize([27, '[', '2', 'J', 27, '[', '3']) == [27, '[', '2', 'J', 27, '[', '3']
+expect crashed(Str.to_utf8("[ROC CRASHED]"))
+expect crashed([27, '[', '3', '1', 'm'].concat(Str.to_utf8("[roc cra")).concat([13]).concat(Str.to_utf8("shed]")))

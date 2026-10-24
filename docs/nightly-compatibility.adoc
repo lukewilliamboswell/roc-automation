@@ -215,7 +215,8 @@ formatter. An empty package cache starts each target's test.
 The suite contains 1–100 unique application paths under `examples/`, with
 1–100 uniquely named cases per application. The runner checks and builds each
 application once with the selected compiler, then runs each recorded case and
-compares stdout and exit code exactly, and stderr exactly unless the case
+compares the exit code exactly, stdout using its explicit mode (exact by default),
+and stderr exactly unless the case
 explicitly selects the bounded fuzz-statistics exception below. A failed application does not
 prevent diagnostics for later applications. Declared cases are the execution
 inventory; maintainers review the suite for representative coverage before
@@ -232,6 +233,12 @@ installs its tools. The shared runner still owns checking, compilation, timeout,
 stdout/stderr capture and exact case comparison. The runtime must exercise the
 built artifact and exit after its assertions; merely building a cart or opening
 a window does not establish behavioral compatibility.
+
+Cases may select `"stdout_match": "strip-sgr-and-cr"` to compare stdout after
+removing SGR color escapes and carriage returns from both expected and actual
+bytes. Omission or `"exact"` preserves every byte, which remains the default for
+ANSI examples. No other control escapes are removed; raw diagnostic logs are
+unchanged. See xref:examples.adoc#update-local-expectations-explicitly[local expectation updates].
 
 A case may add `skip: {"reason":"...","issue":"https://github.com/..."}`.
 The app is still checked and built, and the skip is visible. Any skip prevents
@@ -265,6 +272,13 @@ Compiler stdout and stderr are always displayed, including after exit code 0.
 Warnings remain nonfatal by default. Successful compilation does not imply that
 it was warning-free. The runner owns compiler execution instead of delegating
 it to a driver that might discard captured success output.
+
+Crash markers (`[roc crashed]` and `[roc expect failed]`, ignoring ASCII case)
+are checked in raw output and independently in SGR/CR-normalized output, including
+ignored stderr. An ordinary expected nonzero exit cannot hide a crash. The one
+exception is an admitted `build_args: ["--fuzz"]` case that both expects and
+actually exits 77: libFuzzer uses that status for the intentional failure replay
+contract. Timeouts, signals and output limits never qualify for the exception.
 
 Aggregation accepts the per-artifact directory layout and, for exactly one
 declared runner, the flattened layout produced by a one-match artifact download.
