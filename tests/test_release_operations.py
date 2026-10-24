@@ -17,6 +17,16 @@ PLANNER = os.environ.get("ROC_RELEASE_PLAN_BINARY")
 
 @unittest.skipUnless(BINARY and PLANNER, "set ROC_RELEASE_OPERATIONS_BINARY and ROC_RELEASE_PLAN_BINARY")
 class ReleaseOperationsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.launcher = None
+        if os.name == "nt":
+            cls.launcher_directory = tempfile.TemporaryDirectory()
+            cls.addClassCleanup(cls.launcher_directory.cleanup)
+            cls.launcher = Path(cls.launcher_directory.name) / "launcher.exe"
+            subprocess.run(["clang", str(ROOT / "tests/fixtures/compatibility_launcher.c"),
+                            "-o", str(cls.launcher)], check=True, capture_output=True, text=True)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -29,6 +39,10 @@ class ReleaseOperationsTests(unittest.TestCase):
         (self.workspace / "examples/main.roc").write_text('app [main!] { pf: platform "../package/main.roc" }\n')
         (self.workspace / "examples/data.txt").write_bytes(b"fixture\r\nexact")
         self.spec = dict(schema_version=1, release="working-tree", dependencies=[], apps=[dict(path="examples/main.roc", cases=[dict(name="hello", args=[], stdin="", stdout="hello\n", stderr="", exit_code=0)])])
+        if os.name == "nt":
+            # The fake compiler writes a Python fixture, not a product executable.
+            # Run it through an explicit interpreter on hosts without shebangs.
+            self.spec["apps"][0]["run"] = [sys.executable, "{executable}"]
         (self.workspace / "examples/spec.json").write_text(json.dumps(self.spec))
         (self.workspace / "docs/releases/1.2.0.adoc").write_text("= sample 1.2.0\n\nAuthored notes. Install {package-url}.\n")
         self.program("roc", '''import os,sys,json,urllib.request
@@ -58,7 +72,7 @@ elif args[0] in ('check','build'):
             assert urllib.request.urlopen(args[i+2]).read()==b'candidate bundle'
     if args[0]=='build':
         path=Path(next(arg.split('=',1)[1] for arg in args if arg.startswith('--output=')))
-        path.write_text('#!'+sys.executable+'\\nprint("hello")\\n');path.chmod(0o755)
+        path.write_text('#!'+sys.executable+'\\nimport sys;sys.stdout.reconfigure(newline="\\\\n");print("hello")\\n');path.chmod(0o755)
 elif args[0] in ('fmt','bump'): pass
 else: raise AssertionError(args)
 ''')
@@ -77,6 +91,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
 (out/'manual.pdf').write_bytes(b'%PDF fixture')
 ''')
         subprocess.run(["git", "init", "-q"], cwd=self.workspace, check=True)
+        subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=self.workspace, check=True)
         subprocess.run(["git", "add", "."], cwd=self.workspace, check=True)
         subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"], cwd=self.workspace, check=True)
         sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.workspace, text=True).strip()
@@ -85,14 +100,22 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         self.directory = self.root / "candidate"
         self.scratch = self.root / "evidence"
         self.trace = self.root / "tools.jsonl"
-        self.env = {**os.environ, "GITHUB_WORKSPACE": str(self.workspace), "RO_WORKSPACE": str(self.workspace), "RO_DIRECTORY": str(self.scratch), "RO_CANDIDATE": str(self.directory), "RO_RUNNER": "ubuntu-24.04", "RO_COMPILER": str(self.workspace / "bin/roc"), "RO_BLUEPRINT": str(self.workspace / "bin/blueprint"), "RO_POLICY": str(self.workspace / "bin/roc-policy"), "RO_DOCS": str(self.workspace / "bin/roc-docs"), "RO_SELF": str(BINARY), "RO_TOOLING_COMPILER_VERSION": "Roc compiler version nightly-2026-10-09-258ab27", "RO_PLAN": str(self.root / "plan.json"), "RA_PYTHON": sys.executable, "RA_ARCHIVE_HELPER": str(ROOT / "actions/release-compatibility/archive.py"), "TOOL_TRACE": str(self.trace), "GH_TOKEN": "not-for-children", "GITHUB_TOKEN": "not-for-children", "GITHUB_OUTPUT": str(self.root / "outputs")}
+        self.env = {**os.environ, "GITHUB_WORKSPACE": str(self.workspace), "RO_WORKSPACE": str(self.workspace), "RO_DIRECTORY": str(self.scratch), "RO_CANDIDATE": str(self.directory), "RO_RUNNER": "ubuntu-24.04", "RO_COMPILER": str(self.program_path("roc")), "RO_BLUEPRINT": str(self.program_path("blueprint")), "RO_POLICY": str(self.program_path("roc-policy")), "RO_DOCS": str(self.program_path("roc-docs")), "RO_SELF": str(BINARY), "RO_TOOLING_COMPILER_VERSION": "Roc compiler version nightly-2026-10-09-258ab27", "RO_PLAN": str(self.root / "plan.json"), "FAKE_PYTHON": sys.executable, "RA_PYTHON": sys.executable, "RA_ARCHIVE_HELPER": str(ROOT / "actions/release-compatibility/archive.py"), "TOOL_TRACE": str(self.trace), "GH_TOKEN": "not-for-children", "GITHUB_TOKEN": "not-for-children", "GITHUB_OUTPUT": str(self.root / "outputs")}
         (self.root / "outputs").write_text("")
         self.make_plan()
 
+    def program_path(self, name):
+        return self.workspace / "bin" / (name + (".exe" if os.name == "nt" else ""))
+
     def program(self, name, source):
-        path = self.workspace / "bin" / name
-        path.write_text("#!"+sys.executable+"\n"+source)
-        path.chmod(0o755)
+        path = self.program_path(name)
+        source = "import sys\nsys.stdout.reconfigure(newline='\\n')\nsys.stderr.reconfigure(newline='\\n')\n" + source
+        if os.name == "nt":
+            shutil.copy(self.launcher, path)
+            path.with_suffix(".py").write_text(source)
+        else:
+            path.write_text("#!"+sys.executable+"\n"+source)
+            path.chmod(0o755)
 
     def make_plan(self):
         for name, value in (("context", self.context), ("topology", self.topology), ("changes", dict(complete=False, files=[]))):
@@ -247,7 +270,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         self.assertEqual(context["RO_TARGET"], "linux")
         self.assertEqual(json.loads(context["RO_TARGET_IDS"]), ["linux"])
         self.assertEqual(json.loads(context["RO_OUTPUTS"]), [])
-        self.assertEqual(context["RO_COMPILER"], self.env["RO_COMPILER"])
+        self.assertEqual(Path(context["RO_COMPILER"]), Path(self.env["RO_COMPILER"]))
         self.assertEqual(Path(context["RO_OUTPUT_DIRECTORY"]), self.scratch / "adapter-check-unit-linux")
 
     @unittest.skipUnless(os.environ.get("ROC_DOCS_BINARY"), "set ROC_DOCS_BINARY to verify the real notes renderer")
@@ -365,7 +388,7 @@ if sys.argv[2] == 'test-binaries':
 else:
     assert sys.argv[2]=='check-unit'
 """)
-        subprocess.run(["git", "add", "bin/blueprint"], cwd=self.workspace, check=True)
+        subprocess.run(["git", "add", "bin"], cwd=self.workspace, check=True)
         subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "-qm", "native callback"], cwd=self.workspace, check=True)
         self.context["sha"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.workspace, text=True).strip()
         for output in outputs:
