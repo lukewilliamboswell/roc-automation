@@ -669,3 +669,14 @@ class EndToEndTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedReleaseVersionTests(unittest.TestCase):
+    def test_producer_and_roc_controllers_use_the_same_release_identity_table(self):
+        cases = json.loads((ROOT / "tests/fixtures/release-versions.json").read_text())
+        for version in cases["valid"]:
+            with self.subTest(version=version):
+                self.assertTrue(sidecars.valid_version(version))
+        for version in cases["invalid"]:
+            with self.subTest(version=version):
+                self.assertFalse(sidecars.valid_version(version))

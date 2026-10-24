@@ -437,6 +437,11 @@ def summary_text(files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]]
     return "\n".join(lines) + "\n"
 
 
+def valid_version(value: str) -> bool:
+    """The shared release policy: bounded SemVer without build metadata."""
+    return len(value) <= 100 and VERSION.fullmatch(value) is not None
+
+
 def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_blueprint.fetch) -> None:
     env = os.environ
     workspace = Path(env.get("GITHUB_WORKSPACE", ".")).resolve()
@@ -445,7 +450,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     if not clean(blueprint) or shutil.which(blueprint) is None:
         raise Refusal(f"blueprint-binary is not an executable on this runner: {blueprint!r}")
     version = env.get("INPUT_VERSION", "").strip()
-    if not VERSION.fullmatch(version):
+    if not valid_version(version):
         raise Refusal("version must be a release version such as 0.12.0 or 0.12.0-rc1")
     target = env.get("INPUT_TARGET", "").strip()
     if target != "source" and not SYSTEM.fullmatch(target):

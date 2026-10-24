@@ -1,3 +1,4 @@
+import ReleaseVersion
 import GitHub
 import Compatibility
 import LifecycleJson
@@ -50,12 +51,7 @@ LifecyclePlan := [].{
 			},
 		)
 	}
-	version = |value| {
-		parts = value.split_on("-")
-		core = parts.first() ?? ""
-		core_parts = core.split_on(".")
-		core_parts.len() == 3 and core_parts.all(|part| GitHub.is_digits(part) and (part == "0" or !part.starts_with("0"))) and value.to_utf8().len() <= 100 and (parts.len() == 1 or (parts.len() >= 2 and value.drop_prefix("${core}-").split_on(".").all(|part| !part.is_empty() and GitHub.is_plain(part, "-") and (!GitHub.is_digits(part) or part == "0" or !part.starts_with("0")))))
-	}
+	version = ReleaseVersion.valid
 
 	parse_topology : Str -> Try(Topology, Str)
 	parse_topology = |source| {
