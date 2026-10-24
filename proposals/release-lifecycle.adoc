@@ -1,11 +1,12 @@
 = Shared validation and release lifecycle contract
 
-Status: implementation contract under #83. The maintainer explicitly authorized
-contract and full implementation together in one PR on 2026-10-24, superseding
-the issue's separate contract-merge gate. This document specifies acceptance;
-it is not evidence of implemented behavior. The current consumer manual remains
-normative until its ownership changes are accepted. This proposal covers package and platform
-profiles so the first implementation does not create a package-only dead end.
+Status: reviewed implementation contract under #83. The maintainer authorized
+contract, implementation and the corresponding manual ownership changes together
+in one PR on 2026-10-24, superseding the separate contract-merge gate. This
+proposal records the chosen design and acceptance; it does not establish hosted
+execution or adopter deployment. Package, multi-bundle and bounded native
+fixtures belong to this implementation. Downstream pilot migrations and adopter
+releases are follow-ups with their own authorization.
 
 == Ownership and the change being reviewed
 
@@ -33,7 +34,7 @@ No timing experiments form acceptance evidence.
 
 == Entry point and versioned interface
 
-The proposed entry point is `.github/workflows/release-lifecycle.yml`, called
+The shared entry point is `.github/workflows/release-lifecycle.yml`, called
 by full SHA from a thin consumer `release.yml`. Its `workflow_call` inputs are:
 
 [cols="1,1,3",options="header"]
@@ -42,6 +43,7 @@ by full SHA from a thin consumer `release.yml`. Its `workflow_call` inputs are:
 | contract | number | Exactly 1; unknown versions fail before candidate execution.
 | version | string | Dispatch version; empty on PR. PR always uses `0.0.1-dry-run`.
 | full-dry-run | boolean | Default false; can add full rehearsal but cannot remove an obligation.
+| install-nix | boolean | Optional Unix provisioning for candidate Blueprint environments; never changes controller authority.
 |===
 
 No arbitrary shell, workflow path, publisher override, permission override or
@@ -53,8 +55,7 @@ and configure the actual required check `Lifecycle / Validation verdict`,
 then confirm it on a real PR; reusable job check names include the caller prefix.
 
 The caller declares `permissions: {}` and gives its reusable-workflow calling
-job `contents: write` and `actions: read` (plus attestation permissions only
-when that separately reviewed feature is enabled). This is a permission ceiling:
+job `contents: write`, `actions: read`, `attestations: write` and `id-token: write`. This is a permission ceiling:
 the called workflow declares `permissions: {}` and every executing candidate
 job has only `contents: read`. Trusted read-only admission has `contents: read`
 and `actions: read`; only publication gets `contents: write` and
@@ -76,7 +77,8 @@ cannot replace it or shorten the required matrix. Its JSON is UTF-8, at most
 64 KiB, rejects duplicate keys and unknown
 fields at every level, and accepts no nulls or implicit coercion. Collections
 are bounded to 32 bundles, 16 targets, 32 adapters and 256 obligations. IDs
-use `[a-z][a-z0-9-]{0,47}` and are unique within their collection. Paths are
+use `[a-z][a-z0-9-]{0,47}` (target IDs also permit underscores) and are unique
+within their collection. Paths are
 canonical workspace-relative slash paths, at most 240 bytes, without empty,
 dot, parent, absolute, backslash, drive, control or Windows device components.
 Files must be regular; directory traversal refuses symlinks and special files.
@@ -87,6 +89,7 @@ The reusable workflow validates this data before using it to construct a matrix.
 | Field | Shape and constraint
 | schema | Exactly integer 1.
 | name | Product ID used in filenames and authored notes titles.
+| sbom_author | Reviewed `Person:` or `Organization:` document author; never inferred from a repository owner.
 | profile | `package` or `platform`.
 | bundles | Records of `id`, `root`, `prefix`, `placeholder`, `depends_on`.
   Roots are distinct `.roc` files. Prefixes are distinct stable product IDs;
@@ -114,7 +117,8 @@ The reusable workflow validates this data before using it to construct a matrix.
   Composition and supplier imports name reviewed regular files; supplier imports
   may be empty. A bundle subject is its bundle ID with target `source`; a native
   output subject is its declared path with its declared target.
-  Every bundle/native subject must have exactly one applicable mapping.
+  Every bundle/public binary subject must have exactly one applicable mapping;
+  host linker intermediates are represented by their owning bundle inventory.
 | source_paths | Relative directory prefixes whose ordinary source changes
   may defer archive rehearsal. These do not override the shared mandatory paths.
 |===
@@ -135,8 +139,10 @@ after the name.
 
 The planner derives the complete asset set: each bundle under its original
 content-addressed filename/prefix, each examples ZIP, documentation ZIP and
-optional PDF, each declared native output, required sidecars/manifests and
-rendered notes. It orders bundles topologically and replaces only declared
+optional PDF, each declared public native binary, required sidecars/manifests,
+rendered notes and the final release inventory. Host linker outputs are separate
+intermediates consumed into exactly one owning bundle; they are not public
+standalone assets. It orders bundles topologically and replaces only declared
 sibling dependency URLs. Unknown roles, ambiguous producers and duplicate or
 case-colliding paths fail. A native adapter cannot add a required target or
 remove an expected file. Platform bundles are assembled once from the complete
@@ -149,32 +155,41 @@ contract revision rather than silent interpretation by an older utility.
 == Stages and execution ownership
 
 . Plan validates event, source, topology, version and source changes; resolves
-  one package nightly; emits an immutable plan and obligation IDs.
-. Host invokes each native build adapter once on its declared builder,
-  including every declared cross target, and transports inert host artifacts.
-  Source/native tests and common bundle assembly consume those exact outputs.
-. Validate runs source/unit/policy/format, working-tree examples and relevant
-  native correctness. Each obligation has one owner. Local `check` may compose
-  these operations, but CI must not invoke a task containing hidden rehearsal.
-. Prepare builds every asset once per run, renders notes/docs and invokes
-  existing SBOM actions in separate read-only mapping jobs, followed by a seal
-  job that consolidates the inventory and renders notes once. Target-specific
-  hosts were built once on declared builders; common bundles are shared. A separately named clean
-  rebuild is permitted only as an explicit reproducibility obligation.
-. Test downloads by exact artifact ID and tests those files on every declared
-  runner. Candidate examples use loopback dependency routing and a fresh cache.
-  Source/archive equivalence permits only declared URL changes; expectations
-  remain unchanged. Native link/run evidence is separate from cross-compilation.
-. Admit uses trusted pinned code, no candidate checkout or executable cache,
-  and reconstructs obligations from reviewed topology at the event SHA. It
-  verifies actual GitHub jobs, contexts and files; candidate pass reports are
-  inert claims to check. A PR admission runs read-only and cannot publish.
-. Publish rechecks admission and exact identities in `environment: release`,
-  checks out nothing and evaluates no candidate Blueprint. The existing pinned
-  publisher stages a draft, uploads, reads back every declared file and verifies
-  its hash before publication. No rebuild or notes rendering occurs here.
-. Optional Pages deployment consumes inert output separately. A later derived
-  site operation is not a second build of a published release asset.
+  one package nightly and emits immutable obligations. Dispatch refuses an
+  existing tag/release/draft and missing exact authored notes before expensive
+  builds.
+. Validate release runs only on dispatch and checks the version bump once per
+  bundle against the latest released bundle, or records a verified first release.
+. Host invokes each native build adapter once on its builder, including every
+  declared cross target. Source/native tests and bundle assembly consume those
+  exact transported outputs.
+. Source runs policy/format, declared checks, working-tree examples and native
+  correctness. Each obligation has one owner; no task hides another rehearsal.
+. Prepare builds API reference, docs, example archives and bundles once from the
+  complete host set, with dependency bundles ordered and shared across runners.
+. SBOM runs one separate read-only mapping job per subject/target and retains
+  exact producer evidence and inventory alongside both formats and manifests.
+. Seal consolidates the complete public inventory and renders notes once after
+  sidecar generation. It does not promote host intermediates into public assets.
+. Candidate downloads exact artifacts and tests them on each declared runner.
+  Examples use loopback dependencies and a fresh cache, permitting only declared
+  URL changes with unchanged expectations. Each public binary has a mandatory
+  per-target `test-binary` consuming obligation. Cross-compilation does not
+  substitute for actual target link/run evidence.
+. Admit uses trusted pinned code with no candidate checkout or executable cache.
+  It reconstructs expected work from reviewed topology and actual GitHub records,
+  checks original producers, rehashes files and compares host intermediates with
+  the actual owning tar members. Candidate pass reports remain inert claims.
+. Validation verdict always runs, requires every selected success and distinguishes
+  source-only validation from full candidate rehearsal. PR admission cannot publish.
+. Publish independently repeats admission in `environment: release`, attests the
+  full explicit public set and verifies every provenance subject against the
+  expected workflow/source identities before draft/upload/readback publication.
+  It checks out nothing, evaluates no candidate Blueprint, restores no candidate
+  executable cache, and rebuilds or renders nothing.
+. Optional Pages restore follows final publication. Trusted code verifies the
+  selected admitted documentation ZIP and restores its inert canonical site
+  bytes; deployment receives no source or executable build cache.
 
 Shared executable operations are implemented under #46/#49, and the examples
 engine under #48. Reuse policy/docs/SBOM/compatibility utilities and the existing
@@ -258,8 +273,10 @@ influence outputs. Use disposable runners without sensitive workload data.
 Bound all input reads, extraction, output capture and child lifetimes; preserve
 successful diagnostics and warnings, escape console workflow commands, and
 terminate descendants on timeout. Reuse existing safety primitives where
-compatible, including Windows path/case rules. Routine verification uses
-bundled reviewed schemas and hashes, not live advisory/schema services.
+compatible, including Windows path/case rules. Routine verification uses the supported reviewed evidence/profile invariants
+and exact hashes, without live advisory/schema services. Official schema checks
+remain distinct acceptance evidence rather than a claim inferred from a profile
+label.
 
 == State, concurrency and recovery
 
@@ -301,13 +318,13 @@ ordinary-release artifact promotion.
 
 == Delivery and acceptance
 
-The combined PR reviews this contract and its implementation. Phase 1 supplies pure-package
-and multi-bundle consumers under `examples/`, one shared workflow and released
-operations, independent admission, then pilot migrations of ansi or weaver and
-roc-time. Phase 2 adds the bounded native adapter and multi-target fixture to
-the same lifecycle, pilots gui then Blueprint, and migrates remaining platforms
-according to their publication boundary. Go/Zig caller pin and `producer-run`
-wiring use the existing linker-input controller unchanged.
+The combined PR reviews this contract, implementation and corresponding manual
+ownership changes. It supplies pure-package, multi-bundle and bounded native
+fixtures under `examples/`, one shared workflow, reusable operations and
+independent admission. Downstream pilot migrations of ansi/weaver, roc-time, gui
+and Blueprint, and remaining platforms are follow-ups; their adopter merges and
+product releases are not implied by this tooling PR. Go/Zig caller pin and
+`producer-run` wiring retain the separate linker-input controller's contract.
 
 Fixture invocations trace obligation ID, source/compiler/target and candidate
 file identities. Assert one build per asset per run and one execution per
@@ -332,7 +349,8 @@ files were uploaded unchanged. Product releases, environment/settings changes
 and adopter merges retain their normal authorization. No runtime, native
 support, attestation level or compliance claim follows from configuration alone.
 
-After implementation, update overview/workflows/platforms/examples/shared
-utilities/security/settings guidance and release notes together, replacing this
-proposal with the accepted chapter narratives and linked risk index. Track
-implementation gaps in #83, #46, #48, #49 and #62 rather than a manual gap list.
+The accepted chapter narratives and linked risk index own normative guidance;
+this proposal remains the reviewed design and acceptance record for #83. Keep
+implementation gaps, hosted acceptance observations and downstream migration
+tracking in the relevant issues, rather than a manual gap list. Configuration
+and local fixtures alone do not establish a successful hosted release.

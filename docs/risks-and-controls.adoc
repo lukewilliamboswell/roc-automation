@@ -28,15 +28,15 @@ content identity, provenance and product correctness are different evidence.
 | Hash and cache-corruption tests, reviewed locks and cold/warm execution. Identifying bytes does not establish that upstream code is benign.
 
 | Tested source or assets differ from the delivered release
-| Preserve identity across the operation. See xref:workflows.adoc#risk-release-evidence[release evidence], xref:examples.adoc#risk-example-identity[example archives] and xref:linker-input-releases.adoc#risk-linker-publication[native-input publication].
-| Exact-source/run binding, archive tests, complete inventories, post-upload verification and recovery tests. Matching hashes alone do not prove a reproducible build.
+| Preserve identity across the operation. See xref:workflows.adoc#risk-release-evidence[release evidence], xref:security-model.adoc#independent-lifecycle-admission[independent lifecycle admission], xref:examples.adoc#risk-example-identity[example archives] and xref:linker-input-releases.adoc#risk-linker-publication[native-input publication].
+| Exact source/run/workflow and original-producer binding, archive/member and public-binary tests, complete inventories, provenance subjects, post-upload verification and recovery tests. Matching hashes alone do not prove a reproducible build.
 
 | Source roles or native targets are confused
 | Make the selected input and target explicit. See xref:repository.adoc#risk-source-boundaries[source boundaries] and xref:platforms.adoc#risk-native-targets[native targets] and xref:platforms.adoc#provision-native-windows-hosts[native Windows provisioning].
 | Header/binding checks and actual link/run tests for every claimed target. Static declarations and cross-compilation do not establish native behavior or FFI safety.
 
 | Partial, stale or unrelated results appear successful
-| Complete evidence is required for a pass. See xref:nightly-compatibility.adoc#risk-compatibility-verdicts[compatibility verdicts], xref:adopting.adoc#risk-adoption-evidence[adoption] and xref:project-practices.adoc#risk-evidence-claims[evidence claims].
+| Complete evidence is required for a pass. See xref:workflows.adoc#continuous-integration[lifecycle selection and aggregate verdicts], xref:security-model.adoc#independent-lifecycle-admission[candidate generations], xref:nightly-compatibility.adoc#risk-compatibility-verdicts[compatibility verdicts], xref:adopting.adoc#risk-adoption-evidence[adoption] and xref:project-practices.adoc#risk-evidence-claims[evidence claims].
 | Missing-target, stale-attempt, spoofed-origin, launch-error and failed-publication scenarios. A static snapshot keeps its last colour when its publisher stops.
 
 | A test hangs, hides diagnostics or substitutes smoke for deeper testing
