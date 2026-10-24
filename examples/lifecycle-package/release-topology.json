@@ -51,5 +51,6 @@
   ],
   "source_paths": [
     "package"
-  ]
+  ],
+  "sbom_author": "Organization: roc-automation contributors"
 }

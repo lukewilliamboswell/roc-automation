@@ -68,5 +68,6 @@
   "source_paths": [
     "core",
     "greeting"
-  ]
+  ],
+  "sbom_author": "Organization: roc-automation contributors"
 }

@@ -154,5 +154,6 @@
   "source_paths": [
     "platform",
     "host"
-  ]
+  ],
+  "sbom_author": "Organization: roc-automation contributors"
 }
