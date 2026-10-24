@@ -16,7 +16,7 @@ LifecyclePlan := [].{
 	Adapter : { id : Str, task : Str, operation : Str, builder : Str, target_ids : List(Str), outputs : List(Output) }
 	Check : { id : Str, task : Str, kind : Str, target_ids : List(Str) }
 	Sbom : { subject : Str, target : Str, composition : Str, supplier_imports : Str }
-	Topology : { schema : U64, name : Str, profile : Str, bundles : List(Bundle), examples : List(Examples), documentation : List(Documentation), target_matrix : List(Target), adapters : List(Adapter), checks : List(Check), sboms : List(Sbom), source_paths : List(Str) }
+	Topology : { schema : U64, name : Str, profile : Str, sbom_author : Str, bundles : List(Bundle), examples : List(Examples), documentation : List(Documentation), target_matrix : List(Target), adapters : List(Adapter), checks : List(Check), sboms : List(Sbom), source_paths : List(Str) }
 	Obligation : { id : Str, stage : Str, runner : Str, operation : Str, subject : Str, target : Str, task : Str }
 	AssetRule : { subject : Str, role : Str, target : Str, path : Str }
 	Plan : { schema : U64, context : Context, topology : Topology, full_rehearsal : Bool, obligations : List(Obligation), assets : List(AssetRule), bundle_order : List(Str) }
@@ -30,6 +30,10 @@ LifecyclePlan := [].{
 	}
 	valid_target_id = |value| id(value.replace_each("_", "-"))
 	digest = |value| value.to_utf8().len() == 64 and value.to_utf8().all(|byte| (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f'))
+	valid_author = |value| {
+		name = if value.starts_with("Organization: ") value.drop_prefix("Organization: ") else if value.starts_with("Person: ") value.drop_prefix("Person: ") else ""
+		!name.is_empty() and name == name.trim() and value.to_utf8().len() <= 200 and value.to_utf8().all(|byte| byte >= 32 and byte != 127)
+	}
 	reserved_asset = |value| value == "bundle-map.json" or (!value.contains("/") and value.ends_with("-trace.json")) or value == "diagnostics" or value.starts_with("diagnostics/")
 	paths_disjoint : List(Str) -> Bool
 	paths_disjoint = |values| {
@@ -56,7 +60,7 @@ LifecyclePlan := [].{
 	parse_topology : Str -> Try(Topology, Str)
 	parse_topology = |source| {
 		raw = LifecycleJson.decode(source).map_err(LifecycleJson.message)?
-		_ = LifecycleJson.object(raw, ["schema", "name", "profile", "bundles", "examples", "documentation", "target_matrix", "adapters", "checks", "sboms", "source_paths"])?
+		_ = LifecycleJson.object(raw, ["schema", "name", "profile", "sbom_author", "bundles", "examples", "documentation", "target_matrix", "adapters", "checks", "sboms", "source_paths"])?
 		if LifecycleJson.field(raw, "schema")? != LifecycleJson.Number("1") {
 			return Err("topology schema must be integer 1")
 		}
@@ -123,7 +127,7 @@ LifecyclePlan := [].{
 
 	validate : Topology -> Try(Topology, Str)
 	validate = |topology| {
-		if topology.schema != 1 or !id(topology.name) or !["package", "platform"].contains(topology.profile) or topology.bundles.is_empty() or topology.bundles.len() > 32 or topology.target_matrix.is_empty() or topology.target_matrix.len() > 16 or topology.adapters.len() > 32 or topology.checks.len() > 128 or topology.examples.is_empty() or topology.examples.len() > 64 or topology.documentation.len() > 32 or topology.sboms.len() > 128 or topology.source_paths.len() > 128 {
+		if topology.schema != 1 or !valid_author(topology.sbom_author) or !id(topology.name) or !["package", "platform"].contains(topology.profile) or topology.bundles.is_empty() or topology.bundles.len() > 32 or topology.target_matrix.is_empty() or topology.target_matrix.len() > 16 or topology.adapters.len() > 32 or topology.checks.len() > 128 or topology.examples.is_empty() or topology.examples.len() > 64 or topology.documentation.len() > 32 or topology.sboms.len() > 128 or topology.source_paths.len() > 128 {
 			return Err("invalid topology identity or collection bounds")
 		}
 		for ids in [topology.bundles.map(|x| x.id), topology.adapters.map(|x| x.id), topology.checks.map(|x| x.id), topology.examples.map(|x| x.id), topology.documentation.map(|x| x.id)] {
@@ -362,6 +366,7 @@ sample_topology = {
 	schema: 1,
 	name: "sample",
 	profile: "package",
+	sbom_author: "Organization: roc-automation contributors",
 	bundles: [{ id: "core", root: "package/main.roc", prefix: "sample", placeholder: "package-url", depends_on: [] }],
 	examples: [{ id: "examples", directory: "examples", spec: "examples/spec.json", bundles: ["core"], target_ids: ["linux"] }],
 	documentation: [],
@@ -473,3 +478,6 @@ expect {
 		Err(_) => Bool.False
 	}
 }
+
+expect LifecyclePlan.valid_author("Person: Luke Boswell") and LifecyclePlan.valid_author("Organization: Roc contributors")
+expect ["", "owner/repo", "Organization: ", "Person:  ", "Person: A\nforged", "Person: A\u(007f)"].all(|value| !LifecyclePlan.valid_author(value))
