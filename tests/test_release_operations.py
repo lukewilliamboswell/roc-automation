@@ -106,6 +106,10 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
     def test_prepare_builds_once_and_candidate_uses_unchanged_archive_and_fresh_cache(self):
         ran = self.run_stage("prepare")
         self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        selected = [entry["id"] for entry in json.loads(Path(self.env["RO_PLAN"]).read_text())["obligations"] if entry["stage"] == "prepare" and entry["runner"] == self.env["RO_RUNNER"]]
+        completed = json.loads((self.scratch / "prepare-trace.json").read_text())["obligations"]
+        self.assertEqual([entry["id"] for entry in completed], selected)
+        self.assertTrue(all(entry["outcome"] == "passed" for entry in completed))
         archive = self.directory / "sample-examples-0.0.1-dry-run.zip"
         before = archive.read_bytes()
         with zipfile.ZipFile(archive) as zipped:

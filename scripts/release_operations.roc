@@ -180,7 +180,7 @@ execute! = |stage| {
 				example = plan.topology.examples.find_first(|value| value.id == obligation.subject).map_err(|_| "unknown examples obligation")?
 				test_examples!(plan, example, obligation, workspace, directory, assets, compiler, stage == "candidate")?
 			}
-			"bundle" | "api" | "docs" if stage == "prepare" => {}
+			"bundle" | "api" | "docs" | "package-examples" if stage == "prepare" => {}
 			"notes" if stage == "seal" => {}
 			_ => return Err("unsupported operation ${obligation.operation}; no success recorded")
 		}
