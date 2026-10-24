@@ -28,6 +28,20 @@ restored binaries still run the renderer acceptance tests. The deploy job only
 receives the resulting Pages artifact. It does not compile the renderer, execute
 documentation sources or restore a candidate-produced executable cache.
 
+Optional release Pages restoration selects an explicit manual ID from the
+reviewed topology after publication succeeds. The read-only `lifecycle-pages`
+utility binds the strict admission report to the dispatch repository, source
+and run, checks the original documentation ZIP's admitted size and digest, and
+uses the shared bounded archive verifier. It accepts only the declared sole
+site root with a nonempty regular `index.html`, then hands that unchanged site
+to the separate Pages deployment job. It evaluates no consumer Blueprint and
+runs no renderer or archived executable. This prevents an unrelated report,
+wrong manual or unsafe ZIP from replacing the intended site; it does not make
+archived HTML trustworthy. Publication success, the pinned controller and the
+Pages environment remain workflow assumptions. Regression tests reject wrong
+bindings, unsafe archives and missing roots, preserve an existing output on
+failure, and compare restored files with the actual prepared ZIP byte for byte.
+
 [#risk-execution-authority]
 == Risks and controls for execution authority
 
