@@ -413,7 +413,10 @@ else:
         self.assertEqual(len(calls), 1)
         context = calls[0]
         self.assertEqual(context["RO_STAGE"], "candidate")
-        self.assertEqual(Path(context["RO_COMPILER"]), Path(self.env["RO_COMPILER"]).resolve())
+        # Windows canonicalization may add the native \\?\ drive prefix.
+        # Compare filesystem identity so that spelling differences cannot mask
+        # a genuinely different compiler selected for the callback.
+        self.assertTrue(Path(context["RO_COMPILER"]).samefile(self.env["RO_COMPILER"]))
         records = json.loads(context["RO_TEST_FILES"])
         self.assertEqual({Path(entry["path"]).name for entry in records}, {"native-tool", "another-tool"})
         command = json.loads((self.scratch / "diagnostics/binary-binary-check-linux-command.json").read_text())
