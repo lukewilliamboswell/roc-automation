@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   lifecycle-native-build:
-    uses: lukewilliamboswell/roc-automation/.github/workflows/build-lifecycle-native.yml@e8adb8af1e9ae3b8c73b426694af5fdd47c3a76e
+    uses: lukewilliamboswell/roc-automation/.github/workflows/build-lifecycle-native.yml@44fc5c9224abf55134dcb002bb466b884372a6b9
     permissions:
       contents: read
 
