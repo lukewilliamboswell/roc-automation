@@ -79,7 +79,20 @@ BuildFiles :: [].{
 	}
 }
 
-parent_of = |path| Path.utf8(Str.join_with(Path.display(path).split_on("/").drop_last(1), "/"))
+## Respect Path's representation rather than rendering native paths as text.
+## Utf8/Unix use slash separators (as cli.Path.filename does); native Windows
+## paths returned by directory listing/canonicalization admit both separators.
+## Raw Unix bytes and Windows UTF-16 units must survive without lossy decoding.
+parent_of = |path| match Path.to_raw(path) {
+	Utf8(text) => Path.utf8(Str.from_utf8_lossy(parent_units(text.to_utf8(), Bool.False)))
+	UnixBytes(bytes) => Path.from_raw(UnixBytes(parent_units(bytes, Bool.False)))
+	WindowsU16s(units) => Path.from_raw(WindowsU16s(parent_units(units, Bool.True)))
+}
+
+parent_units = |units, windows| match List.find_last_index(units, |unit| unit == '/' or (windows and unit == '\\')) {
+	Ok(index) => units.take_first(if (index == 0) 1 else if (windows and units.get(index - 1) == Ok(':')) index + 1 else index)
+	Err(NotFound) => ['.']
+}
 
 walk! : Path, Path, U64, List(BuildFiles.Entry) => Try(List(BuildFiles.Entry), Str)
 walk! = |root, current, depth, found| {
@@ -134,3 +147,18 @@ expect BuildFiles.relative_path("C:\\work\\tree/examples", "C:\\work\\tree\\exam
 expect BuildFiles.relative_path("/work/tree/examples", "/work/tree/examples/sub/main.roc", Bool.False) == Ok("sub/main.roc")
 expect BuildFiles.relative_path("/work/tree/examples", "/work/tree/examples/sub\\main.roc", Bool.False).is_err()
 expect BuildFiles.relative_path("C:\\work\\tree/examples", "C:\\work\\other\\main.roc", Bool.True).is_err()
+
+# Native Windows results were previously split only on slash, losing the entire
+# parent and redirecting artifact reads to /dist/... instead of the admitted root.
+expect BuildFiles.parent_path(Path.windows("D:\\evidence\\artifact\\prepare-trace.json")) == Path.windows("D:\\evidence\\artifact")
+expect BuildFiles.parent_path(Path.windows("D:\\suite é\\spec.json")) == Path.windows("D:\\suite é")
+expect BuildFiles.parent_path(Path.windows("D:\\spec.json")) == Path.windows("D:\\")
+expect BuildFiles.parent_path(Path.windows("D:/suite/spec.json")) == Path.windows("D:/suite")
+expect BuildFiles.parent_path(Path.windows("\\\\server\\share\\suite\\spec.json")) == Path.windows("\\\\server\\share\\suite")
+expect BuildFiles.parent_path(Path.windows_u16s([0xD800, '\\', 'x'])) == Path.windows_u16s([0xD800])
+expect BuildFiles.parent_path(Path.unix_bytes(['/', 255, '/', 'x'])) == Path.unix_bytes(['/', 255])
+expect BuildFiles.parent_path(Path.unix_bytes(['/', 'x'])) == Path.unix_bytes(['/'])
+expect BuildFiles.parent_path(Path.utf8("local/spec.json")) == Path.utf8("local")
+expect BuildFiles.parent_path(Path.utf8("spec.json")) == Path.utf8(".")
+expect BuildFiles.parent_path(Path.unix_bytes(['a', '\\', 'b'])) == Path.unix_bytes(['.'])
+expect BuildFiles.parent_path(Path.windows("\\\\?\\D:\\spec.json")) == Path.windows("\\\\?\\D:\\")
