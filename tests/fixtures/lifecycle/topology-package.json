@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "name": "sample",
+  "profile": "package",
+  "bundles": [{"id":"package","root":"package/main.roc","prefix":"sample","placeholder":"package-url","depends_on":[]}],
+  "examples": [{"id":"examples","directory":"examples","spec":"examples/spec.json","bundles":["package"],"target_ids":["linux"]}],
+  "documentation": [],
+  "target_matrix": [{"id":"linux","runner":"ubuntu-24.04","runtime_task":""}],
+  "adapters": [],
+  "checks": [{"id":"unit","task":"check-unit","kind":"unit","target_ids":[]}],
+  "sboms": [{"subject":"package","target":"source","composition":"sbom/composition.json","supplier_imports":"sbom/imports.json"}],
+  "source_paths": ["package"]
+}
