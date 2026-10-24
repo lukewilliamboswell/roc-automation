@@ -85,7 +85,14 @@ Previous : { first_release : Bool, bundles : List({ id : Str, url : Str }) }
 
 FileRecord : { path : Str, role : Str, subject : Str, target : Str, size : U64, sha256 : Str }
 
+ReleaseInventory : { schema : U64, context : LifecyclePlan.Context, version : Str, bundles : List(BundleFile), files : List(FileRecord) }
+
+TestFile : { path : Str, size : U64, sha256 : Str, target : Str }
+
 ObligationRecord : { id : Str, outcome : Str }
+
+protocol_version : U64
+protocol_version = 1
 
 execute! = |stage| {
 	plan = plan!()?
@@ -146,6 +153,9 @@ execute! = |stage| {
 					_ = capture!(directory, obligation.id, [compiler, "bump", "--old", prior.url, "--expect", base_version, bundle.root], workspace, [], [], 300_000)?
 				}
 			}
+			"test-binary" if stage == "candidate" => {
+				test_binary!(plan, obligation, workspace, directory, assets, compiler)?
+			}
 			"policy" => {
 				_ = capture!(directory, obligation.id, [env!("RO_POLICY")?, "check", "--root", native!(workspace)], workspace, [], [], 300_000)?
 			}
@@ -167,6 +177,9 @@ execute! = |stage| {
 				output_directory = if obligation.operation == "build-host" workspace else Path.join(directory, "adapter-${obligation.id}")
 				mkdir!(output_directory)?
 				variables = [
+					{ name: "RO_STAGE", value: stage },
+					{ name: "RO_CANDIDATE", value: native!(Path.canonicalize!(assets).map_err(|e| Str.inspect(e))?) },
+					{ name: "RO_TEST_FILES", value: "[]" },
 					{ name: "RO_TARGET", value: obligation.target },
 					{ name: "RO_TARGET_IDS", value: Json.to_str(target_ids) },
 					{ name: "RO_OUTPUTS", value: Json.to_str(outputs) },
@@ -193,7 +206,7 @@ execute! = |stage| {
 	}
 	files = produced_files!(plan, directory, assets, stage, selected)?
 	trace = Path.join(directory, "${stage}-trace.json")
-	write!(trace, Json.to_str({ schema_version: 1, profile: "roc-automation-lifecycle-trace-v1", repository: plan.context.repository, source_sha: plan.context.sha, run_id: plan.context.run_id, run_attempt: plan.context.run_attempt, stage, runner, obligations: $records, files }))?
+	write!(trace, Json.to_str({ schema_version: protocol_version, profile: "roc-automation-lifecycle-trace-v1", repository: plan.context.repository, source_sha: plan.context.sha, run_id: plan.context.run_id, run_attempt: plan.context.run_attempt, stage, runner, obligations: $records, files }))?
 	match Env.var_str!("GITHUB_OUTPUT") {
 		Ok(output) => {
 			old = Path.read_utf8!(Path.utf8(output)).map_err(|e| Str.inspect(e))?
@@ -288,7 +301,9 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 		for output in adapter.outputs {
 			# Host artifacts have been transported back into the exact checkout paths.
 			copy_file!(workspace, output.path, stage, output.path)?
-			copy_file!(workspace, output.path, assets, output.path)?
+			if output.role == "binary" {
+				copy_file!(workspace, output.path, assets, output.path)?
+			}
 		}
 	}
 	cache = Path.join(directory, "bundle-cache")
@@ -555,7 +570,7 @@ seal! = |plan, workspace, directory, assets, package_compiler_output| {
 	}
 	write!(Path.join(assets, "release-notes.md"), notes)?
 	$files = $files.append({ path: "release-notes.md", role: "notes", subject: "", target: "source", size: notes.to_utf8().len(), sha256: Sha256.hex(notes.to_utf8()) })
-	write!(Path.join(assets, "release-inventory.json"), Json.to_str({ schema: 1, context: plan.context, version: release_version(plan), bundles, files: $files }))
+	write!(Path.join(assets, "release-inventory.json"), Json.to_str({ schema: protocol_version, context: plan.context, version: release_version(plan), bundles, files: $files }))
 }
 
 latest_notes! = |workspace| {
@@ -699,3 +714,92 @@ validate_notes = |topology, version, source| {
 }
 
 unresolved_urls = |source| source.split_on("{").drop_first(1).map(|tail| tail.split_on("}").first() ?? "").keep_if(|name| name.ends_with("-url"))
+
+## Native source correctness is distinct from testing the sealed published bytes.
+## The adapter receives only controller-derived candidate paths and identities;
+## neither its exit status nor a candidate-selected pass flag authorizes a release.
+test_binary! : LifecyclePlan.Plan, LifecyclePlan.Obligation, Path, Path, Path, Str => Try({}, Str)
+test_binary! = |plan, obligation, workspace, directory, assets, compiler| {
+	adapter = plan.topology.adapters.find_first(|entry| entry.id == obligation.subject).map_err(|_| "unknown native binary test adapter")?
+	if adapter.operation != "test-host" or adapter.task != obligation.task or !adapter.target_ids.contains(obligation.target) {
+		return Err("native binary test differs from the reviewed test-host adapter")
+	}
+	target = plan.topology.target_matrix.find_first(|entry| entry.id == obligation.target).map_err(|_| "unknown native binary target")?
+	if target.runner != obligation.runner {
+		return Err("native binary test is assigned to the wrong runner")
+	}
+	compiler_path = Path.utf8(compiler)
+	if !absolute_program!(compiler) {
+		return Err("native binary tests require an absolute selected compiler path")
+	}
+	selected_compiler = native!(Path.canonicalize!(compiler_path).map_err(|_| "selected compiler no longer exists")?)
+	candidate = Path.canonicalize!(assets).map_err(|e| Str.inspect(e))?
+	if Path.type!(candidate).map_err(|e| Str.inspect(e))? != IsDir {
+		return Err("candidate binary root must be a regular directory")
+	}
+	inventory_path = BuildFiles.inside!(candidate, "release-inventory.json")?
+	inventory_bytes = BuildFiles.read!(inventory_path, 16_777_216)?
+	parsed : Try(ReleaseInventory, _)
+	parsed = Json.parse(Str.from_utf8(inventory_bytes).map_err(|_| "sealed inventory is not UTF-8")?)
+	inventory = parsed.map_err(|_| "invalid sealed release inventory")?
+	if inventory.schema != 1 or inventory.context != plan.context or inventory.version != release_version(plan) or Compatibility.unique(inventory.files.map(|file| file.path)).len() != inventory.files.len() {
+		return Err("sealed inventory has wrong source, run, compiler, version or duplicate file identities")
+	}
+	rules = plan.assets.keep_if(|rule| rule.role == "binary" and rule.target == obligation.target)
+	if rules.is_empty() or Compatibility.unique(rules.map(|rule| rule.path)).len() != rules.len() {
+		return Err("native binary test needs distinct published binary files for its exact target")
+	}
+	var $before = []
+	for rule in rules {
+		matching = inventory.files.keep_if(|file| file.path == rule.path and file.role == "binary" and file.target == rule.target and file.subject == rule.subject)
+		record = match matching {
+			[one] => one
+			_ => return Err("sealed inventory omits the exact native binary role, subject or target")
+		}
+		file = BuildFiles.inside!(candidate, rule.path)?
+		bytes = BuildFiles.read!(file, 50_000_000)?
+		if bytes.is_empty() or bytes.len() != record.size or Sha256.hex(bytes) != record.sha256 {
+			return Err("native binary differs from the sealed candidate before testing: ${rule.path}")
+		}
+		$before = $before.append({ path: native!(file), size: record.size, sha256: record.sha256, target: record.target })
+	}
+	output_directory = Path.join(directory, "adapter-${obligation.id}")
+	mkdir!(output_directory)?
+	variables = [
+		{ name: "RO_STAGE", value: "candidate" },
+		{ name: "RO_CANDIDATE", value: native!(candidate) },
+		{ name: "RO_TEST_FILES", value: Json.to_str($before) },
+		{ name: "RO_TARGET", value: obligation.target },
+		{ name: "RO_TARGET_IDS", value: Json.to_str([obligation.target]) },
+		{ name: "RO_OUTPUTS", value: "[]" },
+		{ name: "RO_COMPILER", value: selected_compiler },
+		{ name: "RO_OUTPUT_DIRECTORY", value: native!(output_directory) },
+	]
+	_ = capture_with!(directory, obligation.id, [optional!("RO_BLUEPRINT", "blueprint"), "run", adapter.task], workspace, [], [], 600_000, variables)?
+	if Path.type!(candidate).map_err(|e| Str.inspect(e))? != IsDir {
+		return Err("candidate binary root changed during testing")
+	}
+	for rule in rules {
+		file = BuildFiles.inside!(candidate, rule.path)?
+		bytes = BuildFiles.read!(file, 50_000_000)?
+		absolute_file = native!(file)
+		record = $before.find_first(|entry| entry.path == absolute_file).map_err(|_| "native binary path changed while testing")?
+		if bytes.len() != record.size or Sha256.hex(bytes) != record.sha256 {
+			return Err("native binary changed while its candidate test ran: ${rule.path}")
+		}
+	}
+	if BuildFiles.read!(BuildFiles.inside!(candidate, "release-inventory.json")?, 16_777_216)? != inventory_bytes {
+		return Err("sealed release inventory changed during native binary testing")
+	}
+	Ok({})
+}
+
+absolute_program! = |program| {
+	match Env.platform!().os {
+		WINDOWS => {
+			bytes = program.to_utf8()
+			program.starts_with("\\\\") or (bytes.len() > 2 and (bytes.get(1) ?? 0) == ':' and ['/', '\\'].contains(bytes.get(2) ?? 0))
+		}
+		_ => program.starts_with("/")
+	}
+}

@@ -222,6 +222,21 @@ containing only diagnostic JSON and raw logs. Executables, extracted sources and
 caches remain outside that diagnostics tree. Transport copies those explicit
 files without rebuilding or archiving the scratch workspace.
 
+A published native executable has a separate `test-binary` candidate obligation
+for its exact target; source `test-host` correctness cannot replace that test.
+The controller reads the sealed `release-inventory.json`, checks its source,
+run, compiler and version binding, and hashes every declared binary before the
+adapter runs. `RO_TEST_FILES` is the JSON list of absolute candidate paths with
+size, SHA-256 and target; `RO_STAGE=candidate` distinguishes this handoff from
+source checks, which receive an empty test-file list. `RO_COMPILER` is the
+selected absolute executable path, and outputs belong in the private
+`RO_OUTPUT_DIRECTORY`. The command diagnostic retains those input identities.
+A missing, swapped or misbound file prevents the callback; changing a binary or
+its sealed inventory during the callback prevents a passing trace. Rebuilding
+or overwriting a test input is therefore not a way to substitute another binary.
+The callback still needs reviewed product assertions: supplying exact files and
+observing exit zero does not prove that its assertions cover every behavior.
+
 A trace records completed obligations and source/run identity; it is a claim,
 not publication authorization. The independent admission step reconstructs the
 required work and checks actual jobs and file bytes. These controls establish

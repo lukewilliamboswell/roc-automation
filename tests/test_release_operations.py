@@ -110,6 +110,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         completed = json.loads((self.scratch / "prepare-trace.json").read_text())["obligations"]
         self.assertEqual([entry["id"] for entry in completed], selected)
         self.assertTrue(all(entry["outcome"] == "passed" for entry in completed))
+        self.assertIs(type(json.loads((self.scratch / "prepare-trace.json").read_text())["schema_version"]), int)
         archive = self.directory / "sample-examples-0.0.1-dry-run.zip"
         before = archive.read_bytes()
         with zipfile.ZipFile(archive) as zipped:
@@ -197,6 +198,7 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
         inventory = json.loads((self.directory / "release-inventory.json").read_text())
         self.assertEqual(len(inventory["files"]), len(plan["assets"]) - 1)
+        self.assertIs(type(inventory["schema"]), int)
         for record in inventory["files"]:
             content = (self.directory / record["path"]).read_bytes()
             self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (record["size"], record["sha256"]))
@@ -328,6 +330,147 @@ source=(Path(args[args.index('--workspace')+1])/args[args.index('--docs-director
         self.assertIn("index.html", ran.stderr)
         self.assertFalse((self.scratch / "prepare-trace.json").exists())
         self.assertFalse((self.directory / "sample-docs-0.0.1-dry-run.zip").exists())
+
+    def native_binary_candidate(self):
+        self.topology["profile"] = "platform"
+        outputs = [dict(role="binary", target="linux", path=path) for path in ("dist/native-tool", "dist/another-tool")]
+        self.topology["adapters"] = [
+            dict(id="binary-build", task="build-binaries", operation="build-host", builder="ubuntu-24.04", target_ids=["linux"], outputs=outputs),
+            dict(id="binary-check", task="test-binaries", operation="test-host", builder="ubuntu-24.04", target_ids=["linux"], outputs=[]),
+        ]
+        self.topology["sboms"] += [dict(subject=entry["path"], target="linux", composition="sbom/native.json", supplier_imports="") for entry in outputs]
+        self.program("blueprint", r"""import hashlib,json,os,sys
+from pathlib import Path
+assert not os.environ.get('GH_TOKEN') and not os.environ.get('GITHUB_TOKEN')
+assert sys.argv[1] == 'run'
+if sys.argv[2] == 'test-binaries':
+    fields = ('RO_STAGE','RO_CANDIDATE','RO_TEST_FILES','RO_TARGET','RO_TARGET_IDS','RO_COMPILER','RO_OUTPUT_DIRECTORY')
+    context = {name:os.environ[name] for name in fields}
+    files = json.loads(context['RO_TEST_FILES'])
+    assert context['RO_TARGET']=='linux'
+    if context['RO_STAGE']=='source':
+        assert files==[], 'source correctness must not impersonate candidate file testing'
+    else:
+        assert context['RO_STAGE']=='candidate' and len(files)==2
+        root=Path(context['RO_CANDIDATE']).resolve()
+        for record in files:
+            file=Path(record['path'])
+            assert file.is_absolute() and file.is_relative_to(root)
+            data=file.read_bytes()
+            assert data==b'sealed native bytes', 'the adapter received a working-tree fallback'
+            assert record['target']=='linux' and record['size']==len(data)
+            assert record['sha256']==hashlib.sha256(data).hexdigest()
+        if os.environ.get('MUTATE_NATIVE_BINARY'): Path(files[0]['path']).write_bytes(b'changed by callback')
+    with open(os.environ['NATIVE_CALLBACK_LOG'],'a') as log: log.write(json.dumps(context)+'\n')
+else:
+    assert sys.argv[2]=='check-unit'
+""")
+        subprocess.run(["git", "add", "bin/blueprint"], cwd=self.workspace, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "-qm", "native callback"], cwd=self.workspace, check=True)
+        self.context["sha"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.workspace, text=True).strip()
+        for output in outputs:
+            file = self.workspace / output["path"]
+            file.parent.mkdir(exist_ok=True)
+            file.write_bytes(b"sealed native bytes")
+        self.make_plan()
+        ran = self.run_stage("prepare")
+        self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        self.fill_sidecars()
+        ran = self.run_stage("seal")
+        self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        self.callback_log = self.root / "native-callback.jsonl"
+
+    def test_native_candidate_callback_receives_all_exact_published_files_once(self):
+        self.native_binary_candidate()
+        # This deliberately differs from the candidate copied and sealed earlier.
+        (self.workspace / "dist/native-tool").write_bytes(b"a different working-tree build")
+        ran = self.run_stage("candidate", NATIVE_CALLBACK_LOG=str(self.callback_log))
+        self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        calls = [json.loads(line) for line in self.callback_log.read_text().splitlines()]
+        self.assertEqual(len(calls), 1)
+        context = calls[0]
+        self.assertEqual(context["RO_STAGE"], "candidate")
+        self.assertEqual(Path(context["RO_COMPILER"]), Path(self.env["RO_COMPILER"]).resolve())
+        records = json.loads(context["RO_TEST_FILES"])
+        self.assertEqual({Path(entry["path"]).name for entry in records}, {"native-tool", "another-tool"})
+        command = json.loads((self.scratch / "diagnostics/binary-binary-check-linux-command.json").read_text())
+        retained = {entry["name"]:entry["value"] for entry in command["context"]}
+        self.assertEqual(json.loads(retained["RO_TEST_FILES"]), records)
+        trace = json.loads((self.scratch / "candidate-trace.json").read_text())
+        self.assertIn(dict(id="binary-binary-check-linux", outcome="passed"), trace["obligations"])
+
+    def test_missing_or_swapped_native_candidate_fails_before_callback(self):
+        for mutation in ("missing", "swapped"):
+            with self.subTest(mutation=mutation):
+                if self.scratch.exists(): shutil.rmtree(self.scratch)
+                if self.directory.exists(): shutil.rmtree(self.directory)
+                # Reuse one declared topology but regenerate a clean candidate.
+                if mutation == "missing":
+                    self.native_binary_candidate()
+                else:
+                    for path in ("dist/native-tool", "dist/another-tool"):
+                        (self.workspace / path).write_bytes(b"sealed native bytes")
+                    ran = self.run_stage("prepare")
+                    self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+                    self.fill_sidecars()
+                    ran = self.run_stage("seal")
+                    self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+                file = self.directory / "dist/native-tool"
+                if mutation == "missing": file.unlink()
+                else: file.write_bytes(b"swapped release bytes")
+                ran = self.run_stage("candidate", NATIVE_CALLBACK_LOG=str(self.callback_log))
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertFalse(self.callback_log.exists())
+                self.assertFalse((self.scratch / "candidate-trace.json").exists())
+
+    def test_native_inventory_wrong_bindings_or_float_schema_fail_before_callback(self):
+        self.native_binary_candidate()
+        path = self.directory / "release-inventory.json"
+        original = path.read_text()
+        for mutation in ("source", "target", "float-schema"):
+            with self.subTest(mutation=mutation):
+                inventory = json.loads(original)
+                if mutation == "source": inventory["context"]["sha"] = "a" * 40
+                elif mutation == "target": next(entry for entry in inventory["files"] if entry["role"] == "binary")["target"] = "windows"
+                else: inventory["schema"] = 1.0
+                path.write_text(json.dumps(inventory))
+                ran = self.run_stage("candidate", NATIVE_CALLBACK_LOG=str(self.callback_log))
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertFalse(self.callback_log.exists())
+                self.assertFalse((self.scratch / "candidate-trace.json").exists())
+        path.write_text(original)
+
+    def test_native_callback_cannot_change_the_tested_binary_and_report_pass(self):
+        self.native_binary_candidate()
+        ran = self.run_stage("candidate", NATIVE_CALLBACK_LOG=str(self.callback_log), MUTATE_NATIVE_BINARY="1")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertIn("changed while its candidate test ran", ran.stderr)
+        self.assertTrue(self.callback_log.exists())
+        self.assertFalse((self.scratch / "candidate-trace.json").exists())
+
+    def test_source_native_correctness_has_no_candidate_test_file_claim(self):
+        self.native_binary_candidate()
+        ran = self.run_stage("source", NATIVE_CALLBACK_LOG=str(self.callback_log))
+        self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        contexts = [json.loads(line) for line in self.callback_log.read_text().splitlines()]
+        self.assertEqual(len(contexts), 1)
+        self.assertEqual(contexts[0]["RO_STAGE"], "source")
+        self.assertEqual(json.loads(contexts[0]["RO_TEST_FILES"]), [])
+
+    def test_preparation_keeps_native_host_intermediates_out_of_public_assets(self):
+        self.topology["profile"] = "platform"
+        path = "package/targets/linux.a"
+        file = self.workspace / path
+        file.parent.mkdir()
+        file.write_bytes(b"verified host intermediate")
+        self.topology["adapters"] = [dict(id="host-build", task="build-host", operation="build-host", builder="ubuntu-24.04", target_ids=["linux"], outputs=[dict(role="host", target="linux", path=path)])]
+        self.make_plan()
+        ran = self.run_stage("prepare")
+        self.assertEqual(ran.returncode, 0, ran.stderr+ran.stdout)
+        self.assertEqual((self.scratch / "work" / path).read_bytes(), b"verified host intermediate")
+        self.assertFalse((self.directory / path).exists())
+        command = json.loads((self.scratch / "diagnostics/bundle-package-command.json").read_text())
+        self.assertIn("targets/linux.a", command["argv"])
 
     def test_dispatch_requires_explicit_previous_release_evidence_and_checks_bump(self):
         self.context.update(event="workflow_dispatch", ref="refs/heads/main", version="1.2.0")

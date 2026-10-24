@@ -363,6 +363,16 @@ Tests include PAX/GNU metadata, oversized streams, decoder cleanup and a real
 Roc-produced bundle. These checks establish byte membership, not that a host
 or its build tools behave correctly.
 
+Published native binaries also require an exact-target candidate test. The
+controller verifies their sealed source/run inventory and pre-test hashes,
+passes absolute paths and digests to the reviewed read-only adapter, and
+rehashes afterward. Wrong or missing bytes stop before the callback; input or
+inventory changes stop its passing trace. Source correctness has its own stage
+and carries no candidate-file claim. Black-box regressions cover the actual
+callback handoff, source-file substitution, missing/swapped bytes and mutation.
+The adapter's product assertions remain a review assumption; a successful task
+is not proof of complete behavioral coverage.
+
 Child deadlines manage Windows Job
 Objects or Unix process groups, and public environment overrides cannot replace
 reserved variables under any spelling of their case. Archived code and native
