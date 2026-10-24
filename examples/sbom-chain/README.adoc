@@ -1,0 +1,42 @@
+= Release with SBOM sidecars that chain to a supplier's
+
+A consumer that publishes one package bundle and a native executable for
+each supported system, each with SPDX 3.0.1 and CycloneDX 1.7 sidecars bound
+to its final bytes. It pins a supplier's release file, roc-blueprint-core
+0.7.0, by its published SHA-256 with `SourceFile`, so the supplier's SBOM
+beside that file is fetched and bound into the bundle's SBOM. It also fetches
+a fixed Roc compiler whose publisher ships no SBOM, so the native executable's
+SBOM carries a reviewed gap for it.
+
+[source,text]
+----
+Blueprint.roc                        the pins: a SourceFile and a fetched compiler
+Blueprint.lock                       their reviewed digests
+package/main.roc                     the package whose bundle is released
+app/main.roc                         the application built natively per system
+sbom/composition.json                what the bundle contains (target source)
+sbom/composition-<system>.json       what each executable contains, with the supplier's bundle SBOM bound in
+.github/workflows/release.yml        build, test, attest and publish once
+----
+
+roc-automation's CI copies this directory to a workspace root and runs
+`actions/fetch-dependency-sboms` and `actions/sbom-sidecars` against it on
+x86_64 Linux, arm64 Linux and Apple Silicon, then `tests/check_sbom_chain.py`
+provokes each refusal. The release workflow is the complete copyable release
+for such a repository: read-only build jobs generate and check the sidecars
+and return the asset set; test jobs run the exact executables; a publish job
+with no checkout attests every file, including the sidecars, and hands the
+explicit asset list to `actions/publish-release`.
+
+The native compositions are the package-to-platform chain: each executable
+imports the supplier's bundle SBOM bound to the locked bytes, with the
+bundle's own `source` target kept, so its SBOM carries the supplier's graph
+under the import prefix. Blueprint 0.8.0 admits that import; 0.7.0 refused
+it.
+
+To adopt it, replace the package and application, review each composition
+against what your files actually contain, and commit `sbom/imports.json`
+after the first fetch so the release build is offline and a changed supplier
+document is a reviewed change. See
+https://lukewilliamboswell.github.io/roc-automation/software-bill-of-materials.html[the SBOM chapter]
+for what the chain establishes and what it does not.

@@ -253,6 +253,47 @@ requiring `id-token: write` must remain an explicit caller choice; the artifact
 cache here requires no such token permission. See
 xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide].
 
+== SBOM sidecars and supplier documents
+
+`actions/sbom-sidecars` and `actions/fetch-dependency-sboms` belong in jobs
+with `contents: read` and nothing else. Both run repository configuration:
+the first evaluates `Blueprint.roc` through `blueprint spec` and runs the
+Blueprint SBOM tool over the reviewed composition and the final files; the
+second reads `blueprint lock show --json`. Neither holds a token that can
+write a release, an attestation or an issue, and the publisher receives their
+outputs as inert files, verified by name, size and digest like any other
+asset.
+
+The sidecar action selects the tool bundle by the Blueprint release that
+`Blueprint.roc` names, from a reviewed record in
+`actions/setup-blueprint/sbom-tools.json` fixed by the action's full SHA.
+A release that ships native tool binaries has their SHA-256 reviewed in the
+same record, and the binary is admitted by that digest, as `blueprint` is.
+Otherwise Roc verifies the app bundle's content hash from its URL before
+running it, and the action requires the Roc release the record names. The tool makes no
+request while reporting. The fetch action is the one step that reaches the
+network: HTTPS only, bounded to Blueprint's 1 MiB limit, with a document's
+SHA-256 recorded for review and reproduced on every later run. A changed or
+vanished supplier document fails the step; nothing is adopted silently. The
+regression tests exercise wrong compilers, stale sidecars, a checkout that is
+not the event commit, documents about other bytes, stale opt-outs and changed
+records, and CI runs both actions against a consumer fixture that pins a
+roc-blueprint release file by its published SHA-256: once for its source
+bundle, where the supplier's SBOM is bound in, and once for a native
+executable on the runner's target, whose fetched compiler has no published
+SBOM and so appears as a reviewed gap and whose SBOM carries the supplier's
+bundle graph bound by digest, on x86_64 Linux, arm64 Linux and Apple
+Silicon. The evidence envelope the sidecar action returns names what
+the publisher should receive; it authorizes nothing, and the privileged job
+rechecks every file it names.
+
+The digest of a fetched document establishes which bytes were reviewed, not
+who produced them, and `inspect` establishes that the composition is
+consistent with the Lock and the imports, not that it is complete. An
+attestation check of a supplier's sidecar belongs at admission, as
+xref:artifact-verification.adoc#separate-admission-from-routine-use[Verify released artifacts]
+describes, and the publisher-side validator remains separate work.
+
 == Documentation deployment
 
 The build job of `docs.yml` runs repository sources through

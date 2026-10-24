@@ -1,0 +1,97 @@
+name: Generate SBOM sidecars
+description: Inspect the reviewed composition against the evaluated Spec and Lock, bind SPDX 3.0.1 and CycloneDX 1.7 sidecars to each release file's final bytes, and check them. Use in read-only build jobs.
+
+inputs:
+  files:
+    description: The release files to describe, one relative workspace path per line; an explicit list, never a glob
+    required: true
+  version:
+    description: Release version of every listed file, such as 0.12.0 or 0.12.0-rc1
+    required: true
+  target:
+    description: Blueprint system of the listed files, such as x86_64-linux, or source for a source bundle
+    required: true
+  author:
+    description: "SPDX agent that authors the documents, such as 'Organization: Example Ltd'"
+    required: true
+  composition:
+    description: Reviewed composition JSON, relative to the workspace
+    default: sbom/composition.json
+  imports:
+    description: Optional roc-automation-sbom-imports-v1 file whose imported_documents join the composition, written by actions/fetch-dependency-sboms
+    default: ''
+  url-base:
+    description: HTTPS location the files will be published under; the subject URL is this base plus the file name
+    default: ''
+  namespace-base:
+    description: HTTPS base of each document namespace; the namespace adds the commit, file name and revision
+    default: ''
+  revision:
+    description: Document revision; a correction of a published SBOM increments it
+    default: '1'
+  spdx-2-3:
+    description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
+    default: 'false'
+  archive-members:
+    description: For a source target with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself
+    default: generate
+  roc-binary:
+    description: Roc compiler that runs the tool app bundle, needed only when the Blueprint release records no native tool binary for the runner; it must be the release the record names
+    default: roc
+  blueprint-binary:
+    description: Installed Blueprint executable, otherwise blueprint on PATH
+    default: blueprint
+
+outputs:
+  assets:
+    description: Every listed file and its sidecars, one relative path per line, for the test jobs and the publisher
+    value: ${{ steps.sidecars.outputs.assets }}
+  sidecars:
+    description: Only the sidecars written, one relative path per line, with each evidence manifest when the tool writes one
+    value: ${{ steps.sidecars.outputs.sidecars }}
+  inventory:
+    description: Path of the inspected inventory JSON the sidecars were bound from
+    value: ${{ steps.sidecars.outputs.inventory }}
+  digests:
+    description: Path of a sha256sum-format listing of the sidecars
+    value: ${{ steps.sidecars.outputs.digests }}
+  evidence:
+    description: Path of the roc-automation-sbom-evidence-v1 envelope listing every file and sidecar by name, size and SHA-256, bound to the source commit and run, for the independent validator and publisher
+    value: ${{ steps.sidecars.outputs.evidence }}
+  tool-url:
+    description: Immutable URL of the SBOM tool that generated the sidecars, a native binary or the app bundle
+    value: ${{ steps.sidecars.outputs.tool-url }}
+  tool-sha256:
+    description: Reviewed SHA-256 the native tool binary was admitted by; empty when the app bundle ran
+    value: ${{ steps.sidecars.outputs.tool-sha256 }}
+  compiler:
+    description: Roc release that ran the tool
+    value: ${{ steps.sidecars.outputs.compiler }}
+  commit:
+    description: Source commit the documents name in their namespace and creation time
+    value: ${{ steps.sidecars.outputs.commit }}
+  created:
+    description: Document creation time, taken from the source commit
+    value: ${{ steps.sidecars.outputs.created }}
+
+runs:
+  using: composite
+  steps:
+    - id: sidecars
+      shell: bash
+      env:
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_AUTHOR: ${{ inputs.author }}
+        INPUT_COMPOSITION: ${{ inputs.composition }}
+        INPUT_IMPORTS: ${{ inputs.imports }}
+        INPUT_URL_BASE: ${{ inputs.url-base }}
+        INPUT_NAMESPACE_BASE: ${{ inputs.namespace-base }}
+        INPUT_REVISION: ${{ inputs.revision }}
+        INPUT_SPDX_2_3: ${{ inputs.spdx-2-3 }}
+        INPUT_ARCHIVE_MEMBERS: ${{ inputs.archive-members }}
+        INPUT_ROC_BINARY: ${{ inputs.roc-binary }}
+        INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
+        CONTROLLER: ${{ github.action_path }}/sbom_sidecars.py
+      run: python3 "$CONTROLLER"

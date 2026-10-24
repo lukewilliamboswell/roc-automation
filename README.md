@@ -21,10 +21,14 @@ build inputs, and the trust model behind the shared actions.
 | `actions/build-docs` | Render AsciiDoc or Markdown as an HTML site and PDF using a supplied Roc binary |
 | `actions/publish-release` | Stage a draft release, verify every asset against the tested file, then publish |
 | `actions/publish-build-inputs` | Publish linker inputs built on a pull request, and commit only their lock |
+| `actions/sbom-sidecars` | Bind checked SPDX and CycloneDX sidecars to each release file with the pinned Blueprint tool |
+| `actions/fetch-dependency-sboms` | Fetch suppliers' SBOMs beside locked files and record them for Blueprint to verify |
 
 See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions.html)
 for how to use them. Pure Roc packages can start with the complete
-[Nix-free adoption guide](https://lukewilliamboswell.github.io/roc-automation/pure-package.html).
+[Nix-free adoption guide](https://lukewilliamboswell.github.io/roc-automation/pure-package.html),
+and a release that publishes SBOM sidecars for a bundle and per-system
+executables can start from [`examples/sbom-chain`](examples/sbom-chain/README.adoc).
 
 ## Shared native utilities
 

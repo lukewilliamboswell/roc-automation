@@ -1,0 +1,21 @@
+{
+  "0.7.0": {
+    "url": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/roc-blueprint-sbom-2pLqc6Kr6KE3fw5JE4z17TMnhKYP3npqDMBTVm9K2oKP.tar.zst",
+    "compiler": "nightly-2026-10-21-5349569",
+    "generator": "Tool: blueprint-sbom-0.7.0"
+  },
+  "0.8.0": {
+    "url": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/roc-blueprint-sbom-9FNPZfbSvEMXTo5QSkkPhScWzCpUnLFEgrmHm9Ev4u36.tar.zst",
+    "compiler": "nightly-2026-10-21-5349569",
+    "generator": "Tool: blueprint-sbom-0.8.0",
+    "binaries": {
+      "x86_64-linux": "f6d1ec0b9f00cb8aae60bb62d9cc0598fe0325c38e7aa84d55cf2dbab6831c20",
+      "aarch64-linux": "e83e9fe84effc11cbee925ee0c04d873ee7506bcbd57f37049a5e71cfe14ffb4",
+      "aarch64-darwin": "7df3245c564ed8f87e9f411e9035ec4eaf5470f91bb214aa7bb599fb9beb81be"
+    },
+    "features": [
+      "members",
+      "manifest"
+    ]
+  }
+}

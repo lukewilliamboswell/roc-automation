@@ -466,6 +466,246 @@ xref:settings.adoc#releases[Releases] lists the setting.
 xref:actions.adoc#actions-that-run-a-roc-script[Actions that run a Roc script]
 states what the action needs of the runner.
 
+[#sbom-sidecars]
+== `actions/sbom-sidecars`
+
+Generates the SBOM sidecars of an explicit list of release files in the
+read-only build job, with the standalone tool of the Blueprint release that
+`Blueprint.roc` names, and checks them before the test jobs and the publisher
+see them. It implements the generation sequence of
+xref:software-bill-of-materials.adoc#generate-sidecars-with-the-shared-actions[the SBOM chapter];
+the composition stays the repository's reviewed file.
+
+[source,yaml]
+----
+- id: roc-sbom
+  uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@REVIEWED_FULL_SHA
+  with:
+    task: sbom-roc-path
+- id: sidecars
+  uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@REVIEWED_FULL_SHA
+  with:
+    files: |
+      dist/${{ steps.bundle.outputs.name }}
+    version: ${{ needs.validate.outputs.version }}
+    target: source
+    author: 'Organization: Example Ltd'
+    roc-binary: ${{ steps.roc-sbom.outputs.executable-path }}
+- uses: actions/upload-artifact@REVIEWED_FULL_SHA
+  with:
+    name: release-candidate
+    path: ${{ steps.sidecars.outputs.assets }}
+    if-no-files-found: error
+----
+
+[cols="1,1,3",options="header"]
+|===
+| Input | Default | Meaning
+
+| `files` | required | The release files, one relative path per line. A glob character, an absolute path, a `..` segment, a symlink, a missing file or a sidecar name fails the step.
+| `version` | required | The release version every listed file belongs to
+| `target` | required | The Blueprint system of the listed files, or `source` for a source bundle. Call the action once per target.
+| `author` | required | The SPDX agent that authors the documents, `Organization: ...` or `Person: ...`
+| `composition` | `sbom/composition.json` | The reviewed composition
+| `imports` | empty | A file `actions/fetch-dependency-sboms` wrote, whose `imported_documents` join the composition before `inspect`
+| `url-base` | the release download URL | Where the files will be published; each subject URL is this base plus the file name
+| `namespace-base` | the repository's `sbom` URL | The namespace is this base, the commit, the file name and `revision-<revision>`
+| `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
+| `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
+| `archive-members` | `generate` | For a `source` target with a tool that lists archive members: generate a component for each member the composition does not account for, or `reviewed` to require the composition to account for every member itself
+| `roc-binary` | `roc` | The Roc compiler that runs the tool app bundle, used only when the release records no native tool binary for the runner
+| `blueprint-binary` | `blueprint` | The installed Blueprint executable
+|===
+
+Outputs are `assets`, every listed file and its sidecars, one relative path
+per line, for the artifact upload, the test jobs, the attestation step's
+`subject-path` and `actions/publish-release`; `sidecars`, the sidecars alone;
+`digests`, a `sha256sum`-format listing of them; `inventory`, the inspected
+inventory the documents were rendered from; `evidence`, a
+`roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `tool-sha256`,
+`compiler`, `commit` and `created`, which release notes can record.
+
+The evidence envelope lists every file and sidecar by name, path, size,
+SHA-256, format, target and version, bound to the source repository and
+commit and to the producing workflow, run and attempt, with the generator,
+the digest of the inventory each subject was bound from, each evidence
+manifest the tool wrote, the dependency states and the `incomplete` coverage
+scopes. It is the producer's handoff to the independent validator and publisher: a transfer
+manifest, not a component inventory, and not an authorization. A privileged
+job rechecks what it names against the files it receives.
+
+`examples/sbom-chain/.github/workflows/release.yml` is a complete release
+that uses both actions for a bundle and a native executable per system, runs
+the exact files, attests every asset including the sidecars, and hands the
+explicit asset list to `actions/publish-release`.
+
+The action does the following, in this order, and stops at the first failure.
+
+. *Check the inputs and files.* Every listed file must be a regular file under
+  the workspace with a unique name, because sidecars are named by the file
+  name. A sidecar that already exists beside a file is stale and fails the
+  step: generate into a fresh build, never over an earlier one.
+. *Select the tool.* The roc-blueprint release is read from the platform URL in
+  `Blueprint.roc`, as `actions/setup-blueprint` reads it. The action records,
+  in `actions/setup-blueprint/sbom-tools.json`, the immutable URL of that
+  release's `roc-blueprint-sbom-<hash>.tar.zst` app bundle, the Roc release
+  it was built for, and, for a release that ships `blueprint-sbom-<system>`
+  binaries, their reviewed SHA-256 per system, and the tool's features:
+  `members`, when the tool lists a produced archive, and `manifest`, when
+  `bind` writes an evidence manifest. A release without a record fails the
+  step. With a recorded binary for the runner, the action downloads
+  it into a private file, admits it only when its digest matches, and needs
+  no compiler. Otherwise `roc-binary` must report the recorded Roc release;
+  another compiler fails before anything runs.
+. *Bind to the tested commit.* The checkout's `HEAD` must equal the event
+  commit. The documents' creation time is that commit's time, not the wall
+  clock, and their namespace names the commit, so two runs of one commit
+  produce the same documents.
+. *Stage the inputs.* `blueprint spec` and a copy of `Blueprint.lock` go into
+  a fresh private directory under the runner's temporary directory, with the
+  composition. When `imports` is given, its `imported_documents` are appended
+  to the composition's; its `unavailable_sboms` stubs are never used, so a
+  generated stub cannot become an exemption.
+. *Inspect.* The tool's `inspect` checks the composition against the Spec
+  and Lock for `target` and writes the inventory. It runs nothing and
+  downloads nothing. A refusal names the rule; when a locked dependency has
+  neither a bound supplier SBOM nor a reviewed `unavailable_sboms` entry, the
+  error points at `actions/fetch-dependency-sboms`. With a tool that lists
+  archive members and a `source` target, each file is listed first with
+  `members`, and `inspect --members` runs once per file, so the archive
+  `roc bundle` produced, not the bundler's argument list, is the authority on
+  what it holds. By default a member no reviewed component states by SHA-256
+  and no `archive-member:<name>:<sha256>` disposition names becomes a
+  component with `sha256-<digest>` as its version, NOASSERTION for its
+  supplier, download and license, and a `contains` edge from the subject, as
+  Blueprint's own release lists its bundles; `archive-members: reviewed`
+  leaves every member to the composition and lets `inspect` refuse an
+  omission.
+. *Bind.* For each file, a subject with an empty SHA-256, so the tool hashes
+  the final bytes itself, and a context name the file, version, target,
+  release URL, namespace, revision, creation time, author and generator.
+  `bind` writes `<file>.spdx.json` and `<file>.cdx.json` beside the file, and
+  `<file>.spdx-2.3.json` when asked. A tool that writes evidence manifests
+  also writes `<file>.sbom-manifest.json`: the subject's name, version,
+  target, SHA-256 and size, each sidecar's name, format, SHA-256 and size,
+  and the inventory's SHA-256. It refuses to overwrite anything.
+. *Check.* `check --inventory ... --artifacts <directory>` holds every sidecar
+  to its format's specification and the profile, confirms it describes the
+  file of that name byte for byte, that its evidence is the inventory's, and
+  that the renderings of one document state one graph. With a manifest,
+  `check --manifest` rehashes the subject, each listed sidecar and the
+  inventory first and refuses any difference; the SPDX 2.3 rendering, which
+  the manifest does not list, is named beside it.
+. *Report.* The job summary lists each sidecar with its SHA-256, each locked
+  dependency as bound or unavailable with the reviewed reason and contact, and
+  every `incomplete` coverage scope.
+
+The job needs `contents: read` and nothing else. A recorded native binary is
+one bounded download verified by its reviewed digest. Without one, the first
+`roc run` of the app bundle fills Roc's package cache from the immutable URL,
+whose content hash Roc verifies, and compiles the tool, which costs about a
+minute and a half on a fresh runner; after that the steps make no request.
+The Roc compiler is then a separate input: Blueprint 0.7.0's tool needs
+`nightly-2026-10-21-5349569`, which a `Fetch` recipe with
+`Recipes.roc_nightly` and
+xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`] can supply without
+putting it on `PATH` as `roc`, or `roc-lang/setup-roc` with `nightly-tag` in
+a job that does not also need the package nightly. Blueprint 0.7.0 ships no
+native tool binary and takes this path; 0.8.0 ships one per system.
+
+What the action establishes is bounded. The tool's `inspect` decides what the
+composition may claim, and the sidecars bind that claim to the final bytes.
+Neither proves the composition is complete: an opaque build step's output is
+an `incomplete` coverage scope, as
+xref:software-bill-of-materials.adoc#declare-what-the-inventory-covers[Declare what the inventory covers]
+requires. The documents are not provenance; the repository's attestation step
+covers them as subjects, as Blueprint's own release does.
+
+[#fetch-dependency-sboms]
+== `actions/fetch-dependency-sboms`
+
+Finds the published SBOM of every dependency the Lock pins by file SHA-256 and
+records it for `inspect` to verify. It is the one step of the SBOM chain that
+reaches the network, so it holds no write token, runs no repository code and
+reads the Lock only through `blueprint lock show --json`.
+
+[source,yaml]
+----
+- id: suppliers
+  uses: lukewilliamboswell/roc-automation/actions/fetch-dependency-sboms@REVIEWED_FULL_SHA
+  with:
+    target: source
+----
+
+[cols="1,1,3",options="header"]
+|===
+| Input | Default | Meaning
+
+| `target` | required | The Blueprint system the composition describes, or `source`
+| `composition` | `sbom/composition.json` | The reviewed composition
+| `output` | `sbom/imports.json` | The imports file to write. An existing file is the reviewed record the fetch must reproduce.
+| `contact` | the repository's security policy URL | Whom a recipient asks about a gap in this repository's documents
+| `missing` | `fail` | `fail` or `warn` when a locked dependency has neither a published SBOM nor a reviewed `unavailable_sboms` entry
+| `stale-opt-outs` | `fail` | `fail` or `warn` when an `unavailable_sboms` entry names a dependency whose supplier now publishes a sidecar
+| `blueprint-binary` | `blueprint` | The installed Blueprint executable
+|===
+
+Outputs are `imports`, the path of the written file, and the counts `fetched`,
+`missing`, `unbindable` and `stale`.
+
+For each component of the composition whose origin is `source:<name>` or
+`program:<name>:<system>`:
+
+. A component the composition already imports a document for is left alone.
+. A source pinned by a tree or NAR digest has no file SHA-256, so no supplier
+  SBOM can bind to it. It is reported as unbindable and nothing is fetched;
+  pin the file by its published SHA-256 with `SourceFile` to chain it.
+. Otherwise the Lock gives the file's URL and SHA-256. The action tries
+  `<url>.spdx.json`, then `<url>.cdx.json`, beside each locked URL. Only an
+  HTTPS address without userinfo or query is fetched, a redirect off HTTPS is
+  refused, and a document over 1 MiB, Blueprint's bound, is refused. A `404`
+  means the supplier publishes nothing there; any other failure fails the
+  step rather than becoming an opt-out.
+. A found document is identified: the `SpdxDocument` identifier before `#` in
+  SPDX 3, `documentNamespace` in SPDX 2, `serialNumber` in CycloneDX. What it
+  says it describes is compared with the Lock before anything is recorded: a
+  document about other bytes, another file name or a version the composition
+  does not review fails the step and names the difference. `inspect` repeats
+  the comparison later and remains the authority.
+. The entry records `id` `<component>-sbom`, the URL, the document's SHA-256
+  and identity, the target the supplier's document states for its subject,
+  such as `source` for an architecture-independent bundle, the document
+  bytes, the relation, the basis, the contact, and a `subject` that binds it
+  to the component with the Lock's SHA-256 and the reviewed version. A
+  document that states no target takes the Lock's system for a program and
+  the inventory's target for a file; a relabelled import is what `inspect`
+  refuses.
+. When nothing is published, no entry is written. The file carries a
+  ready-to-paste `unavailable_sboms` stub whose reason and contact say
+  `REPLACE`, and the step fails with it, unless `missing` is `warn`. The
+  maintainer completes the stub in the composition; the action never invents
+  an opt-out, and `inspect` refuses a stub pasted as it is.
+. When an `unavailable_sboms` entry names a dependency whose supplier does
+  publish a sidecar, the opt-out is stale: the step fails, unless
+  `stale-opt-outs` is `warn`, and the document is not recorded until the
+  opt-out is removed.
+
+When the output file already exists, every document it records must be
+fetched again with the same URL and SHA-256, and a recorded document the
+supplier no longer publishes fails the step. Changed bytes are never adopted
+silently; a maintainer reviews the new document and updates the record in a
+pull request. The job summary lists every dependency as bound, fetched,
+unavailable with its reviewed reason, unbindable, missing or a stale opt-out.
+
+The file's digest proves only that the bytes did not change between the
+review and the build. It does not prove the supplier wrote them: a release
+asset and its sidecar come from the same host and the same release, so a
+substituted sidecar would need the same access as a substituted artifact.
+Verifying the supplier's attestation of the sidecar belongs to admission,
+as xref:artifact-verification.adoc#separate-admission-from-routine-use[Verify released artifacts]
+places it, and to the evidence work tracked in roc-automation's issues; this
+action does not call an attestation service.
+
 [#publish-build-inputs]
 == `actions/publish-build-inputs`
 

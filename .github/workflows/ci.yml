@@ -187,6 +187,125 @@ jobs:
       - name: Check native refusals without a sandbox
         run: python3 tools/roc-build-runner/tests/test_cli.py -v
 
+  sbom-actions:
+    name: SBOM sidecars and supplier chain (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, system: x86_64-linux }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux }
+          - { runner: macos-15, system: aarch64-darwin }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # A consumer that pins a supplier's release file by its published SHA-256;
+      # the supplier, roc-blueprint 0.7.0, publishes sidecars beside that file.
+      - name: Use the consumer fixture
+        run: |
+          cp examples/sbom-chain/Blueprint.roc examples/sbom-chain/Blueprint.lock .
+          cp -R examples/sbom-chain/package examples/sbom-chain/app examples/sbom-chain/sbom .
+      - uses: ./actions/setup-blueprint
+      # The SBOM tool bundle runs on the exact Roc release its Blueprint release records.
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-21-5349569
+      - id: bundle
+        name: Build the release file
+        run: |
+          mkdir dist
+          roc bundle package/main.roc --output-dir dist
+          echo "file=$(ls dist/*.tar.zst)" >> "$GITHUB_OUTPUT"
+      - id: fetch
+        uses: ./actions/fetch-dependency-sboms
+        with:
+          target: source
+      - id: sidecars
+        uses: ./actions/sbom-sidecars
+        with:
+          files: ${{ steps.bundle.outputs.file }}
+          version: 0.1.0
+          target: source
+          author: 'Organization: roc-automation contributors'
+          imports: sbom/imports.json
+          spdx-2-3: 'true'
+      - name: Check the supplier graph is bound into the attested asset set
+        env:
+          FETCHED: ${{ steps.fetch.outputs.fetched }}
+          MISSING: ${{ steps.fetch.outputs.missing }}
+          ASSETS: ${{ steps.sidecars.outputs.assets }}
+          DIGESTS: ${{ steps.sidecars.outputs.digests }}
+          FILE: ${{ steps.bundle.outputs.file }}
+        run: |
+          test "$FETCHED" = 1
+          test "$MISSING" = 0
+          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 5
+          shasum -a 256 --check "$DIGESTS"
+          test -s "$FILE.sbom-manifest.json"
+          grep -q '#blueprint-core-sbom-Subject' "$FILE.spdx.json"
+          grep -q '"copiedTo"' "$FILE.spdx.json"
+      # A native executable is a second subject, bound per target with its own
+      # composition: it imports the supplier's bundle SBOM bound, and the
+      # fetched fixed compiler is a locked dependency whose publisher ships no
+      # SBOM, so a reviewed opt-out becomes a visible gap.
+      - name: Build the native executable
+        run: |
+          mkdir dist-native
+          roc build app/main.roc --output=dist-native/hello
+          dist-native/hello
+      - id: fetch-native
+        uses: ./actions/fetch-dependency-sboms
+        with:
+          target: ${{ matrix.system }}
+          composition: sbom/composition-${{ matrix.system }}.json
+          output: sbom/imports-${{ matrix.system }}.json
+      - id: sidecars-native
+        uses: ./actions/sbom-sidecars
+        with:
+          files: dist-native/hello
+          version: 0.1.0
+          target: ${{ matrix.system }}
+          author: 'Organization: roc-automation contributors'
+          composition: sbom/composition-${{ matrix.system }}.json
+          imports: sbom/imports-${{ matrix.system }}.json
+      - name: Check the native sidecars name their target and the compiler gap
+        env:
+          FETCHED: ${{ steps.fetch-native.outputs.fetched }}
+          MISSING: ${{ steps.fetch-native.outputs.missing }}
+          ASSETS: ${{ steps.sidecars-native.outputs.assets }}
+          DIGESTS: ${{ steps.sidecars-native.outputs.digests }}
+          EVIDENCE: ${{ steps.sidecars-native.outputs.evidence }}
+          SYSTEM: ${{ matrix.system }}
+        run: |
+          test "$FETCHED" = 1
+          test "$MISSING" = 0
+          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 4
+          shasum -a 256 --check "$DIGESTS"
+          test -s dist-native/hello.sbom-manifest.json
+          grep -q "\"blueprint:target\",\"value\":\"$SYSTEM\"" dist-native/hello.cdx.json
+          grep -q 'sbom:roc-stable' dist-native/hello.spdx.json
+          grep -q '#blueprint-core-sbom-Subject' dist-native/hello.spdx.json
+          test "$(shasum -a 256 dist-native/hello | cut -d' ' -f1)" = "$(python3 -c 'import json;print(json.load(open("dist-native/hello.cdx.json"))["metadata"]["component"]["hashes"][0]["content"])')"
+          # The evidence envelope binds the same bytes to this commit and run.
+          python3 - "$EVIDENCE" "$SYSTEM" <<'PY'
+          import hashlib, json, os, sys
+          envelope = json.load(open(sys.argv[1]))
+          assert envelope["format"] == "roc-automation-sbom-evidence-v1"
+          assert envelope["source"]["commit"] == os.environ["GITHUB_SHA"] and envelope["producer"]["run_id"] == os.environ["GITHUB_RUN_ID"]
+          [subject] = envelope["subjects"]
+          assert subject["target"] == sys.argv[2] and subject["sha256"] == hashlib.sha256(open(subject["path"], "rb").read()).hexdigest()
+          for sidecar in subject["sidecars"]:
+              assert sidecar["sha256"] == hashlib.sha256(open(sidecar["path"], "rb").read()).hexdigest() and sidecar["size"] == os.path.getsize(sidecar["path"])
+          assert sorted(gap["scope"] for gap in envelope["coverage"]) == ["import:blueprint-core-sbom", "native-closure", "sbom:roc-stable"], envelope["coverage"]
+          PY
+      - name: Provoke the refusals a maintainer must see
+        run: python3 tests/check_sbom_chain.py
+
   # The repository's own Roc scripts, on the pinned tooling compiler. This does
   # not ask GitHub about any repository's settings: that needs administration
   # access, which no workflow token has, so a maintainer runs check-settings.
@@ -215,3 +334,4 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           actionlint
           actionlint examples/pure-package/.github/workflows/ci.yml
+          actionlint examples/sbom-chain/.github/workflows/release.yml
