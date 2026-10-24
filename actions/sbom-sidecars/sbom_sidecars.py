@@ -127,28 +127,73 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
     return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features)}
 
 
+def binary_name(system: str) -> str:
+    return f"blueprint-sbom-{system}{'.exe' if system.endswith('-windows') else ''}"
+
+
 def binary_url(version: str, system: str) -> str:
-    return f"{setup_blueprint.RELEASES}/{setup_blueprint.checked_version(version)}/blueprint-sbom-{system}"
+    return f"{setup_blueprint.RELEASES}/{setup_blueprint.checked_version(version)}/{binary_name(system)}"
 
 
-def install_binary(version: str, system: str, expected: str, directory: Path, download: setup_blueprint.Fetch = setup_blueprint.fetch) -> Path:
+def install_binary(version: str, system: str, expected: str, directory: Path, download: setup_blueprint.Fetch = setup_blueprint.fetch,
+                   cache_directory: Path | None = None, cache_status: list[bool] | None = None) -> Path:
     """Admit the released tool binary by its reviewed SHA-256 before it can run, as setup-blueprint admits blueprint."""
     url = binary_url(version, system)
     setup_blueprint.private_directory(directory)
+    if cache_directory is not None:
+        setup_blueprint.private_directory(cache_directory.parent)
+        setup_blueprint.private_directory(cache_directory)
     handle, name = tempfile.mkstemp(prefix="blueprint-sbom-", suffix=".download", dir=directory)
     os.close(handle)
     candidate = Path(name)
     try:
-        download(url, candidate)
+        hit = cache_directory is not None and setup_blueprint.copy_cached(cache_directory / "blueprint-sbom", candidate)
+        if hit and not hmac.compare_digest(sha256_of(candidate), expected):
+            print("SBOM executable cache digest mismatch; fetching the reviewed release again")
+            hit = False
+        if not hit:
+            download(url, candidate)
         actual = sha256_of(candidate)
         if not hmac.compare_digest(actual, expected):
             raise Refusal(f"SHA-256 mismatch for {url}: expected {expected}, got {actual}")
+        if cache_directory is not None:
+            cache_handle, cache_name = tempfile.mkstemp(prefix=".verified-", dir=cache_directory)
+            try:
+                with os.fdopen(cache_handle, "wb") as output, candidate.open("rb") as source:
+                    shutil.copyfileobj(source, output)
+                Path(cache_name).replace(cache_directory / "blueprint-sbom")
+            finally:
+                Path(cache_name).unlink(missing_ok=True)
+        if cache_status is not None:
+            cache_status.append(bool(hit))
         candidate.chmod(0o755)
-        installed = directory / f"blueprint-sbom-{system}"
+        installed = directory / binary_name(system)
         candidate.replace(installed)
         return installed
     finally:
         candidate.unlink(missing_ok=True)
+
+
+def binary_cache_settings(env: dict[str, str], version: str, system: str, expected: str) -> tuple[str, str]:
+    """An exact, digest-keyed byte cache; no executable-path override is trusted."""
+    enabled = setup_blueprint.boolean_input(env.get("INPUT_CACHE_BINARY", "true"), "cache-binary")
+    if not enabled or not expected:
+        return "", ""
+    identity = f"blueprint-sbom-executable-v1-{system}-{version}-{expected}"
+    directory = Path(env["RUNNER_TEMP"]) / "roc-automation-sbom-cache" / identity
+    if not directory.is_absolute() or not clean(str(directory)):
+        raise Refusal("the SBOM executable cache must be an absolute path without control characters")
+    return str(directory), identity
+
+
+def prepare_cache(env: dict[str, str]) -> None:
+    workspace = Path(env.get("GITHUB_WORKSPACE", ".")).resolve()
+    version = setup_blueprint.version_in(setup_blueprint.read_config(workspace / "Blueprint.roc"))
+    tool = sbom_tool(version, SBOM_TOOLS)
+    system = setup_blueprint.SYSTEMS.get((env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", "")), "")
+    directory, key = binary_cache_settings(env, version, system, tool["binaries"].get(system, ""))
+    with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+        output.write(f"binary-cache-directory={directory}\nbinary-cache-key={key}\n")
 
 
 def compiler_matches(output: str, tag: str) -> bool:
@@ -431,9 +476,12 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     tool = sbom_tool(blueprint_version, SBOM_TOOLS)
     system = setup_blueprint.SYSTEMS.get((env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", "")), "")
     expected = tool["binaries"].get(system, "")
+    cache_directory, _ = binary_cache_settings(dict(env), blueprint_version, system, expected)
+    cache_status: list[bool] = []
     if expected:
         # A released native tool: admitted by its reviewed digest, no compiler needed.
-        binary = install_binary(blueprint_version, system, expected, Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint-sbom", download)
+        binary = install_binary(blueprint_version, system, expected, Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint-sbom", download,
+                                cache_directory=Path(cache_directory) if cache_directory else None, cache_status=cache_status)
         tool_command = [str(binary)]
         tool_identity = {"url": binary_url(blueprint_version, system), "sha256": expected}
     else:
@@ -554,6 +602,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")
         output.write(f"sidecars<<{delimiter}\n" + "\n".join(sidecars_only) + f"\n{delimiter}\n")
+        output.write(f"binary-cache-hit={str(bool(cache_status and cache_status[0])).lower()}\n")
         output.write(f"inventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool_identity['url']}\ntool-sha256={tool_identity['sha256']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
     for file in files:
         for sidecar, digest in written[file]:
@@ -567,7 +616,12 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
 
 if __name__ == "__main__":
     try:
-        main()
+        if sys.argv[1:] == ["--prepare-cache"]:
+            prepare_cache(dict(os.environ))
+        elif sys.argv[1:]:
+            raise Refusal("expected no arguments or --prepare-cache")
+        else:
+            main()
     except (ValueError, OSError) as error:
         print(f"::error::{error}", file=sys.stderr)
         raise SystemExit(1) from error

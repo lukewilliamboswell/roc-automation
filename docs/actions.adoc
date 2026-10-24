@@ -519,6 +519,7 @@ the composition stays the repository's reviewed file.
 | `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
 | `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
 | `archive-members` | `generate` | For a `source` target with a tool that lists archive members: generate a component for each member the composition does not account for, or `reviewed` to require the composition to account for every member itself
+| `cache-binary` | `true` | Persist only reviewed native tool bytes, with an exact release/system/SHA-256 key and verification on every reuse; `false` downloads afresh
 | `roc-binary` | `roc` | The Roc compiler that runs the tool app bundle, used only when the release records no native tool binary for the runner
 | `blueprint-binary` | `blueprint` | The installed Blueprint executable
 |===
@@ -530,6 +531,8 @@ per line, for the artifact upload, the test jobs, the attestation step's
 inventory the documents were rendered from; `evidence`, a
 `roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `tool-sha256`,
 `compiler`, `commit` and `created`, which release notes can record.
+`binary-cache-hit` reports reuse only after the private copied bytes match the
+reviewed digest; the artifact cache service's hit flag alone is not admission.
 
 The evidence envelope lists every file and sidecar by name, path, size,
 SHA-256, format, target and version, bound to the source repository and
@@ -559,9 +562,16 @@ The action does the following, in this order, and stops at the first failure.
   binaries, their reviewed SHA-256 per system, and the tool's features:
   `members`, when the tool lists a produced archive, and `manifest`, when
   `bind` writes an evidence manifest. A release without a record fails the
-  step. With a recorded binary for the runner, the action downloads
-  it into a private file, admits it only when its digest matches, and needs
-  no compiler. Otherwise `roc-binary` must report the recorded Roc release;
+  step. With a recorded binary for the runner, the action copies bounded regular
+  bytes from its exact executable cache into a private file, or downloads on a
+  miss. It hashes that private copy before making it executable and needs no
+  compiler. Corrupt regular bytes are replaced by a freshly verified download;
+  symlink and nonregular cache entries fail. `cache-binary: true` restores and
+  saves only these bytes with `actions/cache`, never an executable workspace,
+  composition, inventory or sidecar. The key includes release, system and
+  reviewed SHA-256. `cache-binary: false` disables reuse. The cache is separate
+  from Blueprint's Programs/Fetch store; a caller need not expose a private
+  installed-path override. Otherwise `roc-binary` must report the recorded Roc release;
   another compiler fails before anything runs.
 . *Bind to the tested commit.* The checkout's `HEAD` must equal the event
   commit. The documents' creation time is that commit's time, not the wall

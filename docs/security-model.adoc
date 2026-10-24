@@ -278,7 +278,11 @@ The sidecar action selects the tool bundle by the Blueprint release that
 `actions/setup-blueprint/sbom-tools.json` fixed by the action's full SHA.
 A release that ships native tool binaries has their SHA-256 reviewed in the
 same record, and the binary is admitted by that digest, as `blueprint` is.
-Otherwise Roc verifies the app bundle's content hash from its URL before
+The native tool's persistent executable cache contains only bytes keyed by
+release, system and reviewed digest. Bounded regular bytes are copied privately
+and rehashed before every execution; corrupt bytes trigger a fresh verified
+download, while symlink and nonregular entries fail. Cache hits do not prove
+provenance or admit arbitrary executables. Otherwise Roc verifies the app bundle's content hash from its URL before
 running it, and the action requires the Roc release the record names. The tool makes no
 request while reporting. The fetch action is the one step that reaches the
 network: HTTPS only, bounded to Blueprint's 1 MiB limit, with a document's
