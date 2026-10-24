@@ -162,7 +162,10 @@ identify = |input, files, path, used, refs| {
 		n = node(block)
 		if n.context == "section" or n.context == "floating_title" {
 			if n.level == 1 {
-				candidates = files.keep_if(|f| f.source.split_on("\n").any(|line| line == "= ${n.title}"))
+				# A book may repeat a chapter title as a later part heading.
+				# Only a file's own first document heading identifies its origin;
+				# later headings in the book are not competing source documents.
+				candidates = files.keep_if(|f| f.source.split_on("\n").find_first(|line| line.starts_with("= ")) == Ok("= ${n.title}"))
 				if candidates.len() > 1 {
 					return Err("ambiguous source origin for included chapter ${n.title}")
 				}

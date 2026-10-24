@@ -195,7 +195,10 @@ Regression fixtures compare roc-parser guide excerpts with independent slices
 and preserve the previous publication on invalid input. Escaping paths, symlinks,
 missing or ambiguous tags and output overlap reject. Keep the original examples
 in compile/test checks: rendering reads their bytes and does not execute or verify their behavior.
-Ambiguous chapter provenance still rejects.
+Chapter provenance matches a file's first document heading, so a book part
+heading that repeats an included chapter's title is not another document.
+Two included documents with the same title remain ambiguous and reject;
+regressions cover both cases.
 
 Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared
 Mermaid registrations. An optional validated SVG companion improves the website;

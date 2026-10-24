@@ -53,6 +53,16 @@ expect Preparation.prepare(
 	options,
 ).is_err()
 
+# Book part headings are not the document title of the book. The actual
+# included chapter still owns its explicit ID and cross-reference route.
+expect Preparation.prepare(
+	[
+		{ path: "index.adoc", source: "= Manual\n\n= Release notes\n\ninclude::releases/index.adoc[leveloffset=+1]\n" },
+		{ path: "releases/index.adoc", source: "[#releases]\n= Release notes\n\nRelease text.\n" },
+	],
+	options,
+).map_ok(|r| r.manual.contains("Release text.")) == Ok(True)
+
 expect manual("= Manual\n\n[cols=\"1,2\",options=\"header\"]\n|===\n| A | B\n| long\ncontinued | value\n|===\n").map_ok(|s| s.contains("| long continued | value |")) == Ok(True)
 expect Preparation.prepare(source("= Manual\n\nlink:api/index.html[API]\n"), { ..options, site_url: "https://example.com/project/" }).map_ok(|r| r.manual.contains("https://example.com/project/api/index.html")) == Ok(True)
 
