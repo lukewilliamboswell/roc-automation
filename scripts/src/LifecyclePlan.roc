@@ -232,6 +232,9 @@ LifecyclePlan := [].{
 			}
 		}
 		for output in $outputs.keep_if(|item| item.role == "binary") {
+			if !topology.adapters.any(|adapter| adapter.operation == "test-host" and adapter.target_ids.contains(output.target)) {
+				return Err("each published binary target requires a consumer test-host adapter")
+			}
 			if topology.sboms.keep_if(|mapping| mapping.subject == output.path and mapping.target == output.target).len() != 1 {
 				return Err("every published binary needs exactly one applicable SBOM mapping")
 			}
@@ -302,6 +305,17 @@ LifecyclePlan := [].{
 				$obligations = $obligations.append({ id: "adapter-${adapter.id}-${target.id}", stage: "source", runner: target.runner, operation: "runtime", subject: adapter.id, target: target.id, task: adapter.task })
 				if full_rehearsal {
 					$obligations = $obligations.append({ id: "runtime-${adapter.id}-${target.id}", stage: "candidate", runner: target.runner, operation: "runtime", subject: adapter.id, target: target.id, task: adapter.task })
+				}
+			}
+		}
+
+		if full_rehearsal {
+			for adapter in topology.adapters.keep_if(|item| item.operation == "test-host") {
+				for target_id in adapter.target_ids {
+					if topology.adapters.any(|builder| builder.outputs.any(|output| output.role == "binary" and output.target == target_id)) {
+						target = topology.target_matrix.find_first(|item| item.id == target_id).map_err(|_| "unknown binary test target")?
+						$obligations = $obligations.append({ id: "binary-${adapter.id}-${target.id}", stage: "candidate", runner: target.runner, operation: "test-binary", subject: adapter.id, target: target.id, task: adapter.task })
+					}
 				}
 			}
 		}
@@ -529,4 +543,22 @@ expect match LifecyclePlan.full(sample_context, sample_topology) {
 expect match LifecyclePlan.plan(sample_context, sample_topology, sample_changes) {
 	Ok(plan) => !plan.obligations.any(|item| item.operation == "package-examples")
 	Err(_) => Bool.False
+}
+
+binary_topology : LifecyclePlan.Topology
+binary_topology = { ..sample_topology, profile: "platform", adapters: [{ id: "binary", task: "build-tool", operation: "build-host", builder: "ubuntu-24.04", target_ids: ["linux"], outputs: [{ role: "binary", target: "linux", path: "bin/tool-linux" }] }], sboms: sample_topology.sboms.append({ subject: "bin/tool-linux", target: "linux", composition: "sbom/binary.json", supplier_imports: "" }) }
+expect LifecyclePlan.validate(binary_topology).is_err()
+expect {
+	topology = { ..binary_topology, adapters: binary_topology.adapters.append({ id: "consumer", task: "test-tool", operation: "test-host", builder: "ubuntu-24.04", target_ids: ["linux"], outputs: [] }) }
+	match LifecyclePlan.full(sample_context, topology) {
+		Ok(plan) => plan.obligations.keep_if(|item| item.stage == "candidate").map(|item| item.id) == ["binary-consumer-linux", "archive-examples-linux"] and plan.assets.any(|item| item.role == "binary" and item.path == "bin/tool-linux")
+		Err(_) => Bool.False
+	}
+}
+expect {
+	topology = { ..binary_topology, adapters: binary_topology.adapters.append({ id: "consumer", task: "test-tool", operation: "test-host", builder: "ubuntu-24.04", target_ids: ["linux"], outputs: [] }) }
+	match LifecyclePlan.plan(sample_context, topology, sample_changes) {
+		Ok(plan) => !plan.obligations.any(|item| item.operation == "test-binary")
+		Err(_) => Bool.False
+	}
 }
