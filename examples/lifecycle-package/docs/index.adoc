@@ -1,0 +1,6 @@
+= lifecycle-package
+
+This manual describes the public examples distributed with the release.
+The shared pipeline builds each bundle once and tests its exact archived files.
+
+include::usage.adoc[leveloffset=+1]

@@ -13,3 +13,14 @@ config = [
 	Task("prepare", [Use("shared"), Run(["release-operations", "prepare"])]),
 	Task("candidate", [Use("shared"), Run(["release-operations", "candidate"])]),
 ]
+
+# Shared source policy reads this data without evaluating product code.
+repository_policy = {
+	schema_version: 2,
+	roots: ["package", "examples", "docs"],
+	exclude: ["platform/targets/**"],
+	test_roots: ["package"],
+	profiles: [{ name: "base", builtin: "roc-package", version: 1 }],
+	rules: [],
+	overrides: [],
+}

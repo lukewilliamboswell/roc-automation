@@ -34,7 +34,13 @@
       ]
     }
   ],
-  "documentation": [],
+  "documentation": [
+    {
+      "id": "manual",
+      "directory": "docs",
+      "pdf": true
+    }
+  ],
   "target_matrix": [
     {
       "id": "linux",
