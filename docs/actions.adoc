@@ -361,6 +361,34 @@ generation fails. Repositories pinned to older action SHAs keep the behavior
 of those revisions; adopting this action removes the Docker backend and the
 `backend` and `theme-directory` inputs.
 
+[#lifecycle-integration]
+== Shared lifecycle integration
+
+Consumers call `.github/workflows/release-lifecycle.yml` at a reviewed full SHA;
+xref:workflows.adoc#the-three-workflows[the lifecycle chapter] describes the
+caller and required aggregate. Its wrappers keep the execution boundary explicit:
+
+* `actions/lifecycle-tool` builds only named shared utilities from its own action
+  revision, with fixed implementation compilers. It runs in read-only jobs and
+  returns executable/helper paths and the observed tooling compiler version.
+* `actions/setup-package-compiler` installs one exact resolved nightly before
+  candidate checkout, rejects existing workspace compiler entries, and retains
+  the installation outside the workspace. Its outputs are the absolute compiler
+  path and observed version; it never resolves a second latest nightly.
+* `actions/admit-release` uses its own locked tooling, with no consumer checkout
+  or Blueprint evaluation. Its `discover`, `extract`, `assemble`, `collect` and
+  `verify-provenance` phases handle bounded inert metadata and files. Exact
+  artifact IDs/digests and the complete admitted file list carry the handoff.
+
+The shared publisher repeats independent admission after the protected release
+job starts, attests and verifies every explicit subject, and invokes the
+publisher below with `require-admission: true`. Optional Pages restoration runs
+read-only after publication and supplies only the verified site directory to a
+separate deploy job. Local fixtures and wrapper configuration do not establish
+that a consuming repository's environment rules or protected dispatch worked;
+those require the actual observations described in
+xref:security-model.adoc#independent-lifecycle-admission[independent admission].
+
 [#publish-release]
 == `actions/publish-release`
 
@@ -393,10 +421,12 @@ publish:
           candidate/docs/*.pdf
 ----
 
-The job names the `release` environment, holds `contents: write` and nothing
-else, and has no checkout step. Its only inputs are the artifact the build job
-uploaded and the test jobs verified. What the assets are, how they are built and
-tested, and any attestation of them stay in the repository's earlier jobs.
+The action needs `contents: write` and runs without a consumer checkout. The
+example describes its low-level interface. Product repositories adopt the shared
+lifecycle caller: that workflow owns the build/test graph and gives its protected
+publication job the additional read and attestation permissions needed for
+independent admission and provenance verification. The publisher receives the
+resulting explicit file set and admission report.
 
 [cols="2,2,4",options="header"]
 |===
@@ -407,6 +437,8 @@ tested, and any attestation of them stay in the repository's earlier jobs.
 | `notes-file` | required | Path of the rendered release notes, which become the body of the release
 | `assets` | required | Globs of the tested files, one per line, relative to the workspace
 | `tag` | `version` | The tag to create: the version, or `<name>-<version>` in a repository that releases more than one thing
+| `admission-file` | empty | Independent exact-file admission report supplied by the shared lifecycle
+| `require-admission` | `false` | The shared lifecycle sets `true`; missing or mismatched source/run/version/notes/assets evidence is refused before publication
 | `target` | `${{ github.sha }}` | Full SHA of the tested commit the tag points at
 | `token` | `${{ github.token }}` | A token with `contents: write` on the repository
 |===

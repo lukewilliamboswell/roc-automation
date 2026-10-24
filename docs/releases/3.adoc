@@ -1,5 +1,26 @@
 = roc-automation 3
 
+== Shared validation and release lifecycle
+
+Source checks and release rehearsal share one centrally maintained lifecycle.
+Consumers keep inert topology, cases, authored notes, compositions and bounded
+native tasks; shared tooling owns compiler selection, the job graph, transport
+and the stable aggregate verdict. Independent admission binds exact files to
+actual source/run/workflow and original producer identities. Native host inputs
+remain intermediates verified against bundle members; public binaries require
+consuming target evidence. The protected publisher re-admits, verifies provenance
+and reads back uploaded bytes. Optional Pages deployment restores the admitted
+documentation ZIP without rendering again.
+
+The examples engine serves source, candidate and published suites, including
+bounded LLVM fuzz builds, opt-in output normalization and explicit local-only
+expectation updates. Blueprint setup admits reviewed Windows executables and
+rehashes cached executable bytes. The renderer delegates source listing selection
+to the pinned parser API, retaining checked tags, line selections and indentation.
+See xref:workflows.adoc#the-three-workflows[the lifecycle],
+xref:shared-utilities.adoc#shared-lifecycle-executable-interface[utility interfaces]
+and xref:examples.adoc#update-local-expectations-explicitly[local updates].
+
 == Shared SBOM sidecars and supplier chaining
 
 Two shared actions put Blueprint's standalone SBOM tool, the native
