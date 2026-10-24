@@ -32,7 +32,7 @@ content identity, provenance and product correctness are different evidence.
 | Exact-source/run binding, archive tests, complete inventories, post-upload verification and recovery tests. Matching hashes alone do not prove a reproducible build.
 
 | Source roles or native targets are confused
-| Make the selected input and target explicit. See xref:repository.adoc#risk-source-boundaries[source boundaries] and xref:platforms.adoc#risk-native-targets[native targets].
+| Make the selected input and target explicit. See xref:repository.adoc#risk-source-boundaries[source boundaries] and xref:platforms.adoc#risk-native-targets[native targets] and xref:platforms.adoc#provision-native-windows-hosts[native Windows provisioning].
 | Header/binding checks and actual link/run tests for every claimed target. Static declarations and cross-compilation do not establish native behavior or FFI safety.
 
 | Partial, stale or unrelated results appear successful

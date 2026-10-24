@@ -132,6 +132,32 @@ jobs:
           test "$(command -v blueprint)" = "$BLUEPRINT"
           nix --version
           blueprint --help
+  setup-blueprint-windows:
+    name: Native Windows Blueprint task (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use the native-only fixture as the consumer
+        shell: pwsh
+        run: Copy-Item tests/fixtures/windows-blueprint/* . -Force
+      - id: blueprint
+        uses: ./actions/setup-blueprint
+      - name: Run setup regressions on native Windows
+        shell: pwsh
+        run: python -m unittest discover -s tests -p test_setup_blueprint.py -v
+      - name: Execute a consumer task without Nix or a host Roc compiler
+        shell: pwsh
+        run: |
+          if ((Get-Command blueprint).Source -ne '${{ steps.blueprint.outputs.blueprint-path }}') { throw 'wrong Blueprint on PATH' }
+          blueprint run smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   nightly-report-action:
     runs-on: ubuntu-24.04
     permissions:

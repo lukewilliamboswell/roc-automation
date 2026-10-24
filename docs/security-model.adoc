@@ -236,6 +236,15 @@ before use. Corrupt artifacts and their derived trees are discarded and refetche
 a mismatching download is not usable. Derived trees are rebuilt on a fresh
 runner rather than trusted from a cache. GitHub cache-hit status is not admission.
 Roc's package cache is separate and is not included by this action.
+On native Windows the installer rejects reparse-point cache files and directories,
+opens cache files without following a reparse point, and admits the copied bytes
+by the same digest before exposing `blueprint.exe`. Windows uses the runner
+account's filesystem ACLs rather than Unix mode bits. Artifact caching follows
+Blueprint's `XDG_CACHE_HOME`, then `LOCALAPPDATA`, then `HOME/.cache` convention.
+Native Windows tests exercise the installer and a real Blueprint task;
+unit tests reject wrong hashes, old releases without reviewed Windows bytes
+and requests for unavailable Nix. These controls assume the disposable runner
+account and its parent directories have not been compromised.
 
 `actions/blueprint-tool` runs a repository task and therefore belongs only in
 read-only build jobs. The task resolves a temporary program link before its

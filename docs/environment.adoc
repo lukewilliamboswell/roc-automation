@@ -191,7 +191,11 @@ the latest nightly, then calls a task:
 . Run `blueprint run <task>`.
 
 A matrix names only runners Blueprint supports: x86_64 and arm64 Linux, and
-Apple Silicon macOS. It cannot include an Intel macOS runner. A platform can
+Apple Silicon macOS, and native x64 Windows with Blueprint 0.6.0 or later.
+On Windows use `Programs`/`Fetch` and `Expect`, keep `install-nix` false,
+and name script interpreters explicitly; see
+xref:platforms.adoc#provision-native-windows-hosts[Provision native Windows hosts].
+It cannot include an Intel macOS runner. A platform can
 still cross-compile a host for that target in
 xref:platforms.adoc#the-builder-job[the builder job], but no job runs the
 repository's scripts there.

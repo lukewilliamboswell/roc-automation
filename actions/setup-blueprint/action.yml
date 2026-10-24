@@ -27,6 +27,10 @@ inputs:
     description: Reviewed SHA-256 of the blueprint-aarch64-darwin binary, for a release this action does not record
     default: ''
 
+  sha256-x86_64-windows:
+    description: Reviewed SHA-256 of blueprint-x86_64-windows.exe, for a release this action does not record
+    default: ''
+
 outputs:
   binary-cache-hit:
     description: Whether a restored executable passed SHA-256 verification and avoided a release download
@@ -74,8 +78,10 @@ runs:
         INPUT_SHA256_X86_64_LINUX: ${{ inputs.sha256-x86_64-linux }}
         INPUT_SHA256_AARCH64_LINUX: ${{ inputs.sha256-aarch64-linux }}
         INPUT_SHA256_AARCH64_DARWIN: ${{ inputs.sha256-aarch64-darwin }}
+        INPUT_SHA256_X86_64_WINDOWS: ${{ inputs.sha256-x86_64-windows }}
         INSTALLER: ${{ github.action_path }}/setup_blueprint.py
-      run: python3 "$INSTALLER" --prepare
+      run: |
+        if [[ "$RUNNER_OS" == Windows ]]; then python "$INSTALLER" --prepare; else python3 "$INSTALLER" --prepare; fi
 
     - id: executable
       name: Restore and save reviewed Blueprint executable bytes
@@ -97,8 +103,10 @@ runs:
         INPUT_SHA256_X86_64_LINUX: ${{ inputs.sha256-x86_64-linux }}
         INPUT_SHA256_AARCH64_LINUX: ${{ inputs.sha256-aarch64-linux }}
         INPUT_SHA256_AARCH64_DARWIN: ${{ inputs.sha256-aarch64-darwin }}
+        INPUT_SHA256_X86_64_WINDOWS: ${{ inputs.sha256-x86_64-windows }}
         INSTALLER: ${{ github.action_path }}/setup_blueprint.py
-      run: python3 "$INSTALLER"
+      run: |
+        if [[ "$RUNNER_OS" == Windows ]]; then python "$INSTALLER"; else python3 "$INSTALLER"; fi
 
     - name: Install Nix when requested
       if: inputs.install-nix == 'true'

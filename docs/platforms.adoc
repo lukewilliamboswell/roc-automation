@@ -138,6 +138,169 @@ The native toolchains come from `Blueprint.roc`, as described in
 xref:environment.adoc#declare-the-environment[Declare the environment], so a
 contributor and every CI job compile the host with the same versions.
 
+[#provision-native-windows-hosts]
+=== Provision native Windows hosts
+
+Use Blueprint 0.6.0 or later for `x86_64-windows`. Windows is a native runner,
+not a Nix environment. Declare it in `Systems`, fetch tools from their reviewed
+release recipes, and commit the resulting `Blueprint.lock`. A version belongs
+in one declaration; runner labels select systems, not tool versions.
+
+For example, this host uses Zig on all three operating systems. Its
+repository-owned `build.zig` defines the `test` step that builds the host and
+runs its native tests. If it also invokes Cargo, Rust is provisioned from the
+repository's `rust-toolchain.toml` below. Use the Blueprint 0.8.0 platform URL
+shown here and keep the setup action pinned to the same reviewed action commit
+on every runner.
+
+[source,roc]
+----
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst" }
+
+import pf.Config
+import pf.System
+
+zig_version = "0.16.0"
+
+config = [
+    Name("native-host"),
+    Systems(["x86_64-linux", "aarch64-darwin", "x86_64-windows"]),
+    Environment("host", [
+        Programs([Fetch("zig", zig)]),
+        Expect(["rustup", "cargo"]),
+    ]),
+    Task("test-host", [Use("host"), Run(["zig", "build", "test"])]),
+]
+
+zig : System -> Config.Download
+zig = |system| {
+    base = "https://ziglang.org/download/${zig_version}"
+    match system {
+        "x86_64-linux" => {
+            name = "zig-x86_64-linux-${zig_version}"
+            Archive("${base}/${name}.tar.xz", TarXz, "${name}/zig")
+        }
+        "aarch64-darwin" => {
+            name = "zig-aarch64-macos-${zig_version}"
+            Archive("${base}/${name}.tar.xz", TarXz, "${name}/zig")
+        }
+        "x86_64-windows" => {
+            name = "zig-x86_64-windows-${zig_version}"
+            Archive("${base}/${name}.zip", Zip, "${name}/zig.exe")
+        }
+        _ => Unavailable
+    }
+}
+----
+
+Run `blueprint update` when adopting or changing the recipe. Review the URL,
+length and digest for every system in `Blueprint.lock`; subsequent builds
+verify those recorded bytes, including cache hits. A platform may keep
+Nix-only environments for separate Linux jobs, but the environment selected by
+the Windows task must contain no Nix-sourced tools or Nix builds.
+
+Rustup remains the source of Rust's channel selection. Commit one
+`rust-toolchain.toml`, for example:
+
+[source,toml]
+----
+[toolchain]
+channel = "1.95.0"
+profile = "minimal"
+components = ["rustfmt"]
+----
+
+Install what that file declares rather than repeating its channel in YAML.
+This `scripts/setup_rust.py` uses Python 3.11 or later and the standard library:
+
+[source,python]
+----
+import argparse
+from pathlib import Path
+import subprocess
+import tomllib
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--target")
+args = parser.parse_args()
+toolchain = tomllib.loads(Path("rust-toolchain.toml").read_text())["toolchain"]
+command = ["rustup", "toolchain", "install", toolchain["channel"],
+           "--profile", toolchain.get("profile", "minimal")]
+for component in toolchain.get("components", []):
+    command += ["--component", component]
+for target in dict.fromkeys(toolchain.get("targets", []) +
+                            ([args.target] if args.target else [])):
+    command += ["--target", target]
+subprocess.run(command, check=True)
+----
+
+The complete native host job matrix then has no copied Zig or Rust versions.
+Hosted runners supply Git Bash, Python and rustup; these bootstrap/runtime tools
+are separate from the host compiler pins. Resolve `REVIEWED_FULL_SHA` to the
+reviewed setup action commit before copying the job. Each native test must
+fail the task when the host cannot link or run.
+
+[source,yaml]
+----
+permissions: {}
+jobs:
+  host:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            python: python3
+          - runner: macos-15
+            python: python3
+          - runner: windows-2025
+            python: python
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@REVIEWED_FULL_SHA
+      - name: Provision the declared Rust channel
+        shell: bash
+        env:
+          PYTHON_COMMAND: ${{ matrix.python }}
+        run: '"$PYTHON_COMMAND" scripts/setup_rust.py'
+      - name: Build and execute the native host tests
+        shell: bash
+        run: blueprint run test-host
+----
+
+For a Windows GNU LLVM Rust target, pass
+`--target x86_64-pc-windows-gnullvm` to the provisioning script and configure
+the host build to select that target. `rustup toolchain install` adds it to the
+same manifest-selected channel; there is no second channel string. Adding a
+Rust target installs its standard library, not its linker or Windows SDK.
+Declare the linker and SDK inputs the host actually needs, using fetched,
+locked tools where available. For MSVC, account for the native SDK and Visual
+Studio tools supplied by the runner. A runner label is not an immutable SDK
+pin; include those identities in native build evidence and reuse fingerprints.
+If the host needs no Rust, remove the Rust provisioning step and its `Expect`
+entries.
+
+Scripts run through an explicit interpreter on Windows: do not rely on a
+Unix shebang or executable mode bit. When linking Roc applications, use
+`roc build --no-cache` on native Windows while
+https://github.com/roc-lang/roc/issues/12429[roc#12429] applies. This flag does
+not rebuild already selected native dependencies or replace testing the exact
+candidate bundle.
+
+A copied version in a setup action can silently select a different compiler on
+Windows. The shared installer removes that copy, checks the same reviewed
+digest before exposing `blueprint.exe`, and refuses `install-nix: true` before
+downloading. Installer regressions cover the Windows system, hash rejection,
+cache reuse and missing older-release digests; the hosted Windows fixture runs
+an actual Blueprint task. Native host execution remains the repository's test:
+configuration validation alone does not establish that a host works, or that
+an ambient SDK and the runner account are trustworthy.
+
 == Several platforms in one repository
 
 A repository that publishes more than one platform, such as a web platform and

@@ -27,7 +27,12 @@ consumer configuration retain their own verification and trust requirements.
 Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
 installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
-The setup action builds nothing.
+The setup action builds nothing. It supports x64 and arm64 Linux, Apple Silicon
+macOS, and x64 Windows. Windows releases are recorded from Blueprint 0.6.0;
+the installed command is `blueprint.exe`. Leave `install-nix` false on Windows:
+a native Windows request for Nix fails before any binary download. Use
+`Programs`/`Fetch` and `Expect`, as the
+xref:platforms.adoc#provision-native-windows-hosts[native host guide] describes.
 
 The executable cache is enabled by default. Its exact identity includes the
 Blueprint release, runner system and reviewed SHA-256. Restored bytes are copied
@@ -71,6 +76,7 @@ workflow cannot disagree with it.
 | `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-darwin` | Reviewed SHA-256 of the binary for Apple Silicon macOS runners. Overrides the recorded value.
+| `sha256-x86_64-windows` | Reviewed SHA-256 of `blueprint-x86_64-windows.exe` for native x64 Windows runners. Overrides the recorded value.
 |===
 
 Outputs are `blueprint-path`, the absolute path of the installed binary,
