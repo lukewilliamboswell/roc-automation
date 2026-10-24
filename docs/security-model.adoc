@@ -351,6 +351,18 @@ trace/file uploads and malformed inventories; this establishes extraction
 safety, not the authority or correctness of the files. Lifecycle admission
 still binds each file to its expected producer, source and role.
 
+For a native platform, a successful host job must not stand in for proof that
+the distributed bundle contains its host. The helper's `--bundle` mode hashes
+the actual regular members of the digest-verified tar.zst file. The controller
+runs its own pinned `zstd`, bounds the decompressed temporary regular file to
+100 MB, and rejects links, special files, extension headers, duplicate/colliding
+paths and hidden trailing inventories before publishing the member JSON. It
+extracts and executes nothing from the bundle. Admission compares each declared
+host intermediate with its owning bundle member by path, size and SHA-256.
+Tests include PAX/GNU metadata, oversized streams, decoder cleanup and a real
+Roc-produced bundle. These checks establish byte membership, not that a host
+or its build tools behave correctly.
+
 Child deadlines manage Windows Job
 Objects or Unix process groups, and public environment overrides cannot replace
 reserved variables under any spelling of their case. Archived code and native

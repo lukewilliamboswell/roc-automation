@@ -1,7 +1,9 @@
-"""Verify and extract inert examples or workflow-artifact ZIPs on every host.
+"""Admit inert archives, extract ZIPs and hash exact tar.zst bundle members.
 
-Only the standard library is needed. Nothing in the archive is executed here.
-The entire inventory is validated before the destination directory is created.
+ZIP operations need only the standard library. Bundle inventory uses the
+controller's reviewed zstd for bounded decompression, then Python tar headers.
+Nothing in an archive is executed; bundles are never extracted. The entire
+ZIP inventory is validated before the destination directory is created.
 """
 import hashlib
 import json
@@ -11,6 +13,9 @@ import re
 import shutil
 import stat
 import sys
+import subprocess
+import tarfile
+import tempfile
 import zipfile
 
 MAX_ARCHIVE = 50_000_000
@@ -21,13 +26,49 @@ RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"
 
 def canonical(name):
     if not name or name.startswith("/") or len(name) > 4096:
-        raise ValueError("unsafe ZIP path")
+        raise ValueError("unsafe archive path")
     for part in name.split("/"):
         if (not re.fullmatch(r"[A-Za-z0-9_.-]{1,255}", part)
                 or part in (".", "..") or part.endswith(".")
                 or part.split(".", 1)[0].upper() in RESERVED):
-            raise ValueError("unsafe ZIP path or reserved Windows filename")
+            raise ValueError("unsafe archive path or reserved Windows filename")
     return name
+
+
+class Inventory:
+    """Shared cross-platform path, collision and resource admission."""
+    def __init__(self):
+        self.seen, self.spellings, self.files, self.directories = set(), {}, set(), set()
+        self.expanded = 0
+        self.entries = 0
+
+    def add(self, name, directory, size):
+        self.entries += 1
+        if self.entries > MAX_ENTRIES:
+            raise ValueError("archive entry limit exceeded")
+        name = canonical(name)
+        key = name.lower()
+        if key in self.seen:
+            raise ValueError("duplicate or case-colliding archive member")
+        self.seen.add(key)
+        parts = name.split("/")
+        for length in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:length])
+            previous = self.spellings.setdefault(prefix.lower(), prefix)
+            if previous != prefix:
+                raise ValueError("case-colliding archive directory")
+        if size < 0 or (directory and size):
+            raise ValueError("archive directory has file content or negative size")
+        self.expanded += size
+        if self.expanded > MAX_EXPANDED:
+            raise ValueError("archive expansion limit exceeded")
+        (self.directories if directory else self.files).add(key)
+        self.directories.update("/".join(parts[:length]).lower() for length in range(1, len(parts)))
+        return name
+
+    def finish(self):
+        if not self.entries or self.files & self.directories:
+            raise ValueError("empty archive or file/directory collisions")
 
 
 def inventory(archive, root=None):
@@ -39,8 +80,7 @@ def inventory(archive, root=None):
     entries = archive.infolist()
     if not entries or len(entries) > MAX_ENTRIES:
         raise ValueError("examples ZIP entry limit exceeded")
-    seen, spellings, files, directories = set(), {}, set(), set()
-    expanded = 0
+    checked = Inventory()
     for entry in entries:
         # orig_filename retains NUL bytes which ZipInfo.filename truncates.
         if entry.orig_filename != entry.filename:
@@ -48,17 +88,6 @@ def inventory(archive, root=None):
         name = canonical(entry.filename.removesuffix("/"))
         if root is not None and name != root and not name.startswith(root + "/"):
             raise ValueError("ZIP member escapes the declared root")
-        key = name.lower()
-        if key in seen:
-            raise ValueError("duplicate or case-colliding ZIP member")
-        seen.add(key)
-        # Include implicit parents: A/file and a/other collide on Windows too.
-        parts = name.split("/")
-        for length in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:length])
-            previous = spellings.setdefault(prefix.lower(), prefix)
-            if previous != prefix:
-                raise ValueError("case-colliding ZIP directory")
         mode = entry.external_attr >> 16
         kind = stat.S_IFMT(mode)
         directory = entry.is_dir()
@@ -75,26 +104,29 @@ def inventory(archive, root=None):
             raise ValueError("encrypted or unsupported ZIP compression")
         if directory and entry.file_size:
             raise ValueError("ZIP directory has file content")
-        expanded += entry.file_size
-        if expanded > MAX_EXPANDED:
-            raise ValueError("examples ZIP expansion limit exceeded")
-        (directories if directory else files).add(key)
-        directories.update("/".join(parts[:length]).lower() for length in range(1, len(parts)))
-    if files & directories or (root is not None and not any(entry.filename == root + "/spec.json" for entry in entries)):
-        raise ValueError("ZIP lacks spec.json or has file/directory collisions")
+        checked.add(name, directory, entry.file_size)
+    checked.finish()
+    if root is not None and not any(entry.filename == root + "/spec.json" for entry in entries):
+        raise ValueError("ZIP lacks spec.json")
     return entries
+
+
+def checked_source(source, digest):
+    if source.is_symlink() or not stat.S_ISREG(source.stat().st_mode):
+        raise ValueError("archive input must be a regular file")
+    if source.stat().st_size > MAX_ARCHIVE:
+        raise ValueError("archive download limit exceeded")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise ValueError("invalid archive SHA-256")
+    with source.open("rb") as stream:
+        actual = hashlib.sha256(stream.read(MAX_ARCHIVE + 1)).hexdigest()
+    if "sha256:" + actual != digest:
+        raise ValueError("archive SHA-256 changed")
 
 
 def prepare(source, digest, root, destination):
     source, destination = Path(source), Path(destination)
-    if source.stat().st_size > MAX_ARCHIVE:
-        raise ValueError("examples ZIP download limit exceeded")
-    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-        raise ValueError("invalid examples ZIP SHA-256")
-    with source.open("rb") as stream:
-        actual = hashlib.sha256(stream.read(MAX_ARCHIVE + 1)).hexdigest()
-    if "sha256:" + actual != digest:
-        raise ValueError("examples archive SHA-256 changed")
+    checked_source(source, digest)
     with zipfile.ZipFile(source) as archive:
         entries = inventory(archive, root)
         print(json.dumps([dict(name=entry.filename, size=entry.file_size) for entry in entries]), flush=True)
@@ -124,16 +156,96 @@ def prepare(source, digest, root, destination):
             raise
 
 
+def bundle_members(stream):
+    """Read bounded tar records with tarfile's header parser, never extract.
+
+    Reject extension headers before their payload can alter a later member's
+    interpretation. This also prevents PAX/GNU recursion or hidden inventories.
+    """
+    checked = Inventory()
+    members = []
+    while True:
+        header = stream.read(tarfile.BLOCKSIZE)
+        if len(header) != tarfile.BLOCKSIZE:
+            raise ValueError("truncated bundle tar header or missing terminator")
+        if header == bytes(tarfile.BLOCKSIZE):
+            if stream.read(tarfile.BLOCKSIZE) != bytes(tarfile.BLOCKSIZE):
+                raise ValueError("bundle tar requires two zero terminator blocks")
+            while chunk := stream.read(65536):
+                if any(chunk):
+                    raise ValueError("nonzero data after bundle tar terminator")
+            break
+        member = tarfile.TarInfo.frombuf(header, "utf-8", "strict")
+        if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE):
+            raise ValueError("bundle links, special files and extension headers are forbidden")
+        # Tar names are fixed NUL-padded fields, not NUL-truncated aliases.
+        for field in (header[:100], header[345:500]):
+            if b"\0" in field and any(field.split(b"\0", 1)[1]):
+                raise ValueError("bundle tar name contains hidden bytes after NUL")
+        directory = member.isdir()
+        if not directory and member.name.endswith("/"):
+            raise ValueError("regular bundle member has a directory name")
+        name = checked.add(member.name.removesuffix("/"), directory, member.size)
+        digest = hashlib.sha256()
+        remaining = member.size
+        while remaining:
+            chunk = stream.read(min(65536, remaining))
+            if not chunk:
+                raise ValueError("truncated bundle member")
+            digest.update(chunk)
+            remaining -= len(chunk)
+        padding = (-member.size) % tarfile.BLOCKSIZE
+        if stream.read(padding) != bytes(padding):
+            raise ValueError("truncated or nonzero bundle member padding")
+        if not directory:
+            members.append(dict(path=name, size=member.size, sha256=digest.hexdigest()))
+    checked.finish()
+    return dict(schema=1, members=sorted(members, key=lambda item: item["path"]))
+
+
+def inspect_bundle(source, digest, output):
+    source, output = Path(source), Path(output)
+    checked_source(source, digest)
+    # The controller supplies its own reviewed zstd through its pinned tooling
+    # environment. Candidate Blueprint files and executables play no part.
+    with tempfile.TemporaryFile() as expanded:
+        child = subprocess.Popen([os.environ.get("RA_ZSTD", "zstd"), "--decompress", "--stdout", "--memory=100MB", "--", str(source)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        try:
+            length = 0
+            while chunk := child.stdout.read(65536):
+                length += len(chunk)
+                if length > MAX_EXPANDED:
+                    raise ValueError("bundle tar byte limit exceeded")
+                expanded.write(chunk)
+            if child.wait(timeout=30) != 0:
+                raise ValueError("zstd rejected the bundle")
+        except BaseException:
+            child.kill()
+            child.wait()
+            raise
+        finally:
+            child.stdout.close()
+        expanded.seek(0)
+        result = bundle_members(expanded)
+    # No inventory is published until every member has been checked and hashed.
+    with output.open("x", encoding="utf-8") as target:
+        json.dump(result, target, separators=(",", ":"))
+        target.write("\n")
+
+
 def main():
     try:
         if len(sys.argv) != 5:
-            raise ValueError("expected archive, digest, root and destination; or --artifact archive digest destination")
-        if sys.argv[1] == "--artifact":
+            raise ValueError("expected ZIP digest root destination; --artifact ZIP digest destination; or --bundle FILE digest output.json")
+        if sys.argv[1] == "--bundle":
+            inspect_bundle(sys.argv[2], sys.argv[3], sys.argv[4])
+        elif sys.argv[1] == "--artifact":
             prepare(sys.argv[2], sys.argv[3], None, sys.argv[4])
         else:
             prepare(*sys.argv[1:])
-    except (OSError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile) as error:
-        print("ZIP verification failed: " + str(error), file=sys.stderr)
+    except (OSError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile, tarfile.TarError, UnicodeError, subprocess.SubprocessError) as error:
+        print("archive verification failed: " + str(error), file=sys.stderr)
         return 1
     return 0
 
