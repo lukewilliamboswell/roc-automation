@@ -365,6 +365,40 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('1.1. ',html); self.assertIn('2.1. ',html)
         self.assertRegex(html,r'<li><a href="#first">1\. First</a><ul>')
         self.assertEqual(len(page.ids),len(set(page.ids)))
+    def test_renamed_explicit_heading_keeps_legacy_alias_and_canonical_routes(self):
+        self.source('index.adoc', '= Guide\n\ninclude::a.adoc[leveloffset=+1]\n\ninclude::b.adoc[leveloffset=+1]\n\nxref:b.adoc#shared[Renamed]\n')
+        self.source('a.adoc', '= First\n\n[#shared]\n== Original heading\n')
+        self.source('b.adoc', '= Second\n\n[#shared]\n== Renamed heading\n')
+        self.run_build('--markdown', 'true')
+        output = self.root/'.docs-out'
+        html = (output/'site/index.html').read_text(); ids = Html(html).ids
+        self.assertIn('id="b-shared"', html)
+        self.assertIn('<span class="anchor-alias" id="shared-2"></span>', html)
+        self.assertIn('href="#b-shared"', html)
+        self.assertIn('shared', Html((output/'site/b.html').read_text()).ids)
+        self.assertEqual(len(ids), len(set(ids)))
+        # Legacy aliases are HTML navigation only. Markdown/PDF preparation
+        # keeps the canonical source-qualified destinations unchanged.
+        markdown = (output/'site/index.md').read_text()
+        self.assertIn('<a id="b-shared"></a>', markdown)
+        self.assertNotIn('anchor-alias', markdown)
+        self.assertNotIn('<a id="shared-2"></a>', markdown)
+
+    def test_legacy_alias_never_shadows_primary_or_previously_emitted_alias(self):
+        for reserved_primary in (True, False):
+            with self.subTest(reserved_primary=reserved_primary):
+                prefix = '[#shared-2]\n== Reserved primary\n' if reserved_primary else '[#one]\n== Shared\n\n[#two]\n== Shared\n'
+                self.source('index.adoc', '= Guide\n\n' + prefix + '\ninclude::a.adoc[leveloffset=+1]\n\ninclude::b.adoc[leveloffset=+1]\n')
+                self.source('a.adoc', '= First\n\n[#shared]\n== Old heading\n')
+                self.source('b.adoc', '= Second\n\n[#shared]\n== New heading\n')
+                self.run_build()
+                html = (self.root/'.docs-out/site/index.html').read_text(); ids = Html(html).ids
+                self.assertEqual(ids.count('shared-2'), 1)
+                self.assertIn('b-shared', ids)
+                self.assertEqual(len(ids), len(set(ids)))
+                if reserved_primary:
+                    self.assertNotIn('<span class="anchor-alias" id="shared-2">', html)
+
     def test_prepared_vectors_use_picture_and_png_fallback_and_reject_active_svg(self):
         body='flowchart LR\n  First --> Last\n'
         self.source('index.adoc','= Diagrams\n\n.A useful diagram\n[mermaid]\n....\n'+body+'....\n')

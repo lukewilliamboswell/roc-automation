@@ -111,7 +111,9 @@ try {
   const index = inventory['index.html'];
   assert.ok(index.nested > 0, 'Manual TOC has no hierarchy');
   assert.ok(index.ids.includes('reporting-2') && index.ids.includes('the-three-workflows-2'), 'Legacy anchors missing');
-  assert.equal(index.images.filter(image => image.src.endsWith('.svg')).length, 6, 'Manual must use six vector diagrams');
+  // Two platform diagrams, one testing diagram and one workflow diagram.
+  // Mermaid in a source listing is not an image.
+  assert.equal(index.images.filter(image => image.src.endsWith('.svg')).length, 4, 'Manual must use four vector diagrams');
   assert.equal(await evaluate(`['Space Grotesk','Plus Jakarta Sans'].every(name => [...document.fonts].some(face => face.family.includes(name) && face.status === 'loaded'))`), true, 'Vendored reading fonts not loaded');
   assert.ok(index.sidebars > 0, 'Introduction lost its sidebar/description list');
   assert.ok(index.captions[0].startsWith('Figure 1.'), 'Figure caption numbering missing');
@@ -147,7 +149,7 @@ try {
     await evaluate('scrollTo({top:0,behavior:"instant"})');
     await fs.writeFile(path.join(screenshots, 'mobile.png'), Buffer.from((await cdp('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   }
-  console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:6,darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed'}, null, 2));
+  console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:4,darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed'}, null, 2));
 } finally {
   // Let Chrome flush its profile and stop renderers before removing it. A
   // parent-only SIGTERM can leave Linux helper processes briefly writing files.
