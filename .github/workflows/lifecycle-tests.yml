@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions: {}
+concurrency:
+  group: lifecycle-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   native:
     name: Native contracts (${{ matrix.runner }})

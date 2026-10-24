@@ -13,7 +13,7 @@ on:
 permissions: {}
 concurrency:
   group: release-tools-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   lifecycle-native-build:
     uses: lukewilliamboswell/roc-automation/.github/workflows/build-lifecycle-native.yml@b4d1baa4362405044db5427f222137f118a5bbd1
