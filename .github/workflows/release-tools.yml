@@ -135,6 +135,13 @@ jobs:
           cp tests/test_release_compatibility.py tests/test_compatibility_archive.py compatibility-tests/tests/
           cp tests/fixtures/compatibility_example.py tests/fixtures/compatibility_launcher.c compatibility-tests/tests/fixtures/
           test -s dist/release-compatibility-archive.py
+      - name: Include source-free lifecycle contract regressions
+        run: |
+          mkdir -p lifecycle-tests/tests/fixtures lifecycle-tests/actions/release-compatibility
+          cp tests/test_lifecycle_plan.py tests/test_lifecycle_github.py tests/test_lifecycle_transport.py tests/test_transport_environment.py tests/test_lifecycle_admission.py tests/test_release_operations.py lifecycle-tests/tests/
+          cp -R tests/fixtures/lifecycle lifecycle-tests/tests/fixtures/
+          cp tests/fixtures/compatibility_launcher.c lifecycle-tests/tests/fixtures/
+          cp actions/release-compatibility/archive.py lifecycle-tests/actions/release-compatibility/
       - name: Include the policy dictionary permission notice
         run: cp tools/roc-policy/vendor/typos/LICENSE-MIT dist/roc-policy-dictionary-LICENSE-MIT.txt
       - name: Include the source-free policy test harness
@@ -184,6 +191,7 @@ jobs:
             policy-tests/test_cli.py
             docs-tests/
             compatibility-tests/
+            lifecycle-tests/
 
   # The exact files that would be published, on a runner with no checkout, no
   # Nix and no compiler: what a calling job has when an action runs one.
@@ -252,6 +260,18 @@ jobs:
           ROC_COMPATIBILITY_BINARY: ${{ github.workspace }}/tools/dist/release-compatibility-${{ matrix.system }}
           ROC_COMPATIBILITY_ARCHIVE_HELPER: ${{ github.workspace }}/tools/dist/release-compatibility-archive.py
         run: python3 -m unittest discover -s tools/compatibility-tests/tests -v
+
+      - name: Test the exact lifecycle tools without a source checkout or compiler
+        env:
+          ROC_RELEASE_PLAN_BINARY: ${{ github.workspace }}/tools/dist/release-plan-${{ matrix.system }}
+          ROC_RELEASE_ADMIT_BINARY: ${{ github.workspace }}/tools/dist/release-admit-${{ matrix.system }}
+          ROC_RELEASE_OPERATIONS_BINARY: ${{ github.workspace }}/tools/dist/release-operations-${{ matrix.system }}
+          ROC_LIFECYCLE_GITHUB_BINARY: ${{ github.workspace }}/tools/dist/lifecycle-github-${{ matrix.system }}
+          ROC_LIFECYCLE_TRANSPORT_BINARY: ${{ github.workspace }}/tools/dist/lifecycle-transport-${{ matrix.system }}
+          RA_ARCHIVE_HELPER: ${{ github.workspace }}/tools/lifecycle-tests/actions/release-compatibility/archive.py
+        working-directory: tools/lifecycle-tests
+        run: |
+          python3 -m unittest discover -s tests -v
 
   policy-test:
     name: Test exact policy artifact (${{ matrix.system }})

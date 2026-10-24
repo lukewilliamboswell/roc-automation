@@ -115,7 +115,7 @@ runs:
             "$BLUEPRINT" run lifecycle-transport -- extract "$INPUT_TRANSPORT_MANIFEST" "$INPUT_RAW_DOWNLOADS" "$INPUT_OUTPUT_DIRECTORY" python3 "$ACTION_PATH/../release-compatibility/archive.py"
             ;;
           assemble)
-            "$BLUEPRINT" run lifecycle-transport -- assemble "$INPUT_TRACES" "$INPUT_CANDIDATE"
+            "$BLUEPRINT" run lifecycle-transport -- assemble-public "$INPUT_TRACES" "$INPUT_CANDIDATE"
             ;;
         esac
 

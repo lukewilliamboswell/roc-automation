@@ -36,6 +36,7 @@ jobs:
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_plan.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_github.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_transport.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_transport_environment.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_package_compiler_action.py -v
       - name: Build the trusted admission utility
         if: runner.os != 'Windows'

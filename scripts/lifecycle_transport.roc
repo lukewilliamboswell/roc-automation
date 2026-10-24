@@ -33,7 +33,8 @@ main! = |args| {
 	}
 	result = match args.map(OsStr.display) {
 		["extract", manifest, raw, destination, python, helper] => extract!(manifest, Path.utf8(raw), Path.utf8(destination), python, helper)
-		["assemble", evidence, destination] => assemble!(Path.utf8(evidence), Path.utf8(destination))
+		["assemble", evidence, destination] => assemble!(Path.utf8(evidence), Path.utf8(destination), Bool.True)
+		["assemble-public", evidence, destination] => assemble!(Path.utf8(evidence), Path.utf8(destination), Bool.False)
 		["restore", plan, candidate, workspace] => restore!(plan, Path.utf8(candidate), Path.utf8(workspace))
 		["pack", trace, candidate, metadata, diagnostics, destination] => pack!(Path.utf8(trace), Path.utf8(candidate), metadata, diagnostics, Path.utf8(destination))
 		["subject", plan, index, candidate] => subject_output!(plan, index, Path.utf8(candidate))
@@ -207,7 +208,7 @@ extract! = |manifest, raw, destination, python, helper| {
 	Ok({})
 }
 
-assemble! = |evidence, destination| {
+assemble! = |evidence, destination, include_hosts| {
 	if Path.exists!(destination).map_err(|_| "cannot inspect candidate output")? {
 		return Err("candidate output must be fresh")
 	}
@@ -230,7 +231,8 @@ assemble! = |evidence, destination| {
 			return Err("invalid trace profile or file inventory")
 		}
 		artifact_root = BuildFiles.parent_path(trace_file.absolute)
-		for relative in trace.files {
+		public_files = if trace.stage == "host" and !include_hosts [] else trace.files
+		for relative in public_files {
 			if !LifecyclePlan.safe_path(relative) or relative.ends_with("-trace.json") {
 				return Err("unsafe public candidate path")
 			}

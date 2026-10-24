@@ -178,6 +178,23 @@ class LifecycleTransportTests(unittest.TestCase):
         self.run_tool("assemble", self.extracted, self.candidate, success=False)
         self.assertEqual((self.candidate / "previous").read_bytes(), b"preserve")
 
+    def test_public_assembly_excludes_host_intermediates_but_retains_their_evidence(self):
+        artifacts = []
+        for index, stage in enumerate(("prepare", "host"), 1):
+            name = f"lifecycle-{stage}-ubuntu-24.04-1"
+            digest = self.archive(self.raw / name, stage)
+            artifacts.append(dict(id=index, name=name, digest=digest))
+        self.extract(artifacts)
+        host = self.extracted / artifacts[1]["name"]
+        (host / "dist/bundle.tar.zst").unlink()
+        (host / "native").mkdir()
+        (host / "native/host.a").write_bytes(b"linker input")
+        (host / "host-trace.json").write_bytes(self.trace("host", ["native/host.a"]))
+        self.run_tool("assemble-public", self.extracted, self.candidate)
+        self.assertEqual((self.candidate / "dist/bundle.tar.zst").read_bytes(), b"tested bytes")
+        self.assertFalse((self.candidate / "native").exists())
+        self.assertEqual((host / "native/host.a").read_bytes(), b"linker input")
+
 
 if __name__ == "__main__":
     unittest.main()
