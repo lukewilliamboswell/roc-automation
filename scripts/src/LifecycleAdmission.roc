@@ -1,3 +1,5 @@
+import "../../Blueprint.roc" as controller_blueprint : Str
+import Pins
 import GitHub
 import LifecycleJson
 import LifecyclePlan
@@ -13,9 +15,9 @@ LifecycleAdmission := [].{
 	File : { path : Str, role : Str, subject : Str, target : Str, size : U64, sha256 : Str }
 	Obligation : { id : Str, job_id : U64, run_attempt : U64 }
 	Artifact : { id : U64, digest : Str, job_id : U64, run_attempt : U64, trace_sha256 : Str, obligations : List(Str), files : List(Str), metadata : List({ path : Str, size : U64, sha256 : Str }) }
-	Evidence : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, obligations : List(Obligation), artifacts : List(Artifact), files : List(File), producer_evidence : List({ id : Str, sha256 : Str, document : Str, inventory_sha256 : Str, inventory_document : Str }) }
+	Evidence : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, obligations : List(Obligation), artifacts : List(Artifact), files : List(File), intermediates : List(File), producer_evidence : List({ id : Str, sha256 : Str, document : Str, inventory_sha256 : Str, inventory_document : Str }) }
 	ObservedFile : { path : Str, size : U64, sha256 : Str }
-	Report : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, policy_version : Str, schema_profile : Str, verdict : Str, publish : Bool, assets : List(File), notes_sha256 : Str, artifacts : List(Artifact) }
+	Report : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, policy_version : Str, schema_profile : Str, validator_version : Str, verdict : Str, publish : Bool, assets : List(File), intermediates : List(File), notes_sha256 : Str, artifacts : List(Artifact) }
 
 	## Reconstruct every obligation and asset role from reviewed topology, not
 	## the producer's matrix, pass flag or claimed inventory.
@@ -60,22 +62,11 @@ LifecycleAdmission := [].{
 				return Err("ADMIT_JOB: wrong source, run, attempt, runner or conclusion for ${required.id}")
 			}
 		}
-		if evidence.files.len() > 4096 or evidence.files.len() != plan.assets.len() or !unique(evidence.files.map(|file| lower(file.path))) {
-			return Err("ADMIT_FILES: empty, duplicate, missing or undeclared file set")
-		}
-		for file in evidence.files {
-			if !LifecyclePlan.safe_path(file.path) or file.path.to_utf8().len() > 240 or file.size > 536870912 or !LifecyclePlan.digest(file.sha256) {
-				return Err("ADMIT_FILE: unsafe path, excessive size or invalid digest")
-			}
-			matches = plan.assets.keep_if(|rule| rule.role == file.role and rule.subject == file.subject and rule.target == file.target and matches_path(rule.path, file.path))
-			if matches.len() != 1 {
-				return Err("ADMIT_ROLE: undeclared subject, role, target or path: ${file.path}")
-			}
-		}
-		for rule in plan.assets {
-			if evidence.files.keep_if(|file| rule.role == file.role and rule.subject == file.subject and rule.target == file.target and matches_path(rule.path, file.path)).len() != 1 {
-				return Err("ADMIT_ROLE: required role has missing or ambiguous files")
-			}
+		file_set(plan.assets, evidence.files)?
+		file_set(plan.intermediates, evidence.intermediates)?
+		all_files = evidence.files.concat(evidence.intermediates)
+		if all_files.len() > 4096 or !unique(all_files.map(|file| lower(file.path))) or all_files.fold(0.U64, |sum, file| sum + file.size) > 1073741824 {
+			return Err("ADMIT_FILES: combined public/intermediate paths collide or exceed limits")
 		}
 		# Sidecars for a hash-named bundle must use the SAME hash-named subject,
 		# rather than independently matching another valid-looking bundle name.
@@ -92,10 +83,10 @@ LifecycleAdmission := [].{
 				}
 			}
 		}
-		if actual.len() != evidence.files.len() or !unique(actual.map(|file| lower(file.path))) {
+		if actual.len() != all_files.len() or !unique(actual.map(|file| lower(file.path))) {
 			return Err("ADMIT_BYTES: actual directory differs from declared complete file set")
 		}
-		for file in evidence.files {
+		for file in all_files {
 			actual_file = actual.find_first(|item| item.path == file.path).map_err(|_| "ADMIT_BYTES: missing file ${file.path}")?
 			if actual_file.size != file.size or actual_file.sha256 != file.sha256 {
 				return Err("ADMIT_BYTES: size or SHA-256 differs for ${file.path}")
@@ -122,7 +113,7 @@ LifecycleAdmission := [].{
 			if remote.name != "lifecycle-${key}-${attempt.to_str()}" {
 				return Err("ADMIT_ARTIFACT: wrong immutable upload name for actual producer job")
 			}
-			if !unique(artifact.metadata.map(|item| lower(item.path))) or artifact.metadata.len() > 1024 or !artifact.metadata.all(|item| metadata_path(producer.stage, item.path) and item.size <= 1048576 and LifecyclePlan.digest(item.sha256)) or artifact.metadata.fold(0.U64, |sum, item| sum + item.size) > 33554432 {
+			if !unique(artifact.metadata.map(|item| lower(item.path))) or artifact.metadata.len() > 1024 or !artifact.metadata.all(|item| metadata_path(producer.stage, item.path) and item.size <= 10000000 and LifecyclePlan.digest(item.sha256)) or artifact.metadata.fold(0.U64, |sum, item| sum + item.size) > 100000000 {
 				return Err("ADMIT_METADATA: unsafe or excessive inert diagnostics")
 			}
 			if claims.len() != artifact.obligations.len() or !claims.all(|claim| artifact.obligations.contains(claim.id)) {
@@ -130,26 +121,156 @@ LifecycleAdmission := [].{
 			}
 			$transported = $transported.concat(artifact.files)
 		}
-		if LifecyclePlan.unique($transported).len() != evidence.files.len() or !evidence.files.all(|file| $transported.contains(file.path)) {
+		if LifecyclePlan.unique($transported).len() != all_files.len() or !all_files.all(|file| $transported.contains(file.path)) {
 			return Err("ADMIT_ARTIFACTS: artifact membership differs from complete file inventory")
+		}
+		for file in evidence.files {
+			producer_id = match file.role {
+				"notes" | "inventory" => "release-notes"
+				"spdx.json" | "cdx.json" | "sbom-manifest.json" => {
+					index = topology.sboms.find_first_index(|mapping| mapping.subject == file.subject and mapping.target == file.target).map_err(|_| "ADMIT_PRODUCER: no expected sidecar producer")?
+					"sbom-${index.to_str()}"
+				}
+				"binary" => {
+					adapter = topology.adapters.find_first(|item| item.operation == "build-host" and item.outputs.any(|output| output.role == "binary" and output.path == file.path and output.target == file.target)).map_err(|_| "ADMIT_PRODUCER: no expected native binary producer")?
+					"adapter-${adapter.id}"
+				}
+				_ => plan.obligations.find_first(|item| item.stage == "prepare" and item.runner == "ubuntu-24.04").map_err(|_| "ADMIT_PRODUCER: missing expected preparation job")?.id
+			}
+			claim = evidence.obligations.find_first(|item| item.id == producer_id).map_err(|_| "ADMIT_PRODUCER: no successful expected original producer")?
+			if !evidence.artifacts.any(|artifact| artifact.job_id == claim.job_id and artifact.run_attempt == claim.run_attempt and artifact.files.contains(file.path)) {
+				return Err("ADMIT_PRODUCER: final file is not present in its expected original producing artifact")
+			}
+		}
+		for file in evidence.intermediates {
+			adapter = topology.adapters.find_first(|item| item.operation == "build-host" and item.outputs.any(|output| output.role == "host" and output.path == file.path and output.target == file.target)).map_err(|_| "ADMIT_INTERMEDIATE: no expected native host producer")?
+			claim = evidence.obligations.find_first(|item| item.id == "adapter-${adapter.id}").map_err(|_| "ADMIT_INTERMEDIATE: no successful expected host obligation")?
+			if !evidence.artifacts.any(|artifact| artifact.job_id == claim.job_id and artifact.run_attempt == claim.run_attempt and artifact.files.contains(file.path)) {
+				return Err("ADMIT_INTERMEDIATE: host bytes are not bound to their exact producing job")
+			}
 		}
 		claimed_ids = evidence.artifacts.fold([], |ids, artifact| ids.concat(artifact.obligations))
 		if !unique(claimed_ids) or claimed_ids.len() != evidence.obligations.len() or !evidence.obligations.all(|item| claimed_ids.contains(item.id)) {
 			return Err("ADMIT_TRACE: missing, duplicated or undeclared trace obligations")
 		}
 		notes_sha256 = if plan.assets.is_empty() and !trusted.publish "" else evidence.files.find_first(|file| file.path == "release-notes.md").map_err(|_| "ADMIT_NOTES: missing exact rendered notes")?.sha256
-		Ok({ schema_version: 1, profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: evidence.producing_attempt, compiler: context.compiler, version, topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, policy_version: "roc-automation-release-policy-1", schema_profile: "release-evidence-1", verdict: "admitted", publish: trusted.publish, assets: evidence.files, notes_sha256, artifacts: evidence.artifacts })
+		Ok({ schema_version: 1, profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: evidence.producing_attempt, compiler: context.compiler, version, topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, policy_version: "roc-automation-release-policy-1", schema_profile: "release-evidence-1", validator_version: "roc-automation-release-admit-v1", verdict: "admitted", publish: trusted.publish, assets: evidence.files, intermediates: evidence.intermediates, notes_sha256, artifacts: evidence.artifacts })
+	}
+
+	BundleRecord : { id : Str, path : Str, url : Str, sha256 : Str, size : U64 }
+	ReleaseInventory : { schema : U64, context : LifecyclePlan.Context, version : Str, bundles : List(BundleRecord), files : List(File) }
+	final_metadata : Trusted, LifecyclePlan.Topology, Evidence, Str, Str -> Try({}, Str)
+	final_metadata = |trusted, topology, evidence, inventory_text, notes| {
+		if evidence.files.is_empty() {
+			return Ok({})
+		}
+		if notes.split_on("{").drop_first(1).any(|tail| (tail.split_on("}").first() ?? "").ends_with("-url")) {
+			return Err("ADMIT_NOTES: unresolved bundle URL placeholder")
+		}
+		if GitHub.count(notes) > 125000 {
+			return Err("ADMIT_NOTES: notes exceed the publisher's 125000-character limit")
+		}
+		raw = LifecycleJson.decode_limit(inventory_text, 1048576).map_err(LifecycleJson.message)?
+		LifecycleJson.object(raw, ["schema", "context", "version", "bundles", "files"])?
+		LifecycleJson.object(LifecycleJson.field(raw, "context")?, ["event", "ref", "default_branch", "repository", "sha", "run_id", "run_attempt", "compiler", "version", "full_dry_run", "topology_sha256"])?
+		check_files(LifecycleJson.array(LifecycleJson.field(raw, "files")?)?)?
+		for item in LifecycleJson.array(LifecycleJson.field(raw, "bundles")?)? {
+			LifecycleJson.object(item, ["id", "path", "url", "sha256", "size"])?
+		}
+		parsed : Try(ReleaseInventory, _)
+		parsed = Json.parse(inventory_text)
+		inventory = parsed.map_err(|_| "ADMIT_RELEASE_INVENTORY: invalid final inventory field types")?
+		context = trusted.context
+		version = release_version(context)
+		if inventory.schema != 1 or inventory.context != { ..context, run_attempt: evidence.producing_attempt } or inventory.version != version {
+			return Err("ADMIT_RELEASE_INVENTORY: final inventory source, compiler, version, run or producing attempt differs")
+		}
+		expected_files = evidence.files.keep_if(|file| file.path != "release-inventory.json")
+		if inventory.files.len() != expected_files.len() or !unique(inventory.files.map(|file| file.path)) or !inventory.files.all(|file| expected_files.contains(file)) {
+			return Err("ADMIT_RELEASE_INVENTORY: final public file roles, subjects, targets or bytes differ")
+		}
+		if inventory.bundles.len() != topology.bundles.len() or !unique(inventory.bundles.map(|bundle| bundle.id)) {
+			return Err("ADMIT_RELEASE_INVENTORY: missing or duplicate bundle map")
+		}
+		for declaration in topology.bundles {
+			bundle = inventory.bundles.find_first(|item| item.id == declaration.id).map_err(|_| "ADMIT_RELEASE_INVENTORY: expected bundle absent")?
+			file = evidence.files.find_first(|item| item.role == "bundle" and item.subject == declaration.id).map_err(|_| "ADMIT_RELEASE_INVENTORY: expected bundle file absent")?
+			if bundle.path != file.path or bundle.size != file.size or bundle.sha256 != file.sha256 or bundle.url != "https://github.com/${context.repository}/releases/download/${version}/${file.path}" {
+				return Err("ADMIT_RELEASE_INVENTORY: bundle URL or exact content mapping differs")
+			}
+		}
+		compiler_parts = match notes.split_on("\n\n## Compilers\n\nPackage compiler:\n\n```text\n") {
+			[before, after] => { before, after }
+			_ => return Err("ADMIT_NOTES: missing or ambiguous generated compiler section")
+		}
+		if !compiler_parts.before.ends_with("\n\nSource: `${context.sha}`.") {
+			return Err("ADMIT_NOTES: generated source binding differs")
+		}
+		tooling_parts = match compiler_parts.after.split_on("\n```\n\nShared utility build compiler:\n\n```text\n") {
+			[package_output, rest] => { package_output, rest }
+			_ => return Err("ADMIT_NOTES: malformed package/tooling compiler sections")
+		}
+		tooling_tag = Pins.stable_tag(controller_blueprint).map_err(|_| "ADMIT_NOTES: trusted tooling compiler pin missing")?
+		if !tooling_parts.package_output.contains(context.compiler) or tooling_parts.package_output.to_utf8().len() > 1000 {
+			return Err("ADMIT_NOTES: recorded package compiler differs")
+		}
+		urls_parts = match tooling_parts.rest.split_on("\n```\n\n") {
+			[tooling_output, rest] => { tooling_output, rest }
+			_ => return Err("ADMIT_NOTES: malformed shared utility compiler record")
+		}
+		if !urls_parts.tooling_output.contains(tooling_tag) or urls_parts.tooling_output.to_utf8().len() > 1000 {
+			return Err("ADMIT_NOTES: recorded shared utility compiler differs")
+		}
+		digests_parts = match urls_parts.rest.split_on("\n\nSHA-256 of the tested release files:\n\n```\n") {
+			[urls, digests] => { urls, digests }
+			_ => return Err("ADMIT_NOTES: malformed final URL/digest sections")
+		}
+		urls = digests_parts.urls.split_on("\n")
+		if urls.len() != inventory.bundles.len() or !unique(urls) or !inventory.bundles.all(|bundle| urls.contains("- ${bundle.id}: ${bundle.url}")) {
+			return Err("ADMIT_NOTES: final bundle URL set differs")
+		}
+		if !digests_parts.digests.ends_with("\n```\n") {
+			return Err("ADMIT_NOTES: malformed digest listing terminator")
+		}
+		digests = digests_parts.digests.drop_suffix("\n```\n").split_on("\n")
+		payloads = evidence.files.keep_if(|file| file.role != "notes" and file.role != "inventory")
+		if digests.len() != payloads.len() or !unique(digests) or !payloads.all(|file| digests.contains("${file.sha256}  ${file.path}")) {
+			return Err("ADMIT_NOTES: final tested-file digest listing differs")
+		}
+		Ok({})
+	}
+
+	file_set : List(LifecyclePlan.AssetRule), List(File) -> Try({}, Str)
+	file_set = |rules, files| {
+		if files.len() != rules.len() or !unique(files.map(|file| lower(file.path))) {
+			return Err("ADMIT_FILES: duplicate, missing or undeclared file set")
+		}
+		for file in files {
+			if !LifecyclePlan.safe_path(file.path) or file.size > 536870912 or !LifecyclePlan.digest(file.sha256) {
+				return Err("ADMIT_FILE: unsafe path, excessive size or invalid digest")
+			}
+			if rules.keep_if(|rule| rule.role == file.role and rule.subject == file.subject and rule.target == file.target and matches_path(rule.path, file.path)).len() != 1 {
+				return Err("ADMIT_ROLE: undeclared subject, role, target or path")
+			}
+		}
+		for rule in rules {
+			if files.keep_if(|file| rule.role == file.role and rule.subject == file.subject and rule.target == file.target and matches_path(rule.path, file.path)).len() != 1 {
+				return Err("ADMIT_ROLE: required role has missing or ambiguous files")
+			}
+		}
+		Ok({})
 	}
 
 	parse_evidence : Str -> Try(Evidence, Str)
 	parse_evidence = |text| {
 		raw = LifecycleJson.decode_limit(text, 16777216).map_err(LifecycleJson.message)?
-		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "obligations", "artifacts", "files", "producer_evidence"])?
+		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "obligations", "artifacts", "files", "intermediates", "producer_evidence"])?
 		for item in LifecycleJson.array(LifecycleJson.field(raw, "obligations")?)? {
 			LifecycleJson.object(item, ["id", "job_id", "run_attempt"])?
 		}
 		check_artifacts(LifecycleJson.array(LifecycleJson.field(raw, "artifacts")?)?)?
 		check_files(LifecycleJson.array(LifecycleJson.field(raw, "files")?)?)?
+		check_files(LifecycleJson.array(LifecycleJson.field(raw, "intermediates")?)?)?
 		for record in LifecycleJson.array(LifecycleJson.field(raw, "producer_evidence")?)? {
 			LifecycleJson.object(record, ["id", "sha256", "document", "inventory_sha256", "inventory_document"])?
 		}
@@ -195,8 +316,9 @@ LifecycleAdmission := [].{
 	parse_report : Str -> Try(Report, Str)
 	parse_report = |text| {
 		raw = LifecycleJson.decode_limit(text, 1048576).map_err(LifecycleJson.message)?
-		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "policy_version", "schema_profile", "verdict", "publish", "assets", "notes_sha256", "artifacts"])?
+		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "policy_version", "schema_profile", "validator_version", "verdict", "publish", "assets", "intermediates", "notes_sha256", "artifacts"])?
 		check_files(LifecycleJson.array(LifecycleJson.field(raw, "assets")?)?)?
+		check_files(LifecycleJson.array(LifecycleJson.field(raw, "intermediates")?)?)?
 		check_artifacts(LifecycleJson.array(LifecycleJson.field(raw, "artifacts")?)?)?
 		parsed : Try(Report, _)
 		parsed = Json.parse(text)
@@ -223,7 +345,7 @@ LifecycleAdmission := [].{
 	## observations in this job, then compare all local bytes before any write.
 	publication : Report, Str, Str, Str, Str, Str, List(ObservedFile) -> Try({}, Str)
 	publication = |report, repository, source_sha, run_id, version, notes_sha256, files| {
-		if report.schema_version != 1 or report.profile != profile or report.verdict != "admitted" or !report.publish or report.policy_version != "roc-automation-release-policy-1" or report.schema_profile != "release-evidence-1" or report.repository != repository or report.source_sha != source_sha or report.run_id != run_id or report.version != version or report.notes_sha256 != notes_sha256 {
+		if report.schema_version != 1 or report.profile != profile or report.verdict != "admitted" or !report.publish or report.policy_version != "roc-automation-release-policy-1" or report.schema_profile != "release-evidence-1" or report.validator_version != "roc-automation-release-admit-v1" or report.repository != repository or report.source_sha != source_sha or report.run_id != run_id or report.version != version or report.notes_sha256 != notes_sha256 {
 			return Err("ADMIT_PUBLISH: report cannot authorize this publication context or notes")
 		}
 		if !unique(report.assets.map(|file| basename(file.path))) or files.len() != report.assets.len() or !unique(files.map(|file| file.path)) {
@@ -261,7 +383,12 @@ LifecycleAdmission := [].{
 		}
 		_ => Bool.False
 	}
-	metadata_path = |stage, path| LifecyclePlan.safe_path(path) and ((stage == "prepare" and path == "bundle-map.json") or (path.starts_with("diagnostics/") and !path.split_on("/").any(|part| ["cache", ".cache", "node_modules", "target", ".git"].contains(lower(part)))))
+	metadata_path = |stage, path| {
+		suffix_ok = [".log", ".txt", ".json", ".jsonl"].any(|suffix| lower(path).ends_with(suffix))
+		directories_ok = !path.split_on("/").drop_last(1).any(|part| lower(part).contains("cache") or ["node_modules", "target", ".git"].contains(lower(part)))
+		LifecyclePlan.safe_path(path) and ((stage == "prepare" and path == "bundle-map.json") or (path.starts_with("diagnostics/") and suffix_ok and directories_ok))
+	}
+
 	unique_ids : List(U64) -> Bool
 	unique_ids = |values| values.all(|value| values.keep_if(|other| value == other).len() == 1)
 	unique : List(Str) -> Bool
@@ -300,13 +427,13 @@ fixture_jobs = fixture_stages.map(
 	},
 )
 
-fixture_artifacts = fixture_stages.map(|stage| { id: fixture_id(stage) + 100, digest: "sha256:${Str.repeat("e", 64)}", job_id: fixture_id(stage), run_attempt: 1.U64, trace_sha256: Str.repeat("f", 64), obligations: fixture_plan.obligations.keep_if(|item| item.stage == stage).map(|item| item.id), files: if stage == "seal" fixture_files.map(|file| file.path) else [], metadata: [] })
+fixture_artifacts = fixture_stages.map(|stage| { id: fixture_id(stage) + 100, digest: "sha256:${Str.repeat("e", 64)}", job_id: fixture_id(stage), run_attempt: 1.U64, trace_sha256: Str.repeat("f", 64), obligations: fixture_plan.obligations.keep_if(|item| item.stage == stage).map(|item| item.id), files: if stage == "seal" fixture_files.map(|file| file.path) else if stage == "prepare" fixture_files.keep_if(|file| ["bundle", "examples", "documentation", "pdf"].contains(file.role)).map(|file| file.path) else if stage == "sbom" fixture_files.keep_if(|file| ["spdx.json", "cdx.json", "sbom-manifest.json"].contains(file.role)).map(|file| file.path) else [], metadata: [] })
 
 fixture_observed : LifecycleAdmission.Observations
 fixture_observed = { complete: Bool.True, jobs: fixture_jobs, artifacts: fixture_artifacts.map(|artifact| { id: artifact.id, name: "lifecycle-${if artifact.job_id == 4 "sbom-0" else "${fixture_stages.get(artifact.job_id - 1) ?? ""}-ubuntu-24.04"}-1", digest: artifact.digest, expired: Bool.False, workflow_run: { id: 10.U64, head_sha: fixture_context.sha } }) }
 
 fixture_evidence : LifecycleAdmission.Evidence
-fixture_evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: fixture_context.repository, source_sha: fixture_context.sha, run_id: fixture_context.run_id, producing_attempt: "1", compiler: fixture_context.compiler, version: fixture_context.version, topology_sha256: fixture_context.topology_sha256, workflow_ref: fixture_trusted.workflow_ref, workflow_sha: fixture_trusted.workflow_sha, obligations: fixture_plan.obligations.map(|item| { id: item.id, job_id: fixture_id(item.stage), run_attempt: 1.U64 }), artifacts: fixture_artifacts, files: fixture_files, producer_evidence: [] }
+fixture_evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: fixture_context.repository, source_sha: fixture_context.sha, run_id: fixture_context.run_id, producing_attempt: "1", compiler: fixture_context.compiler, version: fixture_context.version, topology_sha256: fixture_context.topology_sha256, workflow_ref: fixture_trusted.workflow_ref, workflow_sha: fixture_trusted.workflow_sha, obligations: fixture_plan.obligations.map(|item| { id: item.id, job_id: fixture_id(item.stage), run_attempt: 1.U64 }), artifacts: fixture_artifacts, files: fixture_files, intermediates: [], producer_evidence: [] }
 
 fixture_actual = fixture_files.map(|file| { path: file.path, size: file.size, sha256: file.sha256 })
 

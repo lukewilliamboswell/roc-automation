@@ -22,7 +22,8 @@ import src/LifecycleSbom
 ## executable, Blueprint file or shell fragment is ever evaluated here.
 main! = |args| {
 	result = match args.map(OsStr.display) {
-		["admit", trusted, topology, jobs, evidence, candidate, output] => admit!(trusted, topology, jobs, evidence, candidate, output)
+		["admit", trusted, topology, jobs, evidence, candidate, output] => admit!(trusted, topology, jobs, evidence, candidate, "", output)
+		["admit", trusted, topology, jobs, evidence, candidate, intermediates, output] => admit!(trusted, topology, jobs, evidence, candidate, intermediates, output)
 		["collect", trusted, topology, traces, candidate, output] => collect!(trusted, topology, traces, candidate, output)
 		["discover", trusted, topology, output] => discover!(trusted, topology, output)
 		["verify-provenance", report, bundle, candidate, output] => verify_provenance!(report, bundle, candidate, output)
@@ -69,7 +70,7 @@ tree! = |directory| {
 	Ok($files)
 }
 
-admit! = |trusted_path, topology_path, jobs_path, evidence_path, candidate, output| {
+admit! = |trusted_path, topology_path, jobs_path, evidence_path, candidate, intermediate_directory, output| {
 	trusted = LifecycleAdmission.parse_trusted(read!(trusted_path, 4194304)?)?
 	topology_text = read!(topology_path, 65536)?
 	if Sha256.hex(topology_text.to_utf8()) != trusted.context.topology_sha256 {
@@ -79,13 +80,24 @@ admit! = |trusted_path, topology_path, jobs_path, evidence_path, candidate, outp
 	jobs = LifecycleAdmission.parse_observations(read!(jobs_path, 4194304)?)?
 	evidence = LifecycleAdmission.parse_evidence(read!(evidence_path, 16777216)?)?
 	actual = tree!(candidate)?
-	report = LifecycleAdmission.validate(trusted, topology, jobs, evidence, actual)?
+	actual_intermediates = if intermediate_directory == "" [] else tree!(intermediate_directory)?
+	report = LifecycleAdmission.validate(trusted, topology, jobs, evidence, actual.concat(actual_intermediates))?
 	if Json.to_str(report).to_utf8().len() > 1048576 {
 		return Err("ADMIT_LIMIT: report exceeds the supported 1 MiB handoff")
 	}
+	validate_final_metadata!(trusted, topology, evidence, candidate)?
 	validate_sboms!(trusted, topology, evidence, candidate)?
+	verify_host_members!(topology, evidence, candidate, "${output}.members.json")?
 	write!(output, Json.to_str(report))?
 	Stdout.line!("PASS admitted exact source/run/workflow, obligations, artifacts and candidate bytes").map_err(|_| "cannot display result")
+}
+
+validate_final_metadata! = |trusted, topology, evidence, candidate| {
+	if evidence.files.is_empty() {
+		return Ok({})
+	}
+	root = Path.utf8(candidate)
+	LifecycleAdmission.final_metadata(trusted, topology, evidence, read!(Path.display(BuildFiles.inside!(root, "release-inventory.json")?), 1048576)?, read!(Path.display(BuildFiles.inside!(root, "release-notes.md")?), 500000)?)
 }
 
 validate_sboms! = |trusted, topology, evidence, candidate| {
@@ -447,6 +459,8 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 	plan = LifecyclePlan.plan(context, snapshot.topology, trusted.changes)?
 	actual = tree!(candidate)?
 	var $files = []
+	var $intermediates = []
+	var $actual_intermediates = []
 	for file in actual {
 		rule = match plan.assets.keep_if(|candidate_rule| LifecycleAdmission.matches_path(candidate_rule.path, file.path)) {
 			[only] => only
@@ -471,10 +485,26 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 		# Rehash EACH artifact copy, including duplicates transported through
 		# later stages. No byte from one artifact can stand in for another.
 		for path in trace.files {
-			expected = $files.find_first(|file| file.path == path).map_err(|_| "ADMIT_TRACE: undeclared transported file")?
 			bytes = BuildFiles.read!(BuildFiles.inside!(root, path)?, 536870912)?
-			if bytes.len() != expected.size or Sha256.hex(bytes) != expected.sha256 {
-				return Err("ADMIT_TRACE: transported bytes differ from final candidate")
+			observed_file = { path, size: bytes.len(), sha256: Sha256.hex(bytes) }
+			match $files.find_first(|file| file.path == path) {
+				Ok(expected) => if observed_file.size != expected.size or observed_file.sha256 != expected.sha256 {
+					return Err("ADMIT_TRACE: transported public bytes differ from final candidate")
+				}
+				Err(_) => {
+					rule = match plan.intermediates.keep_if(|item| item.path == path) {
+						[only] => only
+						_ => return Err("ADMIT_TRACE: undeclared transported file")
+					}
+					if artifact.stage != "host" {
+						return Err("ADMIT_INTERMEDIATE: native intermediates must come directly from their host job")
+					}
+					if $intermediates.any(|item| item.path == path) {
+						return Err("ADMIT_INTERMEDIATE: duplicate intermediate producer")
+					}
+					$intermediates = $intermediates.append({ path, size: observed_file.size, sha256: observed_file.sha256, role: rule.role, subject: rule.subject, target: rule.target })
+					$actual_intermediates = $actual_intermediates.append(observed_file)
+				}
 			}
 		}
 		entries = BuildFiles.list!(root)?
@@ -485,9 +515,9 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 				if !LifecycleAdmission.metadata_path(artifact.stage, entry.path) {
 					return Err("ADMIT_TRACE: transport contains undeclared files or executable caches")
 				}
-				bytes = BuildFiles.read!(entry.absolute, 1048576)?
+				bytes = BuildFiles.read!(entry.absolute, 10000000)?
 				$metadata_bytes = $metadata_bytes + bytes.len()
-				if $metadata_bytes > 33554432 or $metadata.len() >= 1024 {
+				if $metadata_bytes > 100000000 or $metadata.len() >= 1024 {
 					return Err("ADMIT_METADATA: diagnostics exceed bounded limits")
 				}
 				if entry.path == "bundle-map.json" {
@@ -510,12 +540,14 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 		$obligations = $obligations.concat(trace.obligations.map(|item| { id: item.id, job_id: artifact.job_id, run_attempt: artifact.attempt }))
 	}
 	evidence : LifecycleAdmission.Evidence
-	evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: snapshot.producing_attempt.to_str(), compiler: context.compiler, version: LifecycleAdmission.release_version(context), topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, obligations: $obligations, artifacts: $artifacts, files: $files, producer_evidence: $producer_evidence }
-	report = LifecycleAdmission.validate(trusted, snapshot.topology, snapshot.observations, evidence, actual)?
+	evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: snapshot.producing_attempt.to_str(), compiler: context.compiler, version: LifecycleAdmission.release_version(context), topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, obligations: $obligations, artifacts: $artifacts, files: $files, intermediates: $intermediates, producer_evidence: $producer_evidence }
+	report = LifecycleAdmission.validate(trusted, snapshot.topology, snapshot.observations, evidence, actual.concat($actual_intermediates))?
 	if Json.to_str(report).to_utf8().len() > 1048576 or Json.to_str(evidence).to_utf8().len() > 16777216 {
 		return Err("ADMIT_LIMIT: report or evidence exceeds the supported handoff bounds")
 	}
+	validate_final_metadata!(trusted, snapshot.topology, evidence, candidate)?
 	validate_sboms!(trusted, snapshot.topology, evidence, candidate)?
+	verify_host_members!(snapshot.topology, evidence, candidate, "${output}/host-members.json")?
 	write!("${output}/evidence.json", Json.to_str(evidence))?
 	write!("${output}/admission.json", Json.to_str(report))?
 	match Env.var_str!("GITHUB_OUTPUT") {
@@ -583,6 +615,15 @@ verify_provenance! = |report_path, bundle_path, candidate, output| {
 		if LifecycleJson.array(receipt).map_ok(|items| items.is_empty()) != Ok(Bool.False) {
 			return Err("PROVENANCE_VERIFY: missing structured verification receipt")
 		}
+		for entry in LifecycleJson.array(receipt).map_err(|_| "PROVENANCE_VERIFY: unknown receipt structure")? {
+			LifecycleJson.object(entry, ["attestation", "verificationResult"])?
+			for key in ["attestation", "verificationResult"] {
+				match LifecycleJson.field(entry, key)? {
+					Object(fields) if !fields.is_empty() => {}
+					_ => return Err("PROVENANCE_VERIFY: empty or unknown verifier result")
+				}
+			}
+		}
 		name = "${$index.to_str()}-receipt.json"
 		write!("${output}/${name}", text)?
 		$receipts = $receipts.append({ path: file.path, sha256: file.sha256, receipt: name, receipt_sha256: Sha256.hex(text.to_utf8()) })
@@ -594,4 +635,80 @@ verify_provenance! = |report_path, bundle_path, candidate, output| {
 		_ => {}
 	}
 	Stdout.line!("PASS verified provenance for every exact admitted subject using source and reusable-workflow policy").map_err(|_| "cannot display provenance result")
+}
+
+BundleMembers : { schema : U64, members : List(LifecycleAdmission.ObservedFile) }
+
+inspect_bundle_members! = |bundle, sha256| {
+	result = Env.with_temp_dir!(
+		|directory| {
+			output = Path.join(directory, "members.json")
+			helper = Env.var_str!("RA_ARCHIVE_HELPER") ?? "actions/release-compatibility/archive.py"
+			path = Env.var_str!("PATH").map_err(|_| "ADMIT_HOST_BYTES: missing trusted tool path")?
+			command = Cmd.new("python3").args([helper, "--bundle", bundle, "sha256:${sha256}", Path.display(output)].map(OsStr.from_str)).clear_envs().env_str("PATH", path).env("RA_ZSTD", "zstd").stdout(Capture).stderr(Capture).timeout_ms(120000).output_limit(4194304).manage_tree(Bool.True).run!().map_err(|_| "ADMIT_HOST_BYTES: bounded member inspection failed")?
+			if command.status != Exited(0) {
+				return Err("ADMIT_HOST_BYTES: bundle digest, framing, paths or members rejected")
+			}
+			text = read!(Path.display(output), 4194304)?
+			raw = LifecycleJson.decode_limit(text, 4194304).map_err(LifecycleJson.message)?
+			LifecycleJson.object(raw, ["schema", "members"])?
+			for item in LifecycleJson.array(LifecycleJson.field(raw, "members")?)? {
+				LifecycleJson.object(item, ["path", "size", "sha256"])?
+			}
+			parsed : Try(BundleMembers, _)
+			parsed = Json.parse(text)
+			listing = parsed.map_err(|_| "ADMIT_HOST_BYTES: invalid trusted member inventory")?
+			if listing.schema != 1 or listing.members.is_empty() or !LifecyclePlan.paths_disjoint(listing.members.map(|item| item.path)) or !listing.members.all(|item| LifecyclePlan.safe_path(item.path) and LifecyclePlan.digest(item.sha256)) {
+				return Err("ADMIT_HOST_BYTES: unsafe or invalid trusted member inventory")
+			}
+			Ok(listing.members)
+		},
+	)
+	result.map_err(
+		|error| match error {
+			CallbackErr(reason) => reason
+			_ => "ADMIT_HOST_BYTES: temporary member inspection failed or could not be cleaned"
+		},
+	)
+}
+
+verify_host_members! = |topology, evidence, candidate, output| {
+	if evidence.intermediates.is_empty() or evidence.files.is_empty() {
+		return Ok({})
+	}
+	var $proofs = []
+	for bundle in topology.bundles {
+		hosts = evidence.intermediates.keep_if(|file| LifecyclePlan.host_owner(topology, file.path).map_ok(|owner| owner.id) == Ok(bundle.id))
+		if !hosts.is_empty() {
+			asset = evidence.files.find_first(|file| file.subject == bundle.id and file.role == "bundle" and file.target == "source").map_err(|_| "ADMIT_HOST_BYTES: owning candidate bundle missing")?
+			path = Path.display(BuildFiles.inside!(Path.utf8(candidate), asset.path)?)
+			members = inspect_bundle_members!(path, asset.sha256)?
+			index = topology.sboms.find_first_index(|mapping| mapping.subject == bundle.id and mapping.target == "source").map_err(|_| "ADMIT_HOST_BYTES: owning bundle inventory mapping missing")?
+			producer = evidence.producer_evidence.find_first(|record| record.id == "sbom-${index.to_str()}").map_err(|_| "ADMIT_HOST_BYTES: retained owning bundle inventory missing")?
+			inventory = LifecycleSbom.decode(producer.inventory_document)?
+			components_ = LifecycleSbom.array_field(inventory, "components")?
+			parent = Str.join_with(bundle.root.split_on("/").drop_last(1), "/")
+			for host in hosts {
+				member_path = if parent == "" host.path else host.path.drop_prefix("${parent}/")
+				member = members.find_first(|item| item.path == member_path).map_err(|_| "ADMIT_HOST_BYTES: declared native host is absent at its exact owning bundle member path")?
+				if member.size != host.size or member.sha256 != host.sha256 {
+					return Err("ADMIT_HOST_BYTES: owning bundle contains different bytes from the tested host intermediate")
+				}
+				matching = components_.keep_if(|component| LifecycleSbom.string_field(component, "sha256") == Ok(host.sha256))
+				named = matching.keep_if(|component| LifecycleSbom.string_field(component, "name") == Ok(member_path))
+				component = match named {
+					[only] => only
+					_ => match matching {
+						[only] => only
+						_ => return Err("ADMIT_HOST_BYTES: native host has no unambiguous inventory component")
+					}
+				}
+				$proofs = $proofs.append({ host: host.path, target: host.target, bundle: asset.path, member: member_path, size: host.size, sha256: host.sha256, component: LifecycleSbom.string_field(component, "id")? })
+			}
+		}
+	}
+	if $proofs.len() != evidence.intermediates.len() {
+		return Err("ADMIT_HOST_BYTES: not every native host is bound to an owning bundle")
+	}
+	write!(output, Json.to_str({ schema_version: 1.U64, native_host_members: $proofs }))
 }

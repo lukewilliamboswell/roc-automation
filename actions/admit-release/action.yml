@@ -134,6 +134,7 @@ runs:
         INPUT_TRACES: ${{ inputs.traces }}
         INPUT_CANDIDATE: ${{ inputs.candidate }}
         INPUT_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        RA_ARCHIVE_HELPER: ${{ github.action_path }}/../release-compatibility/archive.py
         GH_TOKEN: ${{ inputs.token }}
       run: |
         cd "$ACTION_PATH/../.."

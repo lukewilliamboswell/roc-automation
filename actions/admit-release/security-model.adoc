@@ -99,3 +99,22 @@ signer workflow and its reviewed digest, SLSA provenance v1 predicate and
 hosted-runner requirement. Unknown, failed or empty structured verification
 receipts stop publication. Receipts are retained as inert files in a fresh
 output directory. This checks provenance identity; it claims no SLSA level.
+
+Native host files are retained intermediates in this same evidence envelope,
+not additional published assets. Their exact producer job, target and bytes are
+checked against the reviewed intermediate declarations. A bounded shared tar
+inspector hashes actual regular members of the final owning bundle without
+extracting or executing them; each declared host must occupy its exact relative
+member path with the same size and SHA-256, and its retained inventory component
+must agree. The inspector runs with credentials and OIDC variables cleared,
+using the controller's reviewed Python helper and locked zstd tool. The offline
+`admit` command accepts a separate intermediate directory before its final
+output argument when host intermediates are declared.
+
+The final `release-inventory.json` is independently parsed and compared with the
+admitted public file set, source/producing context, version and exact bundle URL
+map. Generated notes must bind that source and compiler pair, all final bundle
+URLs and the exact tested-file digest listing. A candidate cannot authorize a
+contradictory inventory or notes simply by updating its own checksums. The
+report records validator, policy and schema-profile versions; its workflow SHA
+fixes the reviewed nested controller pins and provisioning inputs.
