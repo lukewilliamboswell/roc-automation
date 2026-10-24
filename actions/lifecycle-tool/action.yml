@@ -2,7 +2,7 @@ name: Build shared lifecycle utilities
 description: Build immutable shared Roc utilities for read-only lifecycle jobs; never evaluates consumer configuration or runs a consumer task.
 inputs:
   tools:
-    description: Space-separated subset of plan github transport operations; only these reviewed utility entrypoints can be built
+    description: Space-separated subset of plan github transport operations pages; only these reviewed utility entrypoints can be built
     default: plan github transport operations
   build-policy:
     description: Also build the pinned source policy utility in this read-only job
@@ -26,6 +26,9 @@ outputs:
   operations-binary:
     value: ${{ steps.build.outputs.operations-binary }}
     description: Source and candidate release operations
+  pages-binary:
+    value: ${{ steps.build.outputs.pages-binary }}
+    description: Inert admitted documentation archive restoration
   tooling-compiler-version:
     value: ${{ steps.build.outputs.tooling-compiler-version }}
     description: Actual fixed compiler version used to build these utilities
@@ -78,6 +81,7 @@ runs:
             github) source=lifecycle_github ;;
             transport) source=lifecycle_transport ;;
             operations) source=release_operations ;;
+            pages) source=lifecycle_pages ;;
             *) echo 'Unsupported lifecycle utility' >&2; exit 2 ;;
           esac
           roc build "$ACTION_PATH/../../scripts/$source.roc" --output="$directory/$tool$extension"

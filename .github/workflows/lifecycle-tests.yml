@@ -25,14 +25,18 @@ jobs:
           persist-credentials: false
       - id: tools
         uses: ./actions/lifecycle-tool
+        with:
+          tools: plan github transport operations pages
       - name: Test native planning, GitHub observation and inert transport
         env:
+          ROC_LIFECYCLE_PAGES_BINARY: ${{ steps.tools.outputs.pages-binary }}
           ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
           ROC_LIFECYCLE_GITHUB_BINARY: ${{ steps.tools.outputs.github-binary }}
           ROC_LIFECYCLE_TRANSPORT_BINARY: ${{ steps.tools.outputs.transport-binary }}
           FAKE_PYTHON: ${{ steps.tools.outputs.python }}
           PYTHON_COMMAND: ${{ steps.tools.outputs.python }}
         run: |
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_pages.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_plan.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_github.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_transport.py -v
@@ -43,14 +47,22 @@ jobs:
         env:
           TOOL_DIRECTORY: ${{ steps.tools.outputs.directory }}
         run: '"$TOOL_DIRECTORY/tooling/roc" build scripts/release_admit.roc --output="$RUNNER_TEMP/release-admit"'
-      - name: Test native operations and independent admission
+      - name: Test native operations and local expectation updates
+        env:
+          ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
+          ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}
+          FAKE_PYTHON: ${{ steps.tools.outputs.python }}
+          PYTHON_COMMAND: ${{ steps.tools.outputs.python }}
+        run: |
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_operations.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_examples_update.py -v
+      - name: Test independent admission
         if: runner.os != 'Windows'
         env:
           ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
           ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}
           ROC_RELEASE_ADMIT_BINARY: ${{ runner.temp }}/release-admit
         run: |
-          python3 -m unittest discover -s tests -p test_release_operations.py -v
           python3 -m unittest discover -s tests -p test_lifecycle_admission.py -v
 
   real-fixtures:

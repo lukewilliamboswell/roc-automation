@@ -220,6 +220,10 @@ plan! = || {
 	parsed : Try(LifecyclePlan.Plan, _)
 	parsed = Json.parse(plan_source)
 	plan = parsed.map_err(|_| "planner returned malformed plan")?
+	pages = Env.var_str!("INPUT_PAGES_DOCUMENTATION") ?? ""
+	if pages != "" and !plan.topology.documentation.any(|manual| manual.id == pages) {
+		return Err("Pages documentation ID must be declared by the committed topology")
+	}
 	if event == "workflow_dispatch" {
 		refs_source = get!("repos/${repository}/git/matching-refs/tags/${context.version}", "map(.ref)", Bool.False)?
 		refs : Try(List(Str), _)

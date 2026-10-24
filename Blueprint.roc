@@ -45,6 +45,7 @@ config = [
 	Task("release-admit", [Use("dev"), Run(["scripts/release_admit.roc", "--"])]),
 	Task("release-operations", [Use("dev"), Run(["scripts/release_operations.roc", "--"])]),
 	Task("lifecycle-github", [Use("dev"), Run(["scripts/lifecycle_github.roc", "--"])]),
+	Task("lifecycle-pages", [Use("dev"), Run(["scripts/lifecycle_pages.roc", "--"])]),
 	Task("lifecycle-transport", [Use("dev"), Run(["scripts/lifecycle_transport.roc", "--"])]),
 	# The two shared actions that are Roc scripts. Each action runs its task
 	# from its own checkout of this repository, with its inputs in the

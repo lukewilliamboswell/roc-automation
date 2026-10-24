@@ -138,7 +138,7 @@ jobs:
       - name: Include source-free lifecycle contract regressions
         run: |
           mkdir -p lifecycle-tests/tests/fixtures lifecycle-tests/actions/release-compatibility
-          cp tests/test_lifecycle_plan.py tests/test_lifecycle_github.py tests/test_lifecycle_transport.py tests/test_transport_environment.py tests/test_lifecycle_admission.py tests/test_release_operations.py lifecycle-tests/tests/
+          cp tests/test_examples_update.py tests/test_lifecycle_pages.py tests/test_lifecycle_plan.py tests/test_lifecycle_github.py tests/test_lifecycle_transport.py tests/test_transport_environment.py tests/test_lifecycle_admission.py tests/test_release_operations.py lifecycle-tests/tests/
           cp -R tests/fixtures/lifecycle lifecycle-tests/tests/fixtures/
           cp tests/fixtures/compatibility_launcher.c lifecycle-tests/tests/fixtures/
           cp actions/release-compatibility/archive.py lifecycle-tests/actions/release-compatibility/
@@ -263,6 +263,7 @@ jobs:
 
       - name: Test the exact lifecycle tools without a source checkout or compiler
         env:
+          ROC_LIFECYCLE_PAGES_BINARY: ${{ github.workspace }}/tools/dist/lifecycle-pages-${{ matrix.system }}
           ROC_RELEASE_PLAN_BINARY: ${{ github.workspace }}/tools/dist/release-plan-${{ matrix.system }}
           ROC_RELEASE_ADMIT_BINARY: ${{ github.workspace }}/tools/dist/release-admit-${{ matrix.system }}
           ROC_RELEASE_OPERATIONS_BINARY: ${{ github.workspace }}/tools/dist/release-operations-${{ matrix.system }}

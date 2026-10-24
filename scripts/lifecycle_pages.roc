@@ -78,7 +78,15 @@ restore! = |args| match args {
 		output = Path.absolute!(Path.utf8(output_path)).map_err(|_| "cannot resolve Pages output directory")?
 		python = env!("RA_PYTHON")?
 		helper = env!("RA_ARCHIVE_HELPER")?
-		result = Cmd.new(OsStr.from_str(python)).args([helper, "--artifact", native!(archive), "sha256:${selected.archive.sha256}", native!(output)].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(2_000_000).manage_tree(Bool.True).env("GH_TOKEN", "").env("GITHUB_TOKEN", "").run!().map_err(|_| "Pages ZIP verification was interrupted")?
+		trusted_path = env!("PATH")?
+		var $command = Cmd.new(OsStr.from_str(python)).args([helper, "--artifact", native!(archive), "sha256:${selected.archive.sha256}", native!(output)].map(OsStr.from_str)).clear_envs().env_str("PATH", trusted_path)
+		match Env.var_str!("SystemRoot") {
+			Ok(root) => {
+				$command = $command.env_str("SystemRoot", root)
+			}
+			Err(_) => {}
+		}
+		result = $command.stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(2_000_000).manage_tree(Bool.True).run!().map_err(|_| "Pages ZIP verification was interrupted")?
 		if result.status != Exited(0) {
 			return Err("PAGES_ARCHIVE: ${Str.from_utf8_lossy(result.stderr_bytes)}")
 		}

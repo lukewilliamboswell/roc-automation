@@ -100,6 +100,11 @@ class LifecycleGitHubTests(unittest.TestCase):
         self.assertEqual(ran.returncode, 0, ran.stderr)
         self.assertTrue(self.plan()["full_rehearsal"])
 
+    def test_pages_selection_must_name_a_declared_manual_before_any_release(self):
+        ran = self.run_collector(INPUT_PAGES_DOCUMENTATION="unknown-manual")
+        self.assertNotEqual(ran.returncode, 0)
+        self.assertIn("must be declared", ran.stderr)
+
     def test_changed_live_pr_cannot_select_from_a_later_diff(self):
         ran = self.run_collector(LIVE_HEAD="d" * 40)
         self.assertEqual(ran.returncode, 0, ran.stderr)
