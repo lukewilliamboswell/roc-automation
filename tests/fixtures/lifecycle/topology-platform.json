@@ -67,12 +67,12 @@
         {
           "role": "host",
           "target": "linux",
-          "path": "hosts/linux.a"
+          "path": "platform/targets/linux.a"
         },
         {
           "role": "host",
           "target": "windows",
-          "path": "hosts/windows.a"
+          "path": "platform/targets/windows.a"
         }
       ]
     }
@@ -96,18 +96,6 @@
       "subject": "platform",
       "target": "source",
       "composition": "sbom/platform.json",
-      "supplier_imports": ""
-    },
-    {
-      "subject": "hosts/linux.a",
-      "target": "linux",
-      "composition": "sbom/linux.json",
-      "supplier_imports": ""
-    },
-    {
-      "subject": "hosts/windows.a",
-      "target": "windows",
-      "composition": "sbom/windows.json",
       "supplier_imports": ""
     }
   ],

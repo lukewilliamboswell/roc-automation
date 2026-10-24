@@ -19,7 +19,7 @@ LifecyclePlan := [].{
 	Topology : { schema : U64, name : Str, profile : Str, sbom_author : Str, bundles : List(Bundle), examples : List(Examples), documentation : List(Documentation), target_matrix : List(Target), adapters : List(Adapter), checks : List(Check), sboms : List(Sbom), source_paths : List(Str) }
 	Obligation : { id : Str, stage : Str, runner : Str, operation : Str, subject : Str, target : Str, task : Str }
 	AssetRule : { subject : Str, role : Str, target : Str, path : Str }
-	Plan : { schema : U64, context : Context, topology : Topology, full_rehearsal : Bool, obligations : List(Obligation), assets : List(AssetRule), bundle_order : List(Str) }
+	Plan : { schema : U64, context : Context, topology : Topology, full_rehearsal : Bool, obligations : List(Obligation), assets : List(AssetRule), intermediates : List(AssetRule), bundle_order : List(Str) }
 	unique = Compatibility.unique
 	lower : Str -> Str
 	lower = |value| Str.from_utf8_lossy(value.to_utf8().map(|byte| if byte >= 'A' and byte <= 'Z' byte + 32 else byte))
@@ -125,6 +125,21 @@ LifecyclePlan := [].{
 		parsed.map_err(|_| "invalid change inventory field types")
 	}
 
+	host_owner : Topology, Str -> Try(Bundle, Str)
+	host_owner = |topology, path| {
+		owners = topology.bundles.keep_if(
+			|bundle| {
+				parts = bundle.root.split_on("/")
+				parent_directory = Str.join_with(parts.take_first(parts.len() - 1), "/")
+				parent_directory == "" or path.starts_with("${parent_directory}/")
+			},
+		)
+		match owners {
+			[owner] => Ok(owner)
+			_ => Err("native host output needs exactly one owning bundle directory")
+		}
+	}
+	public_names_unique = |values| unique(values.map(|value| lower(value.split_on("/").last() ?? ""))).len() == values.len()
 	validate : Topology -> Try(Topology, Str)
 	validate = |topology| {
 		if topology.schema != 1 or !valid_author(topology.sbom_author) or !id(topology.name) or !["package", "platform"].contains(topology.profile) or topology.bundles.is_empty() or topology.bundles.len() > 32 or topology.target_matrix.is_empty() or topology.target_matrix.len() > 16 or topology.adapters.len() > 32 or topology.checks.len() > 128 or topology.examples.is_empty() or topology.examples.len() > 64 or topology.documentation.len() > 32 or topology.sboms.len() > 128 or topology.source_paths.len() > 128 {
@@ -190,10 +205,13 @@ LifecyclePlan := [].{
 				if !["host", "binary"].contains(output.role) or !adapter.target_ids.contains(output.target) or !safe_path(output.path) or reserved_asset(output.path) {
 					return Err("invalid native output role, path or target")
 				}
+				if output.role == "host" {
+					_ = host_owner(topology, output.path)?
+				}
 				$outputs = $outputs.append(output)
 			}
 		}
-		if !paths_disjoint($outputs.map(|x| x.path)) {
+		if !paths_disjoint($outputs.map(|x| x.path)) or !public_names_unique($outputs.keep_if(|x| x.role == "binary").map(|x| x.path)) {
 			return Err("native outputs have ambiguous producers or case collisions")
 		}
 		for check in topology.checks {
@@ -208,7 +226,7 @@ LifecyclePlan := [].{
 			return Err("invalid source path prefixes")
 		}
 		for mapping in topology.sboms {
-			if !safe_path(mapping.composition) or (mapping.supplier_imports != "" and !safe_path(mapping.supplier_imports)) or !(bundles.contains(mapping.subject) and mapping.target == "source") and !$outputs.any(|output| output.path == mapping.subject and output.target == mapping.target) {
+			if !safe_path(mapping.composition) or (mapping.supplier_imports != "" and !safe_path(mapping.supplier_imports)) or !(bundles.contains(mapping.subject) and mapping.target == "source") and !$outputs.any(|output| output.role == "binary" and output.path == mapping.subject and output.target == mapping.target) {
 				return Err("SBOM mapping must name a declared subject/target and regular-file paths")
 			}
 		}
@@ -217,9 +235,9 @@ LifecyclePlan := [].{
 				return Err("every bundle needs exactly one source SBOM mapping")
 			}
 		}
-		for output in $outputs {
+		for output in $outputs.keep_if(|item| item.role == "binary") {
 			if topology.sboms.keep_if(|mapping| mapping.subject == output.path and mapping.target == output.target).len() != 1 {
-				return Err("every native output needs exactly one applicable SBOM mapping")
+				return Err("every published binary needs exactly one applicable SBOM mapping")
 			}
 		}
 		Ok(topology)
@@ -313,6 +331,12 @@ LifecyclePlan := [].{
 				}
 			}
 		}
+		var $intermediates = []
+		for adapter in topology.adapters {
+			for output in adapter.outputs.keep_if(|item| item.role == "host") {
+				$intermediates = $intermediates.append({ subject: output.path, role: output.role, target: output.target, path: output.path })
+			}
+		}
 		var $assets = []
 		order = bundle_order(topology)?
 		if full_rehearsal {
@@ -334,11 +358,11 @@ LifecyclePlan := [].{
 				}
 			}
 			for adapter in topology.adapters {
-				for output in adapter.outputs {
+				for output in adapter.outputs.keep_if(|item| item.role == "binary") {
 					$assets = $assets.append({ subject: output.path, role: output.role, target: output.target, path: output.path })
 				}
 			}
-			for asset in $assets.keep_if(|asset| ["bundle", "host", "binary"].contains(asset.role)) {
+			for asset in $assets.keep_if(|asset| ["bundle", "binary"].contains(asset.role)) {
 				for suffix in ["spdx.json", "cdx.json", "sbom-manifest.json"] {
 					$assets = $assets.append({ subject: asset.subject, role: suffix, target: asset.target, path: "${asset.path}.${suffix}" })
 				}
@@ -354,10 +378,10 @@ LifecyclePlan := [].{
 		if $obligations.len() > 256 or unique($obligations.map(|item| item.id)).len() != $obligations.len() {
 			return Err("obligation limit or duplicate ownership")
 		}
-		if !paths_disjoint($assets.map(|asset| asset.path)) or $assets.any(|asset| reserved_asset(asset.path)) {
+		if !public_names_unique($assets.map(|asset| asset.path)) or !paths_disjoint($assets.map(|asset| asset.path)) or $assets.any(|asset| reserved_asset(asset.path)) {
 			return Err("release asset path collision")
 		}
-		Ok({ schema: 1, context, topology, full_rehearsal, obligations: $obligations, assets: $assets, bundle_order: order })
+		Ok({ schema: 1, context, topology, full_rehearsal, obligations: $obligations, assets: $assets, intermediates: $intermediates, bundle_order: order })
 	}
 }
 
@@ -481,3 +505,9 @@ expect {
 
 expect LifecyclePlan.valid_author("Person: Luke Boswell") and LifecyclePlan.valid_author("Organization: Roc contributors")
 expect ["", "owner/repo", "Organization: ", "Person:  ", "Person: A\nforged", "Person: A\u(007f)"].all(|value| !LifecyclePlan.valid_author(value))
+
+expect !LifecyclePlan.public_names_unique(["linux/tool", "windows/TOOL"])
+expect LifecyclePlan.public_names_unique(["linux/tool-linux", "windows/tool-windows.exe"])
+expect LifecyclePlan.host_owner(sample_topology, "elsewhere/libhost.a").is_err()
+expect LifecyclePlan.host_owner(sample_topology, "package/targets/libhost.a").map_ok(|bundle| bundle.id) == Ok("core")
+expect LifecyclePlan.host_owner({ ..sample_topology, bundles: sample_topology.bundles.append({ id: "nested", root: "package/nested/main.roc", prefix: "nested", placeholder: "nested-url", depends_on: [] }) }, "package/nested/libhost.a").is_err()

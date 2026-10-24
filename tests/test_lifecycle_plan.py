@@ -56,10 +56,11 @@ class LifecyclePlannerTests(unittest.TestCase):
                          {"ubuntu-24.04", "windows-2025"})
         paths = [asset["path"] for asset in plan["assets"]]
         self.assertEqual(len(paths), len(set(paths)))
-        self.assertIn("hosts/windows.a.spdx.json", paths)
+        self.assertFalse(any(path.startswith("platform/targets/") for path in paths))
+        self.assertEqual({item["path"] for item in plan["intermediates"]}, {"platform/targets/linux.a", "platform/targets/windows.a"})
         self.assertIn("platform-1.0.0.pdf", paths)
         self.assertEqual([item["id"] for item in plan["obligations"] if item["stage"] == "sbom"],
-                         ["sbom-0", "sbom-1", "sbom-2", "sbom-3"])
+                         ["sbom-0", "sbom-1"])
 
     def test_unknown_mixed_rename_delete_and_incomplete_changes_force_rehearsal(self):
         changes = [
@@ -135,7 +136,7 @@ class LifecyclePlannerTests(unittest.TestCase):
         topology["sboms"].pop()
         modifications.append(topology)
         topology = copy.deepcopy(base)
-        topology["adapters"][0]["outputs"][1]["path"] = "hosts/LINUX.a"
+        topology["adapters"][0]["outputs"][1]["path"] = "platform/targets/LINUX.a"
         modifications.append(topology)
         topology = copy.deepcopy(base)
         topology["adapters"][0]["builder"] = "self-hosted"
