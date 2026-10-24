@@ -278,14 +278,16 @@ LifecyclePlan := [].{
 				}
 			}
 		}
-		if full_rehearsal {
-			for target in topology.target_matrix {
-				if target.runtime_task != "" {
-					adapter = topology.adapters.find_first(|item| item.id == target.runtime_task).map_err(|_| "unknown runtime adapter")?
+		for target in topology.target_matrix {
+			if target.runtime_task != "" {
+				adapter = topology.adapters.find_first(|item| item.id == target.runtime_task).map_err(|_| "unknown runtime adapter")?
+				$obligations = $obligations.append({ id: "adapter-${adapter.id}-${target.id}", stage: "source", runner: target.runner, operation: "runtime", subject: adapter.id, target: target.id, task: adapter.task })
+				if full_rehearsal {
 					$obligations = $obligations.append({ id: "runtime-${adapter.id}-${target.id}", stage: "candidate", runner: target.runner, operation: "runtime", subject: adapter.id, target: target.id, task: adapter.task })
 				}
 			}
 		}
+
 		for example in topology.examples {
 			for target_id in example.target_ids {
 				target = topology.target_matrix.find_first(|value| value.id == target_id).map_err(|_| "unknown example target")?
@@ -301,7 +303,7 @@ LifecyclePlan := [].{
 			} else {
 				for target_id in adapter.target_ids {
 					target = topology.target_matrix.find_first(|value| value.id == target_id).map_err(|_| "unknown adapter target")?
-					if adapter.operation != "runtime" or target.runtime_task == adapter.id {
+					if adapter.operation != "runtime" {
 						$obligations = $obligations.append({ id: "adapter-${adapter.id}-${target.id}", stage: "source", runner: target.runner, operation: adapter.operation, subject: adapter.id, target: target.id, task: adapter.task })
 					}
 				}
@@ -459,6 +461,15 @@ expect {
 	adapter = { id: "native-runtime", task: "check-runtime", operation: "runtime", builder: "ubuntu-24.04", target_ids: ["linux"], outputs: [] }
 	match LifecyclePlan.full(sample_context, { ..sample_topology, profile: "platform", adapters: [adapter] }) {
 		Ok(plan) => !plan.obligations.any(|item| item.operation == "runtime")
+		Err(_) => Bool.False
+	}
+}
+
+expect {
+	target = { id: "linux", runner: "ubuntu-24.04", runtime_task: "runtime" }
+	adapter = { id: "runtime", task: "check-runtime", operation: "runtime", builder: "ubuntu-24.04", target_ids: ["linux"], outputs: [] }
+	match LifecyclePlan.plan(sample_context, { ..sample_topology, profile: "platform", target_matrix: [target], adapters: [adapter] }, sample_changes) {
+		Ok(plan) => plan.obligations.keep_if(|item| item.stage == "source").map(|item| item.id) == ["source-policy", "source-format", "check-unit", "adapter-runtime-linux", "working-examples-linux"]
 		Err(_) => Bool.False
 	}
 }
