@@ -188,15 +188,26 @@ else:
     def test_duplicate_flat_and_nested_evidence_is_ambiguous(self):
         ran, directory, _ = self.run_phase("test")
         self.assertEqual(ran.returncode, 0, ran.stderr)
-        artifacts = self.root / "artifacts"
-        nested = artifacts / "compatibility-ubuntu-24.04"
-        nested.mkdir(parents=True)
-        shutil.copy(directory / "result.json", nested / "result.json")
-        shutil.copy(directory / "result.json", artifacts / "result.json")
-        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
-        self.assertEqual(ran.returncode, 0, ran.stderr)
-        self.assertIn("outcome=setup-failed", outputs)
-        self.assertIn("report=none", outputs)
+        result = json.loads((directory / "result.json").read_text())
+        selected = json.loads(self.selection.read_text())
+        # Aggregate is platform independent: exercise each supported Windows
+        # identity here too, rather than silently creating an Ubuntu directory
+        # beside a flat Windows result on hosted Windows.
+        for runner in ("ubuntu-24.04", "windows-2022", "windows-2025"):
+            with self.subTest(runner=runner):
+                artifacts = self.root / ("duplicate-artifacts-" + runner)
+                nested = artifacts / ("compatibility-" + runner)
+                nested.mkdir(parents=True)
+                result["runner"] = runner
+                selected["runners"] = [runner]
+                self.selection.write_text(json.dumps(selected))
+                encoded = json.dumps(result)
+                (nested / "result.json").write_text(encoded)
+                (artifacts / "result.json").write_text(encoded)
+                ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                self.assertIn("outcome=setup-failed", outputs)
+                self.assertIn("report=none", outputs)
 
     def test_stdout_normalization_is_opt_in_and_logs_keep_raw_bytes(self):
         ansi = "\x1b[31mhello\x1b[0m\r\n"
