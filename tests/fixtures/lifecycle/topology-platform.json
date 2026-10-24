@@ -1,0 +1,14 @@
+{
+  "schema":1,"name":"platform","profile":"platform",
+  "bundles":[
+    {"id":"platform","root":"platform/main.roc","prefix":"platform","placeholder":"platform-url","depends_on":["core"]},
+    {"id":"core","root":"core/main.roc","prefix":"core","placeholder":"core-url","depends_on":[]}
+  ],
+  "examples":[{"id":"native","directory":"examples","spec":"examples/spec.json","bundles":["platform"],"target_ids":["linux","windows"]}],
+  "documentation":[{"id":"manual","directory":"docs","pdf":true}],
+  "target_matrix":[{"id":"linux","runner":"ubuntu-24.04","runtime_task":""},{"id":"windows","runner":"windows-2025","runtime_task":""}],
+  "adapters":[{"id":"hosts","task":"build-hosts","operation":"build-host","builder":"ubuntu-24.04","target_ids":["linux","windows"],"outputs":[{"role":"host","target":"linux","path":"hosts/linux.a"},{"role":"host","target":"windows","path":"hosts/windows.a"}]}],
+  "checks":[{"id":"unit","task":"check-unit","kind":"unit","target_ids":[]}],
+  "sboms":[{"subject":"core","target":"source","composition":"sbom/core.json","supplier_imports":""},{"subject":"platform","target":"source","composition":"sbom/platform.json","supplier_imports":""},{"subject":"hosts/linux.a","target":"linux","composition":"sbom/linux.json","supplier_imports":""},{"subject":"hosts/windows.a","target":"windows","composition":"sbom/windows.json","supplier_imports":""}],
+  "source_paths":["platform","core","host"]
+}

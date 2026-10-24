@@ -115,7 +115,7 @@ LifecyclePlan := [].{
 
 	validate : Topology -> Try(Topology, Str)
 	validate = |topology| {
-		if topology.schema != 1 or !id(topology.name) or !["package", "platform"].contains(topology.profile) or topology.bundles.is_empty() or topology.bundles.len() > 32 or topology.target_matrix.is_empty() or topology.target_matrix.len() > 16 or topology.adapters.len() > 32 or topology.checks.len() > 128 or topology.examples.len() > 64 or topology.documentation.len() > 32 or topology.sboms.len() > 128 or topology.source_paths.len() > 128 {
+		if topology.schema != 1 or !id(topology.name) or !["package", "platform"].contains(topology.profile) or topology.bundles.is_empty() or topology.bundles.len() > 32 or topology.target_matrix.is_empty() or topology.target_matrix.len() > 16 or topology.adapters.len() > 32 or topology.checks.len() > 128 or topology.examples.is_empty() or topology.examples.len() > 64 or topology.documentation.len() > 32 or topology.sboms.len() > 128 or topology.source_paths.len() > 128 {
 			return Err("invalid topology identity or collection bounds")
 		}
 		for ids in [topology.bundles.map(|x| x.id), topology.target_matrix.map(|x| x.id), topology.adapters.map(|x| x.id), topology.checks.map(|x| x.id), topology.examples.map(|x| x.id), topology.documentation.map(|x| x.id)] {
@@ -140,6 +140,9 @@ LifecyclePlan := [].{
 		}
 		_ = bundle_order(topology)?
 		for target in topology.target_matrix {
+			if !topology.examples.any(|example| example.target_ids.contains(target.id)) {
+				return Err("every declared target requires consumer examples")
+			}
 			if !Compatibility.runners.contains(target.runner) {
 				return Err("target runner is not supported")
 			}
@@ -162,7 +165,7 @@ LifecyclePlan := [].{
 			if !id(adapter.task) or !["build-host", "test-host", "check-bindings", "runtime"].contains(adapter.operation) or !Compatibility.runners.contains(adapter.builder) or adapter.target_ids.is_empty() or adapter.target_ids.any(|value| !target_ids.contains(value)) or unique(adapter.target_ids).len() != adapter.target_ids.len() or adapter.outputs.len() > 64 {
 				return Err("invalid native adapter")
 			}
-			if adapter.operation == "build-host" and adapter.outputs.is_empty() {
+			if adapter.operation == "build-host" and (adapter.outputs.is_empty() or adapter.target_ids.any(|target_id| !adapter.outputs.any(|output| output.target == target_id))) {
 				return Err("build-host requires explicit outputs")
 			}
 			if adapter.operation != "build-host" and !adapter.outputs.is_empty() {
@@ -222,7 +225,7 @@ LifecyclePlan := [].{
 
 	mandatory = |topology, path| {
 		base = path.split_on("/").last() ?? ""
-		path.starts_with(".github/") or path.starts_with("actions/") or path.starts_with("scripts/") or path.starts_with("sbom/") or path.starts_with("tools/") or path.starts_with("docs/releases/") or path.starts_with("examples/") or path == "Blueprint.roc" or path == "Blueprint.lock" or path == "rust-toolchain.toml" or path == "Cargo.lock" or path == "Cargo.toml" or path == "build.zig" or path == "build.zig.zon" or path == "release-topology.json" or path == "AGENTS.md" or base == "spec.json" or base == "composition.json" or base.contains("lock") or topology.examples.any(|example| path == example.spec or path == example.directory or path.starts_with("${example.directory}/")) or topology.documentation.any(|doc| path == doc.directory or path.starts_with("${doc.directory}/")) or topology.sboms.any(|mapping| path == mapping.composition or path == mapping.supplier_imports)
+		path.starts_with(".github/") or path.starts_with("actions/") or path.starts_with("scripts/") or path.starts_with("sbom/") or path.starts_with("tools/") or path.starts_with("docs/releases/") or path.starts_with("examples/") or path == "Blueprint.roc" or path == "Blueprint.lock" or path == "rust-toolchain.toml" or path == "Cargo.lock" or path == "Cargo.toml" or path == "build.zig" or path == "build.zig.zon" or path == "release-topology.json" or path == "AGENTS.md" or base == "spec.json" or base == "composition.json" or base == "build.rs" or base == "CMakeLists.txt" or base == "Makefile" or base == "flake.nix" or base.ends_with(".cmake") or base.ends_with(".nix") or base.ends_with(".py") or base.ends_with(".sh") or base.ends_with(".ps1") or base.starts_with("rust-toolchain") or path.contains("/.cargo/") or base.contains("lock") or topology.examples.any(|example| path == example.spec or path == example.directory or path.starts_with("${example.directory}/")) or topology.documentation.any(|doc| path == doc.directory or path.starts_with("${doc.directory}/")) or topology.sboms.any(|mapping| path == mapping.composition or path == mapping.supplier_imports)
 	}
 	rehearse = |context, topology, changes| context.event == "workflow_dispatch" or context.full_dry_run or !changes.complete or changes.files.is_empty() or changes.files.any(
 		|change| {
@@ -287,13 +290,15 @@ LifecyclePlan := [].{
 				$assets = $assets.append({ subject: bundle.id, role: "bundle", target: "source", path: "${bundle.prefix}-{hash}.tar.zst" })
 			}
 			for example in topology.examples {
-				$assets = $assets.append({ subject: example.id, role: "examples", target: "source", path: "${topology.name}-examples-${example.id}-${selected_version}.zip" })
+				name = if topology.examples.len() == 1 topology.name else "${topology.name}-${example.id}"
+				$assets = $assets.append({ subject: example.id, role: "examples", target: "source", path: "${name}-examples-${selected_version}.zip" })
 			}
 			for doc in topology.documentation {
+				name = if topology.documentation.len() == 1 topology.name else "${topology.name}-${doc.id}"
 				$obligations = $obligations.append({ id: "docs-${doc.id}", stage: "prepare", runner: "ubuntu-24.04", operation: "docs", subject: doc.id, target: "source", task: "" })
-				$assets = $assets.append({ subject: doc.id, role: "documentation", target: "source", path: "${topology.name}-docs-${doc.id}-${selected_version}.zip" })
+				$assets = $assets.append({ subject: doc.id, role: "documentation", target: "source", path: "${name}-docs-${selected_version}.zip" })
 				if doc.pdf {
-					$assets = $assets.append({ subject: doc.id, role: "pdf", target: "source", path: "${topology.name}-${doc.id}-${selected_version}.pdf" })
+					$assets = $assets.append({ subject: doc.id, role: "pdf", target: "source", path: "${name}-${selected_version}.pdf" })
 				}
 			}
 			for adapter in topology.adapters {
@@ -389,6 +394,10 @@ expect match LifecyclePlan.plan(sample_context, sample_topology, sample_changes)
 	Err(_) => Bool.False
 }
 expect match LifecyclePlan.full(sample_context, sample_topology) {
-	Ok(plan) => plan.full_rehearsal and plan.context == sample_context and plan.bundle_order == ["core"] and plan.assets.any(|x| x.path == "sample-{hash}.tar.zst") and plan.assets.any(|x| x.path == "sample-examples-examples-0.0.1-dry-run.zip") and plan.assets.len() == 7 and plan.obligations.map(|x| x.id).contains("archive-examples-linux")
+	Ok(plan) => plan.full_rehearsal and plan.context == sample_context and plan.bundle_order == ["core"] and plan.assets.any(|x| x.path == "sample-{hash}.tar.zst") and plan.assets.any(|x| x.path == "sample-examples-0.0.1-dry-run.zip") and plan.assets.len() == 7 and plan.obligations.map(|x| x.id).contains("archive-examples-linux")
 	Err(_) => Bool.False
 }
+
+expect LifecyclePlan.validate({ ..sample_topology, examples: [] }).is_err()
+expect LifecyclePlan.validate({ ..sample_topology, profile: "platform", target_matrix: sample_topology.target_matrix.append({ id: "windows", runner: "windows-2025", runtime_task: "" }) }).is_err()
+expect ["package/build.rs", "package/native.cmake", "package/build.py", "package/.cargo/config.toml"].all(|path| LifecyclePlan.rehearse(sample_context, sample_topology, { complete: Bool.True, files: [{ status: "modified", old_path: path, new_path: path }] }))

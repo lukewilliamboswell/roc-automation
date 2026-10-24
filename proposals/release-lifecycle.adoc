@@ -90,20 +90,28 @@ The reusable workflow validates this data before using it to construct a matrix.
   Roots are distinct `.roc` files. Prefixes are distinct stable product IDs;
   placeholders are distinct names such as `package-url`, without braces.
   `depends_on` names other bundle IDs; reject cycles and unknown/self edges.
-| examples | Records of `id`, `directory`, `spec`, `bundles`, `targets`.
+| examples | Records of `id`, `directory`, `spec`, `bundles`, `target_ids`.
   Specs retain their own versioned execution/expectation contract; no cases
   are duplicated here. Bundle and target references must exist.
 | documentation | Records of `id`, `directory`, `pdf` (boolean). An empty list
   means no manual. The shared renderer owns rendering and deterministic archives.
-| targets | Records of `id`, `runner`, `runtime_task`. Runners come from the
+| target_matrix | Records of `id`, `runner`, `runtime_task`. Runners come from the
   shared supported runner table; runtime task is empty or an adapter ID.
   Package profile has one Linux target and no native adapter.
-| adapters | Records of `id`, `task`, `operation`, `targets`, `outputs`.
+| adapters | Records of `id`, `task`, `operation`, `builder`, `target_ids`, `outputs`.
   Operation is `build-host`, `test-host`, `check-bindings` or `runtime`.
-  Task names are Blueprint task identifiers, never command text. Outputs
+  `builder` is a supported runner label; one adapter invocation can produce
+  outputs for several runtime targets. Task names are Blueprint task identifiers,
+  never command text. Outputs
   declare role/target/path, not candidate-selected globs. No outputs for test tasks.
-| sboms | Records of `subject`, `target`, `composition`, `imports`.
-  Composition and imports name reviewed regular files; imports may be empty.
+| checks | Records of `id`, `task`, `kind`, `target_ids`. Kinds are `unit`,
+  `source` or `native`; an empty target list runs once on Linux. Native checks
+  name their target IDs. A task has exactly one obligation owner and must not
+  hide packaging or archive rehearsal.
+| sboms | Records of `subject`, `target`, `composition`, `supplier_imports`.
+  Composition and supplier imports name reviewed regular files; supplier imports
+  may be empty. A bundle subject is its bundle ID with target `source`; a native
+  output subject is its declared path with its declared target.
   Every bundle/native subject must have exactly one applicable mapping.
 | source_paths | Relative directory prefixes whose ordinary source changes
   may defer archive rehearsal. These do not override the shared mandatory paths.
@@ -116,6 +124,12 @@ version. A dispatch requires the exact version's notes, SemVer without build
 metadata, no existing tag/release/draft, and `roc bump --expect` against the
 latest released bundle for each root. The first release records that no prior
 bundle exists; it must not silently ignore a failed lookup.
+
+One examples suite uses `<name>-examples-<version>.zip`; several use
+`<name>-<suite-id>-examples-<version>.zip`, allowing nightly callers to select
+`<name>-<suite-id>` without a second naming convention. One manual uses
+`<name>-docs-<version>.zip` and `<name>-<version>.pdf`; several add the manual ID
+after the name.
 
 The planner derives the complete asset set: each bundle under its original
 content-addressed filename/prefix, each examples ZIP, documentation ZIP and
@@ -134,12 +148,16 @@ contract revision rather than silent interpretation by an older utility.
 
 . Plan validates event, source, topology, version and source changes; resolves
   one package nightly; emits an immutable plan and obligation IDs.
+. Host invokes each native build adapter once on its declared builder,
+  including every declared cross target, and transports inert host artifacts.
+  Source/native tests and common bundle assembly consume those exact outputs.
 . Validate runs source/unit/policy/format, working-tree examples and relevant
   native correctness. Each obligation has one owner. Local `check` may compose
   these operations, but CI must not invoke a task containing hidden rehearsal.
 . Prepare builds every asset once per run, renders notes/docs and invokes
-  existing SBOM actions in read-only jobs. Target-specific hosts build once
-  on declared builders; common bundles are shared. A separately named clean
+  existing SBOM actions in separate read-only mapping jobs, followed by a seal
+  job that consolidates the inventory and renders notes once. Target-specific
+  hosts were built once on declared builders; common bundles are shared. A separately named clean
   rebuild is permitted only as an explicit reproducibility obligation.
 . Test downloads by exact artifact ID and tests those files on every declared
   runner. Candidate examples use loopback dependency routing and a fresh cache.
