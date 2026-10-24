@@ -14,6 +14,7 @@ import cli.Sleep
 import cli.Tcp
 import cli.Stdout
 import cli.Stderr
+import src/ToolVersion
 import src/Compatibility
 import src/LifecyclePlan
 import src/ReleaseArchive
@@ -25,6 +26,10 @@ import docs.Sha256
 ## Candidate-only release effects. This executable runs with read-only authority;
 ## its JSON records and files are inert inputs to independent admission.
 main! = |arguments| {
+	if arguments.map(OsStr.display) == ["--version"] {
+		Stdout.line!(ToolVersion.json("release-operations"))?
+		return Ok({})
+	}
 	args = arguments.map(OsStr.display)
 	result = match args {
 		["source"] => execute!("source")

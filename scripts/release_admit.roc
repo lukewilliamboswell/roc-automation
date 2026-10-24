@@ -12,6 +12,7 @@ import cli.Stderr
 import cli.Stdout
 import docs.BuildFiles
 import docs.Sha256
+import src/ToolVersion
 import src/GitHub
 import src/LifecycleJson
 import src/LifecyclePlan
@@ -21,6 +22,10 @@ import src/LifecycleSbom
 ## Trusted inert-file admission and read-only GitHub observation. No candidate
 ## executable, Blueprint file or shell fragment is ever evaluated here.
 main! = |args| {
+	if args.map(OsStr.display) == ["--version"] {
+		Stdout.line!(ToolVersion.json("release-admit"))?
+		return Ok({})
+	}
 	result = match args.map(OsStr.display) {
 		["admit", trusted, topology, jobs, evidence, candidate, output] => admit!(trusted, topology, jobs, evidence, candidate, "", output)
 		["admit", trusted, topology, jobs, evidence, candidate, intermediates, output] => admit!(trusted, topology, jobs, evidence, candidate, intermediates, output)

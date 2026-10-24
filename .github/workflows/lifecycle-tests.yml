@@ -1,0 +1,112 @@
+name: Lifecycle utility tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  native:
+    name: Native contracts (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: tools
+        uses: ./actions/lifecycle-tool
+      - name: Test native planning, GitHub observation and inert transport
+        env:
+          ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
+          ROC_LIFECYCLE_GITHUB_BINARY: ${{ steps.tools.outputs.github-binary }}
+          ROC_LIFECYCLE_TRANSPORT_BINARY: ${{ steps.tools.outputs.transport-binary }}
+          FAKE_PYTHON: ${{ steps.tools.outputs.python }}
+          PYTHON_COMMAND: ${{ steps.tools.outputs.python }}
+        run: |
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_plan.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_github.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_lifecycle_transport.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_package_compiler_action.py -v
+      - name: Build the trusted admission utility
+        if: runner.os != 'Windows'
+        env:
+          TOOL_DIRECTORY: ${{ steps.tools.outputs.directory }}
+        run: '"$TOOL_DIRECTORY/tooling/roc" build scripts/release_admit.roc --output="$RUNNER_TEMP/release-admit"'
+      - name: Test native operations and independent admission
+        if: runner.os != 'Windows'
+        env:
+          ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
+          ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}
+          ROC_RELEASE_ADMIT_BINARY: ${{ runner.temp }}/release-admit
+        run: |
+          python3 -m unittest discover -s tests -p test_release_operations.py -v
+          python3 -m unittest discover -s tests -p test_lifecycle_admission.py -v
+
+  real-fixtures:
+    name: Real consumers (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: tools
+        uses: ./actions/lifecycle-tool
+        with:
+          build-policy: 'true'
+          build-docs: 'true'
+      - id: compiler
+        uses: ./actions/setup-package-compiler
+        with:
+          nightly-tag: nightly-2026-10-23-18478ff
+      - id: blueprint
+        uses: ./actions/setup-blueprint
+        with:
+          version: 0.8.0
+      - name: Install the archive decoder
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            command -v zstd || brew install zstd
+          else
+            command -v zstd || { sudo apt-get update && sudo apt-get install -y zstd; }
+          fi
+      - name: Exercise committed consumers with real compilers and SBOM tools
+        env:
+          ROC_RELEASE_PLAN_BINARY: ${{ steps.tools.outputs.plan-binary }}
+          ROC_RELEASE_OPERATIONS_BINARY: ${{ steps.tools.outputs.operations-binary }}
+          RO_COMPILER: ${{ steps.compiler.outputs.compiler-path }}
+          ROC_TOOLING_COMPILER: ${{ steps.tools.outputs.directory }}/tooling/roc
+          RO_BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+          RO_POLICY: ${{ steps.tools.outputs.policy-binary }}
+          RO_DOCS: ${{ steps.tools.outputs.docs-binary }}
+          RA_ZSTD: zstd
+          FIXTURE_OUTPUT: ${{ runner.temp }}/real-lifecycle-fixtures
+          FIXTURE_RUNNER: ${{ matrix.runner }}
+        run: python3 tests/run_lifecycle_fixture.py --output "$FIXTURE_OUTPUT" --runner "$FIXTURE_RUNNER"
+      - name: Retain actual commands, hashes and execution scope
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: real-lifecycle-${{ matrix.runner }}
+          path: ${{ runner.temp }}/real-lifecycle-fixtures/
+          if-no-files-found: warn
+          include-hidden-files: true

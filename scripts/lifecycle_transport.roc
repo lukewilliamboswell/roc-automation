@@ -10,8 +10,10 @@ import cli.Env
 import cli.OsStr
 import cli.Path
 import cli.Stderr
+import cli.Stdout
 import docs.BuildFiles
 import docs.Sha256
+import src/ToolVersion
 import src/Compatibility
 import src/LifecyclePlan
 import src/LifecycleAdmission
@@ -25,12 +27,17 @@ Trace : { schema_version : U64, profile : Str, repository : Str, source_sha : St
 ## Transport only inert bytes. Raw downloader output is verified and inspected
 ## before extraction; explicit traced public files are copied into a fresh tree.
 main! = |args| {
+	if args.map(OsStr.display) == ["--version"] {
+		Stdout.line!(ToolVersion.json("lifecycle-transport"))?
+		return Ok({})
+	}
 	result = match args.map(OsStr.display) {
 		["extract", manifest, raw, destination, python, helper] => extract!(manifest, Path.utf8(raw), Path.utf8(destination), python, helper)
 		["assemble", evidence, destination] => assemble!(Path.utf8(evidence), Path.utf8(destination))
+		["restore", plan, candidate, workspace] => restore!(plan, Path.utf8(candidate), Path.utf8(workspace))
 		["pack", trace, candidate, metadata, diagnostics, destination] => pack!(Path.utf8(trace), Path.utf8(candidate), metadata, diagnostics, Path.utf8(destination))
 		["subject", plan, index, candidate] => subject_output!(plan, index, Path.utf8(candidate))
-		["sbom-trace", plan, index, candidate, evidence, directory] => sbom_trace!(plan, index, Path.utf8(candidate), Path.utf8(evidence), Path.utf8(directory))
+		["sbom-trace", plan, index, candidate, evidence, inventory, directory] => sbom_trace!(plan, index, Path.utf8(candidate), Path.utf8(evidence), Path.utf8(inventory), Path.utf8(directory))
 		_ => Err("usage: lifecycle-transport extract MANIFEST RAW DEST PYTHON HELPER | assemble EVIDENCE DEST")
 	}
 	match result {
@@ -40,6 +47,24 @@ main! = |args| {
 			Err(Exit(1))
 		}
 	}
+}
+
+restore! = |plan_path, candidate, workspace| {
+	parsed : Try(LifecyclePlan.Plan, _)
+	parsed = Json.parse(read_json!(Path.utf8(plan_path))?)
+	plan = parsed.map_err(|_| "invalid native-output restoration plan")?
+	_ = LifecyclePlan.validate(plan.topology)?
+	for adapter in plan.topology.adapters {
+		for output in adapter.outputs {
+			from = BuildFiles.inside!(candidate, output.path)?
+			to = BuildFiles.inside!(workspace, output.path)?
+			if Path.exists!(to).map_err(|_| "cannot inspect native-output path")? {
+				return Err("native output would replace checkout bytes")
+			}
+			BuildFiles.write_bytes!(workspace, output.path, BuildFiles.read!(from, 50_000_000)?)?
+		}
+	}
+	Ok({})
 }
 
 subject! = |plan_path, index_text, candidate| {
@@ -81,7 +106,7 @@ subject_output! = |plan_path, index, candidate| {
 	append_output!("files=${relative}/${selected.file}\n")
 }
 
-sbom_trace! = |plan_path, index, candidate, evidence, directory| {
+sbom_trace! = |plan_path, index, candidate, evidence, inventory, directory| {
 	selected = subject!(plan_path, index, candidate)?
 	files = [selected.file].concat(["spdx.json", "cdx.json", "sbom-manifest.json"].map(|suffix| "${selected.file}.${suffix}"))
 	for file in files {
@@ -89,6 +114,7 @@ sbom_trace! = |plan_path, index, candidate, evidence, directory| {
 	}
 	Path.create_all!(Path.join(directory, "diagnostics")).map_err(|_| "cannot create SBOM evidence directory")?
 	BuildFiles.write_bytes!(directory, "diagnostics/sbom-evidence.json", BuildFiles.read!(evidence, 1_000_000)?)?
+	BuildFiles.write_bytes!(directory, "diagnostics/sbom-inventory.json", BuildFiles.read!(inventory, 1_000_000)?)?
 	context = selected.plan.context
 	trace : Trace
 	trace = { schema_version: 1, profile: "roc-automation-lifecycle-trace-v1", repository: context.repository, source_sha: context.sha, run_id: context.run_id, run_attempt: context.run_attempt, stage: "sbom", runner: "ubuntu-24.04", obligations: [{ id: "sbom-${selected.index.to_str()}", outcome: "passed" }], files }
@@ -125,6 +151,9 @@ pack! = |trace_path, candidate, metadata, diagnostics, destination| {
 	}
 	if diagnostics != "-" {
 		for entry in BuildFiles.list!(Path.utf8(diagnostics))? {
+			if !LifecycleAdmission.metadata_path(trace.stage, "diagnostics/${entry.path}") {
+				return Err("unexpected executable, cache or unsupported diagnostic metadata")
+			}
 			bytes = BuildFiles.read!(entry.absolute, 10_000_000)?
 			$total = $total + bytes.len()
 			if $total > 100_000_000 {

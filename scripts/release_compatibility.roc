@@ -119,6 +119,7 @@ selection! = || {
 ## exit, then displayed even after success. Compiler warnings are never used
 ## as a substitute for its exit status.
 command! = ExamplesEngine.command!
+
 logged! = ExamplesEngine.logged!
 
 test! = || {

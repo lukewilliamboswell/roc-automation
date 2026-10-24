@@ -10,6 +10,8 @@ import cli.Env
 import cli.OsStr
 import cli.Path
 import cli.Stderr
+import cli.Stdout
+import src/ToolVersion
 import src/Compatibility
 import src/LifecyclePlan
 import src/LifecycleAdmission
@@ -24,6 +26,10 @@ RunArtifact : { id : U64, name : Str, digest : Str, expired : Bool, run_id : U64
 ## Read-only GitHub inputs for the shared planner. No candidate code runs here.
 ## GitHub owns event identities; the caller supplies topology as inert JSON.
 main! = |args| {
+	if args.map(OsStr.display) == ["--version"] {
+		Stdout.line!(ToolVersion.json("lifecycle-github"))?
+		return Ok({})
+	}
 	result = match args.map(OsStr.display) {
 		["plan"] => plan!()
 		["resolve", plan, stages, output] => resolve!(plan, stages, output)
@@ -269,12 +275,12 @@ plan! = || {
 		compositions: [],
 	}
 	write!(Path.join(directory, "trusted-seed.json"), Json.to_str(seed))?
-	var $lines = ["compiler=${compiler}", "version=${if event == "pull_request" "0.0.1-dry-run" else context.version}", "full-rehearsal=${if plan.full_rehearsal "true" else "false"}"]
+	var $lines = ["source=${context.sha}", "compiler=${compiler}", "version=${if event == "pull_request" "0.0.1-dry-run" else context.version}", "full-rehearsal=${if plan.full_rehearsal "true" else "false"}"]
 	for stage in ["validate", "host", "source", "prepare", "candidate"] {
 		runners = Compatibility.unique(plan.obligations.keep_if(|obligation| obligation.stage == stage).map(|obligation| obligation.runner))
 		$lines = $lines.append("${stage}-matrix=${Json.to_str({ runner: if runners.is_empty() ["ubuntu-24.04"] else runners })}")
 	}
-	sbom_matrix = plan.topology.sboms.map_with_index(|mapping, index| { index, subject: mapping.subject, target: mapping.target, composition: mapping.composition, supplier_imports: mapping.supplier_imports })
+	sbom_matrix = plan.topology.sboms.map_with_index(|mapping, index| { index, subject: mapping.subject, target: mapping.target, composition: mapping.composition, supplier_imports: mapping.supplier_imports, author: plan.topology.sbom_author })
 	$lines = $lines.append("sbom-matrix=${Json.to_str({ include: sbom_matrix })}")
 	$lines = $lines.append("has-host=${if plan.obligations.any(|obligation| obligation.stage == "host") "true" else "false"}")
 	output = Path.utf8(env!("GITHUB_OUTPUT")?)

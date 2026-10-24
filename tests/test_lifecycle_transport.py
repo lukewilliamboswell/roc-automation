@@ -112,7 +112,7 @@ class LifecycleTransportTests(unittest.TestCase):
         context = json.loads((ROOT / "tests/fixtures/lifecycle/context-pr.json").read_text())
         plan = self.root / "plan.json"
         plan.write_text(json.dumps(dict(schema=1, context=context, topology=topology, full_rehearsal=True,
-                                       obligations=[], bundle_order=["package"], assets=[dict(subject="package", role="bundle", target="source", path="sample-{hash}.tar.zst")])))
+                                       obligations=[], intermediates=[], bundle_order=["package"], assets=[dict(subject="package", role="bundle", target="source", path="sample-{hash}.tar.zst")])))
         outputs = self.root / "outputs"
         outputs.write_text("")
         env = dict(GITHUB_WORKSPACE=str(self.root), GITHUB_OUTPUT=str(outputs))
@@ -121,11 +121,11 @@ class LifecycleTransportTests(unittest.TestCase):
         evidence = self.root / "producer.json"
         evidence.write_text("{}")
         scratch = self.root / "sbom"
-        self.run_tool("sbom-trace", plan, "0", self.candidate, evidence, scratch, success=False, extra_env=env)
+        self.run_tool("sbom-trace", plan, "0", self.candidate, evidence, evidence, scratch, success=False, extra_env=env)
         self.assertFalse((scratch / "sbom-trace.json").exists())
         for suffix in ("spdx.json", "cdx.json", "sbom-manifest.json"):
             (self.candidate / (subject+"."+suffix)).write_text("{}")
-        self.run_tool("sbom-trace", plan, "0", self.candidate, evidence, scratch, extra_env=env)
+        self.run_tool("sbom-trace", plan, "0", self.candidate, evidence, evidence, scratch, extra_env=env)
         trace = json.loads((scratch / "sbom-trace.json").read_text())
         self.assertEqual(trace["obligations"], [dict(id="sbom-0", outcome="passed")])
         self.assertEqual(trace["files"], [subject]+[subject+"."+suffix for suffix in ("spdx.json", "cdx.json", "sbom-manifest.json")])
@@ -151,6 +151,24 @@ class LifecycleTransportTests(unittest.TestCase):
                          ["bundle-map.json", "diagnostics/stdout.log", "dist/bundle.tar.zst", "prepare-trace.json"])
         self.assertEqual((packed / "dist/bundle.tar.zst").read_bytes(), b"one built candidate")
         self.run_tool("pack", trace, self.candidate, metadata, diagnostics, packed, success=False)
+
+    def test_host_restore_preserves_exact_bytes_and_refuses_checkout_overwrite(self):
+        self.candidate.mkdir()
+        (self.candidate / "platform/targets").mkdir(parents=True)
+        (self.candidate / "platform/targets/linux.a").write_bytes(b"tested linux host")
+        (self.candidate / "platform/targets/windows.a").write_bytes(b"tested windows host")
+        topology = json.loads((ROOT / "tests/fixtures/lifecycle/topology-platform.json").read_text())
+        context = json.loads((ROOT / "tests/fixtures/lifecycle/context-pr.json").read_text())
+        plan = self.root / "plan.json"
+        plan.write_text(json.dumps(dict(schema=1, context=context, topology=topology, full_rehearsal=True,
+                                       obligations=[], intermediates=[], bundle_order=["core","platform"], assets=[])))
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        self.run_tool("restore", plan, self.candidate, workspace)
+        self.assertEqual((workspace / "platform/targets/linux.a").read_bytes(), b"tested linux host")
+        (workspace / "platform/targets/linux.a").write_bytes(b"checkout source must survive")
+        self.run_tool("restore", plan, self.candidate, workspace, success=False)
+        self.assertEqual((workspace / "platform/targets/linux.a").read_bytes(), b"checkout source must survive")
 
     def test_candidate_is_not_reused_or_followed(self):
         digest = self.archive(self.raw)

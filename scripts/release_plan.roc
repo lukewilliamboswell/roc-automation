@@ -8,11 +8,17 @@ import cli.File
 import cli.OsStr
 import cli.Path
 import cli.Stderr
+import cli.Stdout
+import src/ToolVersion
 import src/LifecyclePlan
 
 ## The trusted caller supplies context from event/run metadata and independently
 ## hashes the exact inert topology bytes. This utility never executes a task.
 main! = |args| {
+	if args.map(OsStr.display) == ["--version"] {
+		Stdout.line!(ToolVersion.json("release-plan"))?
+		return Ok({})
+	}
 	result = plan!(args)
 	match result {
 		Ok({}) => Ok({})
