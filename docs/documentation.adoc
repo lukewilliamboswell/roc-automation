@@ -200,6 +200,14 @@ heading that repeats an included chapter's title is not another document.
 Two included documents with the same title remain ambiguous and reject;
 regressions cover both cases.
 
+Renaming a heading can break existing URL fragments. Keep canonical chapter
+identities stable; HTML also retains noncolliding historical title and duplicate
+explicit-ID occurrence aliases. An alias cannot replace a primary ID or duplicate
+an earlier alias. Native and browser regressions check legacy fragments, current
+routes and uniqueness; PDF and Markdown retain their canonical destinations.
+These aliases do not infer every historical site URL, so review migration links
+explicitly.
+
 Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared
 Mermaid registrations. An optional validated SVG companion improves the website;
 PDF uses PNG. Prepare unsupported JPEG, GIF, WebP and general SVG assets before

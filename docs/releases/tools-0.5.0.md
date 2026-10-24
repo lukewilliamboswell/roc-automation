@@ -23,7 +23,8 @@ those require observations from the consuming repository. Downstream pilot
 migrations are follow-ups.
 
 Compatibility fixes accept the flattened result file produced by a single-target
-artifact download while rejecting ambiguous duplicates. Examples may opt into
+artifact download while rejecting ambiguous duplicates before decoding either
+layout, including malformed or nonregular duplicate entries. Examples may opt into
 `--fuzz` builds and per-case ignored stderr. Fuzz builds use the compiler's LLVM
 backend and retain bounded process, output and timeout handling. Explicit local
 expectation updates share the same engine, reject CI and published suites, and
@@ -42,4 +43,6 @@ published immutable release; merged upstream source is not a released tool.
 The renderer delegates source include selection to the pinned roc-parser 3.0.0
 API, retaining tagged regions, line selections and strict failure handling.
 Document heading identity uses the first title, preventing a nested title from
-being mistaken for another included document.
+being mistaken for another included document. HTML preserves noncolliding legacy
+heading aliases after explicit-ID heading renames; canonical routes and PDF/Markdown
+destinations remain unchanged.
