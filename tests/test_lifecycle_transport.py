@@ -118,6 +118,10 @@ class LifecycleTransportTests(unittest.TestCase):
         env = dict(GITHUB_WORKSPACE=str(self.root), GITHUB_OUTPUT=str(outputs))
         self.run_tool("subject", plan, "0", self.candidate, extra_env=env)
         self.assertEqual(outputs.read_text(), "files=candidate/"+subject+"\n")
+
+        outside = self.run_tool("subject", plan, "0", self.candidate, success=False,
+                                extra_env={**env, "GITHUB_WORKSPACE": str(self.root / "other-workspace")})
+        self.assertIn("inside the workspace", outside.stderr)
         evidence = self.root / "producer.json"
         evidence.write_text("{}")
         scratch = self.root / "sbom"

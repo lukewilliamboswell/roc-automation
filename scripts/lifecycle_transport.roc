@@ -95,15 +95,13 @@ append_output! = |value| {
 
 subject_output! = |plan_path, index, candidate| {
 	selected = subject!(plan_path, index, candidate)?
-	workspace = Env.var_str!("GITHUB_WORKSPACE").map_err(|_| "missing workspace")?.drop_suffix("/")
-	absolute = Path.display(candidate)
-	if !absolute.starts_with("${workspace}/") {
-		return Err("SBOM candidate must be inside the workspace")
+	workspace = Path.absolute!(Path.utf8(Env.var_str!("GITHUB_WORKSPACE").map_err(|_| "missing workspace")?)).map_err(|_| "cannot resolve workspace")?
+	absolute = Path.absolute!(candidate).map_err(|_| "cannot resolve SBOM candidate")?
+	windows = match Env.platform!().os {
+		WINDOWS => Bool.True
+		_ => Bool.False
 	}
-	relative = absolute.drop_prefix("${workspace}/")
-	if !LifecyclePlan.safe_path(relative) {
-		return Err("unsafe SBOM candidate directory")
-	}
+	relative = BuildFiles.relative_path(Path.display(workspace).drop_suffix("/").drop_suffix("\\"), Path.display(absolute), windows).map_err(|_| "SBOM candidate must be inside the workspace")?
 	append_output!("files=${relative}/${selected.file}\n")
 }
 
