@@ -1,9 +1,10 @@
 = Shared validation and release lifecycle contract
 
-Status: proposed for review under #83. This is the contract review gate,
-not a claim of implemented lifecycle behavior. Implementation starts after
-this contract merges. The current consumer manual remains normative until
-its ownership changes are accepted. This proposal covers package and platform
+Status: implementation contract under #83. The maintainer explicitly authorized
+contract and full implementation together in one PR on 2026-10-24, superseding
+the issue's separate contract-merge gate. This document specifies acceptance;
+it is not evidence of implemented behavior. The current consumer manual remains
+normative until its ownership changes are accepted. This proposal covers package and platform
 profiles so the first implementation does not create a package-only dead end.
 
 == Ownership and the change being reviewed
@@ -280,7 +281,7 @@ ordinary-release artifact promotion.
 
 == Delivery and acceptance
 
-The contract merge is the implementation gate. Phase 1 supplies pure-package
+The combined PR reviews this contract and its implementation. Phase 1 supplies pure-package
 and multi-bundle consumers under `examples/`, one shared workflow and released
 operations, independent admission, then pilot migrations of ansi or weaver and
 roc-time. Phase 2 adds the bounded native adapter and multi-target fixture to
