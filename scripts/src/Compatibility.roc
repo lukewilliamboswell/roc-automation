@@ -24,6 +24,7 @@ Compatibility := [].{
 	## External compiler/runtime interfaces receive the host's path separators;
 	## Windows compiler cache identities compare their literal root prefixes.
 	native_path = |value, windows| if windows value.replace_each("/", "\\") else value
+	compiler_matches = |output, expected| (output.split_on("\n").first() ?? "").trim().replace_each("\t", " ").split_on(" ").contains(expected)
 	valid_repository = GitHub.valid_repository
 
 	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26", "windows-2022", "windows-2025"]
@@ -76,7 +77,9 @@ Compatibility := [].{
 
 	validate_apps : Suite -> Try(Suite, Str)
 	validate_apps = |found| {
-		if found.apps.is_empty() or found.apps.len() > 100 { return Err("suite needs 1–100 applications") }
+		if found.schema_version != 1 or found.apps.is_empty() or found.apps.len() > 100 {
+			return Err("suite schema 1 needs 1–100 applications")
+		}
 		if unique(found.apps.map(|example| example.path)).len() != found.apps.len() {
 			return Err("duplicate suite applications")
 		}
@@ -185,3 +188,7 @@ expect !Compatibility.valid_environment([{ name: "SystemRoot", value: "x" }])
 
 expect Compatibility.native_path("D:\\a\\temp/output/empty-cache", Bool.True) == "D:\\a\\temp\\output\\empty-cache"
 expect Compatibility.native_path("/tmp/output/empty-cache", Bool.False) == "/tmp/output/empty-cache"
+
+expect Compatibility.compiler_matches("Roc compiler version nightly-example\n", "nightly-example")
+expect !Compatibility.compiler_matches("Roc compiler version nightly-example-extra\n", "nightly-example")
+expect !Compatibility.compiler_matches("other\nnightly-example", "nightly-example")

@@ -151,3 +151,60 @@ xref:pure-package.adoc#pass-an-executable-to-a-shared-action[shared executable h
 Return a persistent resolved store path rather than the task's temporary link.
 Action code and privileged controllers remain pinned to full reviewed SHAs;
 candidate tasks and executables run only in jobs without write authority.
+
+[#release-operations]
+== Release operations and the examples engine
+
+`release-operations` runs candidate effects with read-only repository authority.
+Its `validate`, `host`, `source`, `prepare`, `seal` and `candidate` commands consume
+the planner's versioned plan. The workflow supplies the selected compiler and
+an exact event checkout; the executable verifies both before running a task.
+A task name comes from the reviewed topology, not shell text in a result file.
+Unknown selected operations fail without a passing trace.
+
+`validate` performs dispatch-only `roc bump --expect` checks before a host or
+release asset is built. It requires explicit previous-release evidence for every
+bundle, or a verified first-release result. `host` runs each declared native
+builder once. `source` owns policy, formatting, selected product checks and
+working-tree examples. These tasks must not hide an archive rehearsal inside an
+ordinary check; the shared plan gives rehearsal its own obligation.
+
+`prepare` copies the bounded tracked regular-file inventory into private staging,
+assembles bundles in dependency order and admits each sibling through Roc's
+content-addressed package cache. It replaces declared bundle placeholders and
+quoted local bundle paths, builds the examples ZIPs with their final release
+URLs, and invokes the shared renderer for documentation. The ZIP writer uses a
+stable file order, fixed timestamps and permissions, and refuses unsafe names,
+case collisions and files that collide with directories. A repeated preparation
+in the same staging directory fails before rebuilding an asset.
+
+After the separate read-only SBOM actions have produced the required sidecars,
+`seal` renders the authored notes once, records the selected compiler and bundle
+URLs, and hashes the complete files into `release-inventory.json`. The inventory
+cannot hash itself; independent admission hashes that final file separately.
+For a PR, the highest authored SemVer notes are rendered with the synthetic
+release version. A dispatch uses the exact version's authored notes.
+
+`candidate` extracts the exact examples ZIP with the existing bounded archive
+admission helper. It compares its complete source file inventory and expected
+results with the working tree, permitting only the declared dependency URL
+changes. A managed loopback server exposes the bound bundle bytes while the
+compiler receives explicit `--replace-dep` routes. Each obligation starts with an
+empty package cache. The source, candidate and published-release paths share
+one compiler/case engine: successful diagnostics are retained, deadlines terminate
+descendants, and interruptions cannot match an expected program exit code.
+
+`RO_DIRECTORY` names private evidence/scratch; `RO_CANDIDATE` names the separate
+public asset directory. Explicit overlapping directories fail. `RO_BUNDLE_MAP`
+may identify the transported inert bundle mapping; every use rechecks its URLs,
+sizes and digests against the candidate files. The `trace`, `files` and
+`diagnostics` outputs identify the trace, explicit public file paths and a tree
+containing only diagnostic JSON and raw logs. Executables, extracted sources and
+caches remain outside that diagnostics tree. Transport copies those explicit
+files without rebuilding or archiving the scratch workspace.
+
+A trace records completed obligations and source/run identity; it is a claim,
+not publication authorization. The independent admission step reconstructs the
+required work and checks actual jobs and file bytes. These controls establish
+which reviewed cases ran against which files; they do not prove complete case
+coverage, the accuracy of a supplier's graph, or that candidate code is benign.

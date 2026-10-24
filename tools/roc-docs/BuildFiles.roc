@@ -1,9 +1,27 @@
 import cli.Path
+import cli.Env
 import BuildOptions
 
 ## Bounded regular-file access. Paths are checked component by component before
 ## reads, copies, or directory creation; documentation never selects host paths.
 BuildFiles :: [].{
+
+	## Compare native Windows directory results with UTF-8 slash-joined roots.
+	## Unix backslashes remain filename bytes and are rejected by safe_path.
+	relative_path : Str, Str, Bool -> Try(Str, Str)
+	relative_path = |root, child, windows| {
+		base = if windows root.replace_each("\\", "/") else root
+		text = if windows child.replace_each("\\", "/") else child
+		prefix = "${base}/"
+		if !text.starts_with(prefix) {
+			return Err("filesystem returned a path outside the declared root")
+		}
+		path = text.drop_prefix(prefix)
+		if !BuildOptions.safe_path(path) {
+			return Err("unsafe relative filename")
+		}
+		Ok(path)
+	}
 	Entry : { path : Str, absolute : Path }
 	inside! : Path, Str => Try(Path, Str)
 	inside! = |root, relative| {
@@ -75,14 +93,11 @@ walk! = |root, current, depth, found| {
 	}
 	for child in children {
 		text = Path.to_str(child).map_err(|_| "documentation paths must be valid UTF-8")?
-		prefix = "${Path.display(root)}/"
-		if !text.starts_with(prefix) {
-			return Err("filesystem returned a path outside documentation root")
+		windows = match Env.platform!().os {
+			WINDOWS => Bool.True
+			_ => Bool.False
 		}
-		relative = text.drop_prefix(prefix)
-		if !BuildOptions.safe_path(relative) {
-			return Err("unsafe documentation filename: ${relative}")
-		}
+		relative = BuildFiles.relative_path(Path.display(root), text, windows)?
 		match Path.type!(child).map_err(|e| Str.inspect(e))? {
 			IsFile => {
 				$files = $files.append({ path: relative, absolute: child })
@@ -114,3 +129,8 @@ compare_text = |a, b| {
 	}
 	if (left.len() < right.len()) Before else if (left.len() > right.len()) After else Same
 }
+
+expect BuildFiles.relative_path("C:\\work\\tree/examples", "C:\\work\\tree\\examples\\sub\\main.roc", Bool.True) == Ok("sub/main.roc")
+expect BuildFiles.relative_path("/work/tree/examples", "/work/tree/examples/sub/main.roc", Bool.False) == Ok("sub/main.roc")
+expect BuildFiles.relative_path("/work/tree/examples", "/work/tree/examples/sub\\main.roc", Bool.False).is_err()
+expect BuildFiles.relative_path("C:\\work\\tree/examples", "C:\\work\\other\\main.roc", Bool.True).is_err()

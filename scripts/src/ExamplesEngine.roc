@@ -9,14 +9,24 @@ import Compatibility
 ## One bounded compiler/examples engine for working-tree, candidate and published
 ## suites. Callers own immutable source/archive admission and dependency routes.
 ExamplesEngine := [].{
-	run! = run_examples!
+	run! = |suite, compiler, initial, root, directory, cache, replace_args, timeout, published| run_examples!(suite, compiler, initial, root, directory, cache, replace_args, timeout, published, directory)
+	run_with_outputs! = run_examples!
 	command! = run_command!
 	logged! = log_command!
 }
 
 env! = |name| Env.var_str!(OsStr.from_str(name)).map_err(|_| "missing environment ${name}")
-native! = |path| Compatibility.native_path(Path.display(path), match Env.platform!().os { WINDOWS => Bool.True, _ => Bool.False })
+
+native! = |path| Compatibility.native_path(
+	Path.display(path),
+	match Env.platform!().os {
+		WINDOWS => Bool.True
+		_ => Bool.False
+	},
+)
+
 read! = |path| Path.read_utf8!(path).map_err(|_| "cannot read example")
+
 write! = |path, text| Path.write_utf8!(path, text).map_err(|_| "cannot write diagnostic")
 
 run_command! = |argv, cwd, cache, input, timeout| {
@@ -67,7 +77,7 @@ log_command! : Path, U64, List(Str), Path, Path, List(U8), U64 => Try({ status :
 log_command! = |directory, number, argv, cwd, cache, input, timeout| {
 	ran = run_command!(argv, cwd, cache, input, timeout)?
 	prefix = "${number.to_str()}"
-	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: native!(cwd), cache: native!(cache), stdin: Str.from_utf8_lossy(input), environment: env!("RA_ENVIRONMENT")?, timeout_ms: timeout, status: ran.status, signal: ran.signal, error: ran.error, code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
+	write!(Path.join(directory, "${prefix}-command.json"), Json.to_str({ argv, cwd: native!(cwd), cache: native!(cache), stdin: Str.from_utf8_lossy(input), environment: Env.var_str!("RA_ENVIRONMENT") ?? "[]", timeout_ms: timeout, status: ran.status, signal: ran.signal, error: ran.error, code: ran.code, timed_out: ran.timed_out, limited: ran.limited }))?
 	Path.write_bytes!(Path.join(directory, "${prefix}-stdout.log"), ran.stdout).map_err(|_| "cannot preserve stdout")?
 	Path.write_bytes!(Path.join(directory, "${prefix}-stderr.log"), ran.stderr).map_err(|_| "cannot preserve stderr")?
 	Stdout.line!("\n${Compatibility.console(Json.to_str(argv))} (${ran.status}, code ${ran.code.to_str()}, signal ${ran.signal.to_str()}: ${Compatibility.console(ran.error)})\n${Compatibility.console(Str.from_utf8_lossy(ran.stdout))}${Compatibility.console(Str.from_utf8_lossy(ran.stderr))}").map_err(|_| "cannot display diagnostics")?
@@ -77,10 +87,10 @@ log_command! = |directory, number, argv, cwd, cache, input, timeout| {
 	Ok(ran)
 }
 
-run_examples! : Compatibility.Suite, Str, Compatibility.Result, Path, Path, Path, List(Str), U64, Bool => Try(Compatibility.Result, Str)
-run_examples! = |suite, compiler, initial, root, directory, cache, replace_args, case_timeout, published| {
+run_examples! : Compatibility.Suite, Str, Compatibility.Result, Path, Path, Path, List(Str), U64, Bool, Path => Try(Compatibility.Result, Str)
+run_examples! = |suite, compiler, initial, root, directory, cache, replace_args, case_timeout, published, executable_directory| {
 	version = log_command!(directory, 1, [compiler, "version"], root, cache, [], 30_000)?
-	if version.status != "exited" or version.code != 0 or !Str.from_utf8_lossy(version.stdout).contains(initial.nightly) {
+	if version.status != "exited" or version.code != 0 or !Compatibility.compiler_matches(Str.from_utf8_lossy(version.stdout), initial.nightly) {
 		return Err("installed compiler identity does not match the selected nightly")
 	}
 	var $result = { ..initial, detail: "", outcome: "compatible" }
@@ -90,7 +100,7 @@ run_examples! = |suite, compiler, initial, root, directory, cache, replace_args,
 			return Err("example must directly reference the declared published bundle and must not pin its compiler")
 		}
 		target = example.target ?? "native"
-		executable = Path.join(directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else if initial.runner.starts_with("windows-") ".exe" else ""}")
+		executable = Path.join(executable_directory, "example-${$number.to_str()}${if target == "wasm32" ".wasm" else if initial.runner.starts_with("windows-") ".exe" else ""}")
 		native_executable = native!(executable)
 		native_root = native!(root)
 		build_target = if target == "native" [] else ["--target=${target}"]
