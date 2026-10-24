@@ -300,7 +300,10 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 		out = Path.join(directory, "bundle-${id}")
 		mkdir!(out)?
 		modules = Path.list!(root_directory).map_err(|e| Str.inspect(e))?.map(|path| Path.filename(path).map_ok(Path.display) ?? "").keep_if(|name| name.ends_with(".roc") and name != file_name(bundle.root)).sort_with(ReleaseArchive.compare)
-		_ = capture!(directory, "bundle-${id}", [compiler, "bundle", file_name(bundle.root)].concat(modules).concat(["--output-dir", native!(out)]), root_directory, [native!(cache)], [], 300_000)?
+		prefix = if parent(bundle.root) == "" "" else "${parent(bundle.root)}/"
+		native_inputs = plan.topology.adapters.fold([], |all, adapter| all.concat(adapter.outputs.map(|output| output.path))).keep_if(|path| prefix == "" or path.starts_with(prefix)).map(|path| path.drop_prefix(prefix))
+		inputs = Compatibility.unique(modules.concat(native_inputs)).sort_with(ReleaseArchive.compare)
+		_ = capture!(directory, "bundle-${id}", [compiler, "bundle", file_name(bundle.root)].concat(inputs).concat(["--output-dir", native!(out)]), root_directory, [native!(cache)], [], 300_000)?
 		produced = Path.list!(out).map_err(|e| Str.inspect(e))?.keep_if(|path| Path.display(path).ends_with(".tar.zst"))
 		file = match produced {
 			[one] => one
@@ -316,7 +319,9 @@ prepare! = |plan, workspace, directory, assets, compiler| {
 		$bundles = $bundles.append({ id, path: name, url: "https://github.com/${plan.context.repository}/releases/download/${release_version(plan)}/${name}", size: bytes.len(), sha256: Sha256.hex(bytes) })
 		# Roc's content-addressed cache admits the bare hash archive; it never
 		# needs to fetch an unpublished sibling URL when bundling its dependent.
-		_ = capture!(directory, "unbundle-${id}", [compiler, "unbundle", native!(file)], stage, [native!(cache)], [], 120_000)?
+		package_cache = Path.join(cache, "roc/packages")
+		mkdir!(package_cache)?
+		_ = capture!(directory, "unbundle-${id}", [compiler, "unbundle", native!(file)], package_cache, [native!(cache)], [], 120_000)?
 	}
 	write!(Path.utf8(optional!("RO_BUNDLE_MAP", native!(Path.join(directory, "bundle-map.json")))), Json.to_str($bundles))?
 	for example in plan.topology.examples {

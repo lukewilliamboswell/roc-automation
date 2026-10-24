@@ -38,9 +38,17 @@ args=sys.argv[1:]
 with open(os.environ['TOOL_TRACE'],'a') as out: out.write(json.dumps(args)+'\\n')
 if args==['version']: print('Roc compiler version nightly-2026-10-23-18478ff')
 elif args[0]=='bundle':
+    import re
+    source=Path(args[1]).read_text()
+    for url in re.findall(r'https://[^" ]+\\.tar\\.zst',source):
+        name=url.rsplit('/',1)[1].rsplit('-',1)[-1].removesuffix('.tar.zst')
+        assert (Path(os.environ['XDG_CACHE_HOME'])/'roc/packages'/name/'main.roc').is_file(), 'unpublished dependency was not admitted to compiler package cache'
     out=Path(args[args.index('--output-dir')+1]);out.mkdir(exist_ok=True)
     (out/('a'*43+'.tar.zst')).write_bytes(b'candidate bundle')
-elif args[0]=='unbundle': pass
+elif args[0]=='unbundle':
+    archive=Path(args[1]); assert archive.read_bytes()==b'candidate bundle'
+    extracted=Path.cwd()/archive.name.removesuffix('.tar.zst');extracted.mkdir(exist_ok=True)
+    (extracted/'main.roc').write_text('package []\\n')
 elif args[0] in ('check','build'):
     for i,arg in enumerate(args):
         if arg=='--replace-dep':
