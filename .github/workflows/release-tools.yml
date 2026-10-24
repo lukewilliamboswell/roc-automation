@@ -396,7 +396,7 @@ jobs:
           else
             sha256sum --check --strict sha256sums.txt
           fi
-          chmod +x -- *-"$SYSTEM$EXTENSION"
+          chmod +x ./*-"$SYSTEM$EXTENSION"
       - name: Test native utilities without consumer sources or a Roc compiler
         working-directory: tools/lifecycle-tests
         env:
