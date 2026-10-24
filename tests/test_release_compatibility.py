@@ -163,6 +163,27 @@ else:
         self.assertIn("::error::", (directory / "2-stderr.log").read_text())
         self.assertIn("compiler stdout detail", (directory / "2-stdout.log").read_text())
 
+    def test_single_artifact_flattened_download_is_aggregated(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        # download-artifact's one-match pattern writes directly to its path.
+        artifacts = self.root / "artifacts"
+        artifacts.mkdir()
+        shutil.copy(directory / "result.json", artifacts / "result.json")
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("report=success", outputs)
+        for change in ({"GITHUB_RUN_ATTEMPT": "2"}, {"RA_TEST_RESULT": "cancelled"}):
+            ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts), **change)
+            self.assertEqual(ran.returncode, 0, ran.stderr)
+            self.assertNotIn("report=success", outputs)
+        selected = json.loads(self.selection.read_text())
+        selected["runners"].append("macos-26")
+        self.selection.write_text(json.dumps(selected))
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertNotIn("report=success", outputs)
+
     def test_compiler_failure_is_incompatible_and_keeps_diagnostics(self):
         ran, directory, _ = self.run_phase("test", FAKE_COMPILER_FAIL="1")
         self.assertNotEqual(ran.returncode, 0)

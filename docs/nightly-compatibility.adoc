@@ -246,6 +246,11 @@ Warnings remain nonfatal by default. Successful compilation does not imply that
 it was warning-free. The runner owns compiler execution instead of delegating
 it to a driver that might discard captured success output.
 
+Aggregation accepts the per-artifact directory layout and, for exactly one
+declared runner, the flattened layout produced by a one-match artifact download.
+Both paths require the same repository, release, compiler, runner and current
+run-attempt identity; a flattened file cannot fill a multi-target inventory.
+
 Each target artifact, `compatibility-<runner>`, retains raw stdout and stderr,
 command arguments, working directory, process status (normal exit, signal or
 I/O error), exit code, signal number, launch-error details, interruption flags and

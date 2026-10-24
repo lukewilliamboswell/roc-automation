@@ -293,6 +293,13 @@ aggregate! = || {
 		parsed : Try(Compatibility.Result, _)
 		parsed = match read!(Path.join(artifacts, "compatibility-${runner}/result.json")) {
 			Ok(source) => Json.parse(source)
+			# download-artifact flattens a pattern matching exactly one artifact.
+			# Only a one-target selection can use that layout; identity and
+			# current-attempt checks below remain identical.
+			Err(_) if selected.runners.len() == 1 => match read!(Path.join(artifacts, "result.json")) {
+				Ok(source) => Json.parse(source)
+				Err(_) => Err(Missing)
+			}
 			Err(_) => Err(Missing)
 		}
 		match parsed {
