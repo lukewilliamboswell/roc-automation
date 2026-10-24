@@ -1,0 +1,77 @@
+= Independent lifecycle admission
+
+This controller runs from the action's reviewed full commit SHA. It checks out
+no consumer source, evaluates no candidate Blueprint, restores no candidate cache
+and executes no candidate file. Its bootstrap uses the action's own Blueprint
+and lock; Nix token configuration is cleared and checked before provisioning.
+Only the bounded GET controller step receives `GH_TOKEN`.
+
+== Discovery and admission
+
+`release-admit discover SEED TOPOLOGY OUTPUT` independently reads the actual
+repository, run, referenced reusable workflow, all producing attempts' jobs and
+all retained artifacts. It compares the actual runner environment and default
+branch, reconstructs obligations from the topology and selects exact immutable
+artifact IDs/digests. This is transport discovery, not publication authority.
+The workflow downloads those IDs with digest mismatches treated as errors and
+uses the shared bounded regular-file archive helper before collection.
+
+`release-admit collect SEED TOPOLOGY TRACES CANDIDATE OUTPUT` rechecks that live
+API evidence, then requires every selected job's exact obligation trace and
+hashes every artifact copy and the complete final file set. Trace directories
+are named by the actual API artifact names; each contains `<stage>-trace.json`
+and exactly the public files its trace declares. Discovery never treats a
+candidate's job ID or pass flag as proof of an actual successful job.
+
+`release-admit admit TRUSTED TOPOLOGY JOBS EVIDENCE CANDIDATE OUTPUT` is the
+corresponding offline validation interface. `TRUSTED` and `JOBS` must come from
+the pinned controller's authenticated observations, not from a candidate.
+Offline success alone is not authenticated publication authorization.
+
+A publish-only retry may retain an earlier producing attempt. A later attempt
+that reruns any required producing stage invalidates the old generation; missing
+same-generation stages fail rather than mixing old builds and new verdicts.
+PR source is the immutable tested merge commit, whose parents include the actual
+run head. If the live PR head or base moved, changed-file evidence cannot select
+a smaller obligation set. Publication requires dispatch on the live default
+branch name and binds the original event SHA, not a later branch tip.
+
+== Supported evidence and SBOM profile
+
+The bounded `roc-automation-release-evidence-v1` profile extends the release
+handoff with explicit obligations, real job IDs/producing attempts, immutable
+artifact IDs/service digests, trace digests and canonical files by role, subject,
+target, size and SHA-256. Duplicate JSON keys, unknown envelope fields,
+nonregular files, symlinks, Windows aliases, missing/extra files and size/hash or
+subject/target swaps reject. Input JSON and graph depth/count, file count,
+per-file bytes, total bytes, command output and GET deadlines are bounded.
+
+The supported independent SBOM policy is the Blueprint SPDX 3.0.1 and
+CycloneDX 1.7 profile with its `blueprint-spdx-3.0-v1` manifest. It checks exact
+subject/version/target/digests, sidecar binding, required profile nodes,
+duplicate/dangling graph references, reviewed relationships and their build
+scope, reviewed component identities/input dispositions and coverage claims.
+Compositions are fetched as inert bytes from the event SHA. Unreviewed claims of
+complete coverage reject. Supplier gaps retain reviewed reasons and contacts.
+These are explicit profile checks, not a general JSON Schema implementation or
+a claim of complete software discovery, supplier authorship or compliance.
+No schema, JSON-LD context, supplier URL or advisory service is fetched while
+validating a document.
+
+The existing publisher consumes the admitted explicit asset set, hashes those
+local files again and compares the notes digest before its first write. Its
+existing upload/readback checks cover every file, including the sidecars and
+inventory. Lifecycle callers require admission and rerun it in the protected
+publish job. Legacy publisher callers retain their existing separate contract.
+A report file is inert evidence, never a credential or signed authorization
+object; the trusted same-job controller step and immutable workflow pin supply
+the authority boundary.
+
+The adversarial native tests in `tests/test_lifecycle_admission.py` alter
+context, jobs, attempts, transports, files and rehashed SBOM graphs/coverage;
+pure expects in `scripts/src/LifecycleAdmission.roc` exercise the state checks.
+A successful job does not prove a compiler, adapter or product is benign.
+Candidate execution still belongs on disposable read-only runners without
+sensitive workload data. Artifact-byte binding relies on the pinned downloader
+checking the selected service digest before extraction, and the caller's
+reviewed workflow pin remains its chosen shared-controller authority.

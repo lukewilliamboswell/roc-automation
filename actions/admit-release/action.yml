@@ -1,0 +1,101 @@
+name: Independently admit release evidence
+description: Reconstruct trusted jobs, transports, obligations and exact inert bytes before lifecycle publication.
+inputs:
+  phase:
+    description: discover selects actual immutable transports; collect validates downloaded evidence and candidate bytes
+    required: true
+  trusted-seed:
+    description: Bounded trusted plan context JSON, never a candidate-produced authorization flag
+    required: true
+  topology:
+    description: Exact reviewed topology JSON bound by the seed digest
+    required: true
+  traces:
+    description: Downloaded artifacts in directories named by their actual API artifact names
+    default: ''
+  candidate:
+    description: Complete final asset directory inside GITHUB_WORKSPACE for publication
+    default: ''
+  output-directory:
+    description: Private output directory for trusted observations, evidence and admission result
+    required: true
+  token:
+    description: Token for read-only GitHub evidence GET requests; no token is given to bootstrap
+    default: ${{ github.token }}
+outputs:
+  artifact-ids:
+    description: Comma-separated immutable artifact IDs independently selected from the actual run
+    value: ${{ steps.admit.outputs.artifact-ids }}
+  producing-attempt:
+    description: Original producing generation, which can precede a publish-only retry
+    value: ${{ steps.admit.outputs.producing-attempt }}
+  admission-file:
+    description: Exact-file report reconstructed by trusted code in this job
+    value: ${{ steps.admit.outputs.admission-file }}
+  explicit-assets:
+    description: Complete admitted file paths relative to GITHUB_WORKSPACE
+    value: ${{ steps.admit.outputs.explicit-assets }}
+  notes-file:
+    description: Exact admitted notes path relative to GITHUB_WORKSPACE
+    value: ${{ steps.admit.outputs.notes-file }}
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      with:
+        extra_nix_config: access-tokens =
+
+    - name: Check that Nix holds no token
+      shell: bash
+      run: |
+        if [ -n "$(nix config show access-tokens | tr -d '[:space:]')" ]; then
+          echo "::error::Nix is configured with a GitHub access token; refusing to continue"
+          exit 1
+        fi
+
+    # The installer reads Blueprint.roc from GITHUB_WORKSPACE, installs under
+    # RUNNER_TEMP and adds that directory to GITHUB_PATH. Here it is given this
+    # repository's checkout, a directory of its own, and no PATH file, so the
+    # calling job's PATH and any blueprint it installed are left alone.
+    - id: blueprint
+      name: Download and verify blueprint
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_VERSION: ''
+        INPUT_SHA256_X86_64_LINUX: ''
+        INPUT_SHA256_AARCH64_LINUX: ''
+        INPUT_SHA256_AARCH64_DARWIN: ''
+      run: |
+        root="$(cd "$ACTION_PATH/../.." && pwd)"
+        GITHUB_WORKSPACE="$root" RUNNER_TEMP="$RUNNER_TEMP/roc-automation-admit-release" GITHUB_PATH=/dev/null \
+          python3 "$root/actions/setup-blueprint/setup_blueprint.py"
+
+    - id: admit
+      name: Independently observe or admit inert evidence
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+        INPUT_PHASE: ${{ inputs.phase }}
+        INPUT_TRUSTED_SEED: ${{ inputs.trusted-seed }}
+        INPUT_TOPOLOGY: ${{ inputs.topology }}
+        INPUT_TRACES: ${{ inputs.traces }}
+        INPUT_CANDIDATE: ${{ inputs.candidate }}
+        INPUT_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        cd "$ACTION_PATH/../.."
+        case "$INPUT_PHASE" in
+          discover)
+            "$BLUEPRINT" run release-admit -- discover "$INPUT_TRUSTED_SEED" "$INPUT_TOPOLOGY" "$INPUT_OUTPUT_DIRECTORY"
+            ;;
+          collect)
+            "$BLUEPRINT" run release-admit -- collect "$INPUT_TRUSTED_SEED" "$INPUT_TOPOLOGY" "$INPUT_TRACES" "$INPUT_CANDIDATE" "$INPUT_OUTPUT_DIRECTORY"
+            ;;
+          *)
+            echo "::error::phase must be discover or collect"
+            exit 1
+            ;;
+        esac
