@@ -87,11 +87,15 @@ indentation. Printed page numbers resolve to the final physical destination page
 Use `--site-url https://example.com/project/` (or the action's `site-url` input)
 for PDF links to website-only chapters, API routes and downloads. The utility
 keeps manual chapter references internal and preserves other download filenames.
-Local listing includes can select `tag=name` and `indent=0` from checked files
-inside the workspace; consumers still compile/test their examples separately.
-The broader roc-parser 3.0.0 include-selector API does not expand this renderer
-contract. Parser upgrades still require acceptance checks for whitespace, tab
-handling, inline code, source highlighting and links across every output format.
+Local listing includes can select `tag=name`, `lines=N`, `lines=A..B`,
+semicolon-separated line selections and open-ended ranges (`A..` or `A..-1`),
+with optional `indent=0`, from checked files inside the workspace. Selection
+uses roc-parser 3.0.0 and rejects every reported problem. Duplicate or unknown
+options, combined line/tag selectors and missing or ambiguous tags reject;
+multiple/negative tag selectors and other indentation values remain unsupported.
+Consumers still compile/test their examples separately. Parser upgrades still
+require acceptance checks for whitespace, tab handling, inline code, source
+highlighting and links across every output format.
 
 HTML and PDF share the same language-aware source highlighter and original
 UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source

@@ -53,7 +53,7 @@ content identity, provenance and product correctness are different evidence.
 
 | Documentation or an assessment overstates the checks
 | Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims], xref:documentation.adoc#publish-static-markdown[retrievable documentation formats] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
-| Executable examples, rendered-content/link checks and review of operational evidence. A valid publication does not prove every technical assertion.
+| Executable examples, exact selected-listing/digest fixtures, rendered-content/link checks and review of operational evidence. A valid publication does not prove every technical assertion.
 |===
 
 == Use research without turning it into a framework checklist

@@ -207,6 +207,37 @@ class RepositoryTests(unittest.TestCase):
         provenance = json.loads((self.root/'.docs-prepared/manifest.json').read_text())['includes']
         self.assertEqual(provenance, [{'document':'index.adoc', 'line':5, 'path':'docs/tutorial/step1.roc', 'options':'tag=body,indent=0', 'source_sha256':hashlib.sha256(original.encode()).hexdigest(), 'selected_sha256':hashlib.sha256(expected.encode()).hexdigest()}])
 
+    def test_roc_parser_line_selected_output_preserves_exact_bytes_and_provenance(self):
+        fixture = Path(__file__).parent/'fixtures/compatibility'
+        original = (fixture/'roc-parser-csv-guide.expected').read_bytes()
+        self.source('examples/csv-guide.expected', original.decode())
+        self.source('index.adoc', (fixture/'roc-parser-csv-outputs.adoc').read_text())
+        self.run_build()
+        ranges = [(1, 4), (5, 6), (7, 7), (8, 10), (11, 11), (16, 18), (12, 15)]
+        expected = [b''.join(original.splitlines(keepends=True)[start-1:end]).decode() for start, end in ranges]
+        site = self.root/'.docs-out/site'
+        self.assertEqual(Html((site/'index.html').read_text()).code, expected)
+        for text in expected:
+            self.assertIn(text, (site/'index.md').read_text())
+        self.assertTrue((self.root/'.docs-out/manual.pdf').read_bytes().startswith(b'%PDF-'))
+        self.run_build(command='prepare')
+        manifest = json.loads((self.root/'.docs-prepared/manifest.json').read_text())
+        self.assertEqual([entry['selected_sha256'] for entry in manifest['includes']],
+                         [hashlib.sha256(text.encode()).hexdigest() for text in expected])
+        self.assertTrue(all(entry['source_sha256'] == hashlib.sha256(original).hexdigest()
+                            for entry in manifest['includes']))
+
+    def test_invalid_line_selection_cannot_replace_previous_publication(self):
+        self.source('value.expected', 'one\n  two  \nthree\n')
+        output = self.prior()
+        for options in ['lines=4', 'lines=3..1', 'lines=1;4', 'lines=1abc',
+                        'lines=', 'lines=1,lines=2', 'lines=1,tag=missing']:
+            with self.subTest(options=options):
+                self.source('index.adoc', '= Output\n\n[source,text]\n----\ninclude::value.expected[' + options + ']\n----\n')
+                result = self.run_build(success=False)
+                self.assertIn('index.adoc:5:', result.stdout+result.stderr)
+                self.unchanged(output)
+
     def test_external_checked_listing_and_rejections_preserve_publication(self):
         examples = self.root/'examples'; examples.mkdir()
         (examples/'value.expected').write_text('  expected value  \n')

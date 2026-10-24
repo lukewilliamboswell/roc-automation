@@ -185,9 +185,16 @@ URLs and anchors deliberately when replacing a site.
 
 Chapter includes are bounded local `.adoc` or `.md` sources. Listings may include
 checked source and `.expected` files anywhere inside the workspace. Single
-`tag=name` selections and `indent=0` are supported; escaping paths, symlinks,
-missing tags and output overlap reject. Keep the original examples in compile/test
-checks: rendering reads their bytes and does not execute or verify their behavior.
+`tag=name` selections and line selections (`lines=N`, `lines=A..B`,
+semicolon-separated entries or open-ended ranges) support optional `indent=0`.
+This lets manuals quote slices of checked stdout without adding tag markers to
+files compared byte-for-byte. The shared parser selects the text; the renderer
+rejects every reported selection problem, unknown/duplicate options and combined
+line/tag selectors, so invalid ranges cannot fall back to guessed examples.
+Regression fixtures compare roc-parser guide excerpts with independent slices
+and preserve the previous publication on invalid input. Escaping paths, symlinks,
+missing or ambiguous tags and output overlap reject. Keep the original examples
+in compile/test checks: rendering reads their bytes and does not execute or verify their behavior.
 Ambiguous chapter provenance still rejects.
 
 Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared

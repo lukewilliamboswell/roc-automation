@@ -81,10 +81,14 @@ Custom Asciidoctor YAML themes remain unsupported.
 
 Listing includes are read as inert UTF-8 files, with workspace containment,
 symlink checks, per-file and aggregate limits, and output-overlap rejection.
-Single positive `tag` selections and `indent=0` are supported. The wider
-selector API offered by roc-parser 3.0.0 does not expand this checked-listing
-contract: multiple/negative tags and line-range selection remain unsupported. Missing/unbalanced
-tags, nested include directives and delimiter injection reject. The preparation manifest records each include's document line, workspace path,
+Single positive `tag` selections, `lines=N`, `lines=A..B`, semicolon-separated
+line selections, open-ended ranges and `indent=0` are supported. Selection
+delegates to roc-parser 3.0.0 and rejects all reported problems, including
+invalid ranges, missing tags and empty selections. Unknown or duplicate options
+and combined line/tag selectors reject so an ignored attribute cannot silently
+change the example. Multiple/negative tags remain unsupported. Missing/unbalanced
+or repeated selected tags, nested include directives and delimiter injection
+reject. The preparation manifest records each include's document line, workspace path,
 selection options, original digest and selected-text digest. Example compilation
 and test execution remain the consumer's explicit CI stages.
 
