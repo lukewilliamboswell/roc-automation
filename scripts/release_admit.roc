@@ -85,19 +85,48 @@ admit! = |trusted_path, topology_path, jobs_path, evidence_path, candidate, outp
 }
 
 validate_sboms! = |trusted, topology, evidence, candidate| {
+	if LifecyclePlan.unique(trusted.compositions.map(|item| item.path)).len() != trusted.compositions.len() or !trusted.compositions.all(|item| LifecyclePlan.safe_path(item.path) and Sha256.hex(item.text.to_utf8()) == item.sha256) {
+		return Err("SBOM_COMPOSITION: duplicate, unsafe or altered reviewed source record")
+	}
+	if !evidence.files.is_empty() and (evidence.producer_evidence.len() != topology.sboms.len() or LifecyclePlan.unique(evidence.producer_evidence.map(|item| item.id)).len() != evidence.producer_evidence.len()) {
+		return Err("SBOM_PRODUCER: missing or duplicate producer transfer records")
+	}
+	var $mapping_index = 0.U64
 	for mapping in topology.sboms {
 		if !evidence.files.is_empty() {
 			subject = evidence.files.find_first(|file| file.subject == mapping.subject and file.target == mapping.target and ["bundle", "host", "binary"].contains(file.role)).map_err(|_| "SBOM_SUBJECT: declared subject missing")?
+			obligation_id = "sbom-${$mapping_index.to_str()}"
+			producer_record = evidence.producer_evidence.find_first(|record| record.id == obligation_id).map_err(|_| "SBOM_PRODUCER: no exact job-bound producer record")?
+			if Sha256.hex(producer_record.document.to_utf8()) != producer_record.sha256 {
+				return Err("SBOM_PRODUCER: producer record digest differs")
+			}
+			claim = evidence.obligations.find_first(|item| item.id == obligation_id).map_err(|_| "SBOM_PRODUCER: no expected producer job")?
+			if !evidence.artifacts.any(|artifact| artifact.job_id == claim.job_id and artifact.run_attempt == claim.run_attempt and artifact.metadata.any(|item| item.path == "diagnostics/sbom-evidence.json" and item.sha256 == producer_record.sha256 and item.size == producer_record.document.to_utf8().len())) {
+				return Err("SBOM_PRODUCER: producer record is not bound to its actual job artifact")
+			}
+			LifecycleSbom.producer(producer_record.document, trusted.context.repository, trusted.context.sha, trusted.context.run_id, claim.run_attempt.to_str(), LifecycleAdmission.release_version(trusted.context), { path: subject.path, size: subject.size, sha256: subject.sha256, target: subject.target }, evidence.files.map(|file| { path: file.path, size: file.size, sha256: file.sha256 }))?
+
 			composition = trusted.compositions.find_first(|item| item.path == mapping.composition).map_err(|_| "SBOM_COMPOSITION: no independently fetched reviewed composition")?
 			if Sha256.hex(composition.text.to_utf8()) != composition.sha256 {
 				return Err("SBOM_COMPOSITION: reviewed composition digest differs")
+			}
+			supplier_text = if mapping.supplier_imports == "" "" else trusted.compositions.find_first(|item| item.path == mapping.supplier_imports).map_err(|_| "SBOM_IMPORT: no independently fetched reviewed imports")?.text
+			merged = LifecycleSbom.merged_composition(composition.text, supplier_text)?
+			for record in LifecycleSbom.optional_array_field(merged, "imported_documents")? {
+				document = LifecycleSbom.string_field(record, "document")?
+				sha256 = LifecycleSbom.string_field(record, "sha256")?
+				if Sha256.hex(document.to_utf8()) != sha256 {
+					return Err("SBOM_IMPORT: reviewed supplier document digest differs")
+				}
+				_ = LifecycleJson.decode_limit(document, 1048576).map_err(LifecycleJson.message)?
 			}
 			root = Path.utf8(candidate)
 			manifest = Path.display(BuildFiles.inside!(root, "${subject.path}.sbom-manifest.json")?)
 			spdx = Path.display(BuildFiles.inside!(root, "${subject.path}.spdx.json")?)
 			cdx = Path.display(BuildFiles.inside!(root, "${subject.path}.cdx.json")?)
-			LifecycleSbom.validate({ path: subject.path, size: subject.size, sha256: subject.sha256, target: subject.target }, LifecycleAdmission.release_version(trusted.context), trusted.context.repository, trusted.context.sha, read!(manifest, 1048576)?, read!(spdx, 1048576)?, read!(cdx, 1048576)?, composition.text, evidence.files.map(|file| { path: file.path, size: file.size, sha256: file.sha256 }))?
+			LifecycleSbom.validate({ path: subject.path, size: subject.size, sha256: subject.sha256, target: subject.target }, LifecycleAdmission.release_version(trusted.context), trusted.context.repository, trusted.context.sha, read!(manifest, 1048576)?, read!(spdx, 1048576)?, read!(cdx, 1048576)?, composition.text, supplier_text, evidence.files.map(|file| { path: file.path, size: file.size, sha256: file.sha256 }))?
 		}
+		$mapping_index = $mapping_index + 1
 	}
 	Ok({})
 }
@@ -122,7 +151,14 @@ Snapshot : { trusted : LifecycleAdmission.Trusted, topology : LifecyclePlan.Topo
 
 snapshot! : Str, Str => Try(Snapshot, Str)
 snapshot! = |trusted_path, topology_path| {
-	seed = LifecycleAdmission.parse_trusted(read!(trusted_path, 4194304)?)?
+	original_seed = LifecycleAdmission.parse_trusted(read!(trusted_path, 4194304)?)?
+	runtime_attempt = env!("GITHUB_RUN_ATTEMPT")?
+	seed_attempt = U64.from_str(original_seed.context.run_attempt).map_err(|_| "ADMIT_ATTEMPT: malformed seed attempt")?
+	observing_attempt = U64.from_str(runtime_attempt).map_err(|_| "ADMIT_ATTEMPT: malformed actual attempt")?
+	if seed_attempt == 0 or seed_attempt > observing_attempt {
+		return Err("ADMIT_ATTEMPT: immutable seed comes from a future generation")
+	}
+	seed = { ..original_seed, context: { ..original_seed.context, run_attempt: runtime_attempt } }
 	context = seed.context
 	if seed.server_url != "https://github.com" or context.repository != env!("GITHUB_REPOSITORY")? or context.run_id != env!("GITHUB_RUN_ID")? or context.run_attempt != env!("GITHUB_RUN_ATTEMPT")? or context.sha != env!("GITHUB_SHA")? or context.event != env!("GITHUB_EVENT_NAME")? or context.ref != env!("GITHUB_REF")? or seed.server_url != env!("GITHUB_SERVER_URL")? {
 		return Err("ADMIT_ENVIRONMENT: seed differs from the actual caller environment")
@@ -208,6 +244,10 @@ snapshot! = |trusted_path, topology_path| {
 		return Err("ADMIT_EVENT: only pull request and default-branch dispatch are eligible")
 	}
 	topology_text = read!(topology_path, 65536)?
+	reviewed_topology = raw_source!(repository, "release-topology.json", context.sha)?
+	if reviewed_topology != topology_text {
+		return Err("ADMIT_TOPOLOGY: supplied topology differs from the committed event-source topology")
+	}
 	if Sha256.hex(topology_text.to_utf8()) != context.topology_sha256 {
 		return Err("ADMIT_TOPOLOGY: topology digest differs")
 	}
@@ -215,12 +255,17 @@ snapshot! = |trusted_path, topology_path| {
 	plan = LifecyclePlan.plan(context, topology, $changes)?
 	var $compositions = []
 	for mapping in topology.sboms {
-		if !$compositions.any(|item| item.path == mapping.composition) {
-			text = raw_source!(repository, mapping.composition, context.sha)?
-			$compositions = $compositions.append({ path: mapping.composition, text, sha256: Sha256.hex(text.to_utf8()) })
+		for path in [mapping.composition, mapping.supplier_imports] {
+			if path != "" and !$compositions.any(|item| item.path == path) {
+				text = raw_source!(repository, path, context.sha)?
+				$compositions = $compositions.append({ path, text, sha256: Sha256.hex(text.to_utf8()) })
+			}
 		}
 	}
 	trusted = { ..seed, changes: $changes, workflow_ref: workflow.path, workflow_sha: workflow.sha, compositions: $compositions }
+	if Json.to_str(trusted).to_utf8().len() > 4194304 {
+		return Err("ADMIT_COMPOSITION: reviewed source records exceed the 4 MiB context limit")
+	}
 	var $jobs = []
 	for attempt in 1..=current {
 		var $page = 1.U64
@@ -386,6 +431,7 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 	}
 	var $artifacts = []
 	var $obligations = []
+	var $producer_evidence = []
 	for artifact in snapshot.artifacts {
 		root = Path.utf8("${traces}/${artifact.name}")
 		if Path.type!(root).map_err(|_| "ADMIT_TRACE: cannot inspect artifact root")? != IsDir {
@@ -407,14 +453,38 @@ collect! = |trusted_path, topology_path, traces, candidate, output| {
 			}
 		}
 		entries = BuildFiles.list!(root)?
-		if entries.len() != trace.files.len() + 1 or !entries.all(|entry| entry.path == "${artifact.stage}-trace.json" or trace.files.contains(entry.path)) {
-			return Err("ADMIT_TRACE: transport contains undeclared files")
+		var $metadata = []
+		var $metadata_bytes = 0.U64
+		for entry in entries {
+			if entry.path != "${artifact.stage}-trace.json" and !trace.files.contains(entry.path) {
+				if !LifecycleAdmission.metadata_path(artifact.stage, entry.path) {
+					return Err("ADMIT_TRACE: transport contains undeclared files or executable caches")
+				}
+				bytes = BuildFiles.read!(entry.absolute, 1048576)?
+				$metadata_bytes = $metadata_bytes + bytes.len()
+				if $metadata_bytes > 33554432 or $metadata.len() >= 1024 {
+					return Err("ADMIT_METADATA: diagnostics exceed bounded limits")
+				}
+				if entry.path == "bundle-map.json" {
+					_ = LifecycleJson.decode_limit(Str.from_utf8(bytes).map_err(|_| "ADMIT_METADATA: bundle map must be UTF-8 JSON")?, 1048576).map_err(LifecycleJson.message)?
+				}
+				$metadata = $metadata.append({ path: entry.path, size: bytes.len(), sha256: Sha256.hex(bytes) })
+			}
 		}
-		$artifacts = $artifacts.append({ id: artifact.id, digest: artifact.digest, job_id: artifact.job_id, run_attempt: artifact.attempt, trace_sha256: Sha256.hex(text.to_utf8()), obligations: artifact.obligations, files: trace.files })
+		if artifact.stage == "sbom" {
+			document = read!(Path.display(BuildFiles.inside!(root, "diagnostics/sbom-evidence.json")?), 1048576)?
+			id = match artifact.obligations {
+				[only] => only
+				_ => return Err("SBOM_PRODUCER: SBOM job must have one exact obligation")
+			}
+			$producer_evidence = $producer_evidence.append({ id, sha256: Sha256.hex(document.to_utf8()), document })
+		}
+
+		$artifacts = $artifacts.append({ id: artifact.id, digest: artifact.digest, job_id: artifact.job_id, run_attempt: artifact.attempt, trace_sha256: Sha256.hex(text.to_utf8()), obligations: artifact.obligations, files: trace.files, metadata: $metadata })
 		$obligations = $obligations.concat(trace.obligations.map(|item| { id: item.id, job_id: artifact.job_id, run_attempt: artifact.attempt }))
 	}
 	evidence : LifecycleAdmission.Evidence
-	evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: snapshot.producing_attempt.to_str(), compiler: context.compiler, version: LifecycleAdmission.release_version(context), topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, obligations: $obligations, artifacts: $artifacts, files: $files }
+	evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: context.repository, source_sha: context.sha, run_id: context.run_id, producing_attempt: snapshot.producing_attempt.to_str(), compiler: context.compiler, version: LifecycleAdmission.release_version(context), topology_sha256: context.topology_sha256, workflow_ref: trusted.workflow_ref, workflow_sha: trusted.workflow_sha, obligations: $obligations, artifacts: $artifacts, files: $files, producer_evidence: $producer_evidence }
 	report = LifecycleAdmission.validate(trusted, snapshot.topology, snapshot.observations, evidence, actual)?
 	validate_sboms!(trusted, snapshot.topology, evidence, candidate)?
 	write!("${output}/evidence.json", Json.to_str(evidence))?

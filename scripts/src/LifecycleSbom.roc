@@ -1,3 +1,4 @@
+import "../../actions/setup-blueprint/sbom-tools.json" as tool_registry : Str
 import LifecycleJson
 import LifecyclePlan
 
@@ -9,8 +10,8 @@ LifecycleSbom := [].{
 	Coverage : { scope : Str, status : Str, reason : Str, contact : Str }
 	Manifest : { profile : Str, subject : { filename : Str, version : Str, target : Str, sha256 : Str, size : U64 }, inventory_sha256 : Str, context : { namespace : Str, revision : Str, created : Str, generator : Str }, sidecars : List({ filename : Str, format : Str, sha256 : Str, size : U64 }) }
 
-	validate : Subject, Str, Str, Str, Str, Str, Str, Str, List(Sidecar) -> Try({}, Str)
-	validate = |subject, version, repository, source_sha, manifest_text, spdx_text, cdx_text, composition_text, sidecars| {
+	validate : Subject, Str, Str, Str, Str, Str, Str, Str, Str, List(Sidecar) -> Try({}, Str)
+	validate = |subject, version, repository, source_sha, manifest_text, spdx_text, cdx_text, composition_text, imports_text, sidecars| {
 		manifest_raw = decode(manifest_text)?
 		LifecycleJson.object(manifest_raw, ["profile", "subject", "inventory_sha256", "context", "sidecars"])?
 		LifecycleJson.object(LifecycleJson.field(manifest_raw, "subject")?, ["filename", "version", "target", "sha256", "size"])?
@@ -39,8 +40,12 @@ LifecycleSbom := [].{
 				return Err("SBOM_MANIFEST: sidecar size or digest differs")
 			}
 		}
-		spdx(subject, version, namespace, decode(spdx_text)?, decode(composition_text)?)?
-		cdx(subject, version, namespace, decode(cdx_text)?, decode(composition_text)?)
+		composition = merged_composition(composition_text, imports_text)?
+		spdx_document = decode(spdx_text)?
+		cdx_document = decode(cdx_text)?
+		spdx(subject, version, namespace, spdx_document, composition)?
+		cdx(subject, version, namespace, cdx_document, composition)?
+		consistent_formats(namespace, spdx_document, cdx_document)
 	}
 
 	spdx = |subject, version, namespace, document, composition| {
@@ -202,7 +207,7 @@ LifecycleSbom := [].{
 			status = string_field(item, "status")?
 			reason = string_field(item, "reason")?
 			contact = string_field(item, "contact")?
-			if scope == "" or $scopes.contains(scope) or !["complete", "verified-empty", "incomplete"].contains(status) or reason == "" or contact == "" {
+			if scope == "" or $scopes.contains(scope) or !["complete", "verified-empty", "incomplete", "excluded"].contains(status) or reason == "" or contact == "" {
 				return Err("SBOM_COVERAGE: invalid scope, status, reason or contact")
 			}
 			$scopes = $scopes.append(scope)
@@ -211,8 +216,30 @@ LifecycleSbom := [].{
 				# Supplier gaps can add incomplete scopes, but their explanation
 				# and contact must come from the reviewed composition.
 				unavailable = array_field(composition, "unavailable_sboms")?
-				if status != "incomplete" or !unavailable.any(|record| string_field(record, "reason") == Ok(reason) and string_field(record, "contact") == Ok(contact)) {
+				gap_basis = unavailable.any(|record| scope == "sbom:${string_field(record, "component") ?? ""}" and reason == "No supplier SBOM: ${string_field(record, "reason") ?? ""}" and string_field(record, "contact") == Ok(contact))
+				imported = optional_array_field(composition, "imported_documents")?
+				import_basis = imported.any(|record| scope == "import:${string_field(record, "id") ?? ""}" and string_field(record, "contact") == Ok(contact) and reason.starts_with("Document digest and upstream subject artifact identity match; completeness and undisclosed closure remain unverified"))
+				if status != "incomplete" or (!gap_basis and !import_basis) {
 					return Err("SBOM_COVERAGE: claim has no reviewed coverage or supplier-gap basis")
+				}
+			}
+		}
+		for imported in optional_array_field(composition, "imported_documents")? {
+			id = string_field(imported, "id")?
+			document_sha256 = string_field(imported, "sha256")?
+			url = string_field(imported, "url")?
+			upstream_namespace = string_field(imported, "namespace")?
+			if !LifecyclePlan.id(id) or !LifecyclePlan.digest(document_sha256) or !url.starts_with("https://") or !$scopes.contains("import:${id}") {
+				return Err("SBOM_IMPORT: reviewed supplier binding or coverage missing")
+			}
+			imported_components = all_components.keep_if(|item| (string_field(item, "bom-ref") ?? "").starts_with("${id}-"))
+			if imported_components.is_empty() {
+				return Err("SBOM_IMPORT: reviewed supplier graph omitted")
+			}
+			for component in imported_components {
+				modifications = property(array_field(component, "properties")?, "blueprint:modifications")?
+				if !modifications.starts_with("Imported ${upstream_namespace}#") or !modifications.contains(" from ${url}; document SHA256 ${document_sha256}; upstream metadata ") {
+					return Err("SBOM_IMPORT: graph is not bound to the reviewed supplier document")
 				}
 			}
 		}
@@ -223,6 +250,108 @@ LifecycleSbom := [].{
 		}
 		Ok({})
 	}
+	consistent_formats : Str, LifecycleJson, LifecycleJson -> Try({}, Str)
+	consistent_formats = |namespace, spdx_document, cdx_document| {
+		spdx_nodes = array_field(spdx_document, "@graph")?.keep_if(|item| string_field(item, "type") == Ok("software_Package"))
+		cdx_packages = [LifecycleJson.field(LifecycleJson.field(cdx_document, "metadata")?, "component")?].concat(components(array_field(cdx_document, "components")?, 0)?)
+		if spdx_nodes.len() != cdx_packages.len() {
+			return Err("SBOM_FORMATS: sidecars describe different component sets")
+		}
+		for component in cdx_packages {
+			id = string_field(component, "bom-ref")?
+			spdx_node = spdx_nodes.find_first(|item| string_field(item, "spdxId") == Ok("${namespace}#${id}")).map_err(|_| "SBOM_FORMATS: component absent from SPDX sidecar")?
+			if string_field(spdx_node, "name") != string_field(component, "name") or (string_field(spdx_node, "software_packageVersion") ?? "") != (string_field(component, "version") ?? "") {
+				return Err("SBOM_FORMATS: component identities differ between sidecars")
+			}
+			spdx_hashes = optional_array_field(spdx_node, "verifiedUsing")?.keep_if(|item| string_field(item, "type") == Ok("Hash") and string_field(item, "algorithm") == Ok("sha256")).map(|item| string_field(item, "hashValue") ?? "")
+			cdx_hashes = optional_array_field(component, "hashes")?.keep_if(|item| string_field(item, "alg") == Ok("SHA-256")).map(|item| string_field(item, "content") ?? "")
+			if spdx_hashes.len() > 1 or cdx_hashes.len() > 1 or spdx_hashes != cdx_hashes {
+				return Err("SBOM_FORMATS: component content identities differ between sidecars")
+			}
+		}
+		Ok({})
+	}
+
+	producer : Str, Str, Str, Str, Str, Str, Subject, List(Sidecar) -> Try({}, Str)
+	producer = |text, repository, source_sha, run_id, run_attempt, version, subject, files| {
+		raw = decode(text)?
+		LifecycleJson.object(raw, ["format", "source", "producer", "generator", "subjects", "dependencies", "coverage"])?
+		if string_field(raw, "format")? != "roc-automation-sbom-evidence-v1" {
+			return Err("SBOM_PRODUCER: unsupported transfer evidence format")
+		}
+		source = LifecycleJson.field(raw, "source")?
+		LifecycleJson.object(source, ["server", "repository", "commit"])?
+		if string_field(source, "server")? != "https://github.com" or string_field(source, "repository")? != repository or string_field(source, "commit")? != source_sha {
+			return Err("SBOM_PRODUCER: source repository or commit differs")
+		}
+		producing = LifecycleJson.field(raw, "producer")?
+		LifecycleJson.object(producing, ["workflow", "run_id", "run_attempt"])?
+		if string_field(producing, "run_id")? != run_id or string_field(producing, "run_attempt")? != run_attempt or !string_field(producing, "workflow")?.starts_with("${repository}/.github/workflows/") {
+			return Err("SBOM_PRODUCER: producing source workflow, run or attempt differs")
+		}
+		generator = LifecycleJson.field(raw, "generator")?
+		LifecycleJson.object(generator, ["tool", "tool_sha256", "compiler", "generator", "blueprint", "created"])?
+		blueprint = string_field(generator, "blueprint")?
+		registry = LifecycleJson.field(decode(tool_registry)?, blueprint)?
+		tool = string_field(generator, "tool")?
+		tool_sha256 = string_field(generator, "tool_sha256")?
+		bundle = tool == string_field(registry, "url")? and tool_sha256 == ""
+		native = tool == "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/${blueprint}/blueprint-sbom-x86_64-linux" and string_field(LifecycleJson.field(registry, "binaries") ?? Object([]), "x86_64-linux") == Ok(tool_sha256) and LifecyclePlan.digest(tool_sha256)
+		if (!bundle and !native) or string_field(generator, "compiler") != string_field(registry, "compiler") or string_field(generator, "generator") != string_field(registry, "generator") or string_field(generator, "created")? == "" {
+			return Err("SBOM_PRODUCER: released tool identity differs from embedded reviewed registry")
+		}
+		subjects = array_field(raw, "subjects")?
+		declared = match subjects {
+			[only] => only
+			_ => return Err("SBOM_PRODUCER: exactly one mapped subject per SBOM job required")
+		}
+		LifecycleJson.object(declared, ["name", "path", "size", "sha256", "target", "version", "url", "inventory_sha256", "sidecars"])?
+		if string_field(declared, "name")? != basename(subject.path) or !LifecyclePlan.safe_path(string_field(declared, "path")?) or basename(string_field(declared, "path")?) != basename(subject.path) or string_field(declared, "sha256")? != subject.sha256 or number_field(declared, "size")? != subject.size or string_field(declared, "target")? != subject.target or string_field(declared, "version")? != version or string_field(declared, "url")? != "https://github.com/${repository}/releases/download/${version}/${basename(subject.path)}" or !LifecyclePlan.digest(string_field(declared, "inventory_sha256")?) {
+			return Err("SBOM_PRODUCER: mapped subject identity, target, version or bytes differ")
+		}
+		sidecars = array_field(declared, "sidecars")?
+		if sidecars.len() != 3 or !unique(sidecars.map(|item| string_field(item, "name") ?? "")) {
+			return Err("SBOM_PRODUCER: complete supported sidecar set required")
+		}
+		for sidecar in sidecars {
+			LifecycleJson.object(sidecar, ["name", "path", "size", "sha256", "format"])?
+			name = string_field(sidecar, "name")?
+			file = files.find_first(|item| basename(item.path) == name).map_err(|_| "SBOM_PRODUCER: declared sidecar missing")?
+			suffix = name.drop_prefix(basename(subject.path))
+			format = match suffix {
+				".spdx.json" => "SPDX-3.0.1"
+				".cdx.json" => "CycloneDX-1.7"
+				".sbom-manifest.json" => "manifest"
+				_ => return Err("SBOM_PRODUCER: unsupported extra sidecar")
+			}
+			if number_field(sidecar, "size")? != file.size or string_field(sidecar, "sha256")? != file.sha256 or string_field(sidecar, "format")? != format or !LifecyclePlan.safe_path(string_field(sidecar, "path")?) or basename(string_field(sidecar, "path")?) != name {
+				return Err("SBOM_PRODUCER: sidecar format, size, path or hash differs")
+			}
+		}
+		_ = array_field(raw, "dependencies")?
+		_ = array_field(raw, "coverage")?
+		Ok({})
+	}
+	number_field : LifecycleJson, Str -> Try(U64, Str)
+	number_field = |value, key| match LifecycleJson.field(value, key)? {
+		Number(text) => U64.from_str(text).map_err(|_| "SBOM_SHAPE: expected unsigned integer")
+		_ => Err("SBOM_SHAPE: expected unsigned integer")
+	}
+
+	merged_composition = |composition_text, imports_text| {
+		composition = decode(composition_text)?
+		own = optional_array_field(composition, "imported_documents")?
+		added = if imports_text == "" [] else array_field(decode(imports_text)?, "imported_documents")?
+		combined = own.concat(added)
+		if !unique(combined.map(|record| string_field(record, "id") ?? "")) {
+			return Err("SBOM_IMPORT: duplicate supplier document identities")
+		}
+		match composition {
+			Object(fields) => Ok(Object(fields.keep_if(|field| field.name != "imported_documents").append({ name: "imported_documents", value: Array(combined) })))
+			_ => Err("SBOM_COMPOSITION: reviewed composition must be an object")
+		}
+	}
+
 	components = |items, depth| {
 		if depth > 16 or items.len() > 4096 {
 			return Err("SBOM_CDX: nested component limit exceeded")

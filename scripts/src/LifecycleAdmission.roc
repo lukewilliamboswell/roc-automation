@@ -12,8 +12,8 @@ LifecycleAdmission := [].{
 	Observations : { complete : Bool, jobs : List(Job), artifacts : List(RemoteArtifact) }
 	File : { path : Str, role : Str, subject : Str, target : Str, size : U64, sha256 : Str }
 	Obligation : { id : Str, job_id : U64, run_attempt : U64 }
-	Artifact : { id : U64, digest : Str, job_id : U64, run_attempt : U64, trace_sha256 : Str, obligations : List(Str), files : List(Str) }
-	Evidence : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, obligations : List(Obligation), artifacts : List(Artifact), files : List(File) }
+	Artifact : { id : U64, digest : Str, job_id : U64, run_attempt : U64, trace_sha256 : Str, obligations : List(Str), files : List(Str), metadata : List({ path : Str, size : U64, sha256 : Str }) }
+	Evidence : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, obligations : List(Obligation), artifacts : List(Artifact), files : List(File), producer_evidence : List({ id : Str, sha256 : Str, document : Str }) }
 	ObservedFile : { path : Str, size : U64, sha256 : Str }
 	Report : { schema_version : U64, profile : Str, repository : Str, source_sha : Str, run_id : Str, producing_attempt : Str, compiler : Str, version : Str, topology_sha256 : Str, workflow_ref : Str, workflow_sha : Str, policy_version : Str, schema_profile : Str, verdict : Str, publish : Bool, assets : List(File), notes_sha256 : Str, artifacts : List(Artifact) }
 
@@ -122,6 +122,9 @@ LifecycleAdmission := [].{
 			if remote.name != "lifecycle-${key}-${attempt.to_str()}" {
 				return Err("ADMIT_ARTIFACT: wrong immutable upload name for actual producer job")
 			}
+			if !unique(artifact.metadata.map(|item| lower(item.path))) or artifact.metadata.len() > 1024 or !artifact.metadata.all(|item| metadata_path(producer.stage, item.path) and item.size <= 1048576 and LifecyclePlan.digest(item.sha256)) or artifact.metadata.fold(0.U64, |sum, item| sum + item.size) > 33554432 {
+				return Err("ADMIT_METADATA: unsafe or excessive inert diagnostics")
+			}
 			if claims.len() != artifact.obligations.len() or !claims.all(|claim| artifact.obligations.contains(claim.id)) {
 				return Err("ADMIT_TRACE: artifact trace does not cover exactly its job's obligations")
 			}
@@ -141,19 +144,22 @@ LifecycleAdmission := [].{
 	parse_evidence : Str -> Try(Evidence, Str)
 	parse_evidence = |text| {
 		raw = LifecycleJson.decode_limit(text, 1048576).map_err(LifecycleJson.message)?
-		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "obligations", "artifacts", "files"])?
+		LifecycleJson.object(raw, ["schema_version", "profile", "repository", "source_sha", "run_id", "producing_attempt", "compiler", "version", "topology_sha256", "workflow_ref", "workflow_sha", "obligations", "artifacts", "files", "producer_evidence"])?
 		for item in LifecycleJson.array(LifecycleJson.field(raw, "obligations")?)? {
 			LifecycleJson.object(item, ["id", "job_id", "run_attempt"])?
 		}
 		check_artifacts(LifecycleJson.array(LifecycleJson.field(raw, "artifacts")?)?)?
 		check_files(LifecycleJson.array(LifecycleJson.field(raw, "files")?)?)?
+		for record in LifecycleJson.array(LifecycleJson.field(raw, "producer_evidence")?)? {
+			LifecycleJson.object(record, ["id", "sha256", "document"])?
+		}
 		parsed : Try(Evidence, _)
 		parsed = Json.parse(text)
 		parsed.map_err(|_| "ADMIT_JSON: invalid evidence field types")
 	}
 	parse_trusted : Str -> Try(Trusted, Str)
 	parse_trusted = |text| {
-		raw = LifecycleJson.decode_limit(text, 1048576).map_err(LifecycleJson.message)?
+		raw = LifecycleJson.decode_limit(text, 4194304).map_err(LifecycleJson.message)?
 		LifecycleJson.object(raw, ["context", "changes", "server_url", "run_head_sha", "workflow_ref", "workflow_sha", "publish", "compositions"])?
 		LifecycleJson.object(LifecycleJson.field(raw, "context")?, ["event", "ref", "default_branch", "repository", "sha", "run_id", "run_attempt", "compiler", "version", "full_dry_run", "topology_sha256"])?
 		changes = LifecycleJson.field(raw, "changes")?
@@ -204,7 +210,10 @@ LifecycleAdmission := [].{
 	}
 	check_artifacts = |artifacts| {
 		for artifact in artifacts {
-			LifecycleJson.object(artifact, ["id", "digest", "job_id", "run_attempt", "trace_sha256", "obligations", "files"])?
+			LifecycleJson.object(artifact, ["id", "digest", "job_id", "run_attempt", "trace_sha256", "obligations", "files", "metadata"])?
+			for file in LifecycleJson.array(LifecycleJson.field(artifact, "metadata")?)? {
+				LifecycleJson.object(file, ["path", "size", "sha256"])?
+			}
 		}
 		Ok({})
 	}
@@ -252,6 +261,7 @@ LifecycleAdmission := [].{
 		}
 		_ => Bool.False
 	}
+	metadata_path = |stage, path| LifecyclePlan.safe_path(path) and ((stage == "prepare" and path == "bundle-map.json") or (path.starts_with("diagnostics/") and !path.split_on("/").any(|part| ["cache", ".cache", "node_modules", "target", ".git"].contains(lower(part)))))
 	unique_ids : List(U64) -> Bool
 	unique_ids = |values| values.all(|value| values.keep_if(|other| value == other).len() == 1)
 	unique : List(Str) -> Bool
@@ -281,7 +291,7 @@ fixture_id = |stage| match stage {
 	_ => 6
 }
 
-fixture_stages = ["source", "prepare", "candidate", "sbom", "seal"]
+fixture_stages = ["source", "prepare", "candidate", "sbom", "seal", "validate"]
 
 fixture_jobs = fixture_stages.map(
 	|stage| {
@@ -290,13 +300,13 @@ fixture_jobs = fixture_stages.map(
 	},
 )
 
-fixture_artifacts = fixture_stages.map(|stage| { id: fixture_id(stage) + 100, digest: "sha256:${Str.repeat("e", 64)}", job_id: fixture_id(stage), run_attempt: 1.U64, trace_sha256: Str.repeat("f", 64), obligations: fixture_plan.obligations.keep_if(|item| item.stage == stage).map(|item| item.id), files: if stage == "seal" fixture_files.map(|file| file.path) else [] })
+fixture_artifacts = fixture_stages.map(|stage| { id: fixture_id(stage) + 100, digest: "sha256:${Str.repeat("e", 64)}", job_id: fixture_id(stage), run_attempt: 1.U64, trace_sha256: Str.repeat("f", 64), obligations: fixture_plan.obligations.keep_if(|item| item.stage == stage).map(|item| item.id), files: if stage == "seal" fixture_files.map(|file| file.path) else [], metadata: [] })
 
 fixture_observed : LifecycleAdmission.Observations
 fixture_observed = { complete: Bool.True, jobs: fixture_jobs, artifacts: fixture_artifacts.map(|artifact| { id: artifact.id, name: "lifecycle-${if artifact.job_id == 4 "sbom-0" else "${fixture_stages.get(artifact.job_id - 1) ?? ""}-ubuntu-24.04"}-1", digest: artifact.digest, expired: Bool.False, workflow_run: { id: 10.U64, head_sha: fixture_context.sha } }) }
 
 fixture_evidence : LifecycleAdmission.Evidence
-fixture_evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: fixture_context.repository, source_sha: fixture_context.sha, run_id: fixture_context.run_id, producing_attempt: "1", compiler: fixture_context.compiler, version: fixture_context.version, topology_sha256: fixture_context.topology_sha256, workflow_ref: fixture_trusted.workflow_ref, workflow_sha: fixture_trusted.workflow_sha, obligations: fixture_plan.obligations.map(|item| { id: item.id, job_id: fixture_id(item.stage), run_attempt: 1.U64 }), artifacts: fixture_artifacts, files: fixture_files }
+fixture_evidence = { schema_version: 1, profile: LifecycleAdmission.profile, repository: fixture_context.repository, source_sha: fixture_context.sha, run_id: fixture_context.run_id, producing_attempt: "1", compiler: fixture_context.compiler, version: fixture_context.version, topology_sha256: fixture_context.topology_sha256, workflow_ref: fixture_trusted.workflow_ref, workflow_sha: fixture_trusted.workflow_sha, obligations: fixture_plan.obligations.map(|item| { id: item.id, job_id: fixture_id(item.stage), run_attempt: 1.U64 }), artifacts: fixture_artifacts, files: fixture_files, producer_evidence: [] }
 
 fixture_actual = fixture_files.map(|file| { path: file.path, size: file.size, sha256: file.sha256 })
 
@@ -330,3 +340,16 @@ expect fixture_admit(fixture_trusted, { ..fixture_observed, artifacts: fixture_o
 expect fixture_admit(fixture_trusted, { ..fixture_observed, artifacts: fixture_observed.artifacts.map(|artifact| { ..artifact, name: "wrong" }) }, fixture_evidence, fixture_actual).is_err()
 expect LifecycleAdmission.parse_evidence("{\"schema_version\":1,\"schema_version\":1}").is_err()
 expect LifecycleAdmission.parse_report("{\"schema_version\":1,\"unknown\":true}").is_err()
+
+fixture_report = fixture_admit(fixture_trusted, fixture_observed, fixture_evidence, fixture_actual) ?? crash "fixture admission failed"
+
+fixture_published = fixture_actual.map(|file| { ..file, path: LifecycleAdmission.basename(file.path) })
+
+fixture_publication = |report, files| LifecycleAdmission.publication(report, fixture_context.repository, fixture_context.sha, fixture_context.run_id, fixture_context.version, Str.repeat("d", 64), files)
+expect fixture_publication(fixture_report, fixture_published).is_ok()
+expect fixture_publication({ ..fixture_report, publish: Bool.False }, fixture_published).is_err()
+expect fixture_publication({ ..fixture_report, run_id: "11" }, fixture_published).is_err()
+expect fixture_publication({ ..fixture_report, source_sha: Str.repeat("b", 40) }, fixture_published).is_err()
+expect fixture_publication({ ..fixture_report, notes_sha256: Str.repeat("a", 64) }, fixture_published).is_err()
+expect fixture_publication(fixture_report, fixture_published.drop_first(1)).is_err()
+expect fixture_publication(fixture_report, fixture_published.map(|file| { ..file, sha256: Str.repeat("a", 64) })).is_err()

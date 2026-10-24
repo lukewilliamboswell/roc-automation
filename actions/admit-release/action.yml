@@ -2,7 +2,7 @@ name: Independently admit release evidence
 description: Reconstruct trusted jobs, transports, obligations and exact inert bytes before lifecycle publication.
 inputs:
   phase:
-    description: discover selects actual immutable transports; collect validates downloaded evidence and candidate bytes
+    description: discover selects transports; extract verifies raw archives; assemble consolidates inert files; collect admits evidence
     required: true
   trusted-seed:
     description: Bounded trusted plan context JSON, never a candidate-produced authorization flag
@@ -10,6 +10,12 @@ inputs:
   topology:
     description: Exact reviewed topology JSON bound by the seed digest
     required: true
+  raw-downloads:
+    description: Raw artifact archive directory downloaded by immutable IDs with service digest checking
+    default: ''
+  transport-manifest:
+    description: Trusted discovery manifest selecting immutable archive IDs and digests
+    default: ''
   traces:
     description: Downloaded artifacts in directories named by their actual API artifact names
     default: ''
@@ -41,6 +47,15 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Check controller phase
+      shell: bash
+      env:
+        INPUT_PHASE: ${{ inputs.phase }}
+      run: |
+        case "$INPUT_PHASE" in
+          discover|extract|assemble|collect) ;;
+          *) echo "::error::unsupported admission controller phase"; exit 1 ;;
+        esac
     - name: Install Nix
       uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       with:
@@ -72,7 +87,31 @@ runs:
         GITHUB_WORKSPACE="$root" RUNNER_TEMP="$RUNNER_TEMP/roc-automation-admit-release" GITHUB_PATH=/dev/null \
           python3 "$root/actions/setup-blueprint/setup_blueprint.py"
 
+    - name: Verify and extract or assemble inert transport
+      if: inputs.phase == 'extract' || inputs.phase == 'assemble'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+        INPUT_PHASE: ${{ inputs.phase }}
+        INPUT_RAW_DOWNLOADS: ${{ inputs.raw-downloads }}
+        INPUT_TRANSPORT_MANIFEST: ${{ inputs.transport-manifest }}
+        INPUT_TRACES: ${{ inputs.traces }}
+        INPUT_CANDIDATE: ${{ inputs.candidate }}
+        INPUT_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+      run: |
+        cd "$ACTION_PATH/../.."
+        case "$INPUT_PHASE" in
+          extract)
+            "$BLUEPRINT" run lifecycle-transport -- extract "$INPUT_TRANSPORT_MANIFEST" "$INPUT_RAW_DOWNLOADS" "$INPUT_OUTPUT_DIRECTORY" python3 "$ACTION_PATH/../release-compatibility/archive.py"
+            ;;
+          assemble)
+            "$BLUEPRINT" run lifecycle-transport -- assemble "$INPUT_TRACES" "$INPUT_CANDIDATE"
+            ;;
+        esac
+
     - id: admit
+      if: inputs.phase == 'discover' || inputs.phase == 'collect'
       name: Independently observe or admit inert evidence
       shell: bash
       env:

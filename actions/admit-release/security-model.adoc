@@ -20,7 +20,10 @@ uses the shared bounded regular-file archive helper before collection.
 API evidence, then requires every selected job's exact obligation trace and
 hashes every artifact copy and the complete final file set. Trace directories
 are named by the actual API artifact names; each contains `<stage>-trace.json`
-and exactly the public files its trace declares. Discovery never treats a
+the public files its trace declares, plus bounded inert `diagnostics/` records
+and a prepare-stage `bundle-map.json`. These metadata bytes are hashed into the
+artifact evidence and never promoted into the public asset set. Other extras
+and executable caches reject. Discovery never treats a
 candidate's job ID or pass flag as proof of an actual successful job.
 
 `release-admit admit TRUSTED TOPOLOGY JOBS EVIDENCE CANDIDATE OUTPUT` is the
@@ -41,7 +44,11 @@ branch name and binds the original event SHA, not a later branch tip.
 The bounded `roc-automation-release-evidence-v1` profile extends the release
 handoff with explicit obligations, real job IDs/producing attempts, immutable
 artifact IDs/service digests, trace digests and canonical files by role, subject,
-target, size and SHA-256. Duplicate JSON keys, unknown envelope fields,
+target, size and SHA-256. The nested original
+`roc-automation-sbom-evidence-v1` producer record is hash-bound to its actual
+SBOM artifact and checked for source/run/attempt, subject/sidecar and released
+tool identity against the embedded reviewed tool registry. It supplies transfer
+evidence, not independent authority. Duplicate JSON keys, unknown envelope fields,
 nonregular files, symlinks, Windows aliases, missing/extra files and size/hash or
 subject/target swaps reject. Input JSON and graph depth/count, file count,
 per-file bytes, total bytes, command output and GET deadlines are bounded.
