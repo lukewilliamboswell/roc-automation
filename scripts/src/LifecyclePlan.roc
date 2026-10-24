@@ -344,6 +344,10 @@ LifecyclePlan := [].{
 				bundle = topology.bundles.find_first(|value| value.id == bundle_id).map_err(|_| "unknown ordered bundle")?
 				$obligations = $obligations.append({ id: "bundle-${bundle.id}", stage: "prepare", runner: "ubuntu-24.04", operation: "bundle", subject: bundle.id, target: "source", task: "" })
 				$assets = $assets.append({ subject: bundle.id, role: "bundle", target: "source", path: "${bundle.prefix}-{hash}.tar.zst" })
+				$obligations = $obligations.append({ id: "api-${bundle.id}", stage: "prepare", runner: "ubuntu-24.04", operation: "api", subject: bundle.id, target: "source", task: "" })
+				if topology.documentation.is_empty() {
+					$assets = $assets.append({ subject: bundle.id, role: "documentation", target: "source", path: "${bundle.prefix}-docs-${selected_version}.zip" })
+				}
 			}
 			for example in topology.examples {
 				name = if topology.examples.len() == 1 topology.name else "${topology.name}-${example.id}"
@@ -451,7 +455,7 @@ expect match LifecyclePlan.plan(sample_context, sample_topology, sample_changes)
 	Err(_) => Bool.False
 }
 expect match LifecyclePlan.full(sample_context, sample_topology) {
-	Ok(plan) => plan.full_rehearsal and plan.context == sample_context and plan.bundle_order == ["core"] and plan.assets.any(|x| x.path == "sample-{hash}.tar.zst") and plan.assets.any(|x| x.path == "sample-examples-0.0.1-dry-run.zip") and plan.assets.len() == 7 and plan.obligations.map(|x| x.id).contains("archive-examples-linux")
+	Ok(plan) => plan.full_rehearsal and plan.context == sample_context and plan.bundle_order == ["core"] and plan.assets.any(|x| x.path == "sample-{hash}.tar.zst") and plan.assets.any(|x| x.path == "sample-examples-0.0.1-dry-run.zip") and plan.assets.len() == 8 and plan.obligations.map(|x| x.id).contains("archive-examples-linux")
 	Err(_) => Bool.False
 }
 
@@ -511,3 +515,12 @@ expect LifecyclePlan.public_names_unique(["linux/tool-linux", "windows/tool-wind
 expect LifecyclePlan.host_owner(sample_topology, "elsewhere/libhost.a").is_err()
 expect LifecyclePlan.host_owner(sample_topology, "package/targets/libhost.a").map_ok(|bundle| bundle.id) == Ok("core")
 expect LifecyclePlan.host_owner({ ..sample_topology, bundles: sample_topology.bundles.append({ id: "nested", root: "package/nested/main.roc", prefix: "nested", placeholder: "nested-url", depends_on: [] }) }, "package/nested/libhost.a").is_err()
+
+expect match LifecyclePlan.full(sample_context, sample_topology) {
+	Ok(plan) => plan.obligations.keep_if(|item| item.operation == "api").map(|item| item.id) == ["api-core"] and plan.assets.any(|item| item.path == "sample-docs-0.0.1-dry-run.zip")
+	Err(_) => Bool.False
+}
+expect match LifecyclePlan.full(sample_context, { ..sample_topology, documentation: [{ id: "manual", directory: "docs", pdf: Bool.True }] }) {
+	Ok(plan) => plan.obligations.keep_if(|item| item.operation == "api").len() == 1 and plan.assets.keep_if(|item| item.role == "documentation").len() == 1 and plan.assets.any(|item| item.subject == "manual" and item.path == "sample-docs-0.0.1-dry-run.zip")
+	Err(_) => Bool.False
+}
