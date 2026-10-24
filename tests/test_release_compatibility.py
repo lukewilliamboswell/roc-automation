@@ -209,6 +209,100 @@ else:
                 self.assertIn("outcome=setup-failed", outputs)
                 self.assertIn("report=none", outputs)
 
+    def assert_no_aggregate_report(self, artifacts):
+        ran, directory, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts))
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("outcome=setup-failed", outputs)
+        self.assertIn("report=none", outputs)
+        self.assertEqual(json.loads((directory / "summary.json").read_text())["results"], [])
+
+    def duplicate_layout_paths(self, name, bad_side):
+        artifacts = self.root / name
+        nested = artifacts / ("compatibility-" + self.env["RA_RUNNER"]) / "result.json"
+        nested.parent.mkdir(parents=True)
+        flat = artifacts / "result.json"
+        bad, good = (flat, nested) if bad_side == "flat" else (nested, flat)
+        return artifacts, bad, good
+
+    def test_malformed_or_non_utf8_duplicate_cannot_fall_back_to_valid_layout(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            for kind, content in (("malformed", b"{not json"), ("non-utf8", b"\xff")):
+                with self.subTest(side=side, kind=kind):
+                    artifacts, bad, good = self.duplicate_layout_paths(side + kind, side)
+                    good.write_bytes(result)
+                    bad.write_bytes(content)
+                    self.assert_no_aggregate_report(artifacts)
+
+    def test_directory_duplicate_is_present_and_cannot_fall_back(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            with self.subTest(side=side):
+                artifacts, bad, good = self.duplicate_layout_paths(side + "-directory", side)
+                good.write_bytes(result)
+                bad.mkdir()
+                self.assert_no_aggregate_report(artifacts)
+
+    @unittest.skipIf(os.name == "nt", "Unix FIFO metadata regression")
+    def test_special_duplicate_is_rejected_without_opening_it(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            with self.subTest(side=side):
+                artifacts, bad, good = self.duplicate_layout_paths(side + "-fifo", side)
+                good.write_bytes(result)
+                os.mkfifo(bad)
+                ran, directory, outputs = self.run_phase("aggregate", phase_timeout=2, RA_ARTIFACTS=str(artifacts))
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                self.assertIn("report=none", outputs)
+                self.assertEqual(json.loads((directory / "summary.json").read_text())["results"], [])
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks requires Windows developer privileges")
+    def test_link_or_dangling_duplicate_cannot_fall_back(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for side in ("flat", "nested"):
+            for dangling in (False, True):
+                with self.subTest(side=side, dangling=dangling):
+                    artifacts, bad, good = self.duplicate_layout_paths(side + str(dangling), side)
+                    good.write_bytes(result)
+                    bad.symlink_to(self.root / "absent-result" if dangling else good)
+                    self.assert_no_aggregate_report(artifacts)
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks requires Windows developer privileges")
+    def test_sole_linked_file_or_layout_directory_is_not_admitted(self):
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        result = (directory / "result.json").read_bytes()
+        for kind in ("flat-file", "nested-file", "nested-directory", "artifact-directory"):
+            with self.subTest(kind=kind):
+                artifacts = self.root / ("sole-" + kind)
+                artifacts.mkdir()
+                if kind == "artifact-directory":
+                    (artifacts / "result.json").write_bytes(result)
+                    alias = self.root / "artifact-directory-alias"
+                    alias.symlink_to(artifacts, target_is_directory=True)
+                    self.assert_no_aggregate_report(alias)
+                elif kind == "nested-directory":
+                    actual = self.root / "actual-nested-directory"
+                    actual.mkdir()
+                    (actual / "result.json").write_bytes(result)
+                    (artifacts / ("compatibility-" + self.env["RA_RUNNER"])).symlink_to(actual, target_is_directory=True)
+                    self.assert_no_aggregate_report(artifacts)
+                else:
+                    target = self.root / ("actual-" + kind + ".json")
+                    target.write_bytes(result)
+                    path = artifacts / "result.json" if kind == "flat-file" else artifacts / ("compatibility-" + self.env["RA_RUNNER"]) / "result.json"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.symlink_to(target)
+                    self.assert_no_aggregate_report(artifacts)
+
     def test_stdout_normalization_is_opt_in_and_logs_keep_raw_bytes(self):
         ansi = "\x1b[31mhello\x1b[0m\r\n"
         ran, directory, _ = self.run_phase("test", FAKE_CASE_STDOUT=ansi)

@@ -283,7 +283,12 @@ contract. Timeouts, signals and output limits never qualify for the exception.
 Aggregation accepts the per-artifact directory layout and, for exactly one
 declared runner, the flattened layout produced by a one-match artifact download.
 Both paths require the same repository, release, compiler, runner and current
-run-attempt identity; a flattened file cannot fill a multi-target inventory.
+run-attempt identity; a flattened file cannot fill a multi-target inventory. Both
+layout paths are inspected before decoding. A second path remains ambiguous when
+it contains malformed JSON, invalid UTF-8, a directory or a dangling symlink;
+aggregation never falls back from that entry to the other layout. Results and
+layout directories must be regular files and real directories, respectively.
+Regression tests cover both duplicate directions and linked layout components.
 
 Each target artifact, `compatibility-<runner>`, retains raw stdout and stderr,
 command arguments, working directory, process status (normal exit, signal or

@@ -64,7 +64,7 @@ output! = |text| {
 ## Requests are always GET. Only selection and asset download inherit GH_TOKEN.
 get! = |path, jq| {
 	ran = Cmd.new("gh").args(["api", "--method", "GET", path, "--jq", jq].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(60_000).output_limit(20_000_000).manage_tree(Bool.True).run!().map_err(|_| "GitHub request timed out or could not run")?
-	if ran.status == Exited(0) Ok(Str.from_utf8_lossy(ran.stdout_bytes)) else Err("GitHub could not supply release metadata")
+	if (ran.status == Exited(0)) Ok(Str.from_utf8_lossy(ran.stdout_bytes)) else Err("GitHub could not supply release metadata")
 }
 
 select! = || {
@@ -80,7 +80,7 @@ select! = || {
 	if !Compatibility.valid_repository(repository) or !Compatibility.path(package_name) or package_name.contains("/") or !Compatibility.valid_runners(chosen_runners) or (requested != "" and (!Compatibility.tag(requested) or !requested.starts_with("nightly-"))) or (requested_release != "" and !Compatibility.version(requested_release)) {
 		return Err("invalid selection inputs")
 	}
-	nightly = if requested == "" get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
+	nightly = if (requested == "") get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
 	var $releases = []
 	var $complete = Bool.False
 	pages : List(U64)
@@ -135,7 +135,7 @@ test! = || {
 	}
 	write!(Path.join(directory, "result.json"), Json.to_str(finished))?
 	Stdout.line!(Compatibility.console(Json.to_str(finished))).map_err(|_| "cannot display result")?
-	if finished.outcome == "compatible" Ok({}) else Err("${finished.outcome}: ${finished.detail}")
+	if (finished.outcome == "compatible") Ok({}) else Err("${finished.outcome}: ${finished.detail}")
 }
 
 execute! = |selected, initial, directory| {
@@ -174,6 +174,15 @@ execute! = |selected, initial, directory| {
 	ExamplesEngine.run!(suite, compiler, initial, root, directory, cache, [], case_timeout, Bool.True)
 }
 
+## Path.type! uses the host's lstat-style metadata, including dangling links.
+## Only NotFound means absence; inaccessible or nonregular entries are invalid.
+result_entry! : Path => [Absent, Regular, Invalid]
+result_entry! = |path| match Path.type!(path) {
+	Ok(IsFile) => Regular
+	Err(PathErr(NotFound, _)) => Absent
+	_ => Invalid
+}
+
 aggregate! = || {
 	selected = selection!()?
 	directory = Path.utf8(env!("RA_DIRECTORY")?)
@@ -181,18 +190,33 @@ aggregate! = || {
 	artifacts = Path.utf8(env!("RA_ARTIFACTS")?)
 	var $results = []
 	for runner in selected.runners {
-		nested = read!(Path.join(artifacts, "compatibility-${runner}/result.json"))
-		flat = read!(Path.join(artifacts, "result.json"))
-		parsed : Try(Compatibility.Result, _)
-		parsed = match (nested, flat) {
-			# Two layouts are ambiguous, even if their bytes happen to agree.
-			(Ok(_), Ok(_)) => Err(Missing)
-			(Ok(source), Err(_)) => Json.parse(source)
+		nested_directory = Path.join(artifacts, "compatibility-${runner}")
+		nested_path = Path.join(nested_directory, "result.json")
+		flat_path = Path.join(artifacts, "result.json")
+		# Inspect presence/types before reading any result. Invalid UTF-8, a
+		# directory or a dangling link must not look like an absent layout.
+		root_safe = match Path.type!(artifacts) {
+			Ok(IsDir) => Bool.True
+			_ => Bool.False
+		}
+		nested = if (root_safe) match Path.type!(nested_directory) {
+			Ok(IsDir) => result_entry!(nested_path)
+			Err(PathErr(NotFound, _)) => Absent
+			_ => Invalid
+		} else Invalid
+		flat = if (root_safe) result_entry!(flat_path) else Invalid
+		source = match (nested, flat) {
+			(Regular, Absent) => read!(nested_path)
 			# download-artifact flattens a pattern matching exactly one artifact.
 			# Only a one-target selection can use that layout; identity and
 			# current-attempt checks below remain identical.
-			(Err(_), Ok(source)) if selected.runners.len() == 1 => Json.parse(source)
-			_ => Err(Missing)
+			(Absent, Regular) if selected.runners.len() == 1 => read!(flat_path)
+			_ => Err("missing, ambiguous or unsafe result layout")
+		}
+		parsed : Try(Compatibility.Result, _)
+		parsed = match source {
+			Ok(text) => Json.parse(text)
+			Err(_) => Err(Missing)
 		}
 		match parsed {
 			Ok(result) => {
@@ -202,7 +226,7 @@ aggregate! = || {
 		}
 	}
 	classified = Compatibility.aggregate(selected, env!("GITHUB_RUN_ID")?, env!("GITHUB_RUN_ATTEMPT")?, $results)
-	decision = if classified.report == "success" and env!("RA_TEST_RESULT")? != "success" { outcome: "setup-failed", report: "none" } else classified
+	decision = if (classified.report == "success" and env!("RA_TEST_RESULT")? != "success") { outcome: "setup-failed", report: "none" } else classified
 	write!(Path.join(directory, "summary.json"), Json.to_str({ selection: selected, results: $results, outcome: decision.outcome, report: decision.report }))?
 	output!("outcome=${decision.outcome}\nreport=${decision.report}\n")?
 	# No example output is copied into the job summary or privileged issue job.
