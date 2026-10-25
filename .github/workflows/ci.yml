@@ -331,8 +331,9 @@ jobs:
         name: Build the release utility with the tooling compiler
         run: |
           set -euo pipefail
-          roc build scripts/release_package.roc --output="$RUNNER_TEMP/release-package"
-          echo "binary=$RUNNER_TEMP/release-package" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/tools"
+          roc build scripts/release_package.roc --output="$RUNNER_TEMP/tools/release-package"
+          echo "binary=$RUNNER_TEMP/tools/release-package" >> "$GITHUB_OUTPUT"
           # setup-roc finds the first compiler extracted into the workspace, so
           # the tooling installation goes before the package nightly arrives.
           rm -rf "$GITHUB_WORKSPACE"/roc_nightly-*

@@ -200,6 +200,7 @@ jobs:
         uses: ./.roc-automation/actions/fetch-dependency-sboms
         with:
           target: source
+          composition: ${{ inputs.sbom-task != '' && 'dist/sbom-composition.json' || 'sbom/composition.json' }}
           output: ${{ inputs.sbom-imports }}
 
       - name: Refuse supplier documents that differ from the committed record
