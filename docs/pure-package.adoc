@@ -28,21 +28,28 @@ targets and external runtime programs still need explicit validation.
 
 Copy `examples/pure-package/` to the repository root, including `.github/` and
 `.gitignore`. Keep its Blueprint configuration and lock together. Replace the
-package and manual content, then review and regenerate the lock when changing
-tool recipes. Its CI has separate read-only documentation and package jobs;
-both invoke the same named tasks a contributor uses locally.
+package, example, expected output, notes and manual content, then review and
+regenerate the lock when changing tool recipes.
 
 [source,text]
 ----
 Blueprint.roc
 Blueprint.lock
-.github/workflows/ci.yml
+.github/workflows/ci.yml           renders the manual on a pull request
+.github/workflows/release.yml      the thin caller of the shared release workflow
 .gitignore
 package/main.roc
+package/Greeting.roc
+examples/hello.roc
+tests/spec.json
 docs/index.adoc
+docs/releases/0.1.0.adoc
 ----
 
-The complete copyable workflow is:
+`release.yml` is the whole of the repository's release and pull-request
+checking; see
+xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[The shared release workflow for a pure package].
+The documentation workflow is:
 
 [source,yaml]
 ----

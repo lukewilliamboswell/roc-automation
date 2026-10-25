@@ -76,12 +76,14 @@ and compare it on every run. Examples are run by the same driver as the
 integration tests; see
 xref:testing.adoc#integration-tests[Integration tests].
 
-* Keep expected output under `tests/`, in one specification the scripts read:
-  the arguments each example runs with, its standard input where it has one,
-  and the exact output expected.
-* The check script runs every example and fails on a difference.
-* The same script accepts `--update` to rewrite the expected output, so that an
-  intended change is a reviewed diff.
+* Keep expected output in `tests/spec.json`, in the same suite format the
+  examples archive and the nightly runner use, with the release `working-tree`
+  and no dependencies: the arguments each example runs with, its standard
+  input, and the exact standard output, standard error and exit code expected.
+* `release-package test-examples` runs every example and fails on a difference;
+  the shared release workflow runs it on every pull request.
+* `release-package test-examples --update` rewrites the expected output, so
+  that an intended change is a reviewed diff.
 * An example that cannot run in CI, such as one needing a display or a console
   runtime, is still checked and built, and the specification says so
   explicitly. It is never silently skipped.
@@ -154,7 +156,7 @@ verified and not found from an earlier run.
 
 A pull request runs the release steps with a placeholder version and publishes
 nothing. Roc rejects `0.0.0` in a package URL, so the placeholder is
-`0.0.1-dry-run`.
+`0.0.1-dryrun`.
 
 == An archive is never reformatted
 

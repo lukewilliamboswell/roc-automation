@@ -14,5 +14,5 @@ config = [
 	Task("docs-path", [Use("docs"), Run(["sh", "-c", "realpath \"$(command -v roc-docs)\""])]),
 	Task("tooling-version", [Use("fixed-tools"), Run(["roc-stable", "version"])]),
 	Task("tooling-path", [Use("fixed-tools"), Run(["sh", "-c", "realpath \"$(command -v roc-stable)\""])]),
-	Task("check-package", [Use("package"), Run(["roc", "check", "package/main.roc"])]),
+	Task("check-package", [Use("package"), Run(["roc", "test", "package/main.roc"])]),
 ]

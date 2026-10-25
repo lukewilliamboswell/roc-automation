@@ -59,17 +59,60 @@ Compatibility := [].{
 		Ok({ schema_version: 1, repository, nightly, release: selected.tag_name, release_id: selected.id, asset, runners: runner_names })
 	}
 
+	## The suite archived with a published release, bound to that release's
+	## immutable bundle URLs.
 	suite : Str, Selection -> Try(Suite, Str)
-	suite = |source, selected| {
+	suite = |source, selected| published_suite(source, selected.repository, selected.release)
+
+	## The suite archived with the release `release` of `repository`, which
+	## every archived example must depend on by its immutable bundle URL.
+	published_suite : Str, Str, Str -> Try(Suite, Str)
+	published_suite = |source, repository, release| {
+		found = parse_suite(source)?
+		prefix = "https://github.com/${repository}/releases/download/${release}/"
+		if found.release != release or found.dependencies.is_empty() or !found.dependencies.all(|url| url.starts_with(prefix) and path(url.drop_prefix(prefix)) and url.ends_with(".tar.zst")) {
+			return Err("suite must describe this release and its immutable bundle URLs")
+		}
+		Ok(found)
+	}
+
+	## The release this suite describes when it is the working tree's own
+	## `tests/spec.json`, whose examples depend on the package by path.
+	working_tree : Str
+	working_tree = "working-tree"
+
+	## The working tree's suite: the same format as an archived one, with the
+	## release `working-tree` and no bundle dependencies yet.
+	working_tree_suite : Str -> Try(Suite, Str)
+	working_tree_suite = |source| {
+		found = parse_suite(source)?
+		if found.release != working_tree or !found.dependencies.is_empty() {
+			return Err("the working tree's suite must have release \"${working_tree}\" and no dependencies")
+		}
+		Ok(found)
+	}
+
+	## The same suite as archived with the release `release`, whose examples
+	## depend on `dependencies`, rendered as the text of its `spec.json`.
+	published : Suite, Str, List(Str) -> Str
+	published = |found, release, dependencies| render({ ..found, release, dependencies })
+
+	## The suite as the text of a `spec.json`: one value per line, so a change
+	## in expected output is a diff a reviewer can read. Fields that are not
+	## set, such as a skip, are left out.
+	render : Suite -> Str
+	render = |found| "${Str.from_utf8_lossy(indent(Str.to_utf8(Json.to_str(found)), 0, Outside, []))}\n"
+
+	parse_suite : Str -> Try(Suite, Str)
+	parse_suite = |source| {
 		parsed : Try(Suite, _)
 		parsed = Json.parse(source)
 		found = match parsed {
 			Ok(value) => value
 			Err(_) => return Err("invalid suite JSON")
 		}
-		prefix = "https://github.com/${selected.repository}/releases/download/${selected.release}/"
-		if found.schema_version != 1 or found.release != selected.release or found.apps.is_empty() or found.apps.len() > 100 or found.dependencies.is_empty() or !found.dependencies.all(|url| url.starts_with(prefix) and path(url.drop_prefix(prefix)) and url.ends_with(".tar.zst")) {
-			return Err("suite must describe this release, its immutable bundle URLs and 1–100 applications")
+		if found.schema_version != 1 or found.apps.is_empty() or found.apps.len() > 100 {
+			return Err("suite must use schema_version 1 and describe 1–100 applications")
 		}
 		if unique(found.apps.map(|example| example.path)).len() != found.apps.len() {
 			return Err("duplicate suite applications")
@@ -132,6 +175,29 @@ Compatibility := [].{
 	}
 }
 
+# Json.to_str writes everything on one line. Break after each `{`, `[` and `,`
+# and before each `}` and `]` that are not inside a string, indenting by depth.
+indent : List(U8), U64, [Inside, Outside], List(U8) -> List(U8)
+indent = |bytes, depth, state, out|
+	match (state, bytes) {
+		(_, []) => out
+		(Inside, ['\\', escaped, .. as rest]) => indent(rest, depth, Inside, out.append('\\').append(escaped))
+		(Inside, ['"', .. as rest]) => indent(rest, depth, Outside, out.append('"'))
+		(Inside, [byte, .. as rest]) => indent(rest, depth, Inside, out.append(byte))
+		(Outside, ['"', .. as rest]) => indent(rest, depth, Inside, out.append('"'))
+		(Outside, ['{', '}', .. as rest]) => indent(rest, depth, Outside, out.concat(['{', '}']))
+		(Outside, ['[', ']', .. as rest]) => indent(rest, depth, Outside, out.concat(['[', ']']))
+		(Outside, ['{', .. as rest]) => indent(rest, depth + 1, Outside, new_line(out.append('{'), depth + 1))
+		(Outside, ['[', .. as rest]) => indent(rest, depth + 1, Outside, new_line(out.append('['), depth + 1))
+		(Outside, ['}', .. as rest]) => indent(rest, depth - 1, Outside, new_line(out, depth - 1).append('}'))
+		(Outside, [']', .. as rest]) => indent(rest, depth - 1, Outside, new_line(out, depth - 1).append(']'))
+		(Outside, [',', .. as rest]) => indent(rest, depth, Outside, new_line(out.append(','), depth))
+		(Outside, [':', .. as rest]) => indent(rest, depth, Outside, out.concat([':', ' ']))
+		(Outside, [byte, .. as rest]) => indent(rest, depth, Outside, out.append(byte))
+	}
+
+new_line = |out, depth| out.append('\n').concat(List.repeat(' ', depth * 2))
+
 asset = { id: 2, name: "pkg-examples-1.0.0.zip", size: 100, digest: "sha256:${Str.repeat("a", 64)}" }
 
 release = { id: 1, tag_name: "1.0.0", draft: Bool.False, prerelease: Bool.False, published_at: "2026-10-20T01:00:00Z", assets: [asset] }
@@ -175,3 +241,28 @@ expect !Compatibility.valid_environment([{ name: "SystemRoot", value: "x" }])
 
 expect Compatibility.native_path("D:\\a\\temp/output/empty-cache", Bool.True) == "D:\\a\\temp\\output\\empty-cache"
 expect Compatibility.native_path("/tmp/output/empty-cache", Bool.False) == "/tmp/output/empty-cache"
+
+case : Compatibility.Case
+case = { name: "default", args: [], stdin: "", stdout: "a, \"b\"\n", stderr: "", exit_code: 0, skip: Err(Missing) }
+
+working : Compatibility.Suite
+working = { schema_version: 1, release: "working-tree", dependencies: [], apps: [{ path: "examples/colors.roc", target: Err(Missing), run: Err(Missing), cases: [case] }] }
+
+rendered = "{\n  \"apps\": [\n    {\n      \"cases\": [\n        {\n          \"args\": [],\n          \"exit_code\": 0,\n          \"name\": \"default\",\n          \"stderr\": \"\",\n          \"stdin\": \"\",\n          \"stdout\": \"a, \\\"b\\\"\\n\"\n        }\n      ],\n      \"path\": \"examples/colors.roc\"\n    }\n  ],\n  \"dependencies\": [],\n  \"release\": \"working-tree\",\n  \"schema_version\": 1\n}\n"
+
+expect Compatibility.render(working) == rendered
+expect Compatibility.working_tree_suite(rendered) == Ok(working)
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, release: "1.0.0" })).is_err()
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, dependencies: ["x"] })).is_err()
+expect Compatibility.working_tree_suite("{ \"apps\": 1 }").is_err() and Compatibility.working_tree_suite("").is_err()
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [] })).is_err()
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [{ path: "other/colors.roc", target: Err(Missing), run: Err(Missing), cases: [case] }] })).is_err()
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [{ path: "examples/colors.roc", target: Err(Missing), run: Err(Missing), cases: [case, case] }] })).is_err()
+expect Compatibility.render({ ..working, apps: [{ path: "examples/a.roc", target: Err(Missing), run: Err(Missing), cases: [{ ..case, stdout: "\u(001b)[0m{[,]}", skip: Ok({ reason: "needs a terminal", issue: "https://github.com/o/pkg/issues/1" }) }] }] }).contains("\"skip\": {\n            \"issue\": \"https://github.com/o/pkg/issues/1\",\n            \"reason\": \"needs a terminal\"\n          },\n          \"stderr\": \"\",\n          \"stdin\": \"\",\n          \"stdout\": \"\\u001b[0m{[,]}\"\n")
+
+published_url = "https://github.com/o/pkg/releases/download/1.0.0/hash.tar.zst"
+
+expect Compatibility.published_suite(Compatibility.published(working, "1.0.0", [published_url]), "o/pkg", "1.0.0") == Ok({ ..working, release: "1.0.0", dependencies: [published_url] })
+expect Compatibility.published_suite(Compatibility.published(working, "1.0.0", [published_url]), "o/pkg", "1.0.1").is_err()
+expect Compatibility.published_suite(Compatibility.published(working, "1.0.0", ["http://127.0.0.1:1/hash.tar.zst"]), "o/pkg", "1.0.0").is_err()
+expect Compatibility.suite(Compatibility.published(working, "1.0.0", [published_url]), selection).is_ok()

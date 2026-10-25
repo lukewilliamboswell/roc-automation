@@ -1,0 +1,12 @@
+= pure-package-example 0.1.0
+
+The first release of the example package.
+
+== Use this release
+
+[source,roc]
+----
+app [main!] {
+	example: "{package-url}",
+}
+----

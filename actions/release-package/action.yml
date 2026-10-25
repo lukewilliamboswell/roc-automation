@@ -1,0 +1,24 @@
+name: Build the shared release utility
+description: Build release-package from this action's own checkout with the roc on PATH, which the workflow has already installed as the package compiler. Read-only jobs only.
+outputs:
+  binary:
+    description: Absolute path of the native release-package executable
+    value: ${{ steps.build.outputs.binary }}
+runs:
+  using: composite
+  steps:
+    # The utility is a Roc script in this repository. It is built with the same
+    # nightly that tests the package, so one compiler serves the whole job.
+    - id: build
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        if ! command -v roc > /dev/null; then
+          echo '::error::install the package compiler with roc-lang/setup-roc before this action'
+          exit 2
+        fi
+        directory="$(mktemp -d "$RUNNER_TEMP/release-package.XXXXXX")"
+        roc build "$ACTION_PATH/../../scripts/release_package.roc" --output="$directory/release-package"
+        echo "binary=$directory/release-package" >> "$GITHUB_OUTPUT"

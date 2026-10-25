@@ -33,15 +33,19 @@ main! = |_args| {
 	}
 	for script in scripts {
 		source = Path.read_utf8!(Path.utf8(script))?
-		if Pins.is_app(source) and Pins.roc_pin(source) != Ok(tag) {
+		if floating.contains(script) {
+			if Pins.roc_pin(source).is_ok() {
+				return fail!("${script}: this script is built with the package nightly and must not pin a compiler")
+			}
+		} else if Pins.is_app(source) and Pins.roc_pin(source) != Ok(tag) {
 			return fail!("${script}: the app header must declare roc: \"${tag}\", the roc-stable release in Blueprint.roc")
 		}
 	}
-	Stdout.line!("PASS every script names ${tag}")?
+	Stdout.line!("PASS every script names ${tag}, except the floating ${Str.join_with(floating, ", ")}")?
 
 	Stdout.line!("\n== Scripts")?
 	# The modules without effects carry the tests of the scripts' logic.
-	for module_name in ["AppHeader", "Compatibility", "DownstreamStatus", "GitHub", "NightlyReport", "Pins", "PublishRelease", "Settings"] {
+	for module_name in ["AppHeader", "Compatibility", "DownstreamStatus", "GitHub", "NightlyReport", "Pins", "PublishRelease", "ReleasePackage", "Settings"] {
 		run!(["test", "scripts/src/${module_name}.roc"])?
 	}
 	for script in scripts {
@@ -49,6 +53,10 @@ main! = |_args| {
 	}
 	run!(["fmt", "--check", "scripts"])
 }
+
+# The shared release workflow builds this utility with the nightly that tests
+# the package, so it names no compiler and must also check on roc-stable.
+floating = ["scripts/release_package.roc"]
 
 # Print a `roc-stable` command, then run it with inherited output.
 run! = |args| {

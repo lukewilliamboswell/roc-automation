@@ -194,6 +194,33 @@ downloading the environment is most of the job's time: the environment is about
 a gigabyte once unpacked, so allow a minute or two. The script itself finishes
 in seconds.
 
+[#release-package]
+== `actions/release-package`
+
+Builds `scripts/release_package.roc`, the utility behind the
+xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[shared release workflow],
+with the `roc` already on `PATH`, and returns the executable's path as `binary`.
+The utility names no compiler of its own: the workflow installs the package
+nightly first, so one compiler builds the utility, the package and its examples.
+The reusable workflow calls this action from its own checkout; a repository
+that keeps its own `release.yml` can call it the same way after
+`roc-lang/setup-roc`. It runs in read-only jobs only.
+
+[source,sh]
+----
+release-package test-examples            # the working tree's examples against tests/spec.json
+release-package test-examples --update   # record what they print now
+release-package check-version 0.14.0     # roc bump against the latest release's bundle; needs gh
+release-package build 0.14.0             # dist/: bundle, examples archive, API docs archive, notes
+release-package test-archive             # the archive in dist/ against the bundle in dist/
+----
+
+`RP_COMPILER` names the package compiler when it is not the `roc` on `PATH`.
+`RP_REPOSITORY` is the `owner/name` the bundle URLs name; it defaults to
+`GITHUB_REPOSITORY` and then to the `origin` remote. `RP_DIRECTORY` keeps the
+numbered command records and output streams of every compiler and example
+command, the same files the nightly runner preserves.
+
 == `actions/release-compatibility`
 
 The shared read-only runner owns selection, archive checks, compiler diagnostics

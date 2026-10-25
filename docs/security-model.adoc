@@ -58,6 +58,18 @@ upstream compiler produced a harmless artifact.
 | `contents: write`, behind a protected environment
 | No: it runs `actions/publish-release` on artifacts produced by earlier jobs
 
+| Shared `release-package.yml` build
+| `contents: read`
+| Yes: the package's `check` task, its examples and the compiler, beside the pinned utility built from roc-automation's own checkout
+
+| Shared `release-package.yml` test
+| `contents: read`
+| No package source: the archived examples from the build job's artifact, against the bundle from the same artifact
+
+| Shared `release-package.yml` publish
+| `contents: write`, `id-token: write`, `attestations: write`, behind the `release` environment
+| No: roc-automation's own checkout at the caller's pinned SHA, `actions/attest` and `actions/publish-release` on the build job's artifact
+
 | `release.yml` site deploy
 | `pages: write`, `id-token: write`
 | No: it deploys an artifact built by a read-only job

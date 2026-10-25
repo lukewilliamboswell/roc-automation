@@ -1,0 +1,30 @@
+name: Release
+
+# A pull request builds and tests the release under a version that is never
+# published. Dispatch from the default branch with a version to publish it.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, such as 0.1.0 or 0.1.0-rc1
+        type: string
+        required: true
+      nightly-tag:
+        description: Exact Roc nightly for a diagnostic run; empty resolves the latest
+        type: string
+        default: ''
+
+permissions: {}
+
+jobs:
+  Release:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: lukewilliamboswell/roc-automation/.github/workflows/release-package.yml@a8682c4ea6b0fb2c7b6af9a4a7b1e1a0c6e55c6a
+    with:
+      version: ${{ inputs.version || '' }}
+      nightly-tag: ${{ inputs.nightly-tag || '' }}
+      check-task: check-package

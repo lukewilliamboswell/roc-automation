@@ -9,12 +9,12 @@ one question, and none of them changes the repository.
 
 | `ci.yml`
 | Pull request; push to the default branch
-| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly.
+| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly. A pure package has no `ci.yml`: its release dry run proves the same things.
 | `contents: read`
 
 | `release.yml`
 | Manual dispatch; pull request as a dry run
-| The exact bundle, examples archive and documentation proposed for publication work.
+| The exact bundle, examples archive and documentation proposed for publication work. A pure package's `release.yml` is a thin caller of the shared `release-package.yml`.
 | `contents: read`. The publish job alone has `contents: write`, behind a protected environment.
 
 | `nightly.yml`
@@ -69,8 +69,10 @@ per target. Compilation has its own budget. Sustained searches and measured
 benchmarks run only in schedule/manual jobs with explicit event guards; see
 xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[Heavy runs stay out of pull-request CI].
 
-A xref:overview.adoc#a-pure-roc-package[pure Roc package] runs this as one job
-on `ubuntu-latest`, and that job's name is the required status check.
+A xref:overview.adoc#a-pure-roc-package[pure Roc package] has no `ci.yml`. The
+xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[shared release workflow]
+runs `blueprint run check` and the examples on every pull request as part of
+its dry run, and its two job names are the required status checks.
 
 A repository whose code can behave differently by target runs it as a matrix,
 one job per runner, and ends with a single aggregate job that requires every
@@ -90,6 +92,54 @@ branch before treating a failure as a regression in the pull request.
 publishes them once. A maintainer dispatches it from the default branch with a
 version. A pull request runs the same build and tests as a dry run and publishes
 nothing.
+
+[#the-shared-release-workflow-for-a-pure-package]
+=== The shared release workflow for a pure package
+
+A pure Roc package keeps no release logic of its own. Its `release.yml` calls
+roc-automation's `.github/workflows/release-package.yml` at a full commit SHA:
+
+[source,yaml]
+----
+include::../examples/pure-package/.github/workflows/release.yml[]
+----
+
+The shared workflow runs three jobs. *Build and test the source* resolves the
+latest nightly once, runs the package's `check` task, checks the version with
+`roc bump` against the latest release, runs the working-tree examples, and
+builds the bundle, the examples archive, the API documentation archive and the
+notes. *Test the release candidate* checks out no package source: it downloads
+those exact files and runs the archived examples against the bundle over a
+loopback address. *Publish the release* runs only for a dispatched version on
+the default branch, in the `release` environment; it attests the tested files
+and hands them to xref:actions.adoc#publish-release[`actions/publish-release`].
+
+The bundle, the archives, the notes and both example runs are one utility,
+`scripts/release_package.roc`, built from the roc-automation commit the caller
+pinned with the same nightly that tests the package: the workflow checks out
+its own repository with `job.workflow_sha`, so one SHA fixes the workflow, the
+utility and every shared action it uses, and one compiler serves the whole run.
+A maintainer runs the same utility locally with the package compiler on `PATH`:
+
+[source,sh]
+----
+release-package test-examples            # the working tree's examples against tests/spec.json
+release-package test-examples --update   # record what they print now, as a reviewable diff
+release-package build 0.0.1-dryrun       # the bundle, archives and notes, into dist/
+release-package test-archive             # the archive in dist/ against the bundle in dist/
+----
+
+The inputs are the version, an exact nightly for a diagnostic run, the name of
+the Blueprint task that checks the package, an SBOM author and composition task
+when the release publishes sidecars, and a `manual` switch with an optional task
+that writes generated manual sources before the PDF is rendered. With the
+calling job named `Release`, the required status checks are
+`Release / Build and test the source` and `Release / Test the release candidate`.
+The caller declares no concurrency group: the shared workflow holds one release
+at a time per repository.
+
+A repository that publishes several bundles, or a platform, keeps a `release.yml`
+of its own along the lines below.
 
 === What a release contains
 
