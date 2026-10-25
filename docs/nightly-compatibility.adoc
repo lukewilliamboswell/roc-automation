@@ -269,8 +269,12 @@ evidence; the released fixture makes no Windows claim. Neither a timeout nor tru
 can match an expected exit code.
 
 Compiler stdout and stderr are always displayed, including after exit code 0.
-Warnings remain nonfatal by default. Successful compilation does not imply that
-it was warning-free. The runner owns compiler execution instead of delegating
+Warnings remain nonfatal by default: `roc check` and `roc build` accept
+normal exit codes 0 and 2 (success with warnings), retaining both diagnostics
+and the original status. Crash markers, signals and other compiler exit codes
+still fail; recorded runtime cases must still execute and match their declared
+exit status and output. Successful compilation does not imply that it was
+warning-free. The runner owns compiler execution instead of delegating
 it to a driver that might discard captured success output.
 
 Crash markers (`[roc crashed]` and `[roc expect failed]`, ignoring ASCII case)

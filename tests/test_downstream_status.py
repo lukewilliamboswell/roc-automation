@@ -29,6 +29,16 @@ target='lukewilliamboswell/roc-automation/.github/workflows/nightly-compatibilit
 file='.github/workflows/nightly.yml'
 scenario=os.environ['FAKE_SCENARIO']
 source='name: Nightly\non:\n  schedule:\n    - cron: "0 0 * * *"\npermissions: {}\njobs:\n  compatibility:\n    permissions:\n      contents: read\n      issues: write\n    uses: '+target+'@'+revision+'\n    with:\n      runners: \'["ubuntu-24.04"]\'\n'
+if scenario in ['annotated', 'single_quoted_annotated', 'double_quoted_annotated', 'quoted_hash', 'annotated_wrong_pin']:
+    value=target+'@'+revision
+    replacement={
+        'annotated': value+' # tools-0.4.0',
+        'single_quoted_annotated': "'"+value+"' # tools-0.4.0",
+        'double_quoted_annotated': '"'+value+'"  # tools-0.4.0',
+        'quoted_hash': "'"+value+" # not a comment'",
+        'annotated_wrong_pin': target+'@'+'c'*40+' # tools-0.4.0',
+    }[scenario]
+    source=source.replace('uses: '+value, 'uses: '+replacement)
 if scenario == 'local_spoof':
     source+='  local:\n    name: compatibility / Compatibility verdict\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n'
 if scenario in ['quoted_spoof', 'escaped_quote_spoof', 'doubled_quote_spoof', 'flow_spoof']:
@@ -80,9 +90,16 @@ else:
         badge = self.run_inventory("canonical")
         self.assertEqual(badge["color"], "brightgreen", badge)
 
+    def test_release_annotations_do_not_change_the_workflow_identity(self):
+        for scenario in ["annotated", "single_quoted_annotated", "double_quoted_annotated"]:
+            with self.subTest(scenario=scenario):
+                badge = self.run_inventory(scenario)
+                self.assertEqual(badge["color"], "brightgreen", badge)
+
     def test_spoofed_or_mismatched_origin_never_passes(self):
         for scenario in ["local_spoof", "not_invoked", "wrong_revision", "old_attempt",
-                         "quoted_spoof", "escaped_quote_spoof", "doubled_quote_spoof", "flow_spoof"]:
+                         "quoted_spoof", "escaped_quote_spoof", "doubled_quote_spoof", "flow_spoof",
+                         "quoted_hash", "annotated_wrong_pin"]:
             with self.subTest(scenario=scenario):
                 badge = self.run_inventory(scenario)
                 self.assertNotEqual(badge["color"], "brightgreen", badge)

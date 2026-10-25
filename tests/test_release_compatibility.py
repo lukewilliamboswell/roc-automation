@@ -83,6 +83,9 @@ else:
         else:
             out.write_text('#!'+sys.executable+'\\n'+code)
         out.chmod(0o755)
+    if os.environ.get('FAKE_COMPILER_CRASH'): print('[roc crashed]',file=sys.stderr)
+    if os.environ.get('FAKE_COMPILER_EXIT_PHASE',sys.argv[1]) == sys.argv[1]:
+        sys.exit(int(os.environ.get('FAKE_COMPILER_EXIT','0')))
 """)
         self.releases = self.root / "releases.json"
         self.releases.write_text(json.dumps([dict(id=1, tag_name="1.0.0", draft=False,
@@ -163,6 +166,37 @@ else:
         self.assertIn("::error::", (directory / "2-stderr.log").read_text())
         self.assertIn("compiler stdout detail", (directory / "2-stdout.log").read_text())
         self.assertIn("--opt=dev", json.loads((directory / "3-command.json").read_text())["argv"])
+
+    def test_warning_exit_runs_cases_and_preserves_raw_status(self):
+        for phase in ("check", "build"):
+            with self.subTest(phase=phase):
+                ran, directory, _ = self.run_phase("test", FAKE_COMPILER_EXIT="2",
+                                                  FAKE_COMPILER_EXIT_PHASE=phase)
+                self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
+                result = json.loads((directory / "result.json").read_text())
+                self.assertEqual((result["outcome"], result["tested"], result["failed"]),
+                                 ("compatible", 1, 0))
+                command = "2" if phase == "check" else "3"
+                self.assertEqual(json.loads((directory / (command + "-command.json")).read_text())["code"], 2)
+                self.assertIn("warning: successful", (directory / (command + "-stderr.log")).read_text())
+
+    def test_warning_exit_cannot_hide_crash_or_case_failure(self):
+        for extra in ({"FAKE_COMPILER_CRASH": "1"}, {"FAKE_CASE_STDOUT": "wrong output"}):
+            with self.subTest(extra=extra):
+                ran, directory, _ = self.run_phase("test", FAKE_COMPILER_EXIT="2", **extra)
+                self.assertNotEqual(ran.returncode, 0, ran.stdout)
+                result = json.loads((directory / "result.json").read_text())
+                self.assertEqual(result["outcome"], "incompatible")
+                self.assertGreater(result["failed"], 0)
+                self.assertEqual(result["tested"], 0 if "FAKE_COMPILER_CRASH" in extra else 1)
+
+    def test_other_compiler_exit_codes_remain_failures(self):
+        for code in (1, 3, 77):
+            with self.subTest(code=code):
+                ran, directory, _ = self.run_phase("test", FAKE_COMPILER_EXIT=str(code))
+                self.assertNotEqual(ran.returncode, 0)
+                result = json.loads((directory / "result.json").read_text())
+                self.assertEqual((result["outcome"], result["tested"]), ("incompatible", 0))
 
     def test_single_artifact_flattened_download_is_aggregated(self):
         ran, directory, _ = self.run_phase("test")

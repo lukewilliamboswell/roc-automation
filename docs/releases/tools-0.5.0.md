@@ -24,7 +24,11 @@ migrations are follow-ups.
 
 Compatibility fixes accept the flattened result file produced by a single-target
 artifact download while rejecting ambiguous duplicates before decoding either
-layout, including malformed or nonregular duplicate entries. Examples may opt into
+layout, including malformed or nonregular duplicate entries. Compiler checks and
+builds accept Roc warning status 2 while retaining raw diagnostics and requiring
+case execution; crashes and other failure statuses remain fatal. Downstream
+compatibility badges accept inline comments after pinned workflow references.
+Examples may opt into
 `--fuzz` builds and per-case ignored stderr. Fuzz builds use the compiler's LLVM
 backend and retain bounded process, output and timeout handling. Explicit local
 expectation updates share the same engine, reject CI and published suites, and

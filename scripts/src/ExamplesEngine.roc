@@ -121,7 +121,9 @@ execute_examples! = |suite, compiler, initial, root, directory, cache, replace_a
 				return Ok({ result: { ..$result, outcome: if ran.timed_out "test-timeout" else "output-limit", detail: "compiler interrupted; inspect command ${$number.to_str()}" }, observed: $observed })
 			}
 			$result = { ..$result, diagnostic_commands: $result.diagnostic_commands + 1 }
-			if ran.status != "exited" or ran.code != 0 or crashed(ran.stdout) or crashed(ran.stderr) {
+			# Roc check/build exit 2 after completing with warnings and no errors.
+			# Runtime cases below still compare their declared exit code exactly.
+			if ran.status != "exited" or (ran.code != 0 and ran.code != 2) or crashed(ran.stdout) or crashed(ran.stderr) {
 				$built = Bool.False
 			}
 		}
