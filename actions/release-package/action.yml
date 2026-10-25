@@ -1,15 +1,17 @@
 name: Build the shared release utility
-description: Build release-package from this action's own checkout with the roc on PATH, which the workflow has already installed as the package compiler. Read-only jobs only.
+description: Build release-package from this action's own checkout with the roc on PATH, which the workflow has already installed as the package compiler, reusing a build cached for the same source commit, compiler and runner. Read-only jobs only.
 outputs:
   binary:
     description: Absolute path of the native release-package executable
-    value: ${{ steps.build.outputs.binary }}
+    value: ${{ steps.locate.outputs.binary }}
 runs:
   using: composite
   steps:
     # The utility is a Roc script in this repository. It is built with the same
-    # nightly that tests the package, so one compiler serves the whole job.
-    - id: build
+    # nightly that tests the package, so one compiler serves the whole job. The
+    # build is cached by the source commit, the compiler and the runner: the
+    # same inputs give the same executable, and a cache miss simply rebuilds.
+    - id: locate
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
@@ -19,6 +21,31 @@ runs:
           echo '::error::install the package compiler with roc-lang/setup-roc before this action'
           exit 2
         fi
-        directory="$(mktemp -d "$RUNNER_TEMP/release-package.XXXXXX")"
-        roc build "$ACTION_PATH/../../scripts/release_package.roc" --output="$directory/release-package"
-        echo "binary=$directory/release-package" >> "$GITHUB_OUTPUT"
+        source="$(git -C "$ACTION_PATH/../.." rev-parse HEAD)"
+        compiler="$(NO_COLOR=1 roc version)"
+        compiler="${compiler#Roc compiler version }"
+        directory="$RUNNER_TEMP/release-package-$source"
+        mkdir -p "$directory"
+        {
+          echo "directory=$directory"
+          echo "binary=$directory/release-package"
+          echo "key=release-package-$RUNNER_OS-$RUNNER_ARCH-$compiler-$source"
+        } >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.locate.outputs.directory }}
+        key: ${{ steps.locate.outputs.key }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BINARY: ${{ steps.locate.outputs.binary }}
+      run: roc build "$ACTION_PATH/../../scripts/release_package.roc" --output="$BINARY"
+    - shell: bash
+      env:
+        BINARY: ${{ steps.locate.outputs.binary }}
+      run: |
+        set -euo pipefail
+        test -x "$BINARY"
+        "$BINARY" > /dev/null 2>&1 || test $? = 1
