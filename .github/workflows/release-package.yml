@@ -139,12 +139,8 @@ jobs:
           version: nightly-new-compiler
           nightly-tag: ${{ steps.nightly.outputs.tag }}
 
-      # The utility is built with the same compiler, so a nightly that breaks it
-      # is found here, with the compiler's own diagnostics.
-      - id: tool
-        name: Build the shared release utility
-        uses: ./.roc-automation/actions/release-package
-
+      # Blueprint provisions the release-package utility the repository's lock
+      # names, and every other locked tool, as it does for a maintainer.
       - name: Install Blueprint
         uses: ./.roc-automation/actions/setup-blueprint
         with:
@@ -169,28 +165,25 @@ jobs:
       - name: Check the version against the latest release
         env:
           GH_TOKEN: ${{ github.token }}
-          TOOL: ${{ steps.tool.outputs.binary }}
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.request.outputs.version }}
-        run: '"$TOOL" check-version "$VERSION"'
+        run: blueprint run release-package -- check-version "$VERSION"
 
       - name: Test the examples against the working tree
         env:
-          TOOL: ${{ steps.tool.outputs.binary }}
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
-        run: '"$TOOL" test-examples'
+        run: blueprint run release-package -- test-examples
 
       - id: build
-        name: Build the bundle, examples archive, documentation archive and notes
+        name: Build the bundles, examples archive, documentation archive and notes
         env:
-          TOOL: ${{ steps.tool.outputs.binary }}
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
           RP_AUTOMATION: ${{ job.workflow_repository }}@${{ job.workflow_sha }}
           VERSION: ${{ steps.request.outputs.version }}
-        run: '"$TOOL" build "$VERSION"'
+        run: blueprint run release-package -- build "$VERSION"
 
       - name: Prepare the reviewed SBOM composition
         if: inputs.sbom-author != '' && inputs.sbom-task != ''
@@ -309,8 +302,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      # Only this workflow's repository is checked out: the candidate files are
-      # tested as the exact bytes that would be published, not from source.
+      # The candidate files are tested as the exact bytes that would be
+      # published. The repository is checked out only for its Blueprint, which
+      # provisions the locked utility; no package source is built or run.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
@@ -324,9 +322,11 @@ jobs:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.build.outputs.nightly }}
 
-      - id: tool
-        name: Build the shared release utility
-        uses: ./.roc-automation/actions/release-package
+      - name: Install Blueprint
+        uses: ./.roc-automation/actions/setup-blueprint
+        with:
+          cache: 'true'
+          cache-workload: release
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -347,10 +347,9 @@ jobs:
       # exist yet: the bundles are served from a loopback address in their place.
       - name: Test the examples archive, unchanged, against the bundles
         env:
-          TOOL: ${{ steps.tool.outputs.binary }}
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
-        run: '"$TOOL" test-archive'
+        run: blueprint run release-package -- test-archive
 
       - name: Retain command logs
         if: always()

@@ -87,9 +87,37 @@ jobs:
           if-no-files-found: error
           path: dist/roc-docs-${{ matrix.system }}
 
+  # The Linux executables of the release utility come from build-tools; Apple
+  # Silicon maintainers run the same utility locally, so it is built there too.
+  release-package-build:
+    name: Build release utility (aarch64-darwin)
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-09-258ab27
+      - name: Build the native release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          roc build scripts/release_package.roc --opt=size --output=dist/release-package-aarch64-darwin
+          dist/release-package-aarch64-darwin > /dev/null 2>&1 || test $? = 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-package-tool-aarch64-darwin
+          if-no-files-found: error
+          path: dist/release-package-aarch64-darwin
+
   build:
     name: Build the tools
-    needs: [policy-build, docs-build]
+    needs: [policy-build, docs-build, release-package-build]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -113,6 +141,11 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: docs-tool-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-package-tool-*
           merge-multiple: true
           path: dist
       - name: Include documentation renderer font notices and standalone tests
@@ -252,6 +285,13 @@ jobs:
           ROC_COMPATIBILITY_BINARY: ${{ github.workspace }}/tools/dist/release-compatibility-${{ matrix.system }}
           ROC_COMPATIBILITY_ARCHIVE_HELPER: ${{ github.workspace }}/tools/dist/release-compatibility-archive.py
         run: python3 -m unittest discover -s tools/compatibility-tests/tests -v
+      # The release utility refuses to run without a command and says what it takes.
+      - name: The release utility runs without a compiler and states its usage
+        env:
+          SYSTEM: ${{ matrix.system }}
+        run: |
+          if tools/dist/release-package-"$SYSTEM" 2> error.txt; then exit 1; fi
+          grep -q 'usage: release-package build VERSION' error.txt
 
   policy-test:
     name: Test exact policy artifact (${{ matrix.system }})

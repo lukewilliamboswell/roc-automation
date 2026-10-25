@@ -10,6 +10,10 @@ config = [
 	Environment("docs", [Programs([Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.2.0/roc-docs-{system}"))]), Expect(["realpath", "sh"])]),
 	Environment("fixed-tools", [Programs([Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-10-18-1df370f"))]), Expect(["realpath", "sh"])]),
 	Environment("package", [Expect(["roc"])]),
+	# The shared release workflow runs this utility against the `roc` on PATH; a
+	# maintainer runs the same task locally, such as `-- test-examples --update`.
+	Environment("release", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.5.0/release-package-{system}"))]), Expect(["roc", "git", "gh", "tar", "unzip", "zip", "chmod", "touch", "env"])]),
+	Task("release-package", [Use("release"), Run(["release-package"])]),
 	Task("docs", [Use("docs"), Run(["roc-docs", "build", "--workspace", ".", "--pdf-filename", "example.pdf"])]),
 	Task("docs-path", [Use("docs"), Run(["sh", "-c", "realpath \"$(command -v roc-docs)\""])]),
 	Task("tooling-version", [Use("fixed-tools"), Run(["roc-stable", "version"])]),

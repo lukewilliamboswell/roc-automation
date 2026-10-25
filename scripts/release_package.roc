@@ -1,6 +1,7 @@
-#!/usr/bin/env roc
+#!/usr/bin/env roc-stable
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
+	roc: "nightly-2026-10-09-258ab27",
 }
 
 import cli.Cmd
@@ -25,15 +26,16 @@ import src/ReleasePackage
 ##     release-package test-archive           the examples archive in dist/, unchanged, against the bundles in dist/
 ##
 ## `roc bundle`, `roc docs`, `roc bump`, `roc check` and `roc build` do the work;
-## this utility fixes the order, the names and the checks between them. Unlike
-## the other scripts here it names no compiler: the shared workflow builds it
-## with the same nightly that tests the package, so it must compile on the
-## latest nightly as well as on `roc-stable`. The package compiler is the `roc`
-## on PATH or `RP_COMPILER`. `RP_REPOSITORY` names the GitHub repository as
-## `owner/name`; it defaults to `GITHUB_REPOSITORY` or the `origin` remote.
-## `RP_NAME` is the name in asset file names and defaults to the repository
-## name. `RP_DIRECTORY` keeps the command logs; `RP_AUTOMATION` is recorded in
-## the notes as the shared workflow revision.
+## this utility fixes the order, the names and the checks between them. It is
+## built by `roc-stable` and published as a static executable in each tools
+## release; a repository's Blueprint fetches it by digest and runs it as the
+## `release-package` task, locally and in the shared workflow alike. The package
+## compiler is a different one: the `roc` on PATH or `RP_COMPILER`, the latest
+## nightly. `RP_REPOSITORY` names the GitHub repository as `owner/name`; it
+## defaults to `GITHUB_REPOSITORY` or the `origin` remote. `RP_NAME` is the
+## name in asset file names and defaults to the repository name. `RP_DIRECTORY`
+## keeps the command logs; `RP_AUTOMATION` is recorded in the notes as the
+## shared workflow revision.
 main! = |args| {
 	result = match args.map(OsStr.display) {
 		["build", version] => build!(version)

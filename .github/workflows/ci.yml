@@ -321,12 +321,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The utility is built here from source with the tooling compiler, as a
+      # tools release builds it; consumers fetch that release through Blueprint.
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-09-258ab27
+      - id: tool
+        name: Build the release utility with the tooling compiler
+        run: |
+          set -euo pipefail
+          roc build scripts/release_package.roc --output="$RUNNER_TEMP/release-package"
+          echo "binary=$RUNNER_TEMP/release-package" >> "$GITHUB_OUTPUT"
+          # setup-roc finds the first compiler extracted into the workspace, so
+          # the tooling installation goes before the package nightly arrives.
+          rm -rf "$GITHUB_WORKSPACE"/roc_nightly-*
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
         with:
           version: nightly-new-compiler
           nightly-tag: nightly-2026-10-23-18478ff
-      - id: tool
-        uses: ./actions/release-package
       - name: Build and test the starter's release
         working-directory: examples/pure-package
         env:
@@ -339,8 +352,9 @@ jobs:
           "$TOOL" test-archive
           test -s dist/release-notes.md
           # Two bundles: the package and the data package the directory example depends on.
-          ls dist/pure-package-example-*.tar.zst | grep -vq -- '-data-'
-          ls dist/pure-package-example-data-*.tar.zst
+          bundles=(dist/pure-package-example-*.tar.zst)
+          test "${#bundles[@]}" = 2
+          compgen -G 'dist/pure-package-example-data-*.tar.zst' > /dev/null
           grep -c 'releases/download/0.0.1-dryrun/pure-package-example-' dist/release-notes.md | grep -qx 2
           unzip -Z1 dist/pure-package-example-examples-0.0.1-dryrun.zip | grep -qx 'pure-package-example-examples-0.0.1-dryrun/examples/hello.roc'
           unzip -Z1 dist/pure-package-example-examples-0.0.1-dryrun.zip | grep -qx 'pure-package-example-examples-0.0.1-dryrun/examples/greet/Format.roc'
@@ -363,7 +377,7 @@ jobs:
             echo '::error::an archive with changed expectations passed'
             exit 1
           fi
-          test -s "$RP_DIRECTORY"/*-expected.json
+          compgen -G "$RP_DIRECTORY/*-expected.json" > /dev/null
 
   # The repository's own Roc scripts, on the pinned tooling compiler. This does
   # not ask GitHub about any repository's settings: that needs administration

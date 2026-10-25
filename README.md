@@ -20,7 +20,6 @@ build inputs, and the trust model behind the shared actions.
 | `actions/blueprint-tool` | Hand off a persistent Blueprint utility path with optional process diagnostics |
 | `actions/build-docs` | Render AsciiDoc or Markdown as an HTML site and PDF using a supplied Roc binary |
 | `actions/publish-release` | Stage a draft release, verify every asset against the tested file, then publish |
-| `actions/release-package` | Build the utility that bundles, archives, tests and describes a pure package release |
 | `actions/publish-build-inputs` | Publish linker inputs built on a pull request, and commit only their lock |
 | `actions/sbom-sidecars` | Bind checked SPDX and CycloneDX sidecars to each release file with the pinned Blueprint tool |
 | `actions/fetch-dependency-sboms` | Fetch suppliers' SBOMs beside locked files and record them for Blueprint to verify |
@@ -38,6 +37,7 @@ publishes SBOM sidecars for a bundle and per-system executables can start from
 | Utility | Purpose |
 | --- | --- |
 | [roc-docs](tools/roc-docs/README.adoc) | Build an HTML site and PDF from documentation sources |
+| [release-package](https://lukewilliamboswell.github.io/roc-automation/actions.html#release-package) | Bundle, archive, test and describe a package release, behind the shared release workflow |
 | [roc-build-runner](tools/roc-build-runner/README.adoc) | Execute a versioned build specification with verified isolation and checked inputs and outputs |
 
 The build runner is a standalone Roc program. Consumers pin its source and

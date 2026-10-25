@@ -114,19 +114,21 @@ loopback address. *Publish the release* runs only for a dispatched version on
 the default branch, in the `release` environment; it attests the tested files
 and hands them to xref:actions.adoc#publish-release[`actions/publish-release`].
 
-The bundle, the archives, the notes and both example runs are one utility,
-`scripts/release_package.roc`, built from the roc-automation commit the caller
-pinned with the same nightly that tests the package: the workflow checks out
-its own repository with `job.workflow_sha`, so one SHA fixes the workflow, the
-utility and every shared action it uses, and one compiler serves the whole run.
-A maintainer runs the same utility locally with the package compiler on `PATH`:
+The bundles, the archives, the notes and both example runs are one utility,
+xref:actions.adoc#release-package[`release-package`], a static executable from
+a roc-automation tools release that the repository's Blueprint fetches by
+digest and names as the `release-package` task. The workflow checks out its
+own repository with `job.workflow_sha` for the shared actions it uses, so the
+caller's SHA fixes the workflow and the lock fixes the utility; the package
+compiler is the latest nightly, installed by the workflow. A maintainer runs
+the same task locally with that compiler on `PATH`:
 
 [source,sh]
 ----
-release-package test-examples            # the working tree's examples against tests/spec.json
-release-package test-examples --update   # record what they print now, as a reviewable diff
-release-package build 0.0.1-dryrun       # the bundle, archives and notes, into dist/
-release-package test-archive             # the archive in dist/ against the bundle in dist/
+blueprint run release-package -- test-examples            # the working tree's examples against tests/spec.json
+blueprint run release-package -- test-examples --update   # record what they print now, as a reviewable diff
+blueprint run release-package -- build 0.0.1-dryrun       # the bundles, archives and notes, into dist/
+blueprint run release-package -- test-archive             # the archive in dist/ against the bundles in dist/
 ----
 
 The inputs are the version, an exact nightly for a diagnostic run, the name of
@@ -146,10 +148,12 @@ A platform keeps a `release.yml` of its own along the lines below.
 
 The move from a copied release workflow is the same in every package so far.
 
-. Blueprint 0.8 with a `check` task that runs the package's own checks. A check
-  that takes longer than a few minutes, such as fuzzing or conformance suites,
-  stays in the repository's own `ci.yml`; pass `check-task: ''` then, so that
-  the release dry run stays fast.
+. Blueprint 0.8 with a `check` task that runs the package's own checks, and the
+  `release` environment and `release-package` task from
+  xref:actions.adoc#release-package[the utility's section], followed by
+  `blueprint update` for the lock. A check that takes longer than a few
+  minutes, such as fuzzing or conformance suites, stays in the repository's own
+  `ci.yml`; pass `check-task: ''` then, so that the release dry run stays fast.
 . Every example depends on the package by relative path and names no `roc`
   compiler; the release notes record the compiler instead. A `.roc` file under
   `examples/` without an `app` header is a shared module. An example that

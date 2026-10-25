@@ -27,7 +27,9 @@ A pull request builds and tests the release under `0.0.1-dryrun`; dispatching
 the workflow from the default branch with a version publishes it. The package
 compiler is the latest nightly, installed by the workflow; nothing here pins it.
 The workflow runs `blueprint run check-package` before packaging, so the
-`check-package` task is where the package's own checks go.
+`check-package` task is where the package's own checks go, and then the
+`release-package` task, whose utility Blueprint fetches from a roc-automation
+tools release by digest.
 
 With Blueprint installed and the current nightly on `PATH` as `roc`:
 
@@ -35,9 +37,11 @@ With Blueprint installed and the current nightly on `PATH` as `roc`:
 ----
 blueprint check
 blueprint run check-package
+blueprint run release-package -- test-examples --update   # record what the examples print
+blueprint run release-package -- build 0.0.1-dryrun       # what a release would publish, into dist/
+blueprint run release-package -- test-archive             # the archive against the bundles
 blueprint run docs
 ----
 
-The same utility the workflow runs can be built from roc-automation's
-`scripts/release_package.roc`; see the manual's
+See the manual's
 https://lukewilliamboswell.github.io/roc-automation/workflows.html#the-shared-release-workflow-for-a-pure-package[shared release workflow].
