@@ -8,6 +8,19 @@
           "name": "default",
           "stderr": "",
           "stdin": "",
+          "stdout": "Hello from a pure Roc package, Ada\nHello from a pure Roc package, Grace\n"
+        }
+      ],
+      "path": "examples/greet/main.roc"
+    },
+    {
+      "cases": [
+        {
+          "args": [],
+          "exit_code": 0,
+          "name": "default",
+          "stderr": "",
+          "stdin": "",
           "stdout": "Hello from a pure Roc package\n"
         }
       ],

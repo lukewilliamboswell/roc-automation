@@ -4,6 +4,7 @@ import cli.IOErr
 import cli.OsStr
 import cli.Path
 import cli.Stdout
+import AppHeader
 import Compatibility
 import Loopback
 
@@ -24,12 +25,12 @@ Examples := [].{
 	## exit code; a timeout, output limit or I/O failure has its own.
 	Ran : { status : Str, signal : I32, error : Str, code : I32, stdout : List(U8), stderr : List(U8), timed_out : Bool, limited : Bool }
 
-	## How the examples reach the package they depend on. `Direct` lets Roc
-	## resolve each header as written. `Served` answers requests for `url`
-	## with the bytes of `bundle` from a loopback address and adds
+	## How the examples reach the packages they depend on. `Direct` lets Roc
+	## resolve each header as written. `Served` answers requests for each
+	## `url` with the bytes of its `bundle` from a loopback address and adds
 	## `--replace-dep` to each compiler command, so archived headers stay
 	## exactly as published.
-	Source : [Direct, Served({ url : Str, bundle : Path })]
+	Source : [Direct, Served(List({ url : Str, bundle : Path }))]
 
 	## `compiler` runs every example found under `root` at the paths the suite
 	## names. `dependencies` are the sources an example header must name, such
@@ -84,7 +85,7 @@ Examples := [].{
 		server : Try(Server, Str)
 		server = match options.source {
 			Direct => Ok(NoServer)
-			Served({ bundle, .. }) => Loopback.start!(bundle).map_ok(|active| Server(active))
+			Served(bundles) => Loopback.start!(bundles.map(|served| served.bundle)).map_ok(|active| Server(active))
 		}
 		context = context!(options.setup, server?)?
 		ran = examples!(context, options)
@@ -189,19 +190,24 @@ logged! = |context, number, argv, cwd, input, timeout| {
 examples! : Context, Examples.Options => Try(Examples.Outcome, Str)
 examples! = |context, options| {
 	setup = options.setup
-	replace = match context.server {
-		Server(active) =>
-			match options.source {
-				Served({ url, .. }) => ["--replace-dep", url, active.url]
-				Direct => []
+	# Each replacement is passed only to the applications that declare its
+	# source: the compiler refuses a replacement nothing in the graph uses.
+	replacements = match options.source {
+		Direct => []
+		Served(bundles) =>
+			match context.server {
+				Server(active) => bundles.map(|entry| { from: entry.url, to: Loopback.url(active, Path.filename(entry.bundle).map_ok(Path.display) ?? "") })
+				NoServer => []
 			}
-		NoServer => []
 	}
 	var $result = { tested: 0, failed: 0, skipped: 0, diagnostic_commands: 0, number: options.first_number - 1, interrupted: None, updated: { ..options.suite, apps: [] }, failures: [] }
 	for example in options.suite.apps {
-		if !Compatibility.app_source(read!(Path.join(options.root, example.path))?, options.dependencies) {
+		source = read!(Path.join(options.root, example.path))?
+		if !Compatibility.app_source(source, options.dependencies) {
 			return Err("${example.path} must directly reference the declared package dependency and must not pin its compiler")
 		}
+		declared = (AppHeader.fields(source) ?? []).map(|field| field.source)
+		replace = replacements.keep_if(|entry| declared.contains(entry.from)).join_map(|entry| ["--replace-dep", entry.from, entry.to])
 		target = example.target ?? "native"
 		executable = Path.join(setup.directory, "example-${($result.number + 1).to_str()}${if target == "wasm32" ".wasm" else if context.windows ".exe" else ""}")
 		native_executable = native(context, executable)
@@ -236,7 +242,9 @@ examples! = |context, options| {
 						Ok(argv) if !argv.is_empty() => argv.map(|arg| arg.replace_each("{executable}", native_executable).replace_each("{suite}", native_root))
 						_ => [native_executable]
 					}
-					ran = logged!(context, $result.number, runtime.concat(case.args), options.root, Str.to_utf8(case.stdin), options.case_timeout_ms)?
+					# A case runs where a reader would run the example, in its own
+					# directory, so an example reads sibling data files by relative path.
+					ran = logged!(context, $result.number, runtime.concat(case.args), Path.join(options.root, directory_of(example.path)), Str.to_utf8(case.stdin), options.case_timeout_ms)?
 					if ran.timed_out or ran.limited {
 						return Ok({ ..$result, interrupted: if ran.timed_out Timeout($result.number) else OutputLimit($result.number) })
 					}
@@ -265,6 +273,15 @@ examples! = |context, options| {
 	}
 	Ok($result)
 }
+
+# The directory an application lives in, relative to the suite root.
+directory_of = |path|
+	match Str.split_last(path, "/") {
+		Ok({ before, .. }) => before
+		Err(_) => "."
+	}
+
+expect directory_of("examples/colors.roc") == "examples" and directory_of("examples/greet/main.roc") == "examples/greet"
 
 # The first thing that differs between a case and what actually happened.
 difference : Compatibility.Case, Examples.Ran -> Str

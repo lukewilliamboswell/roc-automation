@@ -60,7 +60,7 @@ upstream compiler produced a harmless artifact.
 
 | Shared `release-package.yml` build
 | `contents: read`
-| Yes: the package's `check` task, its examples and the compiler, beside the pinned utility built from roc-automation's own checkout
+| Yes: one prerequisite program the caller names, the package's `check` task, its examples and the compiler, beside the pinned utility built from roc-automation's own checkout
 
 | Shared `release-package.yml` test
 | `contents: read`

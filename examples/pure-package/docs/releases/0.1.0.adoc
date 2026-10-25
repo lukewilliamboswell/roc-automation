@@ -1,6 +1,6 @@
 = pure-package-example 0.1.0
 
-The first release of the example package.
+The first release of the example package and the data package beside it.
 
 == Use this release
 
@@ -8,5 +8,6 @@ The first release of the example package.
 ----
 app [main!] {
 	example: "{package-url}",
+	names: "{data-url}",
 }
 ----

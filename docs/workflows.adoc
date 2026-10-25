@@ -130,16 +130,45 @@ release-package test-archive             # the archive in dist/ against the bund
 ----
 
 The inputs are the version, an exact nightly for a diagnostic run, the name of
-the Blueprint task that checks the package, an SBOM author and composition task
-when the release publishes sidecars, and a `manual` switch with an optional task
-that writes generated manual sources before the PDF is rendered. With the
+the Blueprint task that checks the package and one program to run before it for
+a prerequisite the runner lacks, an SBOM author with an optional composition
+task and supplier-imports record when the release publishes sidecars, and a
+`manual` switch with an optional task that writes generated manual sources
+before the PDF is rendered. With the
 calling job named `Release`, the required status checks are
 `Release / Build and test the source` and `Release / Test the release candidate`.
 The caller declares no concurrency group: the shared workflow holds one release
 at a time per repository.
 
-A repository that publishes several bundles, or a platform, keeps a `release.yml`
-of its own along the lines below.
+A platform keeps a `release.yml` of its own along the lines below.
+
+==== Adopt the shared workflow in an existing repository
+
+The move from a copied release workflow is the same in every package so far.
+
+. Blueprint 0.8 with a `check` task that runs the package's own checks. A check
+  that takes longer than a few minutes, such as fuzzing or conformance suites,
+  stays in the repository's own `ci.yml`; pass `check-task: ''` then, so that
+  the release dry run stays fast.
+. Every example depends on the package by relative path and names no `roc`
+  compiler; the release notes record the compiler instead. A `.roc` file under
+  `examples/` without an `app` header is a shared module. An example that
+  prints the clock or anything else that varies takes an argument or input
+  that makes a case deterministic: a skipped case never passes.
+. `release-package test-examples --update` writes `tests/spec.json` with one
+  case per application and records what it prints; review that diff, then add
+  cases.
+. Notes in `docs/releases/<version>.adoc` open with `= <name> <version>` and
+  use `{package-url}`, plus `{<dir>-url}` for each further bundle.
+. The thin `release.yml`, then delete the scripts and workflow jobs that
+  bundled, archived, tested examples, rendered notes or published, and `ci.yml`
+  when `check-task` runs the checks.
+. SBOM sidecars need Blueprint 0.8, `sbom/composition.json` and an author; a
+  manual PDF needs the roc-docs renderer behind a `docs-path` task. A
+  repository without either leaves those inputs unset and keeps its own
+  documentation workflow.
+. Update the ruleset's required checks to the two shared job names, and after
+  the first green dry run, a maintainer dispatches the next release.
 
 === What a release contains
 
@@ -326,11 +355,20 @@ hosting.
 
 === Several bundles in one release
 
-A repository that publishes several packages or platforms builds one bundle and
-one examples archive for each, in the same run, under the same version. Each
-archive names only its own bundle, plus any sibling bundle its examples need.
-The release notes list every bundle URL by name. All of them are tested before
-any of them is published.
+A repository that publishes several packages or platforms builds one bundle for
+each, in the same run, under the same version, and one examples archive whose
+specification names every bundle URL. The release notes list every bundle URL
+by name. All of them are tested before any of them is published.
+
+The shared release workflow derives the bundles from the examples: every
+package root an example depends on by relative path is bundled, tested and
+published, and a package no example exercises is not released. The repository's
+own package is `package/main.roc`; another is `<dir>/package/main.roc`, such as
+`tzdb/package/main.roc`. A release with one bundle keeps the bare `<hash>.tar.zst`
+name. With several, the repository's own package becomes `<name>-<hash>.tar.zst`
+and the other `<name>-<dir>-<hash>.tar.zst`, and its placeholder in the notes
+is `{<dir>-url}` beside `{package-url}`. Every tracked file in a package's
+directory goes into its bundle, modules and data alike.
 
 Two bundles under one tag need different names as well as different hashes.
 Roc identifies a package by its URL with the version and the content hash

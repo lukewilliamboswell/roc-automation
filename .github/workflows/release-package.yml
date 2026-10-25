@@ -24,6 +24,14 @@ on:
         description: Blueprint task that checks the package and its scripts before packaging; empty skips it
         type: string
         default: check
+      setup-command:
+        description: 'JSON argv of one program to run in both read-only jobs before the examples, for a prerequisite the runner image lacks, such as ["sudo", "apt-get", "install", "-y", "pandoc"]; empty runs nothing'
+        type: string
+        default: '[]'
+      sbom-imports:
+        description: Path of the committed record of the suppliers' SBOMs the composition imports, which fetch-dependency-sboms rewrites and the run refuses to change; empty imports none
+        type: string
+        default: ''
       sbom-author:
         description: 'SPDX agent that authors SBOM sidecars for the bundle, such as "Person: Jane Doe"; empty publishes none'
         type: string
@@ -143,6 +151,15 @@ jobs:
           cache: 'true'
           cache-workload: release
 
+      - name: Install the prerequisites the package's checks need
+        if: inputs.setup-command != '[]'
+        env:
+          SETUP: ${{ inputs.setup-command }}
+        run: |
+          set -euo pipefail
+          mapfile -t argv < <(jq -er '.[]' <<< "$SETUP")
+          "${argv[@]}"
+
       - name: Check the package
         if: inputs.check-task != ''
         env:
@@ -185,16 +202,30 @@ jobs:
           SBOM_COMPOSITION: dist/sbom-composition.json
         run: blueprint run "$TASK"
 
+      - name: Fetch the suppliers' SBOMs the composition imports
+        if: inputs.sbom-author != '' && inputs.sbom-imports != ''
+        uses: ./.roc-automation/actions/fetch-dependency-sboms
+        with:
+          target: source
+          output: ${{ inputs.sbom-imports }}
+
+      - name: Refuse supplier documents that differ from the committed record
+        if: inputs.sbom-author != '' && inputs.sbom-imports != ''
+        env:
+          IMPORTS: ${{ inputs.sbom-imports }}
+        run: git diff --exit-code -- "$IMPORTS"
+
       - id: sbom
-        name: Generate SBOM sidecars bound to the bundle
+        name: Generate SBOM sidecars bound to the bundles
         if: inputs.sbom-author != ''
         uses: ./.roc-automation/actions/sbom-sidecars
         with:
-          files: ${{ steps.build.outputs.bundle }}
+          files: ${{ steps.build.outputs.bundles }}
           version: ${{ steps.request.outputs.version }}
           target: source
           author: ${{ inputs.sbom-author }}
           composition: ${{ inputs.sbom-task != '' && 'dist/sbom-composition.json' || 'sbom/composition.json' }}
+          imports: ${{ inputs.sbom-imports }}
           archive-members: ${{ inputs.sbom-task != '' && 'reviewed' || 'generate' }}
           spdx-2-3: 'true'
           url-base: https://github.com/${{ github.repository }}/releases/download/${{ steps.request.outputs.version }}
@@ -229,7 +260,7 @@ jobs:
       - id: assets
         name: List the release assets
         env:
-          BUNDLE: ${{ steps.build.outputs.bundle }}
+          BUNDLES: ${{ steps.build.outputs.bundles }}
           EXAMPLES: ${{ steps.build.outputs.examples }}
           DOCS: ${{ steps.build.outputs.docs }}
           SIDECARS: ${{ steps.sbom.outputs.sidecars }}
@@ -244,7 +275,7 @@ jobs:
           fi
           {
             echo "list<<EOF"
-            echo "$BUNDLE"
+            echo "$BUNDLES"
             echo "$EXAMPLES"
             echo "$DOCS"
             if [ -n "$SIDECARS" ]; then echo "$SIDECARS"; fi
@@ -302,9 +333,19 @@ jobs:
           name: release-candidate
           path: dist
 
-      # The archived examples name the release URL of the bundle, which does not
-      # exist yet: the bundle is served from a loopback address in its place.
-      - name: Test the examples archive, unchanged, against the bundle
+      # The archived examples need the same prerequisites as the working tree's.
+      - name: Install the prerequisites the examples need
+        if: inputs.setup-command != '[]'
+        env:
+          SETUP: ${{ inputs.setup-command }}
+        run: |
+          set -euo pipefail
+          mapfile -t argv < <(jq -er '.[]' <<< "$SETUP")
+          "${argv[@]}"
+
+      # The archived examples name the release URLs of the bundles, which do not
+      # exist yet: the bundles are served from a loopback address in their place.
+      - name: Test the examples archive, unchanged, against the bundles
         env:
           TOOL: ${{ steps.tool.outputs.binary }}
           RP_DIRECTORY: ${{ runner.temp }}/release-package

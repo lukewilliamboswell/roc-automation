@@ -1,6 +1,8 @@
 ## Admit the canonical application header subset used by published examples.
 ## Comments and string contents never become fields. Unsupported or ambiguous
 ## header syntax fails closed; the compiler still checks the application itself.
+## An application names at most one platform: the compiler supplies a default
+## platform to an application that names none.
 AppHeader := [].{
 	valid = |source, dependencies| {
 		tokens = match lex(Str.to_utf8(source), [], []) {
@@ -49,7 +51,7 @@ AppHeader := [].{
 		_ => Bool.False
 	}
 	bindings = |tokens, dependencies, names, found, platforms| match tokens {
-		[Mark('}')] => found and platforms == 1
+		[Mark('}')] => found and platforms <= 1
 		[Word(name), Mark(':'), .. as rest] if name != "roc" and !names.contains(name) => match rest {
 			[Word("platform"), Text(url), .. as after] => separator(after, dependencies, names.append(name), found or dependencies.contains(url), platforms + 1)
 			[Text(url), .. as after] => separator(after, dependencies, names.append(name), found or dependencies.contains(url), platforms)
@@ -59,7 +61,7 @@ AppHeader := [].{
 	}
 	separator = |tokens, dependencies, names, found, platforms| match tokens {
 		[Mark(','), .. as rest] => bindings(rest, dependencies, names, found, platforms)
-		[Mark('}')] => found and platforms == 1
+		[Mark('}')] => found and platforms <= 1
 		_ => Bool.False
 	}
 
@@ -90,6 +92,15 @@ AppHeader := [].{
 	## Whether a header declares a `roc` compiler pin.
 	has_roc_pin : Str -> Bool
 	has_roc_pin = |source| (fields(source) ?? []).any(|field| field.name == "roc")
+
+	## Whether `source` is an application: a `.roc` file under examples/
+	## without an `app` header is a module the examples share.
+	is_app : Str -> Bool
+	is_app = |source|
+		match lex(Str.to_utf8(source), [], []) {
+			Ok([Word("app"), ..]) => Bool.True
+			_ => Bool.False
+		}
 
 	## The field whose declared source is `declared`, such as the shorthand an
 	## example gives the package at `../package/main.roc`.
@@ -141,12 +152,16 @@ expect !AppHeader.valid("app [main!] { pf: platform \"other\", ignored: [\"${url
 expect !AppHeader.valid("app [main!] { pf: platform \"${url}\"", [url])
 expect !AppHeader.valid("app [main!] { pf: platform \"other\", pkg: \"${url}\" extra }", [url])
 expect !AppHeader.valid("app [main!] { pf: platform \"other\", pkg: \"${url}\" roc: \"nightly\" }", [url])
+expect AppHeader.valid("app [main!] { time: \"${url}\" }", [url])
+expect !AppHeader.valid("app [main!] { pf: platform \"${url}\", other: platform \"second\" }", [url])
 
 example = "app [main!] {\n\tansi: \"../package/main.roc\",\n\tpf: platform \"https://example.com/cli.tar.zst\",\n}\n\nmain! = |_| { ansi: \"../package/main.roc\" }\n"
 
 expect AppHeader.fields(example) == Ok([{ name: "ansi", source: "../package/main.roc", is_platform: Bool.False }, { name: "pf", source: "https://example.com/cli.tar.zst", is_platform: Bool.True }])
 expect AppHeader.fields("package [A, B] { roc: \"nightly-1\" }\n") == Ok([{ name: "roc", source: "nightly-1", is_platform: Bool.False }])
 expect AppHeader.fields("Files := [].{\n\tpin = { roc: \"nightly\" }\n}\n").is_err()
+expect AppHeader.is_app(example) and AppHeader.is_app("# comment\napp [main!] { pf: platform \"x\" }\n")
+expect !AppHeader.is_app("## Shared by the examples.\nRender := [].{\n\tto_json = |x| x\n}\n") and !AppHeader.is_app("package [A] {}\n")
 expect AppHeader.has_roc_pin("app [main!] { ansi: \"../package/main.roc\", roc: \"nightly-2026-10-09-258ab27\" }\n")
 expect !AppHeader.has_roc_pin(example) and !AppHeader.has_roc_pin("app [main!] { heroc: \"https://example.com/roc: x.tar.zst\" }\n")
 expect AppHeader.shorthand_of(example, "../package/main.roc") == Ok("ansi")

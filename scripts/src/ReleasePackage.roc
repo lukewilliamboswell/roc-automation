@@ -1,13 +1,18 @@
 import GitHub
 
-## Names, URLs and notes of what a pure Roc package release publishes. This
-## module has no effects, so every rule here is covered by the `expect` tests
-## below and shared by the release utility and its tests alike.
+## Names, URLs and notes of what a Roc package release publishes. This module
+## has no effects, so every rule here is covered by the `expect` tests below
+## and shared by the release utility and its tests alike.
 ReleasePackage := [].{
 
-	## The package a release belongs to: the prefix of its asset names and the
-	## GitHub repository that publishes it, as `owner/name`.
+	## The repository a release belongs to: the prefix of its asset names and
+	## the GitHub repository that publishes it, as `owner/name`.
 	Package : { name : Str, repository : Str }
+
+	## One bundle a release publishes. `root` is its package root, such as
+	## `package/main.roc` or `tzdb/package/main.roc`; `infix` names it in file
+	## names and notes, and is "" for the repository's own package.
+	Bundle : { root : Str, infix : Str }
 
 	## The version a pull request builds and tests its release under. It is
 	## never published. Roc reads 0.0.0 in a package URL as "no version", so
@@ -15,10 +20,9 @@ ReleasePackage := [].{
 	dry_run_version : Str
 	dry_run_version = "0.0.1-dryrun"
 
-	## What stands for the release's bundle URL in authored notes and in the
-	## manual, because the URL holds a hash nobody can write by hand.
-	placeholder : Str
-	placeholder = "{package-url}"
+	## The package root every repository has.
+	primary_root : Str
+	primary_root = "package/main.roc"
 
 	## A package name usable in asset file names.
 	valid_name : Str -> Bool
@@ -58,28 +62,109 @@ ReleasePackage := [].{
 	notes_file : Str -> Str
 	notes_file = |version| "docs/releases/${version}.adoc"
 
-	## Whether `value` is the file name `roc bundle` gives a package archive:
-	## its content hash and the `.tar.zst` extension, nothing else.
+	## The repository-relative file an application at `app_path` names with
+	## the header source `declared`, when that source is a path inside the
+	## repository rather than a URL. `examples/greet/main.roc` declaring
+	## `../../package/main.roc` resolves to `package/main.roc`.
+	resolve_local : Str, Str -> Try(Str, [NotLocal])
+	resolve_local = |app_path, declared| {
+		if declared.contains("://") or declared.starts_with("/") or !declared.ends_with(".roc") {
+			return Err(NotLocal)
+		}
+		directory = match Str.split_last(app_path, "/") {
+			Ok({ before, .. }) => Str.split_on(before, "/")
+			Err(_) => []
+		}
+		resolved = Str.split_on(declared, "/").fold(
+			Ok(directory),
+			|state, part|
+				match state {
+					Ok(parts) =>
+						match part {
+							".." => match parts {
+								[.., _] => Ok(parts.drop_last(1))
+								[] => Err(NotLocal)
+							}
+							"." | "" => Ok(parts)
+							_ => Ok(parts.append(part))
+						}
+					Err(reason) => Err(reason)
+				},
+		)?
+		Ok(Str.join_with(resolved, "/"))
+	}
+
+	## The bundle whose package root is `root`. The root is `main.roc` in a
+	## directory; the directory `package` is the repository's own package, and
+	## any other directory, with a trailing `/package` dropped, names the bundle
+	## in file names and notes, so `tzdb/package/main.roc` is `tzdb`.
+	bundle_for_root : Str -> Try(Bundle, [NotABundleRoot(Str)])
+	bundle_for_root = |root| {
+		directory = root.drop_suffix("/main.roc")
+		if !root.ends_with("/main.roc") or directory == "" or !GitHub.is_plain(directory, "-_/") or directory.contains("//") {
+			return Err(NotABundleRoot(root))
+		}
+		infix = if directory == "package" "" else Str.join_with(Str.split_on(directory.drop_suffix("/package"), "/"), "-")
+		if infix != "" and (!GitHub.is_plain(infix, "-_") or infix.starts_with("-")) {
+			return Err(NotABundleRoot(root))
+		}
+		Ok({ root, infix })
+	}
+
+	## The placeholder a bundle's URL has in notes: `{package-url}` for the
+	## repository's own package, `{<infix>-url}` for another.
+	placeholder : Bundle -> Str
+	placeholder = |bundle| if bundle.infix == "" "{package-url}" else "{${bundle.infix}-url}"
+
+	## The file name a bundle is published under. `roc bundle` writes
+	## `<hash>.tar.zst`; a release with one bundle keeps that name. With several,
+	## Roc would read two bare hashes under one version as one package, so each
+	## file name carries the repository name and the bundle's infix.
+	bundle_file : Package, Bundle, Str, Bool -> Str
+	bundle_file = |pkg, bundle, created, single|
+		if single and bundle.infix == "" created else if bundle.infix == "" "${pkg.name}-${created}" else "${pkg.name}-${bundle.infix}-${created}"
+
+	## Whether `value` is a bundle file name: a content hash with `.tar.zst`,
+	## with an optional `<name>-` or `<name>-<infix>-` prefix.
 	valid_bundle_file : Str -> Bool
-	valid_bundle_file = |value| value.ends_with(".tar.zst") and GitHub.is_plain(value.drop_suffix(".tar.zst"), "")
+	valid_bundle_file = |value| value.ends_with(".tar.zst") and GitHub.is_plain(value.drop_suffix(".tar.zst"), "-_") and !value.starts_with("-")
+
+	## Among a release's asset names, the file of `bundle`: the one whose
+	## prefix before its hash is this bundle's, where a bare hash is the
+	## repository's own package.
+	published_bundle_file : Package, Bundle, List(Str) -> [One(Str), None, Several]
+	published_bundle_file = |pkg, bundle, assets| {
+		wanted = if bundle.infix == "" ["", pkg.name] else ["${pkg.name}-${bundle.infix}"]
+		matching = assets.keep_if(
+			|asset| valid_bundle_file(asset) and match Str.split_last(asset.drop_suffix(".tar.zst"), "-") {
+				Ok({ before, .. }) => wanted.contains(before)
+				Err(_) => wanted.contains("")
+			},
+		)
+		match matching {
+			[one] => One(one)
+			[] => None
+			_ => Several
+		}
+	}
 
 	## The immutable URL of a bundle attached to the release `version`.
 	bundle_url : Package, Str, Str -> Try(Str, [InvalidVersion(Str), InvalidBundleFile(Str)])
-	bundle_url = |pkg, version, bundle_file|
+	bundle_url = |pkg, version, file|
 		if !publishable_version(version) {
 			Err(InvalidVersion(version))
-		} else if !valid_bundle_file(bundle_file) {
-			Err(InvalidBundleFile(bundle_file))
+		} else if !valid_bundle_file(file) {
+			Err(InvalidBundleFile(file))
 		} else {
-			Ok("https://github.com/${pkg.repository}/releases/download/${version}/${bundle_file}")
+			Ok("https://github.com/${pkg.repository}/releases/download/${version}/${file}")
 		}
 
 	## The release version a bundle URL belongs to, if it is one of this
-	## package's immutable release bundle URLs.
+	## repository's immutable release bundle URLs.
 	version_of_bundle_url : Package, Str -> Try(Str, [NotAReleaseBundle(Str)])
 	version_of_bundle_url = |pkg, url|
 		match Str.split_on(url.drop_prefix("https://github.com/${pkg.repository}/releases/download/"), "/") {
-			[version, bundle_file] if bundle_url(pkg, version, bundle_file) == Ok(url) => Ok(version)
+			[version, file] if bundle_url(pkg, version, file) == Ok(url) => Ok(version)
 			_ => Err(NotAReleaseBundle(url))
 		}
 
@@ -101,35 +186,38 @@ ReleasePackage := [].{
 	pdf = |pkg, version| "${pkg.name}-${version}.pdf"
 
 	## Whether `entry` may appear in the examples archive whose top-level
-	## directory is `root`: the README, the expected-output specification, or
-	## a Roc file directly inside `examples`.
+	## directory is `root`: the README, the expected-output specification, or a
+	## file under `examples/` whose every path component is a plain name, so
+	## that the archive unpacks the same way on every system.
 	valid_examples_entry : Str, Str -> Bool
 	valid_examples_entry = |root, entry|
-		entry == "${root}/README.md" or entry == "${root}/spec.json" or (entry.starts_with("${root}/examples/") and example_file(entry.drop_prefix("${root}/examples/")))
+		entry == "${root}/README.md" or entry == "${root}/spec.json" or (entry.starts_with("${root}/examples/") and safe_components(Str.split_on(entry.drop_prefix("${root}/examples/"), "/")))
 
 	## The README at the top of the examples archive.
-	examples_readme : Package, Str, Str -> Str
-	examples_readme = |pkg, version, url|
+	examples_readme : Package, Str, List(Str) -> Str
+	examples_readme = |pkg, version, urls|
 		Str.join_with(
 			[
 				"# ${pkg.name} ${version} examples",
 				"",
 				"These are the ${pkg.name} examples as they were when ${version} was released.",
-				"Each application depends on that release's package:",
+				"Each application depends on that release's ${if urls.len() == 1 "package" else "packages"}:",
 				"",
-				"    ${url}",
-				"",
-				"Install the Roc compiler named in the release notes, then run an example",
-				"from the `examples` directory:",
-				"",
-				"    cd examples",
-				"    roc <example>.roc",
-				"",
-				"`spec.json` records what each example printed when ${version} was released.",
-				"",
-				"Release notes: https://github.com/${pkg.repository}/releases/tag/${version}",
-				"",
-			],
+			]
+				.concat(urls.map(|url| "    ${url}"))
+				.concat([
+					"",
+					"Install the Roc compiler named in the release notes, then run an example",
+					"from the `examples` directory:",
+					"",
+					"    cd examples",
+					"    roc <example>.roc",
+					"",
+					"`spec.json` records what each example printed when ${version} was released.",
+					"",
+					"Release notes: https://github.com/${pkg.repository}/releases/tag/${version}",
+					"",
+				]),
 			"\n",
 		)
 
@@ -138,18 +226,21 @@ ReleasePackage := [].{
 	notes_title = |pkg, version| "= ${pkg.name} ${version}"
 
 	## Render authored AsciiDoc notes as the Markdown body of a GitHub release,
-	## with the placeholder replaced by `package_url`. The notes must open with
-	## `title` and use the placeholder, and must leave no other `{...-url}`
+	## with each bundle's placeholder replaced by its URL. The notes must open
+	## with `title`, use every placeholder, and leave no other `{...-url}`
 	## unresolved. Only what release notes use is converted: headings, source
 	## blocks and links. Paragraphs, lists and `code` read the same in both.
-	render_notes : Str, { title : Str, package_url : Str } -> Try(Str, [WrongTitle(Str), UnusedPlaceholder, UnresolvedPlaceholder(Str), UnclosedBlock])
-	render_notes = |source, { title, package_url }|
+	render_notes : Str, { title : Str, urls : List({ placeholder : Str, url : Str }) } -> Try(Str, [WrongTitle(Str), UnusedPlaceholder(Str), UnresolvedPlaceholder(Str), UnclosedBlock])
+	render_notes = |source, { title, urls }|
 		match Str.split_on(source, "\n") {
 			[first, .. as body] if first == title => {
-				if !source.contains(placeholder) {
-					return Err(UnusedPlaceholder)
+				for binding in urls {
+					if !source.contains(binding.placeholder) {
+						return Err(UnusedPlaceholder(binding.placeholder))
+					}
 				}
-				lines = convert(body.map(|line| Str.replace_each(line, placeholder, package_url)), Prose, [])?
+				replaced = body.map(|line| urls.fold(line, |text, binding| Str.replace_each(text, binding.placeholder, binding.url)))
+				lines = convert(replaced, Prose, [])?
 				match lines.keep_oks(unresolved) {
 					[name, ..] => Err(UnresolvedPlaceholder(name))
 					[] => Ok("${Str.join_with(lines, "\n").trim()}\n")
@@ -182,7 +273,16 @@ ReleasePackage := [].{
 			.map(|(_, version)| version)
 }
 
-example_file = |file_name| file_name.ends_with(".roc") and GitHub.is_plain(file_name.drop_suffix(".roc"), "-_")
+# A path component the archive helper and every filesystem accept: plain
+# characters, not `.` or `..`, not ending in a dot, not a Windows device name.
+safe_components = |parts|
+	!parts.is_empty() and parts.all(
+		|part| {
+			stem = Str.join_with(Str.split_on(part, ".").take_first(1), "")
+			upper = Str.from_utf8_lossy(Str.to_utf8(stem).map(|byte| if byte >= 'a' and byte <= 'z' byte - 32 else byte))
+			GitHub.is_plain(part, "-._") and part != "." and part != ".." and !part.ends_with(".") and !["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"].contains(upper)
+		},
+	)
 
 convert : List(Str), [Prose, Block], List(Str) -> Try(List(Str), [UnclosedBlock])
 convert = |lines, state, out|
@@ -253,6 +353,12 @@ compare_numbers = |left, right|
 pkg : ReleasePackage.Package
 pkg = { name: "roc-ansi", repository: "lukewilliamboswell/roc-ansi" }
 
+main_bundle : ReleasePackage.Bundle
+main_bundle = { root: "package/main.roc", infix: "" }
+
+tzdb : ReleasePackage.Bundle
+tzdb = { root: "tzdb/package/main.roc", infix: "tzdb" }
+
 url = "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.14.0/Abc123.tar.zst"
 
 expect ReleasePackage.valid_name("roc-ansi") and ReleasePackage.valid_name("basic_cli") and !ReleasePackage.valid_name("-x") and !ReleasePackage.valid_name("a/b") and !ReleasePackage.valid_name("")
@@ -262,7 +368,28 @@ expect ReleasePackage.publishable_version("0.14.0") and ReleasePackage.publishab
 expect ReleasePackage.final_version("0.14.0") and !ReleasePackage.final_version("1.0.0-rc.1") and !ReleasePackage.final_version(ReleasePackage.dry_run_version)
 expect ReleasePackage.base_version("0.14.0") == "0.14.0" and ReleasePackage.base_version("1.0.0-rc.1") == "1.0.0"
 expect ReleasePackage.notes_file("0.14.0") == "docs/releases/0.14.0.adoc"
-expect ReleasePackage.valid_bundle_file("Abc123.tar.zst") and !ReleasePackage.valid_bundle_file("../Abc123.tar.zst") and !ReleasePackage.valid_bundle_file(".tar.zst") and !ReleasePackage.valid_bundle_file("Abc123.tar.gz") and !ReleasePackage.valid_bundle_file("name-Abc123.tar.zst")
+
+expect ReleasePackage.resolve_local("examples/colors.roc", "../package/main.roc") == Ok("package/main.roc")
+expect ReleasePackage.resolve_local("examples/greet/main.roc", "../../package/main.roc") == Ok("package/main.roc")
+expect ReleasePackage.resolve_local("examples/greet/main.roc", "../../tzdb/package/main.roc") == Ok("tzdb/package/main.roc")
+expect ReleasePackage.resolve_local("examples/greet/main.roc", "./Names.roc") == Ok("examples/greet/Names.roc")
+expect ReleasePackage.resolve_local("examples/colors.roc", "../../package/main.roc") == Err(NotLocal)
+expect ReleasePackage.resolve_local("examples/colors.roc", url) == Err(NotLocal)
+expect ReleasePackage.resolve_local("examples/colors.roc", "/package/main.roc") == Err(NotLocal)
+expect ReleasePackage.bundle_for_root("package/main.roc") == Ok(main_bundle)
+expect ReleasePackage.bundle_for_root("tzdb/package/main.roc") == Ok(tzdb)
+expect ReleasePackage.bundle_for_root("extras/main.roc") == Ok({ root: "extras/main.roc", infix: "extras" })
+expect ReleasePackage.bundle_for_root("examples/greet/Names.roc").is_err() and ReleasePackage.bundle_for_root("main.roc").is_err() and ReleasePackage.bundle_for_root("a//package/main.roc").is_err()
+expect ReleasePackage.placeholder(main_bundle) == "{package-url}" and ReleasePackage.placeholder(tzdb) == "{tzdb-url}"
+expect ReleasePackage.bundle_file(pkg, main_bundle, "Abc123.tar.zst", Bool.True) == "Abc123.tar.zst"
+expect ReleasePackage.bundle_file(pkg, main_bundle, "Abc123.tar.zst", Bool.False) == "roc-ansi-Abc123.tar.zst"
+expect ReleasePackage.bundle_file(pkg, tzdb, "Xyz.tar.zst", Bool.False) == "roc-ansi-tzdb-Xyz.tar.zst"
+expect ReleasePackage.valid_bundle_file("Abc123.tar.zst") and ReleasePackage.valid_bundle_file("roc-ansi-tzdb-Abc123.tar.zst") and !ReleasePackage.valid_bundle_file("../Abc123.tar.zst") and !ReleasePackage.valid_bundle_file(".tar.zst") and !ReleasePackage.valid_bundle_file("Abc123.tar.gz")
+expect ReleasePackage.published_bundle_file(pkg, main_bundle, ["Abc123.tar.zst", "roc-ansi-examples-0.14.0.zip"]) == One("Abc123.tar.zst")
+expect ReleasePackage.published_bundle_file(pkg, main_bundle, ["roc-ansi-Abc.tar.zst", "roc-ansi-tzdb-Xyz.tar.zst"]) == One("roc-ansi-Abc.tar.zst")
+expect ReleasePackage.published_bundle_file(pkg, tzdb, ["roc-ansi-Abc.tar.zst", "roc-ansi-tzdb-Xyz.tar.zst"]) == One("roc-ansi-tzdb-Xyz.tar.zst")
+expect ReleasePackage.published_bundle_file(pkg, tzdb, ["roc-ansi-Abc.tar.zst"]) == None
+expect ReleasePackage.published_bundle_file(pkg, main_bundle, ["Abc.tar.zst", "Def.tar.zst"]) == Several
 expect ReleasePackage.bundle_url(pkg, "0.14.0", "Abc123.tar.zst") == Ok(url)
 expect ReleasePackage.bundle_url(pkg, "latest", "Abc123.tar.zst") == Err(InvalidVersion("latest"))
 expect ReleasePackage.bundle_url(pkg, "0.0.0", "Abc123.tar.zst") == Err(InvalidVersion("0.0.0"))
@@ -275,26 +402,32 @@ expect ReleasePackage.version_of_bundle_url(pkg, "https://github.com/lukewilliam
 expect ReleasePackage.examples_root(pkg, "0.14.0") == "roc-ansi-examples-0.14.0" and ReleasePackage.examples_archive(pkg, "0.14.0") == "roc-ansi-examples-0.14.0.zip"
 expect ReleasePackage.docs_archive(pkg, "0.14.0") == "roc-ansi-docs-0.14.0.zip" and ReleasePackage.pdf(pkg, "0.14.0") == "roc-ansi-0.14.0.pdf"
 expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/README.md")
-expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/spec.json") and !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/spec.json")
+expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/spec.json") and ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/spec.json")
 expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/menu.roc")
+expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/greet/main.roc")
+expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/greet/data/names.txt")
 expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/../../escape.roc")
-expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/nested/app.roc")
-expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/notes.txt")
+expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/")
+expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/greet/CON.txt")
+expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/trailing.")
 expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.13.0/examples/colors.roc")
 expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "/etc/passwd")
-expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/.roc")
-expect ReleasePackage.examples_readme(pkg, "0.14.0", url).contains("    ${url}\n") and ReleasePackage.examples_readme(pkg, "0.14.0", url).ends_with("/releases/tag/0.14.0\n")
+expect !ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/a b.roc")
+expect ReleasePackage.examples_readme(pkg, "0.14.0", [url]).contains("release's package:\n\n    ${url}\n") and ReleasePackage.examples_readme(pkg, "0.14.0", [url]).ends_with("/releases/tag/0.14.0\n")
+expect ReleasePackage.examples_readme(pkg, "0.14.0", [url, "https://example.com/z.tar.zst"]).contains("packages:\n\n    ${url}\n    https://example.com/z.tar.zst\n")
 expect ReleasePackage.notes_title(pkg, "0.14.0") == "= roc-ansi 0.14.0"
 expect ReleasePackage.newest_first(["0.9.0", "0.13.1", "0.10.0", "0.13.0"]) == ["0.13.1", "0.13.0", "0.10.0", "0.9.0"]
 
 notes = "= roc-ansi 0.14.0\n\nAdds streaming.\n\n== Use this release\n\n[source,roc]\n----\napp [main!] {\n\tansi: \"{package-url}\",\n}\n----\n\n=== Thanks\n\n* See https://example.com/a[the issue] and https://example.com/b[the fix].\n* Plain https://example.com stays.\n"
 
-release = { title: "= roc-ansi 0.14.0", package_url: "https://example.com/Abc.tar.zst" }
+release = { title: "= roc-ansi 0.14.0", urls: [{ placeholder: "{package-url}", url: "https://example.com/Abc.tar.zst" }] }
 
 expect ReleasePackage.render_notes(notes, release) == Ok("Adds streaming.\n\n## Use this release\n\n```roc\napp [main!] {\n\tansi: \"https://example.com/Abc.tar.zst\",\n}\n```\n\n### Thanks\n\n* See [the issue](https://example.com/a) and [the fix](https://example.com/b).\n* Plain https://example.com stays.\n")
 expect ReleasePackage.render_notes(notes, { ..release, title: "= roc-ansi 0.15.0" }) == Err(WrongTitle("= roc-ansi 0.14.0"))
-expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\nNothing to install.\n", release) == Err(UnusedPlaceholder)
+expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\nNothing to install.\n", release) == Err(UnusedPlaceholder("{package-url}"))
 expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\n{package-url} and {tzdb-url}\n", release) == Err(UnresolvedPlaceholder("{tzdb-url}"))
+expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\n{package-url} and {tzdb-url}\n", { ..release, urls: release.urls.append({ placeholder: "{tzdb-url}", url: "https://example.com/Z.tar.zst" }) }) == Ok("https://example.com/Abc.tar.zst and https://example.com/Z.tar.zst\n")
+expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\n{package-url}\n", { ..release, urls: release.urls.append({ placeholder: "{tzdb-url}", url: "https://example.com/Z.tar.zst" }) }) == Err(UnusedPlaceholder("{tzdb-url}"))
 expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\n{package-url}\n\n----\nnever closed\n", release) == Err(UnclosedBlock)
 expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\n----\n{package-url}\n----\n", release) == Ok("```\nhttps://example.com/Abc.tar.zst\n```\n")
 expect ReleasePackage.render_notes("", release) == Err(WrongTitle(""))

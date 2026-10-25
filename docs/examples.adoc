@@ -99,6 +99,18 @@ package when the repository publishes several. It contains:
 * the expected-output specification those examples were tested with; and
 * a short README naming the release, the bundle URL and how to run an example.
 
+An example is a file `examples/<name>.roc`, which depends on the package as
+`../package/main.roc`, or a directory `examples/<name>/` whose `main.roc`
+depends on it as `../../package/main.roc` and whose other files travel with it.
+A `.roc` file under `examples/` without an `app` header is a module the
+examples share. An example names at most one platform; one that names none runs
+on the compiler's default platform. Each case runs in its example's own
+directory, as a reader would run it, so an example reads a sibling data file by
+relative path; the working tree's examples run in a scratch copy, so an example
+that writes files beside itself leaves the tree as it was. Every file Git
+tracks under `examples/` is archived, so a build output that is not committed
+is never published.
+
 Publish the versioned `spec.json` and ZIP layout in
 xref:nightly-compatibility.adoc#publish-the-suite-contract[Publish the suite contract]
 so that the same immutable archive is executable by the central nightly runner.

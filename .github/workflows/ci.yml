@@ -338,8 +338,12 @@ jobs:
           "$TOOL" build 0.0.1-dryrun
           "$TOOL" test-archive
           test -s dist/release-notes.md
-          grep -q 'releases/download/0.0.1-dryrun/' dist/release-notes.md
+          # Two bundles: the package and the data package the directory example depends on.
+          ls dist/pure-package-example-*.tar.zst | grep -vq -- '-data-'
+          ls dist/pure-package-example-data-*.tar.zst
+          grep -c 'releases/download/0.0.1-dryrun/pure-package-example-' dist/release-notes.md | grep -qx 2
           unzip -Z1 dist/pure-package-example-examples-0.0.1-dryrun.zip | grep -qx 'pure-package-example-examples-0.0.1-dryrun/examples/hello.roc'
+          unzip -Z1 dist/pure-package-example-examples-0.0.1-dryrun.zip | grep -qx 'pure-package-example-examples-0.0.1-dryrun/examples/greet/Format.roc'
           unzip -Z1 dist/pure-package-example-docs-0.0.1-dryrun.zip | grep -qx '0.0.1-dryrun/index.html'
       - name: Refuse an archive whose examples were edited after testing
         working-directory: examples/pure-package

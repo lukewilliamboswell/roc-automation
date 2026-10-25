@@ -15,25 +15,25 @@ import src/Examples
 import src/GitHub
 import src/ReleasePackage
 
-## Build and test what a pure Roc package release publishes. The shared release
+## Build and test what a Roc package release publishes. The shared release
 ## workflow runs this utility; a maintainer runs the same commands locally.
 ##
-##     release-package build VERSION          the bundle, examples archive, API docs archive and notes, into dist/
-##     release-package check-version VERSION  roc bump against the latest release's bundle
+##     release-package build VERSION          the bundles, examples archive, API docs archive and notes, into dist/
+##     release-package check-version VERSION  roc bump against the latest release's bundles
 ##     release-package test-examples          the working tree's examples against tests/spec.json
-##     release-package test-examples --update rewrite tests/spec.json from what the examples print
-##     release-package test-archive           the examples archive in dist/, unchanged, against the bundle in dist/
+##     release-package test-examples --update record what the examples print; writes tests/spec.json if it is missing
+##     release-package test-archive           the examples archive in dist/, unchanged, against the bundles in dist/
 ##
 ## `roc bundle`, `roc docs`, `roc bump`, `roc check` and `roc build` do the work;
 ## this utility fixes the order, the names and the checks between them. Unlike
 ## the other scripts here it names no compiler: the shared workflow builds it
 ## with the same nightly that tests the package, so it must compile on the
 ## latest nightly as well as on `roc-stable`. The package compiler is the `roc`
-## on PATH or `RP_COMPILER`. `RP_REPOSITORY` names
-## the GitHub repository as `owner/name`; it defaults to `GITHUB_REPOSITORY` or
-## the `origin` remote. `RP_NAME` is the package name in asset names and defaults
-## to the repository name. `RP_DIRECTORY` keeps the command logs; `RP_AUTOMATION`
-## is recorded in the notes as the shared workflow revision.
+## on PATH or `RP_COMPILER`. `RP_REPOSITORY` names the GitHub repository as
+## `owner/name`; it defaults to `GITHUB_REPOSITORY` or the `origin` remote.
+## `RP_NAME` is the name in asset file names and defaults to the repository
+## name. `RP_DIRECTORY` keeps the command logs; `RP_AUTOMATION` is recorded in
+## the notes as the shared workflow revision.
 main! = |args| {
 	result = match args.map(OsStr.display) {
 		["build", version] => build!(version)
@@ -52,16 +52,14 @@ main! = |args| {
 	}
 }
 
-# The paths every command agrees on. A package lives at package/main.roc, its
-# examples directly under examples/, their expectations in tests/spec.json and
-# its authored notes under docs/releases/.
-package_root = Path.utf8("package")
-
+# The paths every command agrees on. The repository's package lives at
+# package/main.roc; another bundle it releases lives at <dir>/package/main.roc.
+# Examples live under examples/, as `<name>.roc` files or `<name>/main.roc`
+# directories with their sibling modules and data files, with their
+# expectations in tests/spec.json. Authored notes live under docs/releases/.
 examples_root = Path.utf8("examples")
 
 spec_path = Path.utf8("tests/spec.json")
-
-dependency = "../package/main.roc"
 
 Settings : { pkg : ReleasePackage.Package, compiler : Str, output : Path, directory : Path, automation : Str }
 
@@ -114,7 +112,11 @@ output! = |pairs| {
 		file => {
 			path = Path.utf8(file)
 			before = Path.read_utf8!(path) ?? ""
-			write!(path, "${before}${Str.join_with(pairs.map(|(key, value)| "${key}=${value}"), "\n")}\n")
+			lines = pairs.map(
+				|(key, value)|
+					if value.contains("\n") "${key}<<RELEASE_PACKAGE_EOF\n${value}\nRELEASE_PACKAGE_EOF" else "${key}=${value}",
+			)
+			write!(path, "${before}${Str.join_with(lines, "\n")}\n")
 		}
 	}
 }
@@ -128,6 +130,12 @@ mkdir! = |path| Path.create_all!(path).map_err(|_| "cannot create ${Path.display
 say! = |text| Stdout.line!(text).map_err(|_| "cannot write to stdout")
 
 file_name = |path| Path.filename(path).map_ok(Path.display).map_err(|_| "${Path.display(path)} has no file name")
+
+parent = |path|
+	match Str.split_last(path, "/") {
+		Ok({ before, .. }) => before
+		Err(_) => "."
+	}
 
 ## Run a program with captured output, returning its standard output as text.
 ## Its standard error is shown only when it fails.
@@ -154,13 +162,6 @@ run! = |argv, cwd, problem| {
 	}
 }
 
-## The `.roc` files directly inside `directory`, by name, in byte order.
-direct_roc_files! = |directory| {
-	entries = Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")?
-	names = entries.map_try(file_name)?
-	Ok(GitHub.sort(names.keep_if(|name| name.ends_with(".roc"))))
-}
-
 ## Every regular file beneath `directory`, relative to it, in byte order. A
 ## symbolic link or special file is an error, so nothing outside the tree is
 ## ever read or archived.
@@ -181,19 +182,28 @@ walk! = |entries, found|
 		[] => Ok(found)
 	}
 
+## The regular files Git tracks under `directory`, by path. Build outputs are
+## not tracked, so they are never bundled or archived; a symbolic link is refused.
+tracked! = |directory| {
+	listing = capture!(["git", "ls-files", "--", directory], Path.utf8("."), "cannot list the tracked files under ${directory}")?
+	paths = GitHub.sort(Str.split_on(listing, "\n").keep_if(|line| line != ""))
+	for path in paths {
+		match Path.type!(Path.utf8(path)).map_err(|_| "cannot inspect ${path}")? {
+			IsFile => {}
+			_ => return Err("${path} is tracked but is not a regular file")
+		}
+	}
+	Ok(paths)
+}
+
 ## A fresh directory under the command log directory, where staged files can
 ## be inspected after a failure.
 temp! = |settings, label| Env.create_temp_dir_in!(settings.directory, "${label}-").map_err(|_| "cannot create a temporary directory under ${Path.display(settings.directory)}")
 
-## The one file in `directory` that `matches`, by name.
-only! = |directory, matches, what| {
+## The names of the entries directly inside `directory`.
+direct_names! = |directory| {
 	entries = if Path.is_dir!(directory) ?? Bool.False Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")? else []
-	names = entries.map_try(file_name)?
-	match names.keep_if(matches) {
-		[one] => Ok(Path.join(directory, one))
-		[] => Err("no ${what} in ${Path.display(directory)}")
-		_ => Err("several ${what}s in ${Path.display(directory)}; start from an empty directory")
-	}
+	entries.map_try(file_name)
 }
 
 ## Add `entries`, relative to `stage`, to the ZIP `archive`, with fixed times
@@ -222,14 +232,99 @@ zip_entries! = |archive| {
 	Ok(Str.split_on(listing, "\n").map(|line| line.drop_suffix("\r")).keep_if(|line| line != ""))
 }
 
-## The working tree's suite, which must describe exactly the examples present.
+## The applications under examples/, by path: each `.roc` file directly inside
+## it that has an `app` header, and the `main.roc` of each directory inside it.
+## A `.roc` file without an `app` header is a module the examples share.
+example_apps! = || {
+	entries = Path.list!(examples_root).map_err(|_| "cannot list ${Path.display(examples_root)}")?
+	var $apps = []
+	for entry in entries {
+		name = file_name(entry)?
+		match Path.type!(entry).map_err(|_| "cannot inspect ${Path.display(entry)}")? {
+			IsFile if name.ends_with(".roc") and AppHeader.is_app(read!(entry)?) => {
+				$apps = $apps.append("examples/${name}")
+			}
+			IsDir if Path.is_file!(Path.join(entry, "main.roc")) ?? Bool.False => {
+				$apps = $apps.append("examples/${name}/main.roc")
+			}
+			IsFile | IsDir => {}
+			_ => return Err("${Path.display(entry)} is not a regular file or directory")
+		}
+	}
+	Ok(GitHub.sort($apps))
+}
+
+## The working tree's suite, which must describe exactly the applications present.
 working_suite! = || {
 	suite = Compatibility.working_tree_suite(read!(spec_path)?)?
-	present = direct_roc_files!(examples_root)?.map(|name| "examples/${name}")
+	present = example_apps!()?
 	listed = suite.apps.map(|example| example.path)
 	match (present.keep_if(|path| !listed.contains(path)), listed.keep_if(|path| !present.contains(path))) {
 		([], []) => Ok(suite)
-		(missing, extra) => Err("${Path.display(spec_path)} does not describe the examples present: unlisted ${Str.inspect(missing)}, absent ${Str.inspect(extra)}")
+		(missing, extra) => Err("${Path.display(spec_path)} does not describe the applications present: unlisted ${Str.inspect(missing)}, absent ${Str.inspect(extra)}")
+	}
+}
+
+## A suite for a repository that has none yet: every application with one
+## case that runs it without arguments, for `--update` to record.
+initial_suite! = || {
+	apps = example_apps!()?
+	if apps.is_empty() {
+		return Err("${Path.display(examples_root)} holds no application")
+	}
+	suite : Compatibility.Suite
+	suite = {
+		schema_version: 1,
+		release: Compatibility.working_tree,
+		dependencies: [],
+		apps: apps.map(|path| { path, target: Err(Missing), run: Err(Missing), cases: [{ name: "default", args: [], stdin: "", stdout: "", stderr: "", exit_code: 0, skip: Err(Missing) }] }),
+	}
+	Ok(suite)
+}
+
+## The header fields of the application at `path` that name a package of this
+## repository by relative path, each with the bundle it resolves to.
+local_dependencies! = |path| {
+	source = read!(Path.utf8(path))?
+	fields = AppHeader.fields(source).map_err(|_| "${path} has a header this utility cannot read")?
+	if fields.any(|field| field.name == "roc") {
+		return Err("${path} must not pin a compiler; the release notes record the compiler")
+	}
+	var $found = []
+	for field in fields.keep_if(|field| !field.is_platform) {
+		match ReleasePackage.resolve_local(path, field.source) {
+			Ok(resolved) =>
+				match ReleasePackage.bundle_for_root(resolved) {
+					Ok(bundle) => {
+						$found = $found.append({ name: field.name, declared: field.source, bundle })
+					}
+					Err(_) => return Err("${path} depends on ${field.source}, which is not a package root such as package/main.roc")
+				}
+			Err(NotLocal) => {}
+		}
+	}
+	if $found.is_empty() {
+		return Err("${path} must depend on the repository's package by relative path, such as ../package/main.roc")
+	}
+	Ok({ source, dependencies: $found })
+}
+
+## The bundles the examples depend on, the repository's own package first and
+## every other one in root order. What no example exercises is not released.
+bundles! = |suite| {
+	var $bundles = []
+	for example in suite.apps {
+		found = local_dependencies!(example.path)?
+		for dependency in found.dependencies {
+			if !$bundles.contains(dependency.bundle) {
+				$bundles = $bundles.append(dependency.bundle)
+			}
+		}
+	}
+	ordered = $bundles.sort_with(|a, b| if a.root == b.root Same else if a.root == ReleasePackage.primary_root Before else if b.root == ReleasePackage.primary_root After else if GitHub.sort([a.root, b.root]) == [a.root, b.root] Before else After)
+	match ordered {
+		[first, ..] if first.root == ReleasePackage.primary_root => Ok(ordered)
+		_ => Err("no example depends on ${ReleasePackage.primary_root}, so the package would be released untested")
 	}
 }
 
@@ -270,66 +365,94 @@ build! = |version| {
 	if existing.any(|name| name.ends_with(".tar.zst") or name.ends_with(".zip") or name == "release-notes.md") {
 		return Err("${Path.display(output)} already holds release files; start from an empty directory")
 	}
-
-	# The bundle: roc bundle takes the entry point first, then every other module.
-	say!("\n== Bundle")?
-	modules = direct_roc_files!(package_root)?
-	if !modules.contains("main.roc") {
-		return Err("package/main.roc does not exist")
-	}
-	report = capture!([compiler, "bundle", "main.roc"].concat(modules.keep_if(|name| name != "main.roc")).concat(["--output-dir", Path.display(absolute_output)]), package_root, "roc bundle failed")?
-	created = match Str.split_on(report, "\n").keep_oks(|line| if line.starts_with("Created: ") Ok(line.drop_prefix("Created: ").trim()) else Err(NotCreated)) {
-		[one] => file_name(Path.utf8(one))?
-		_ => return Err("could not find the bundle path in the output of roc bundle:\n${report}")
-	}
-	bundle = Path.join(output, created)
-	if !(Path.is_file!(bundle) ?? Bool.False) or !ReleasePackage.valid_bundle_file(created) {
-		return Err("roc bundle did not create ${Path.display(bundle)}")
-	}
-	# What the bundle holds is exactly the package's modules, nothing else.
-	members = GitHub.sort(Str.split_on(capture!(["tar", "-tf", Path.display(bundle)], Path.utf8("."), "cannot list the bundle")?, "\n").keep_if(|line| line != ""))
-	if members != modules {
-		return Err("the bundle holds ${Str.inspect(members)}, not the package modules ${Str.inspect(modules)}")
-	}
-	url = ReleasePackage.bundle_url(pkg, version, created).map_err(|_| "cannot form the bundle URL")?
-	say!("BUNDLE ${Path.display(bundle)} with ${modules.len().to_str()} modules\nURL    ${url}")?
-
-	# The examples archive: the working tree's examples, depending on that URL.
-	say!("\n== Examples archive")?
 	suite = working_suite!()?
+	bundles = bundles!(suite)?
+	single = bundles.len() == 1
+
+	# The bundles: roc bundle takes the package root first, then every other
+	# tracked file in its directory, modules and data alike.
+	say!("\n== ${if single "Bundle" else "Bundles"}")?
+	built = bundles.map_try!(
+		|bundle| {
+			directory = parent(bundle.root)
+			files = tracked!(directory)?.keep_if(|path| parent(path) == directory).map(|path| path.drop_prefix("${directory}/"))
+			if !files.contains("main.roc") {
+				return Err("${bundle.root} is not tracked by Git")
+			}
+			report = capture!([compiler, "bundle", "main.roc"].concat(files.keep_if(|name| name != "main.roc")).concat(["--output-dir", Path.display(absolute_output)]), Path.utf8(directory), "roc bundle failed for ${bundle.root}")?
+			created = match Str.split_on(report, "\n").keep_oks(|line| if line.starts_with("Created: ") Ok(line.drop_prefix("Created: ").trim()) else Err(NotCreated)) {
+				[one] => file_name(Path.utf8(one))?
+				_ => return Err("could not find the bundle path in the output of roc bundle:\n${report}")
+			}
+			if !(Path.is_file!(Path.join(output, created)) ?? Bool.False) {
+				return Err("roc bundle did not create ${created}")
+			}
+			# What the bundle holds is exactly what the package directory tracks.
+			members = GitHub.sort(Str.split_on(capture!(["tar", "-tf", Path.display(Path.join(output, created))], Path.utf8("."), "cannot list the bundle")?, "\n").keep_if(|line| line != ""))
+			if members != files {
+				return Err("the bundle of ${bundle.root} holds ${Str.inspect(members)}, not the tracked files ${Str.inspect(files)}")
+			}
+			name = ReleasePackage.bundle_file(pkg, bundle, created, single)
+			if name != created {
+				Path.rename!(Path.join(output, created), Path.join(output, name)).map_err(|_| "cannot rename ${created} to ${name}")?
+			}
+			url = ReleasePackage.bundle_url(pkg, version, name).map_err(|_| "cannot form the bundle URL for ${name}")?
+			say!("BUNDLE ${Path.display(Path.join(output, name))} from ${bundle.root} with ${files.len().to_str()} files\nURL    ${url}")?
+			Ok({ bundle, file: Path.display(Path.join(output, name)), url })
+		},
+	)?
+	url_of = |bundle| (built.keep_if(|b| b.bundle == bundle).first().map_ok(|b| b.url)) ?? ""
+	urls = built.map(|b| b.url)
+
+	# The examples archive: every tracked file under examples/, with each
+	# application's dependencies on this repository's packages replaced by
+	# their release URLs. Sibling modules and data files are copied as they are.
+	say!("\n== Examples archive")?
 	root = ReleasePackage.examples_root(pkg, version)
 	examples_archive = Path.join(absolute_output, ReleasePackage.examples_archive(pkg, version))
 	staging = temp!(settings, "examples")?
 	stage = Path.join(staging, root)
-	mkdir!(Path.join(stage, "examples"))?
-	var $entries = ["${root}/README.md", "${root}/spec.json"]
-	for example in suite.apps {
-		source = read!(Path.utf8(example.path))?
-		shorthand = match AppHeader.shorthand_of(source, dependency) {
-			Ok(name) => name
-			Err(_) => return Err("${example.path} must depend on the package as ${dependency}, exactly once")
+	apps = suite.apps.map(|example| example.path)
+	tracked_examples = tracked!("examples")?
+	for application in apps {
+		if !tracked_examples.contains(application) {
+			return Err("${application} is not tracked by Git, so it cannot be released")
 		}
-		if AppHeader.has_roc_pin(source) {
-			return Err("${example.path} must not pin a compiler; the release notes record the compiler")
-		}
-		archived = AppHeader.with_dependency(source, shorthand, dependency, url).map_err(|_| "${example.path} must be formatted by roc fmt so that its dependency can be replaced")?
-		if !Compatibility.app_source(archived, [url]) {
-			return Err("${example.path} does not depend on the release bundle after replacement")
-		}
-		write!(Path.join(stage, example.path), archived)?
-		$entries = $entries.append("${root}/${example.path}")
 	}
-	write!(Path.join(stage, "README.md"), ReleasePackage.examples_readme(pkg, version, url))?
-	write!(Path.join(stage, "spec.json"), Compatibility.published(suite, version, [url]))?
+	var $entries = ["${root}/README.md", "${root}/spec.json"]
+	for path in tracked_examples {
+		destination = Path.join(stage, path)
+		mkdir!(Path.join(stage, parent(path)))?
+		if apps.contains(path) {
+			found = local_dependencies!(path)?
+			archived = found.dependencies.fold(
+				Ok(found.source),
+				|state, dependency|
+					match state {
+						Ok(text) => AppHeader.with_dependency(text, dependency.name, dependency.declared, url_of(dependency.bundle)).map_err(|_| "${path} must be formatted by roc fmt so that its dependency ${dependency.name} can be replaced")
+						Err(reason) => Err(reason)
+					},
+			)?
+			if !Compatibility.app_source(archived, urls) {
+				return Err("${path} does not depend on a release bundle after replacement")
+			}
+			write!(destination, archived)?
+		} else {
+			Path.copy!(Path.utf8(path), destination).map_err(|_| "cannot copy ${path}")?
+		}
+		$entries = $entries.append("${root}/${path}")
+	}
+	write!(Path.join(stage, "README.md"), ReleasePackage.examples_readme(pkg, version, urls))?
+	write!(Path.join(stage, "spec.json"), Compatibility.published(suite, version, urls))?
 	zip!(staging, $entries, examples_archive)?
-	say!("ARCHIVE ${Path.display(examples_archive)} with ${suite.apps.len().to_str()} examples")?
+	say!("ARCHIVE ${Path.display(examples_archive)} with ${apps.len().to_str()} applications in ${tracked_examples.len().to_str()} files")?
 
 	# The API documentation archive, under a directory named after the version.
 	say!("\n== API documentation archive")?
 	docs_archive = Path.join(absolute_output, ReleasePackage.docs_archive(pkg, version))
 	docs_staging = temp!(settings, "docs")?
 	generated = Path.join(docs_staging, version)
-	run!([compiler, "docs", "package/main.roc", "--output=${Path.display(generated)}"], Path.utf8("."), "roc docs failed")?
+	run!([compiler, "docs", ReleasePackage.primary_root, "--output=${Path.display(generated)}"], Path.utf8("."), "roc docs failed")?
 	if !(Path.is_file!(Path.join(generated, "index.html")) ?? Bool.False) {
 		return Err("roc docs wrote no index.html")
 	}
@@ -344,22 +467,27 @@ build! = |version| {
 	if !(Path.is_file!(notes_path) ?? Bool.False) {
 		return Err("${Path.display(notes_path)} does not exist: write the notes for ${version} and merge them before releasing it")
 	}
-	body = match ReleasePackage.render_notes(read!(notes_path)?, { title: ReleasePackage.notes_title(pkg, noted), package_url: url }) {
+	placeholders = built.map(|b| { placeholder: ReleasePackage.placeholder(b.bundle), url: b.url })
+	body = match ReleasePackage.render_notes(read!(notes_path)?, { title: ReleasePackage.notes_title(pkg, noted), urls: placeholders }) {
 		Ok(rendered) => rendered
 		Err(WrongTitle(found)) => return Err("${Path.display(notes_path)} must open with \"${ReleasePackage.notes_title(pkg, noted)}\", not \"${found}\"")
-		Err(UnusedPlaceholder) => return Err("${Path.display(notes_path)} never uses ${ReleasePackage.placeholder}, so it does not say how to install the release")
+		Err(UnusedPlaceholder(name)) => return Err("${Path.display(notes_path)} never uses ${name}, so it does not say how to install that package")
 		Err(UnresolvedPlaceholder(name)) => return Err("${Path.display(notes_path)} uses ${name}, which this release has no URL for")
 		Err(UnclosedBlock) => return Err("${Path.display(notes_path)} opens a ---- block that it never closes")
 	}
 	notes = Path.join(output, "release-notes.md")
 	write!(notes, "${body}\n${ReleasePackage.built_with({ compiler: compiler_version!(compiler)?, automation: settings.automation })}")?
 	say!("NOTES ${Path.display(notes)} from ${Path.display(notes_path)}")?
-	output!([("bundle", Path.display(bundle)), ("url", url), ("examples", Path.display(Path.join(output, ReleasePackage.examples_archive(pkg, version)))), ("docs", Path.display(Path.join(output, ReleasePackage.docs_archive(pkg, version)))), ("notes", Path.display(notes))])
-}
-
-direct_names! = |directory| {
-	entries = Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")?
-	entries.map_try(file_name)
+	primary = built.first().map_ok(|b| { file: b.file, url: b.url }) ?? { file: "", url: "" }
+	output!([
+		("bundle", primary.file),
+		("url", primary.url),
+		("bundles", Str.join_with(built.map(|b| b.file), "\n")),
+		("urls", Str.join_with(urls, "\n")),
+		("examples", Path.display(Path.join(output, ReleasePackage.examples_archive(pkg, version)))),
+		("docs", Path.display(Path.join(output, ReleasePackage.docs_archive(pkg, version)))),
+		("notes", Path.display(notes)),
+	])
 }
 
 # The newest version that has authored notes, for a dry run to render.
@@ -372,10 +500,10 @@ newest_notes! = || {
 	}
 }
 
-## `roc bump` compares the package with the latest release's bundle and fails
-## when the version understates the change, so a breaking change cannot go out
-## as a patch. A dry run has no version to hold to that: it reports the bump
-## the change needs, and a comparison that cannot be made is not an error.
+## `roc bump` compares each package with the latest release's bundle of it and
+## fails when the version understates the change, so a breaking change cannot
+## go out as a patch. A dry run has no version to hold to that: it reports the
+## bump the change needs, and a comparison that cannot be made is not an error.
 check_version! = |version| {
 	settings = settings!()?
 	pkg = settings.pkg
@@ -399,35 +527,62 @@ check_version! = |version| {
 	latest : Try({ tag : Str, assets : List(Str) }, _)
 	latest = Json.parse(Str.from_utf8_lossy(listing.stdout_bytes))
 	found = latest.map_err(|_| "unreadable release listing")?
-	previous = match found.assets.keep_if(ReleasePackage.valid_bundle_file) {
-		[bundle_file] => ReleasePackage.bundle_url(pkg, found.tag, bundle_file).map_err(|_| "release ${found.tag} is not a version roc bump can compare with")?
-		_ => return Err("release ${found.tag} does not have exactly one bundle attached")
-	}
-	compare = [settings.compiler, "bump", "--old", previous]
-	if dry_run {
-		match run!(compare.append("package/main.roc"), Path.utf8("."), "roc bump") {
-			Ok({}) => Ok({})
-			Err(_) => say!("NOTE roc bump could not compare with ${found.tag}; a release would stop here")
+	for bundle in bundles!(working_suite!()?)? {
+		match ReleasePackage.published_bundle_file(pkg, bundle, found.assets) {
+			None => say!("NOTE release ${found.tag} has no bundle of ${bundle.root}, so ${version} is its first")?
+			Several => return Err("release ${found.tag} has several bundles that could be ${bundle.root}")
+			One(file) => {
+				previous = ReleasePackage.bundle_url(pkg, found.tag, file).map_err(|_| "release ${found.tag} is not a version roc bump can compare with")?
+				compare = [settings.compiler, "bump", "--old", previous]
+				if dry_run {
+					match run!(compare.append(bundle.root), Path.utf8("."), "roc bump") {
+						Ok({}) => {}
+						Err(_) => say!("NOTE roc bump could not compare ${bundle.root} with ${found.tag}; a release would stop here")?
+					}
+				} else {
+					run!(compare.concat(["--expect", ReleasePackage.base_version(version), bundle.root]), Path.utf8("."), "the version understates the change to ${bundle.root} since ${found.tag}, or roc bump could not compare")?
+				}
+			}
 		}
-	} else {
-		run!(compare.concat(["--expect", ReleasePackage.base_version(version), "package/main.roc"]), Path.utf8("."), "the version understates the change since ${found.tag}, or roc bump could not compare")
 	}
+	Ok({})
 }
 
-## The working tree's examples, against the package by path, compared with
-## or recorded into tests/spec.json.
+## The working tree's examples, against the packages by path, compared with
+## or recorded into tests/spec.json. Recording with no specification yet
+## starts from one default case per application.
 test_examples! = |mode| {
 	settings = settings!()?
-	suite = working_suite!()?
-	# The maintainer's own package cache is fine here: the dependency is a path.
+	suite = match (mode, Path.is_file!(spec_path) ?? Bool.False) {
+		(Update, Bool.False) => {
+			say!("NOTE ${Path.display(spec_path)} does not exist; recording one default case per application")?
+			initial_suite!()?
+		}
+		_ => working_suite!()?
+	}
+	# The maintainer's own package cache is fine here: the dependencies are paths.
 	cache = Path.utf8(optional!("XDG_CACHE_HOME", "${optional!("HOME", "/tmp")?}/.cache")?)
-	ran = Examples.execute!({ compiler: settings.compiler, root: Path.utf8("."), suite, dependencies: [dependency], setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: 10_000, source: Direct, mode, first_number: 1 })?
+	# The examples and the packages they depend on run in a scratch copy with
+	# the repository's layout, so the relative dependencies resolve as written
+	# and an example that writes files beside itself leaves the tree as it was.
+	stage = temp!(settings, "working-tree")?
+	found = suite.apps.map_try!(|example| Ok(local_dependencies!(example.path)?.dependencies))?
+	declared = Compatibility.unique(found.join_map(|list| list.map(|dependency| dependency.declared)))
+	package_directories = Compatibility.unique(found.join_map(|list| list.map(|dependency| parent(dependency.bundle.root))))
+	for directory in package_directories.append(Path.display(examples_root)) {
+		for file in all_files!(Path.utf8(directory))? {
+			mkdir!(Path.join(stage, parent("${directory}/${file}")))?
+			Path.copy!(Path.utf8("${directory}/${file}"), Path.join(stage, "${directory}/${file}")).map_err(|_| "cannot copy ${directory}/${file}")?
+		}
+	}
+	ran = Examples.execute!({ compiler: settings.compiler, root: stage, suite, dependencies: declared, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: 10_000, source: Direct, mode, first_number: 1 })?
 	match mode {
 		Update => {
 			rendered = Compatibility.render(ran.updated)
-			if read!(spec_path)? == rendered {
+			if (Path.read_utf8!(spec_path) ?? "") == rendered {
 				say!("UNCHANGED ${Path.display(spec_path)}")?
 			} else {
+				mkdir!(Path.utf8(parent(Path.display(spec_path))))?
 				write!(spec_path, rendered)?
 				say!("UPDATED ${Path.display(spec_path)}")?
 			}
@@ -437,14 +592,22 @@ test_examples! = |mode| {
 	verdict!(ran, "Examples against the working tree")
 }
 
-## The archive in dist/, exactly as it would be published, against the bundle
-## in dist/, served from a loopback address in place of its release URL.
+## The archive in dist/, exactly as it would be published, against the bundles
+## in dist/, served from a loopback address in place of their release URLs.
 test_archive! = || {
 	settings = settings!()?
 	pkg = settings.pkg
-	bundle = only!(settings.output, |name| name.ends_with(".tar.zst"), "bundle")?
-	archive = only!(settings.output, |name| name.starts_with("${pkg.name}-examples-") and name.ends_with(".zip"), "examples archive")?
-	archive_name = file_name(archive)?
+	names = direct_names!(settings.output)?
+	bundle_files = names.keep_if(|name| name.ends_with(".tar.zst"))
+	if bundle_files.is_empty() {
+		return Err("no bundle in ${Path.display(settings.output)}")
+	}
+	archive_name = match names.keep_if(|name| name.starts_with("${pkg.name}-examples-") and name.ends_with(".zip")) {
+		[one] => one
+		[] => return Err("no examples archive in ${Path.display(settings.output)}")
+		_ => return Err("several examples archives in ${Path.display(settings.output)}; start from an empty directory")
+	}
+	archive = Path.join(settings.output, archive_name)
 	root = archive_name.drop_suffix(".zip")
 	version = root.drop_prefix("${pkg.name}-examples-")
 	if !ReleasePackage.publishable_version(version) or ReleasePackage.examples_archive(pkg, version) != archive_name {
@@ -455,24 +618,39 @@ test_archive! = || {
 		[] => {}
 		[entry, ..] => return Err("unexpected entry in the examples archive: ${entry}")
 	}
-	if !entries.contains("${root}/spec.json") {
-		return Err("${archive_name} holds no spec.json, so there is nothing to compare its examples with")
+	for required in ["${root}/spec.json", "${root}/README.md"] {
+		if !entries.contains(required) {
+			return Err("${archive_name} holds no ${required.drop_prefix("${root}/")}")
+		}
 	}
-	url = ReleasePackage.bundle_url(pkg, version, file_name(bundle)?).map_err(|_| "${Path.display(bundle)} is not a release bundle")?
+	served = bundle_files.map_try(
+		|file| {
+			url = ReleasePackage.bundle_url(pkg, version, file).map_err(|_| "${file} is not a release bundle")?
+			Ok({ url, bundle: Path.join(settings.output, file) })
+		},
+	)?
 	temporary = temp!(settings, "archive")?
 	unpacked = Path.join(temporary, "unpacked")
 	mkdir!(unpacked)?
 	_ = capture!(["unzip", "-q", Path.display(archive), "-d", Path.display(unpacked)], Path.utf8("."), "cannot unpack ${archive_name}")?
 	suite_root = Path.join(unpacked, root)
 	suite = Compatibility.published_suite(read!(Path.join(suite_root, "spec.json"))?, pkg.repository, version)?
-	if suite.dependencies != [url] {
-		return Err("the archived examples depend on ${Str.inspect(suite.dependencies)}, not on ${Path.display(bundle)} at ${url}")
+	urls = served.map(|s| s.url)
+	if GitHub.sort(suite.dependencies) != GitHub.sort(urls) {
+		return Err("the archived examples depend on ${Str.inspect(suite.dependencies)}, not on the bundles in ${Path.display(settings.output)}: ${Str.inspect(urls)}")
 	}
-	# An empty package cache makes Roc fetch the bundle from the loopback
-	# server, as it would fetch the published bundle for a first user.
+	for example in suite.apps {
+		if !entries.contains("${root}/${example.path}") {
+			return Err("${archive_name} holds no ${example.path}, which its specification names")
+		}
+	}
+	# An empty package cache makes Roc fetch the bundles from the loopback
+	# server, as it would fetch the published bundles for a first user.
 	cache = Path.join(temporary, "cache")
 	mkdir!(cache)?
-	say!("SERVE ${Path.display(bundle)} in place of ${url}")?
-	ran = Examples.execute!({ compiler: settings.compiler, root: suite_root, suite, dependencies: [url], setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: 10_000, source: Served({ url, bundle }), mode: Compare, first_number: 1 })?
-	verdict!(ran, "Archived examples against the bundle")
+	for s in served {
+		say!("SERVE ${Path.display(s.bundle)} in place of ${s.url}")?
+	}
+	ran = Examples.execute!({ compiler: settings.compiler, root: suite_root, suite, dependencies: urls, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: 10_000, source: Served(served), mode: Compare, first_number: 1 })?
+	verdict!(ran, "Archived examples against the bundles")
 }
