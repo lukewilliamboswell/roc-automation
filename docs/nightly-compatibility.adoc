@@ -269,13 +269,11 @@ evidence; the released fixture makes no Windows claim. Neither a timeout nor tru
 can match an expected exit code.
 
 Compiler stdout and stderr are always displayed, including after exit code 0.
-Warnings remain nonfatal by default: `roc check` and `roc build` accept
-normal exit codes 0 and 2 (success with warnings), retaining both diagnostics
-and the original status. Crash markers, signals and other compiler exit codes
-still fail; recorded runtime cases must still execute and match their declared
-exit status and output. Successful compilation does not imply that it was
-warning-free. The runner owns compiler execution instead of delegating
-it to a driver that might discard captured success output.
+Both `roc check` and `roc build` must exit normally with code 0. A warning
+exit code (2) fails compatibility and must be fixed in the source or dependency
+that emits it. The runner preserves the original status and diagnostics; it
+never translates a warning exit into a pass. The runner owns compiler execution
+instead of delegating it to a driver that might discard captured success output.
 
 Crash markers (`[roc crashed]` and `[roc expect failed]`, ignoring ASCII case)
 are checked in raw output and independently in SGR/CR-normalized output, including
@@ -312,7 +310,7 @@ expires; the run link and selected versions allow a later manual reproduction.
 [cols="2,3,3",options="header"]
 |===
 | Result | Meaning | Follow-up
-| `compatible` | Every target ran cases and passed, without skips | No compatibility action; review any compiler warnings
+| `compatible` | Every target ran cases and passed, without skips | No compatibility action
 | `incompatible` | A compiler check/build or recorded example assertion failed | Inspect per-target diagnostics; fix the compiler/package issue and publish a compatible patch release when needed
 | `setup-failed` | Selection, archive validation, prerequisites or target evidence failed | Repair setup or release packaging; rerun all jobs
 | `test-timeout` / `output-limit` | Execution was interrupted; compatibility is unknown | Inspect partial logs; repair the hang/noise or adjust a justified deadline

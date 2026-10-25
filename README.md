@@ -76,7 +76,7 @@ skipped cases and infrastructure failures; a pass older than 48 hours requires a
 rerun. “Adopt shared nightly” means this repository does not yet report through
 [the shared contract](https://lukewilliamboswell.github.io/roc-automation/nightly-compatibility.html).
 Pin-updater runs, development CI and weekly floating-input checks are excluded.
-Compiler warnings remain visible and nonfatal; green does not mean warning-free.
+Compiler warning exit codes fail compatibility; fix the emitting source or dependency.
 
 **Automation:** the badge lists direct pinned roc-automation SHAs. “Matches main”
 requires every reference to equal the observed upstream `main` SHA. “Review

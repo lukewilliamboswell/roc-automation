@@ -25,7 +25,7 @@ def main():
     version = subprocess.check_output([compiler, "version"], text=True)
     nightly = re.search(r"nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]+", version).group()
     CompatibilityRunnerTests.setUpClass()
-    fixture = CompatibilityRunnerTests(methodName="test_success_preserves_nonfatal_warnings_and_both_streams")
+    fixture = CompatibilityRunnerTests(methodName="test_success_preserves_diagnostics_and_both_streams")
     try:
         # Match the hosted action's private RUNNER_TEMP directory. The separate
         # native fixture suite exercises Unicode and spaces with real processes;

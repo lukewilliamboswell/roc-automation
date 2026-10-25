@@ -86,7 +86,7 @@ def main():
         (evidence / "compiler.txt").write_text(version)
         (evidence / "host.json").write_text(json.dumps(dict(platform=sys.platform, machine=machine)))
     CompatibilityRunnerTests.setUpClass()
-    fixture = CompatibilityRunnerTests(methodName="test_success_preserves_nonfatal_warnings_and_both_streams")
+    fixture = CompatibilityRunnerTests(methodName="test_success_preserves_diagnostics_and_both_streams")
     try:
         fixture.directory_name = "suite"
         fixture.temporary_parent = os.environ.get("RUNNER_TEMP")

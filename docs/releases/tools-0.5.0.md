@@ -25,8 +25,8 @@ migrations are follow-ups.
 Compatibility fixes accept the flattened result file produced by a single-target
 artifact download while rejecting ambiguous duplicates before decoding either
 layout, including malformed or nonregular duplicate entries. Compiler checks and
-builds accept Roc warning status 2 while retaining raw diagnostics and requiring
-case execution; crashes and other failure statuses remain fatal. Downstream
+builds require exit code 0; warning status 2 remains a failure with raw diagnostics
+preserved so the emitting source or dependency can be corrected. Downstream
 compatibility badges accept inline comments after pinned workflow references.
 Examples may opt into
 `--fuzz` builds and per-case ignored stderr. Fuzz builds use the compiler's LLVM

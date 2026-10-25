@@ -69,7 +69,7 @@ if sys.argv[1]=='version':
     print('Roc compiler version '+os.environ['FAKE_NIGHTLY'])
 else:
     print('compiler stdout detail')
-    print('warning: successful compilation diagnostic ::error::not an annotation',file=sys.stderr)
+    print('compiler diagnostic ::error::not an annotation',file=sys.stderr)
     if os.environ.get('FAKE_COMPILER_FAIL'): sys.exit(1)
     if sys.argv[1]=='build':
         output=next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output='))
@@ -83,7 +83,6 @@ else:
         else:
             out.write_text('#!'+sys.executable+'\\n'+code)
         out.chmod(0o755)
-    if os.environ.get('FAKE_COMPILER_CRASH'): print('[roc crashed]',file=sys.stderr)
     if os.environ.get('FAKE_COMPILER_EXIT_PHASE',sys.argv[1]) == sys.argv[1]:
         sys.exit(int(os.environ.get('FAKE_COMPILER_EXIT','0')))
 """)
@@ -156,39 +155,29 @@ else:
         ran = subprocess.run([BINARY, phase], env=env, capture_output=True, text=True, timeout=phase_timeout)
         return ran, directory, outputs.read_text()
 
-    def test_success_preserves_nonfatal_warnings_and_both_streams(self):
+    def test_success_preserves_diagnostics_and_both_streams(self):
         ran, directory, _ = self.run_phase("test")
         self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
         result = json.loads((directory / "result.json").read_text())
         self.assertEqual((result["outcome"], result["tested"], result["failed"]), ("compatible", 1, 0))
-        self.assertIn("warning: successful", ran.stdout)
+        self.assertIn("compiler diagnostic", ran.stdout)
         self.assertNotIn("::error::", ran.stdout)
         self.assertIn("::error::", (directory / "2-stderr.log").read_text())
         self.assertIn("compiler stdout detail", (directory / "2-stdout.log").read_text())
         self.assertIn("--opt=dev", json.loads((directory / "3-command.json").read_text())["argv"])
 
-    def test_warning_exit_runs_cases_and_preserves_raw_status(self):
+    def test_warning_exit_fails_and_preserves_raw_diagnostics(self):
         for phase in ("check", "build"):
             with self.subTest(phase=phase):
                 ran, directory, _ = self.run_phase("test", FAKE_COMPILER_EXIT="2",
                                                   FAKE_COMPILER_EXIT_PHASE=phase)
-                self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
-                result = json.loads((directory / "result.json").read_text())
-                self.assertEqual((result["outcome"], result["tested"], result["failed"]),
-                                 ("compatible", 1, 0))
-                command = "2" if phase == "check" else "3"
-                self.assertEqual(json.loads((directory / (command + "-command.json")).read_text())["code"], 2)
-                self.assertIn("warning: successful", (directory / (command + "-stderr.log")).read_text())
-
-    def test_warning_exit_cannot_hide_crash_or_case_failure(self):
-        for extra in ({"FAKE_COMPILER_CRASH": "1"}, {"FAKE_CASE_STDOUT": "wrong output"}):
-            with self.subTest(extra=extra):
-                ran, directory, _ = self.run_phase("test", FAKE_COMPILER_EXIT="2", **extra)
                 self.assertNotEqual(ran.returncode, 0, ran.stdout)
                 result = json.loads((directory / "result.json").read_text())
-                self.assertEqual(result["outcome"], "incompatible")
-                self.assertGreater(result["failed"], 0)
-                self.assertEqual(result["tested"], 0 if "FAKE_COMPILER_CRASH" in extra else 1)
+                self.assertEqual((result["outcome"], result["tested"], result["failed"]),
+                                 ("incompatible", 0, 1))
+                command = "2" if phase == "check" else "3"
+                self.assertEqual(json.loads((directory / (command + "-command.json")).read_text())["code"], 2)
+                self.assertIn("compiler diagnostic", (directory / (command + "-stderr.log")).read_text())
 
     def test_other_compiler_exit_codes_remain_failures(self):
         for code in (1, 3, 77):
@@ -426,7 +415,7 @@ else:
         ran, directory, _ = self.run_phase("test", FAKE_COMPILER_FAIL="1")
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
-        self.assertIn("warning: successful", ran.stdout)
+        self.assertIn("compiler diagnostic", ran.stdout)
 
     def assert_no_success_report(self, directory):
         artifacts = self.root / "artifacts"

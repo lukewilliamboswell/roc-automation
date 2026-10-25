@@ -159,7 +159,7 @@ compiler and artifact identities, counts and safe relative diagnostic paths.
 Write a completed result atomically to the requested output directory.
 
 Preserve bounded stdout and stderr on successful as well as failed compiler
-calls. Warnings remain visible and nonfatal by default. A timeout, cancellation,
+calls. Compiler warning exit codes fail the check and remain visible. A timeout, cancellation,
 skip or missing report cannot establish a complete pass. Bound child execution
 and clean up descendants. Escape workflow commands in console output; raw
 diagnostic artifacts retain the original bytes. Validate paths and reject

@@ -85,8 +85,8 @@ iteration/input budget so normal execution completes within the smoke budget,
 and give the driver a separate hard deadline to stop hangs and child processes.
 A crash, wrong result or exceeded deadline fails the smoke check; stopping a
 process at the deadline does not establish success. Preserve compiler and
-workload diagnostics even on successful commands, with warnings nonfatal by
-default. Print explicit skips with reasons; skipped work is not passing
+workload diagnostics even on successful commands. Compiler warning exit codes
+fail the smoke check and must be corrected at their source. Print explicit skips with reasons; skipped work is not passing
 compatibility evidence.
 
 Keep the long-running task out of `blueprint run check` and every PR release
