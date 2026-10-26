@@ -20,7 +20,7 @@ They retain no copy of compiler lookup, packaging, selection or publishing.
 
 Relative to `docs/overview.adoc` and `docs/workflows.adoc`, this moves the
 release build/test job graph into shared ownership and combines source CI and
-release dry-run obligations into one run. The pure-package profile also gains
+release dry-run obligations into one run. The Roc package profile also gains
 one stable aggregate check. Relative to `docs/platforms.adoc`, native adapters
 retain product build behavior while the shared workflow owns scheduling and
 builder/runner transport. Compiler policy, dispatch authorization, immutable
@@ -321,7 +321,7 @@ ordinary-release artifact promotion.
 == Delivery and acceptance
 
 The combined PR reviews this contract, implementation and corresponding manual
-ownership changes. It supplies pure-package, multi-bundle and bounded native
+ownership changes. It supplies Roc package, multi-bundle and bounded native
 fixtures under `examples/`, one shared workflow, reusable operations and
 independent admission. Downstream pilot migrations of ansi/weaver, roc-time, gui
 and Blueprint, and remaining platforms are follow-ups; their adopter merges and

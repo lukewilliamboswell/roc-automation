@@ -29,7 +29,7 @@ cannot update its colour. A pass covers the declared examples and targets only.
 
 == Configure the caller
 
-Keep one caller for the product release suite. A pure package uses one Linux
+Keep one caller for the product release suite. A Roc package uses one Linux
 runner. A platform names every supported release runner. One archive can cover
 several bundles through its declared release dependencies.
 

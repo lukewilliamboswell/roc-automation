@@ -34,7 +34,7 @@ Protect the default branch with a ruleset:
 * Require status checks to pass on the current commit, with the branch up to
   date. Name the shared lifecycle aggregate `Lifecycle / Validation verdict`
   when the thin caller job is named `Lifecycle`, including for a
-  xref:overview.adoc#a-pure-roc-package[pure Roc package]. Confirm the actual
+  xref:overview.adoc#a-pure-roc-package[Roc package]. Confirm the actual
   caller-prefixed check name from a real pull request.
 * Require signed commits.
 * Grant no bypass to any bot: neither an app nor a deploy key is on the

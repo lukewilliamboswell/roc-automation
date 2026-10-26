@@ -5,12 +5,12 @@ It assumes the earlier chapters. Work from a fresh branch of the remote default
 branch, and open one pull request per numbered step so that a failure points at
 one change.
 
-A xref:overview.adoc#a-pure-roc-package[pure Roc package] follows every step,
+A xref:overview.adoc#a-pure-roc-package[Roc package] follows every step,
 with one runner in each workflow. The sentences below that begin "A platform"
 and the acceptance item that begins "For a platform" do not apply to it.
 
-For a pure package using released utilities and fixed downloaded tooling, start
-with xref:pure-package.adoc#adopt-a-pure-package-without-nix[Adopt a pure package without Nix]. It includes a
+For a Roc package using released utilities and fixed downloaded tooling, start
+with xref:pure-package.adoc#adopt-a-pure-package-without-nix[Adopt a Roc package without Nix]. It includes a
 complete Blueprint recipe, lock review, cache lifecycle and executable handoff.
 
 [#risk-adoption-evidence]

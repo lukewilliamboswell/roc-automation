@@ -25,7 +25,7 @@ build inputs, and the trust model behind the shared actions.
 | `actions/fetch-dependency-sboms` | Fetch suppliers' SBOMs beside locked files and record them for Blueprint to verify |
 
 See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions.html)
-for how to use them. Pure Roc packages can start with the complete
+for how to use them. Roc packages can start with the complete
 [Nix-free adoption guide](https://lukewilliamboswell.github.io/roc-automation/pure-package.html),
 and a release that publishes SBOM sidecars for a bundle and per-system
 executables can start from [`examples/sbom-chain`](examples/sbom-chain/README.adoc).

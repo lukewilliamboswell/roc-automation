@@ -96,7 +96,7 @@ requires the complete candidate.
 The always-running `Validation verdict` aggregate requires every selected job to
 succeed and accepts a skipped stage only when Plan made it inapplicable. It emits
 `validated-source` or `validated-candidate`; neither string authorizes publication.
-A pure package also uses this stable aggregate check, even with one Linux runner.
+A Roc package also uses this stable aggregate check, even with one Linux runner.
 Native repositories cover every advertised target through declared builders and
 actual consuming runners. A target-specific cross build alone is not a link/run
 test of that target.
@@ -421,7 +421,7 @@ flowchart LR
   compiler invocation. Default-branch code may only provision native prerequisites
   in the read-only test job.
 * Run on every target the release is tested on: the one runner of a
-  xref:overview.adoc#a-pure-roc-package[pure Roc package], or the same matrix
+  xref:overview.adoc#a-pure-roc-package[Roc package], or the same matrix
   as the lifecycle Source jobs.
 * A platform's host bindings are not checked here. A released host is fixed;
   what matters is whether its applications still build and run.

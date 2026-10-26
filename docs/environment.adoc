@@ -9,8 +9,8 @@ The environment holds the tooling compiler, the tools the scripts call, and the
 native toolchains a platform host or a test host needs. It does not hold the
 package compiler, which is never pinned.
 
-Pure packages can use `Programs`, `Fetch` and `Expect` with no Nix source.
-Follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide]. Native
+Roc packages can use `Programs`, `Fetch` and `Expect` with no Nix source.
+Follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Roc package adoption guide]. Native
 platforms can declare Nix sources for their host toolchains and sandboxed builds.
 
 [#risk-tooling-selection]
