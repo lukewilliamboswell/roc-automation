@@ -8,7 +8,7 @@
           "name": "default",
           "stderr": "",
           "stdin": "",
-          "stdout": "Hello from a pure Roc package, Ada\nHello from a pure Roc package, Grace\n"
+          "stdout": "Hello from a Roc package, Ada\nHello from a Roc package, Grace\n"
         }
       ],
       "path": "examples/greet/main.roc"
@@ -21,7 +21,7 @@
           "name": "default",
           "stderr": "",
           "stdin": "",
-          "stdout": "Hello from a pure Roc package\n"
+          "stdout": "Hello from a Roc package\n"
         }
       ],
       "path": "examples/hello.roc"

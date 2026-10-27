@@ -26,7 +26,7 @@ consumer configuration retain their own verification and trust requirements.
 
 Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
 installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
-and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
+and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the Roc package adoption guide].
 The setup action builds nothing.
 
 The executable cache is enabled by default. Its exact identity includes the

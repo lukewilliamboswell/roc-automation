@@ -306,7 +306,7 @@ jobs:
       - name: Provoke the refusals a maintainer must see
         run: python3 tests/check_sbom_chain.py
 
-  # The shared release utility against the pure-package starter: the working
+  # The shared release utility against the Roc package starter: the working
   # tree's examples, then the bundle, archives and notes it would publish, then
   # the archived examples against that exact bundle over a loopback address.
   # The package compiler is fixed here because this tests the utility, not the
@@ -345,7 +345,7 @@ jobs:
         working-directory: examples/pure-package
         env:
           TOOL: ${{ steps.tool.outputs.binary }}
-          RP_REPOSITORY: lukewilliamboswell/pure-package-example
+          RP_REPOSITORY: lukewilliamboswell/roc-package-example
           RP_DIRECTORY: ${{ runner.temp }}/release-package
         run: |
           "$TOOL" test-examples
@@ -353,26 +353,26 @@ jobs:
           "$TOOL" test-archive
           test -s dist/release-notes.md
           # Two bundles: the package and the data package the directory example depends on.
-          bundles=(dist/pure-package-example-*.tar.zst)
+          bundles=(dist/roc-package-example-*.tar.zst)
           test "${#bundles[@]}" = 2
-          compgen -G 'dist/pure-package-example-data-*.tar.zst' > /dev/null
-          grep -c 'releases/download/0.0.1-dryrun/pure-package-example-' dist/release-notes.md | grep -qx 2
-          unzip -Z1 dist/pure-package-example-examples-0.0.1-dryrun.zip | grep -qx 'pure-package-example-examples-0.0.1-dryrun/examples/hello.roc'
-          unzip -Z1 dist/pure-package-example-examples-0.0.1-dryrun.zip | grep -qx 'pure-package-example-examples-0.0.1-dryrun/examples/greet/Format.roc'
-          unzip -Z1 dist/pure-package-example-docs-0.0.1-dryrun.zip | grep -qx '0.0.1-dryrun/index.html'
+          compgen -G 'dist/roc-package-example-data-*.tar.zst' > /dev/null
+          grep -c 'releases/download/0.0.1-dryrun/roc-package-example-' dist/release-notes.md | grep -qx 2
+          unzip -Z1 dist/roc-package-example-examples-0.0.1-dryrun.zip | grep -qx 'roc-package-example-examples-0.0.1-dryrun/examples/hello.roc'
+          unzip -Z1 dist/roc-package-example-examples-0.0.1-dryrun.zip | grep -qx 'roc-package-example-examples-0.0.1-dryrun/examples/greet/Format.roc'
+          unzip -Z1 dist/roc-package-example-docs-0.0.1-dryrun.zip | grep -qx '0.0.1-dryrun/index.html'
       - name: Refuse an archive whose examples were edited after testing
         working-directory: examples/pure-package
         env:
           TOOL: ${{ steps.tool.outputs.binary }}
-          RP_REPOSITORY: lukewilliamboswell/pure-package-example
+          RP_REPOSITORY: lukewilliamboswell/roc-package-example
           RP_DIRECTORY: ${{ runner.temp }}/release-package-tampered
         run: |
-          mkdir -p "$RUNNER_TEMP/tampered/pure-package-example-examples-0.0.1-dryrun/examples"
+          mkdir -p "$RUNNER_TEMP/tampered/roc-package-example-examples-0.0.1-dryrun/examples"
           cd "$RUNNER_TEMP/tampered"
-          unzip -q "$GITHUB_WORKSPACE/examples/pure-package/dist/pure-package-example-examples-0.0.1-dryrun.zip"
-          sed -i 's/Hello from a pure Roc package/edited/' pure-package-example-examples-0.0.1-dryrun/spec.json
-          rm "$GITHUB_WORKSPACE/examples/pure-package/dist/pure-package-example-examples-0.0.1-dryrun.zip"
-          zip -q -X -D -r "$GITHUB_WORKSPACE/examples/pure-package/dist/pure-package-example-examples-0.0.1-dryrun.zip" pure-package-example-examples-0.0.1-dryrun
+          unzip -q "$GITHUB_WORKSPACE/examples/pure-package/dist/roc-package-example-examples-0.0.1-dryrun.zip"
+          sed -i 's/Hello from a Roc package/edited/' roc-package-example-examples-0.0.1-dryrun/spec.json
+          rm "$GITHUB_WORKSPACE/examples/pure-package/dist/roc-package-example-examples-0.0.1-dryrun.zip"
+          zip -q -X -D -r "$GITHUB_WORKSPACE/examples/pure-package/dist/roc-package-example-examples-0.0.1-dryrun.zip" roc-package-example-examples-0.0.1-dryrun
           cd "$GITHUB_WORKSPACE/examples/pure-package"
           if "$TOOL" test-archive; then
             echo '::error::an archive with changed expectations passed'

@@ -25,7 +25,7 @@ build inputs, and the trust model behind the shared actions.
 | `actions/fetch-dependency-sboms` | Fetch suppliers' SBOMs beside locked files and record them for Blueprint to verify |
 
 See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions.html)
-for how to use them. A pure Roc package releases through the reusable
+for how to use them. A Roc package releases through the reusable
 [`release-package.yml`](https://lukewilliamboswell.github.io/roc-automation/workflows.html#the-shared-release-workflow-for-a-pure-package)
 workflow from a thin caller, starting from
 [`examples/pure-package`](examples/pure-package/README.adoc), and a release that

@@ -159,15 +159,6 @@ ReleasePackage := [].{
 			Ok("https://github.com/${pkg.repository}/releases/download/${version}/${file}")
 		}
 
-	## The release version a bundle URL belongs to, if it is one of this
-	## repository's immutable release bundle URLs.
-	version_of_bundle_url : Package, Str -> Try(Str, [NotAReleaseBundle(Str)])
-	version_of_bundle_url = |pkg, url|
-		match Str.split_on(url.drop_prefix("https://github.com/${pkg.repository}/releases/download/"), "/") {
-			[version, file] if bundle_url(pkg, version, file) == Ok(url) => Ok(version)
-			_ => Err(NotAReleaseBundle(url))
-		}
-
 	## The single top-level directory of the examples archive.
 	examples_root : Package, Str -> Str
 	examples_root = |pkg, version| "${pkg.name}-examples-${version}"
@@ -180,10 +171,6 @@ ReleasePackage := [].{
 	## entries live under a `version/` directory, so a site restores it in place.
 	docs_archive : Package, Str -> Str
 	docs_archive = |pkg, version| "${pkg.name}-docs-${version}.zip"
-
-	## The manual attached to the release `version`.
-	pdf : Package, Str -> Str
-	pdf = |pkg, version| "${pkg.name}-${version}.pdf"
 
 	## Whether `entry` may appear in the examples archive whose top-level
 	## directory is `root`: the README, the expected-output specification, or a
@@ -394,13 +381,8 @@ expect ReleasePackage.bundle_url(pkg, "0.14.0", "Abc123.tar.zst") == Ok(url)
 expect ReleasePackage.bundle_url(pkg, "latest", "Abc123.tar.zst") == Err(InvalidVersion("latest"))
 expect ReleasePackage.bundle_url(pkg, "0.0.0", "Abc123.tar.zst") == Err(InvalidVersion("0.0.0"))
 expect ReleasePackage.bundle_url(pkg, "0.14.0", "a/b.tar.zst") == Err(InvalidBundleFile("a/b.tar.zst"))
-expect ReleasePackage.version_of_bundle_url(pkg, url) == Ok("0.14.0")
-expect ReleasePackage.version_of_bundle_url(pkg, "http://127.0.0.1:8000/Abc123.tar.zst").is_err()
-expect ReleasePackage.version_of_bundle_url(pkg, "../package/main.roc").is_err()
-expect ReleasePackage.version_of_bundle_url(pkg, "https://github.com/someone/roc-ansi/releases/download/0.14.0/Abc123.tar.zst").is_err()
-expect ReleasePackage.version_of_bundle_url(pkg, "https://github.com/lukewilliamboswell/roc-ansi/releases/download/latest/Abc123.tar.zst").is_err()
 expect ReleasePackage.examples_root(pkg, "0.14.0") == "roc-ansi-examples-0.14.0" and ReleasePackage.examples_archive(pkg, "0.14.0") == "roc-ansi-examples-0.14.0.zip"
-expect ReleasePackage.docs_archive(pkg, "0.14.0") == "roc-ansi-docs-0.14.0.zip" and ReleasePackage.pdf(pkg, "0.14.0") == "roc-ansi-0.14.0.pdf"
+expect ReleasePackage.docs_archive(pkg, "0.14.0") == "roc-ansi-docs-0.14.0.zip"
 expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/README.md")
 expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/spec.json") and ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/spec.json")
 expect ReleasePackage.valid_examples_entry("roc-ansi-examples-0.14.0", "roc-ansi-examples-0.14.0/examples/menu.roc")

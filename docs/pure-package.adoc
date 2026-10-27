@@ -1,6 +1,7 @@
-= Adopt a pure package without Nix
+[#adopt-a-pure-package-without-nix]
+= Adopt a Roc package without Nix
 
-A pure Roc package can run its checks and publish HTML, mirrored Markdown, an
+A Roc package can run its checks and publish HTML, mirrored Markdown, an
 `llms.txt` discovery index and a PDF using
 released executables. Blueprint owns the fixed downloads and their reviewed
 lock. The package compiler remains the latest nightly supplied by CI. No local
@@ -48,7 +49,7 @@ docs/releases/0.1.0.adoc
 
 `release.yml` is the whole of the repository's release and pull-request
 checking; see
-xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[The shared release workflow for a pure package].
+xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[The shared release workflow for a Roc package].
 The documentation workflow is:
 
 [source,yaml]

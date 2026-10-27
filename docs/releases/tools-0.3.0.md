@@ -43,7 +43,7 @@ pre-existing Roc package cache directories.
 
 Adoption checks use the public `blueprint lock show --json` format 2 interface,
 select fetched programs by name and system, and compare actual executable
-identities. The copyable pure-package starter uses Blueprint 0.7.0 and the
+identities. The copyable Roc package starter uses Blueprint 0.7.0 and the
 released tools 0.2.0 renderer, preserving the separate fixed tooling compiler.
 
 Privileged reporting and publication boundaries are unchanged. This release

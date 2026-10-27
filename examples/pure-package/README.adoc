@@ -1,47 +1,11 @@
-= Pure package starter
+= Roc package starter
 
-A complete pure Roc package: one module, one example with its recorded output,
-a manual, authored release notes, and the two workflows a package needs. Copy
-this directory's contents to a repository root, including the hidden `.github`
-directory, and add `.blueprint/`, `.docs-out/` and `dist/` to that repository's
-`.gitignore`. Keep `Blueprint.roc` and `Blueprint.lock` together, and
-regenerate the lock when changing a recipe rather than copying one from
-another release.
+Copy this directory, including `.github/`, to a package repository root. Keep
+`Blueprint.roc` and `Blueprint.lock` together and review the lock when changing
+recipes. The manual owns the
+https://lukewilliamboswell.github.io/roc-automation/pure-package.html[setup and local commands]
+and the https://lukewilliamboswell.github.io/roc-automation/workflows.html#the-shared-release-workflow-for-a-pure-package[shared release caller].
 
-[source,text]
-----
-Blueprint.roc                     environment and tasks; roc-stable and roc-docs are locked downloads
-Blueprint.lock
-.github/workflows/ci.yml          renders the manual on a pull request
-.github/workflows/release.yml     the thin caller of the shared release workflow
-package/main.roc                  the package, exposing its modules
-package/Greeting.roc
-examples/hello.roc                depends on the package as ../package/main.roc
-tests/spec.json                   what each example prints
-docs/index.adoc                   the manual
-docs/releases/0.1.0.adoc          notes for the first release; {package-url} stands for the bundle URL
-----
-
-`release.yml` calls roc-automation's `release-package.yml` at a full commit SHA.
-A pull request builds and tests the release under `0.0.1-dryrun`; dispatching
-the workflow from the default branch with a version publishes it. The package
-compiler is the latest nightly, installed by the workflow; nothing here pins it.
-The workflow runs `blueprint run check-package` before packaging, so the
-`check-package` task is where the package's own checks go, and then the
-`release-package` task, whose utility Blueprint fetches from a roc-automation
-tools release by digest.
-
-With Blueprint installed and the current nightly on `PATH` as `roc`:
-
-[source,sh]
-----
-blueprint check
-blueprint run check-package
-blueprint run release-package -- test-examples --update   # record what the examples print
-blueprint run release-package -- build 0.0.1-dryrun       # what a release would publish, into dist/
-blueprint run release-package -- test-archive             # the archive against the bundles
-blueprint run docs
-----
-
-See the manual's
-https://lukewilliamboswell.github.io/roc-automation/workflows.html#the-shared-release-workflow-for-a-pure-package[shared release workflow].
+This starter also exercises the release utility in CI: a file example, a directory
+example with a sibling module, and a second package bundle. Recorded expectations,
+notes and the archived files are checked through the same shared utility consumers use.

@@ -9,12 +9,12 @@ one question, and none of them changes the repository.
 
 | `ci.yml`
 | Pull request; push to the default branch
-| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly. A pure package has no `ci.yml`: its release dry run proves the same things.
+| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly. A Roc package has no `ci.yml`: its release dry run proves the same things.
 | `contents: read`
 
 | `release.yml`
 | Manual dispatch; pull request as a dry run
-| The exact bundle, examples archive and documentation proposed for publication work. A pure package's `release.yml` is a thin caller of the shared `release-package.yml`.
+| The exact bundle, examples archive and documentation proposed for publication work. A Roc package's `release.yml` is a thin caller of the shared `release-package.yml`.
 | `contents: read`. The publish job alone has `contents: write`, behind a protected environment.
 
 | `nightly.yml`
@@ -69,7 +69,7 @@ per target. Compilation has its own budget. Sustained searches and measured
 benchmarks run only in schedule/manual jobs with explicit event guards; see
 xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[Heavy runs stay out of pull-request CI].
 
-A xref:overview.adoc#a-pure-roc-package[pure Roc package] has no `ci.yml`. The
+A xref:overview.adoc#a-pure-roc-package[Roc package] has no `ci.yml`. The
 xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[shared release workflow]
 runs `blueprint run check` and the examples on every pull request as part of
 its dry run, and its two job names are the required status checks.
@@ -94,9 +94,9 @@ version. A pull request runs the same build and tests as a dry run and publishes
 nothing.
 
 [#the-shared-release-workflow-for-a-pure-package]
-=== The shared release workflow for a pure package
+=== The shared release workflow for a Roc package
 
-A pure Roc package keeps no release logic of its own. Its `release.yml` calls
+A Roc package keeps no release logic of its own. Its `release.yml` calls
 roc-automation's `.github/workflows/release-package.yml` at a full commit SHA:
 
 [source,yaml]
@@ -488,7 +488,7 @@ flowchart LR
   compiler invocation. Default-branch code may only provision native prerequisites
   in the read-only test job.
 * Run on every target the release is tested on: the one runner of a
-  xref:overview.adoc#a-pure-roc-package[pure Roc package], or the same matrix
+  xref:overview.adoc#a-pure-roc-package[Roc package], or the same matrix
   as `ci.yml`.
 * A platform's host bindings are not checked here. A released host is fixed;
   what matters is whether its applications still build and run.

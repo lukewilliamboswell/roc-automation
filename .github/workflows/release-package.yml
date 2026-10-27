@@ -1,4 +1,4 @@
-name: Release a pure Roc package
+name: Release a Roc package
 
 # A package repository's thin release.yml calls this workflow at a full commit
 # SHA. It builds what a release would contain, tests those exact files, and

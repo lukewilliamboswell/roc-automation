@@ -101,7 +101,7 @@ def main():
         assert hashlib.sha256(actual.read_bytes()).hexdigest() == values['sha256']
         subprocess.run(command,env=env,check=True)
     marker = os.environ.get('NIX_PROBE_MARKER')
-    assert not marker or not Path(marker).exists(), 'a pure package invoked Nix'
+    assert not marker or not Path(marker).exists(), 'a Roc package invoked Nix'
     print(f'{args.workload}: actual executable agrees with the reviewed lock; warm={args.warm}; process and outputs verified')
 
 

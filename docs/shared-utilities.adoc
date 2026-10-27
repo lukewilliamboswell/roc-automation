@@ -20,25 +20,9 @@ alone does not demonstrate native execution support.
 
 == Start from a working consumer
 
-Copy `examples/pure-package/`, including its hidden `.github` directory, to a
-repository root. It contains a real released renderer, its content lock, a small
-package and manual, and a complete CI workflow:
-
-[source,text]
-----
-Blueprint.roc
-Blueprint.lock
-.github/workflows/ci.yml
-package/main.roc
-docs/index.adoc
-----
-
-Run `blueprint check` and `blueprint run docs`. With the current Roc nightly on
-PATH, run `blueprint run check-package`. The workflow invokes exactly those
-tasks. No consumer renderer implementation or installer is copied. The
-xref:pure-package.adoc#adopt-a-pure-package-without-nix[complete consumer walkthrough]
-includes the actual configuration and workflow, download verification, caching
-and executable handoff.
+The xref:pure-package.adoc#adopt-a-pure-package-without-nix[consumer walkthrough]
+owns the copyable `examples/pure-package/` starter, its configuration and workflow,
+download verification, caching and executable handoff.
 
 The renderer is the worked example; apply the same provisioning pattern to
 other released utilities. Keep the utility's implementation compiler separate

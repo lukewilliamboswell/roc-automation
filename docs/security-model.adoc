@@ -263,7 +263,7 @@ can configure Nix with the job's default token. The report/publisher actions
 retain their explicit token-clearing checks described above. An optional cache
 requiring `id-token: write` must remain an explicit caller choice; the artifact
 cache here requires no such token permission. See
-xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide].
+xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Roc package adoption guide].
 
 == SBOM sidecars and supplier documents
 
