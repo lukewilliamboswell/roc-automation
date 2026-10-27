@@ -14,7 +14,7 @@ const screenshots = process.argv[3];
 assert.ok(process.env.ROC_DOCS_BINARY, 'Set ROC_DOCS_BINARY to the native renderer under review');
 const renderer = path.resolve(process.env.ROC_DOCS_BINARY);
 const fixtures = fileURLToPath(new URL('./fixtures/visual/docs/', import.meta.url));
-const sourceCases = {roc:'sample.roc',yaml:'sample.yaml',yml:'sample.yaml',sh:'sample.sh',bash:'sample.sh',shell:'sample.sh',zsh:'sample.sh',json:'sample.json',diff:'sample.diff',patch:'sample.diff','unknown-language':'sample.txt'};
+const sourceCases = {roc:'sample.roc.txt',yaml:'sample.yaml',yml:'sample.yaml',sh:'sample.sh',bash:'sample.sh',shell:'sample.sh',zsh:'sample.sh',json:'sample.json',diff:'sample.diff',patch:'sample.diff','unknown-language':'sample.txt'};
 const sourceText = Object.fromEntries(await Promise.all(Object.entries(sourceCases).map(async ([language, file]) => [language, await fs.readFile(path.join(fixtures, file), 'utf8')])));
 const corpus = Object.values(sourceText).join('');
 assert.ok(corpus.includes('\t') && / {2}\n/.test(corpus) && corpus.includes('\n\n') && corpus.includes('café') && corpus.includes('<&>'), 'Visual fixture lost its whitespace, Unicode or escaping coverage');

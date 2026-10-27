@@ -6,7 +6,7 @@ Inline `code` and a link:https://example.com/[link].
 
 [source,roc]
 ----
-include::sample.roc[]
+include::sample.roc.txt[]
 ----
 
 [source,yaml]
