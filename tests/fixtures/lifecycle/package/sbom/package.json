@@ -38,26 +38,6 @@
       "input": "task:check-unit",
       "component": "",
       "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
-    },
-    {
-      "input": "task:plan",
-      "component": "",
-      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
-    },
-    {
-      "input": "task:source",
-      "component": "",
-      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
-    },
-    {
-      "input": "task:prepare",
-      "component": "",
-      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
-    },
-    {
-      "input": "task:candidate",
-      "component": "",
-      "reason": "Read-only developer/CI task; its runtime is not shipped in this source bundle"
     }
   ],
   "imported_documents": [],

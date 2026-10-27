@@ -83,8 +83,8 @@ Read xref:security-model.adoc#the-three-workflows[the trust model] first. It is
 normative: a change to an action's behavior or permissions keeps those
 boundaries and arrives with regression tests for them.
 Controller implementation references live beside their source. Changes to
-`actions/nightly` or `actions/check-release` also require reading
-`actions/nightly/security-model.adoc`; those implementation notes stay separate
+`actions/admit-release` also require reading
+`actions/admit-release/security-model.adoc`; those implementation notes stay separate
 from the consumer manual.
 
 `actions/nightly-report` and `actions/publish-release` are Roc scripts,

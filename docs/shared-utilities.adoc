@@ -35,10 +35,11 @@ implementations serve local Blueprint tasks and read-only workflow jobs.
 | `release-admit` | `discover`, `collect`, `verify-provenance`; trusted pinned code independently observes actual GitHub identities, validates files and retains evidence before publication.
 |===
 
-The fixture configurations under `examples/lifecycle-package`,
-`examples/lifecycle-multibundle` and `examples/lifecycle-platform` show topology,
-compositions, cases and bounded tasks. They expect explicitly supplied lifecycle
-executables. Adopt a published release through Blueprint's verified provisioning
+Integration fixtures under `tests/fixtures/lifecycle/` exercise single-bundle,
+dependent-bundle and native-platform releases. Their sources, compositions and
+bounded tasks are test inputs; the caller and adoption guidance live in
+xref:workflows.adoc#the-three-workflows[the workflow chapter].
+Adopt a published release through Blueprint's verified provisioning
 contract; do not invent release URLs or substitute unreviewed moving downloads.
 The shared workflow's read-only bootstrap instead builds its own utilities from
 its exact reviewed action commit. Privileged admission uses the controller's own
@@ -60,25 +61,9 @@ and xref:security-model.adoc#independent-lifecycle-admission[Independent lifecyc
 
 == Start from a working consumer
 
-Copy `examples/pure-package/`, including its hidden `.github` directory, to a
-repository root. It contains a real released renderer, its content lock, a small
-package and manual, and a complete CI workflow:
-
-[source,text]
-----
-Blueprint.roc
-Blueprint.lock
-.github/workflows/ci.yml
-package/main.roc
-docs/index.adoc
-----
-
-Run `blueprint check` and `blueprint run docs`. With the current Roc nightly on
-PATH, run `blueprint run check-package`. The workflow invokes exactly those
-tasks. No consumer renderer implementation or installer is copied. The
-xref:pure-package.adoc#adopt-a-pure-package-without-nix[complete consumer walkthrough]
-includes the actual configuration and workflow, download verification, caching
-and executable handoff.
+The xref:pure-package.adoc#adopt-a-pure-package-without-nix[consumer walkthrough]
+owns the copyable `examples/pure-package/` starter, its configuration and workflow,
+download verification, caching and executable handoff.
 
 The renderer is the worked example; apply the same provisioning pattern to
 other released utilities. Keep the utility's implementation compiler separate

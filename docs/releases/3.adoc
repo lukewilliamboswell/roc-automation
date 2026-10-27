@@ -1,5 +1,18 @@
 = roc-automation 3
 
+== Retire obsolete automation and consolidate fixtures
+
+The old compiler-pin PR updater, its configuration checker and compiler-branch
+release policy are removed. The shared lifecycle validates releases, while the
+nightly workflow tests published examples and reports compatibility. Maintainers
+review compiler and automation updates. Existing callers pinned to historical
+full SHAs retain those revisions; adoption of the current workflow is explicit.
+
+Lifecycle integration projects now live under `tests/fixtures/lifecycle/` with
+one test guide. Duplicate starter callers and READMEs are removed; single-bundle,
+dependent-bundle and native-host execution coverage remains. The manual owns the
+current contract, with design and acceptance history retained in issue #83.
+
 == Roc package terminology
 
 The manual and starter use "Roc package" rather than "pure package". Platforms

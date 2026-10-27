@@ -5,7 +5,7 @@ app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint
 import pf.Recipes
 
 config = [
-	Name("pure-package-example"),
+	Name("roc-package-example"),
 	Systems(["x86_64-linux", "aarch64-linux", "aarch64-darwin"]),
 	Environment("docs", [Programs([Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.2.0/roc-docs-{system}"))]), Expect(["realpath", "sh"])]),
 	Environment("fixed-tools", [Programs([Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-10-18-1df370f"))]), Expect(["realpath", "sh"])]),

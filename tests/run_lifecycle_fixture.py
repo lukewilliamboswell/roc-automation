@@ -22,6 +22,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = Path("tests/fixtures/lifecycle")
 PROFILES = ("package", "multibundle", "platform")
 VERSION = "0.0.1-dry-run"
 
@@ -105,7 +106,7 @@ class Harness:
         self.clone = self.output / "checkout"
         self.source_sha = self.run("source-sha", ["git", "rev-parse", "HEAD"], cwd=self.source).stdout.decode().strip()
         self.run("clone-source", ["git", "clone", "--shared", "--no-checkout", self.source, self.clone])
-        self.run("sparse-source", ["git", "sparse-checkout", "set", "--cone", *[f"examples/lifecycle-{profile}" for profile in PROFILES]], cwd=self.clone)
+        self.run("sparse-source", ["git", "sparse-checkout", "set", "--cone", *[(FIXTURES / profile).as_posix() for profile in PROFILES]], cwd=self.clone)
         self.run("checkout-source", ["git", "checkout", "--detach", self.source_sha], cwd=self.clone)
         self.report["source_sha"] = self.source_sha
         self.report["source_scope"] = "committed fixture subtrees in sparse clone; not a live caller repository or GitHub job observation"
@@ -283,7 +284,7 @@ os.execv(program,[program,*sys.argv[1:]])
             if member["size"] != original.stat().st_size or member["sha256"] != sha256(original):
                 raise AssertionError("platform bundle does not contain the exact native host intermediate")
 
-    def compiler_counts(self, name, plan, executed_phases):
+    def compiler_counts(self, name, plan, workspace, executed_phases):
         receipts = [item for item in (json.loads(line) for line in self.receipts.read_text().splitlines()) if item["profile"] == name]
         counts = Counter((item["phase"], item["argv"][0] if item["argv"] else "") for item in receipts)
         bundles = len(plan["topology"]["bundles"])
@@ -291,7 +292,7 @@ os.execv(program,[program,*sys.argv[1:]])
             raise AssertionError("a bundle or its API was not built exactly once")
         for phase in ("source", "candidate"):
             obligations = [item for item in plan["obligations"] if item["stage"] == phase and item["runner"] == self.host["runner"] and item["operation"] in ("working-examples", "archive-examples")]
-            expected = sum(len(read_json(self.clone / "examples" / name / example["spec"])["apps"]) for item in obligations
+            expected = sum(len(read_json(workspace / example["spec"])["apps"]) for item in obligations
                            for example in plan["topology"]["examples"] if example["id"] == item["subject"])
             if phase not in executed_phases:
                 expected = 0
@@ -302,7 +303,7 @@ os.execv(program,[program,*sys.argv[1:]])
     def profile(self, profile):
         name = f"lifecycle-{profile}"
         self.report["active_profile"] = name
-        workspace = self.clone / "examples" / name
+        workspace = self.clone / FIXTURES / profile
         evidence = self.output / name
         evidence.mkdir()
         (evidence / "runner-temp").mkdir()
@@ -370,7 +371,7 @@ os.execv(program,[program,*sys.argv[1:]])
         if after != actual:
             raise AssertionError("candidate execution changed the sealed release files")
         report["public_files"] = [dict(path=path, **record) for path, record in sorted(actual.items())]
-        report["compiler_invocations"] = self.compiler_counts(name, plan, {"source" if source else "", "candidate" if candidate else ""})
+        report["compiler_invocations"] = self.compiler_counts(name, plan, workspace, {"source" if source else "", "candidate" if candidate else ""})
         report["common_preparation_host"] = self.host["system"]
         report["status"] = "passed-for-reported-execution-scope"
         write_json(evidence / "report.json", report)

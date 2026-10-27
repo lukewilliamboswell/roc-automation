@@ -184,7 +184,7 @@ class LifecyclePagesTests(unittest.TestCase):
 
     @unittest.skipUnless(REAL_ZIP, "set ROC_REAL_PAGES_ZIP to a real dispatch-version prepared fixture documentation ZIP")
     def test_actual_prepared_documentation_zip_is_restored_byte_for_byte(self):
-        self.topology = json.loads((ROOT / "examples/lifecycle-package/release-topology.json").read_text())
+        self.topology = json.loads((ROOT / "tests/fixtures/lifecycle/package/release-topology.json").read_text())
         self.topology_path.write_text(json.dumps(self.topology))
         real = Path(REAL_ZIP)
         self.archive = self.public / real.name

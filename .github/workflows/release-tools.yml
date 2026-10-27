@@ -147,9 +147,9 @@ jobs:
           test -s dist/release-compatibility-archive.py
       - name: Include source-free lifecycle contract regressions
         run: |
-          mkdir -p lifecycle-tests/tests/fixtures lifecycle-tests/actions/release-compatibility
+          mkdir -p lifecycle-tests/tests/fixtures/lifecycle lifecycle-tests/actions/release-compatibility
           cp tests/test_examples_update.py tests/test_lifecycle_pages.py tests/test_lifecycle_plan.py tests/test_lifecycle_github.py tests/test_lifecycle_transport.py tests/test_transport_environment.py tests/test_lifecycle_admission.py tests/test_release_operations.py lifecycle-tests/tests/
-          cp -R tests/fixtures/lifecycle lifecycle-tests/tests/fixtures/
+          cp tests/fixtures/lifecycle/*.json lifecycle-tests/tests/fixtures/lifecycle/
           cp tests/fixtures/compatibility_launcher.c lifecycle-tests/tests/fixtures/
           cp actions/release-compatibility/archive.py lifecycle-tests/actions/release-compatibility/
       - name: Include the policy dictionary permission notice

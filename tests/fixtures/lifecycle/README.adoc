@@ -1,6 +1,6 @@
 = Real shared lifecycle fixture tests
 
-`run_lifecycle_fixture.py` is an independent test harness, not a product
+`tests/run_lifecycle_fixture.py` is an independent test harness, not a product
 controller or a second release workflow. It invokes the actual shared planner,
 operations, existing supplier-fetch and SBOM-sidecar actions, Blueprint, policy
 checker, renderer and compilers. No product release or GitHub write is attempted.
@@ -31,7 +31,12 @@ python3 tests/run_lifecycle_fixture.py \
   --zstd /path/to/reviewed/zstd
 ----
 
-The default selects all three `examples/lifecycle-*` profiles. `--profile`
+The default selects the `package`, `multibundle` and `platform` subdirectories
+here. These are synthetic test inputs, not consumer starters. The JSON files
+beside them are smaller inputs for planner, admission and standalone utility
+regressions. The manual's workflow chapter owns the consumer caller.
+
+`--profile`
 can select `package`, `multibundle` or `platform`. Output directories must be
 new. The test keeps tool digests, actual compiler version output, command logs,
 per-profile reports and an overall `report.json`; failures retain their logs.
@@ -63,6 +68,17 @@ to rehearse complete assembly, and are labelled as cross compilation rather
 than native execution. An OS/architecture-incompatible `--runner` label is rejected. The label selects
 a logical lane; the report records the actual local OS release and does not
 claim to have observed a GitHub runner image.
+
+The native fixture's `scripts/native.roc` builds a scalar C host with the
+Zig toolchain fixed by `scripts/Toolchain.roc` and its Blueprint lock. The shared
+pipeline places those host bytes in the platform bundle. The compiler's Archive
+output is linked by `examples/run-archive.sh` with archived `harness.c`, then
+executed; candidate examples cannot fall back to the source host or helpers.
+`main.roc` must exit zero, `wrong.roc` must exit one, and compiler/linker failures
+exit 125. Git Bash and clang are explicit runtime prerequisites, checked by
+`check-runtime`. Clang builds only the ephemeral harness and reports its identity
+on stderr; its runner SDK remains an ambient test-environment assumption. Stdout
+and exit status are asserted even though stderr comparison is disabled.
 
 The report is local test evidence about the reported scope. It does not claim
 that a live caller workflow, all native runners, repository environment rules,
