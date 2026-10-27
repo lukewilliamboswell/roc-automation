@@ -27,6 +27,14 @@ fixtures cover these states and hosted tests
 exercise native execution. The dashboard is a dated snapshot; a stopped publisher
 cannot update its colour. A pass covers the declared examples and targets only.
 
+Fuzzing builds may add only the admitted `--fuzz` switch; archived metadata cannot
+replace the compiler, output path or other compiler arguments. Cases with unstable
+fuzzer statistics explicitly opt out of stderr comparison while preserving its raw
+bytes. Stdout and the normal exit code remain assertions. Signals, timeouts and
+output limits cannot satisfy an expected failure code. Regression tests cover these
+boundaries, and hosted Linux and Apple Silicon smoke tests exercise a published
+fuzzing platform with clean replay, one-second search and an expected exit 77.
+
 == Configure the caller
 
 Keep one caller for the product release suite. A Roc package uses one Linux
@@ -233,6 +241,21 @@ installs its tools. The shared runner still owns checking, compilation, timeout,
 stdout/stderr capture and exact case comparison. The runtime must exercise the
 built artifact and exit after its assertions; merely building a cart or opening
 a window does not establish behavioral compatibility.
+
+An application may add `build_args: ["--fuzz"]` to link a fuzz target. Missing or
+empty `build_args` keeps the ordinary build; every other argument or duplicate is
+rejected. These arguments affect `roc build` only, never `roc check`. Fuzz builds
+use `--opt=speed`, since fuzz instrumentation requires the LLVM backend; ordinary
+examples keep `--opt=dev`.
+
+A case may add `stderr_match: "ignore"` for unstable libFuzzer diagnostics, with
+`stderr: ""`. Missing `stderr_match` or `"exact"` retains exact stderr comparison;
+other policies are rejected. Both streams are always captured and displayed, and
+stdout and the normal exit code are compared exactly in every mode. Seed replay
+also goes through libFuzzer and can print varying diagnostics. A target that must
+find a failure records `exit_code: 77`; a signal or interruption cannot match it.
+The working-tree `test-examples --update` command preserves the selected policy
+and leaves ignored stderr empty instead of recording volatile statistics.
 
 A case may add `skip: {"reason":"...","issue":"https://github.com/..."}`.
 The app is still checked and built, and the skip is visible. Any skip prevents

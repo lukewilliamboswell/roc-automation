@@ -348,6 +348,12 @@ requires schedule/manual dispatch on the actual default branch and verifies
 the checkout HEAD equals the event SHA before running consumer prerequisites.
 Successful diagnostics are
 preserved; console workflow-command markers are escaped rather than interpreted.
+The suite can request the single allowlisted `--fuzz` build switch, with the
+runner selecting its required LLVM backend. It cannot provide arbitrary compiler
+options or change the runner's output path. A case may explicitly ignore unstable
+stderr statistics; those bytes remain in the diagnostic artifacts, while stdout,
+normal exit status and interruption checks still determine its result. Native
+regressions and real Linux/Apple Silicon fuzz targets exercise these controls.
 
 Aggregation checks every declared target's identity, counts and run attempt as
 inert JSON. No single matrix output can stand in for all targets. A cancelled or

@@ -31,9 +31,15 @@ jobs:
       - id: build
         name: Build the shared runner using its native action bootstrap
         run: '"$PYTHON_COMMAND" actions/release-compatibility/bootstrap.py'
+      - name: Build the shared release utility with the same engine
+        env:
+          TOOLING_DIRECTORY: ${{ steps.build.outputs.directory }}
+        run: |
+          "$PYTHON_COMMAND" -c 'import os,pathlib,subprocess; root=pathlib.Path(os.environ["TOOLING_DIRECTORY"]); suffix=".exe" if os.name=="nt" else ""; subprocess.run([str(root/"tooling"/("roc"+suffix)),"build","scripts/release_package.roc","--output="+str(root/("release-package"+suffix))],check=True)'
       - name: Exercise diagnostics, immutable archives, timeouts and process-tree cleanup
         env:
           ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner${{ runner.os == 'Windows' && '.exe' || '' }}
+          ROC_RELEASE_PACKAGE_BINARY: ${{ steps.build.outputs.directory }}/release-package${{ runner.os == 'Windows' && '.exe' || '' }}
         run: |
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_archive.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_compatibility.py -v
@@ -68,6 +74,33 @@ jobs:
           ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner.exe
           ROC_COMPATIBILITY_SMOKE_EXPECTED: incompatible
         run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
+  fuzz-compatibility:
+    name: Published fuzz targets (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-09-258ab27
+      - id: build
+        name: Build the shared runner with its tooling compiler
+        run: python3 actions/release-compatibility/bootstrap.py
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-23-18478ff
+      - name: Verify replay, expected failure and one-second search
+        env:
+          ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner
+        run: python3 tests/run_fuzz_compatibility_smoke.py
   controller-tests:
     runs-on: ubuntu-24.04
     steps:

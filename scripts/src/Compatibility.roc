@@ -7,8 +7,8 @@ Compatibility := [].{
 	Asset : { id : U64, name : Str, size : U64, digest : Str }
 	Release : { id : U64, tag_name : Str, draft : Bool, prerelease : Bool, published_at : Str, assets : List(Asset) }
 	Selection : { schema_version : U64, repository : Str, nightly : Str, release : Str, release_id : U64, asset : Asset, runners : List(Str) }
-	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
-	App : { path : Str, target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), cases : List(Case) }
+	Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, stderr_match : Try(Str, [Missing]), exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
+	App : { path : Str, target : Try(Str, [Missing]), run : Try(List(Str), [Missing]), build_args : Try(List(Str), [Missing]), cases : List(Case) }
 	Suite : { schema_version : U64, release : Str, dependencies : List(Str), apps : List(App) }
 	Result : { schema_version : U64, repository : Str, nightly : Str, release : Str, asset_digest : Str, runner : Str, run_id : Str, run_attempt : Str, outcome : Str, tested : U64, failed : U64, skipped : U64, diagnostic_commands : U64, detail : Str }
 	Environment : { name : Str, value : Str }
@@ -118,6 +118,13 @@ Compatibility := [].{
 			return Err("duplicate suite applications")
 		}
 		for example in found.apps {
+			build_args = example.build_args ?? []
+			if build_args != [] and build_args != ["--fuzz"] {
+				return Err("build_args must be empty or contain only --fuzz once")
+			}
+			if !example.cases.all(|case| ["exact", "ignore"].contains(case.stderr_match ?? "exact")) {
+				return Err("stderr_match must be exact or ignore")
+			}
 			target = example.target ?? "native"
 			runtime = example.run ?? []
 			if !GitHub.is_plain(target, "-_") or (target != "native" and runtime.is_empty()) or (!runtime.is_empty() and !runtime.any(|arg| arg.contains("{executable}"))) {
@@ -141,6 +148,11 @@ Compatibility := [].{
 	## An example must name a declared release dependency in its header. The runner
 	## never substitutes the default-branch bundle or edits a compiler constraint.
 	app_source = AppHeader.valid
+
+	## Fuzzer statistics vary between runs. Opting out of their comparison never
+	## discards the captured bytes or changes stdout, exit and interruption checks.
+	stderr_matches : Case, List(U8) -> Bool
+	stderr_matches = |case, actual| (case.stderr_match ?? "exact") == "ignore" or actual == Str.to_utf8(case.stderr)
 
 	## Preserve raw diagnostics as artifacts; escape command markers and control
 	## characters only in their console rendering. Success never discards output.
@@ -243,10 +255,10 @@ expect Compatibility.native_path("D:\\a\\temp/output/empty-cache", Bool.True) ==
 expect Compatibility.native_path("/tmp/output/empty-cache", Bool.False) == "/tmp/output/empty-cache"
 
 case : Compatibility.Case
-case = { name: "default", args: [], stdin: "", stdout: "a, \"b\"\n", stderr: "", exit_code: 0, skip: Err(Missing) }
+case = { name: "default", args: [], stdin: "", stdout: "a, \"b\"\n", stderr: "", stderr_match: Err(Missing), exit_code: 0, skip: Err(Missing) }
 
 working : Compatibility.Suite
-working = { schema_version: 1, release: "working-tree", dependencies: [], apps: [{ path: "examples/colors.roc", target: Err(Missing), run: Err(Missing), cases: [case] }] }
+working = { schema_version: 1, release: "working-tree", dependencies: [], apps: [{ path: "examples/colors.roc", target: Err(Missing), run: Err(Missing), build_args: Err(Missing), cases: [case] }] }
 
 rendered = "{\n  \"apps\": [\n    {\n      \"cases\": [\n        {\n          \"args\": [],\n          \"exit_code\": 0,\n          \"name\": \"default\",\n          \"stderr\": \"\",\n          \"stdin\": \"\",\n          \"stdout\": \"a, \\\"b\\\"\\n\"\n        }\n      ],\n      \"path\": \"examples/colors.roc\"\n    }\n  ],\n  \"dependencies\": [],\n  \"release\": \"working-tree\",\n  \"schema_version\": 1\n}\n"
 
@@ -256,9 +268,9 @@ expect Compatibility.working_tree_suite(Compatibility.render({ ..working, releas
 expect Compatibility.working_tree_suite(Compatibility.render({ ..working, dependencies: ["x"] })).is_err()
 expect Compatibility.working_tree_suite("{ \"apps\": 1 }").is_err() and Compatibility.working_tree_suite("").is_err()
 expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [] })).is_err()
-expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [{ path: "other/colors.roc", target: Err(Missing), run: Err(Missing), cases: [case] }] })).is_err()
-expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [{ path: "examples/colors.roc", target: Err(Missing), run: Err(Missing), cases: [case, case] }] })).is_err()
-expect Compatibility.render({ ..working, apps: [{ path: "examples/a.roc", target: Err(Missing), run: Err(Missing), cases: [{ ..case, stdout: "\u(001b)[0m{[,]}", skip: Ok({ reason: "needs a terminal", issue: "https://github.com/o/pkg/issues/1" }) }] }] }).contains("\"skip\": {\n            \"issue\": \"https://github.com/o/pkg/issues/1\",\n            \"reason\": \"needs a terminal\"\n          },\n          \"stderr\": \"\",\n          \"stdin\": \"\",\n          \"stdout\": \"\\u001b[0m{[,]}\"\n")
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [{ path: "other/colors.roc", target: Err(Missing), run: Err(Missing), build_args: Err(Missing), cases: [case] }] })).is_err()
+expect Compatibility.working_tree_suite(Compatibility.render({ ..working, apps: [{ path: "examples/colors.roc", target: Err(Missing), run: Err(Missing), build_args: Err(Missing), cases: [case, case] }] })).is_err()
+expect Compatibility.render({ ..working, apps: [{ path: "examples/a.roc", target: Err(Missing), run: Err(Missing), build_args: Err(Missing), cases: [{ ..case, stdout: "\u(001b)[0m{[,]}", skip: Ok({ reason: "needs a terminal", issue: "https://github.com/o/pkg/issues/1" }) }] }] }).contains("\"skip\": {\n            \"issue\": \"https://github.com/o/pkg/issues/1\",\n            \"reason\": \"needs a terminal\"\n          },\n          \"stderr\": \"\",\n          \"stdin\": \"\",\n          \"stdout\": \"\\u001b[0m{[,]}\"\n")
 
 published_url = "https://github.com/o/pkg/releases/download/1.0.0/hash.tar.zst"
 
@@ -266,3 +278,11 @@ expect Compatibility.published_suite(Compatibility.published(working, "1.0.0", [
 expect Compatibility.published_suite(Compatibility.published(working, "1.0.0", [published_url]), "o/pkg", "1.0.1").is_err()
 expect Compatibility.published_suite(Compatibility.published(working, "1.0.0", ["http://127.0.0.1:1/hash.tar.zst"]), "o/pkg", "1.0.0").is_err()
 expect Compatibility.suite(Compatibility.published(working, "1.0.0", [published_url]), selection).is_ok()
+
+fuzz_suite = { ..working, apps: [{ path: "examples/fuzz.roc", target: Err(Missing), run: Err(Missing), build_args: Ok(["--fuzz"]), cases: [{ ..case, stderr_match: Ok("ignore"), exit_code: 77 }] }] }
+
+expect Compatibility.working_tree_suite(Compatibility.render(fuzz_suite)) == Ok(fuzz_suite)
+expect Compatibility.published_suite(Compatibility.published(fuzz_suite, "1.0.0", [published_url]), "o/pkg", "1.0.0") == Ok({ ..fuzz_suite, release: "1.0.0", dependencies: [published_url] })
+expect Compatibility.stderr_matches(case, []) and !Compatibility.stderr_matches(case, Str.to_utf8("statistics"))
+expect Compatibility.stderr_matches({ ..case, stderr_match: Ok("ignore") }, Str.to_utf8("statistics"))
+expect !Compatibility.stderr_matches({ ..case, stderr_match: Ok("exact") }, Str.to_utf8("statistics"))

@@ -279,7 +279,7 @@ initial_suite! = || {
 		schema_version: 1,
 		release: Compatibility.working_tree,
 		dependencies: [],
-		apps: apps.map(|path| { path, target: Err(Missing), run: Err(Missing), cases: [{ name: "default", args: [], stdin: "", stdout: "", stderr: "", exit_code: 0, skip: Err(Missing) }] }),
+		apps: apps.map(|path| { path, target: Err(Missing), run: Err(Missing), build_args: Err(Missing), cases: [{ name: "default", args: [], stdin: "", stdout: "", stderr: "", stderr_match: Err(Missing), exit_code: 0, skip: Err(Missing) }] }),
 	}
 	Ok(suite)
 }

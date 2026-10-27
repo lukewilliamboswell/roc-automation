@@ -162,12 +162,109 @@ else:
         self.assertNotIn("::error::", ran.stdout)
         self.assertIn("::error::", (directory / "2-stderr.log").read_text())
         self.assertIn("compiler stdout detail", (directory / "2-stdout.log").read_text())
+        self.assertIn("--opt=dev", json.loads((directory / "3-command.json").read_text())["argv"])
 
     def test_compiler_failure_is_incompatible_and_keeps_diagnostics(self):
         ran, directory, _ = self.run_phase("test", FAKE_COMPILER_FAIL="1")
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
         self.assertIn("warning: successful", ran.stdout)
+
+    def test_fuzz_build_argument_is_owned_by_the_build_command(self):
+        self.spec["apps"][0]["build_args"] = ["--fuzz"]
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
+        check = json.loads((directory / "2-command.json").read_text())
+        build = json.loads((directory / "3-command.json").read_text())
+        self.assertNotIn("--fuzz", check["argv"])
+        self.assertEqual(build["argv"].count("--fuzz"), 1)
+        self.assertIn("--opt=speed", build["argv"])
+        self.assertEqual(sum(arg.startswith("--output=") for arg in build["argv"]), 1)
+
+    def test_unadmitted_build_arguments_and_stream_policies_fail_setup(self):
+        for arguments in (["--output=elsewhere"], ["--fuzz", "--fuzz"], ["--fuzz", "--target=wasm32"], ["--opt=all"], "--fuzz"):
+            with self.subTest(build_args=arguments):
+                self.spec["apps"][0]["build_args"] = arguments
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+                self.assertFalse((directory / "2-command.json").exists())
+        self.spec["apps"][0].pop("build_args")
+        for policy in ("prefix", "", True):
+            with self.subTest(stderr_match=policy):
+                self.case["stderr_match"] = policy
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+
+    def test_stderr_comparison_remains_exact_by_default(self):
+        for policy in (None, "exact"):
+            with self.subTest(stderr_match=policy):
+                if policy is not None:
+                    self.case["stderr_match"] = policy
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="varying fuzzer statistics")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["failed"], 1)
+                self.assertIn("varying fuzzer statistics", (directory / "4-stderr.log").read_text())
+
+    def test_ignored_stderr_is_preserved_and_expected_exit_77_passes(self):
+        self.case["stderr_match"] = "ignore"
+        for code in (0, 77):
+            with self.subTest(exit_code=code):
+                self.case["exit_code"] = code
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", FAKE_CASE_EXIT=str(code), FAKE_CASE_STDERR="varying fuzzer statistics ::error::raw")
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "compatible")
+                self.assertIn("varying fuzzer statistics ::error::raw", (directory / "4-stderr.log").read_text())
+                self.assertIn("varying fuzzer statistics : :error: :raw", ran.stdout)
+
+    def test_ignored_stderr_does_not_hide_wrong_stdout_or_exit_code(self):
+        self.case["stderr_match"] = "ignore"
+        for changes in (dict(stdout="different\n"), dict(exit_code=77)):
+            with self.subTest(changes=changes):
+                self.case.update(stdout="hello\n", exit_code=0)
+                self.case.update(changes)
+                self.make_archive()
+                self.refresh_selection()
+                ran, directory, _ = self.run_phase("test", FAKE_CASE_STDERR="varying statistics")
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["failed"], 1)
+
+    @unittest.skipUnless(os.environ.get("ROC_RELEASE_PACKAGE_BINARY"), "set ROC_RELEASE_PACKAGE_BINARY to test baseline updates")
+    def test_baseline_update_preserves_build_and_stream_policies(self):
+        (self.root / "examples").mkdir()
+        (self.root / "package").mkdir()
+        (self.root / "tests").mkdir()
+        (self.root / "package/main.roc").write_text("package []\n")
+        (self.root / "examples/main.roc").write_text('app [main!] { lib: "../package/main.roc" }\n')
+        self.spec.update(release="working-tree", dependencies=[])
+        self.spec["apps"][0]["build_args"] = ["--fuzz"]
+        self.case.update(stderr_match="ignore", stderr="old unstable statistics", stdout="old output")
+        specification = self.root / "tests/spec.json"
+        specification.write_text(json.dumps(self.spec))
+        evidence = self.root / "update-evidence"
+        ran = subprocess.run([os.environ["ROC_RELEASE_PACKAGE_BINARY"], "test-examples", "--update"],
+                             cwd=self.root, env={**self.env, "RP_REPOSITORY": "o/pkg", "RP_NAME": "pkg",
+                             "RP_COMPILER": self.env["RA_COMPILER"], "RP_DIRECTORY": str(evidence),
+                             "XDG_CACHE_HOME": str(self.root / "update-cache"),
+                             "FAKE_CASE_STDERR": "new unstable statistics"},
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        updated = json.loads(specification.read_text())
+        self.assertEqual(updated["apps"][0]["build_args"], ["--fuzz"])
+        case = updated["apps"][0]["cases"][0]
+        self.assertEqual((case["stderr_match"], case["stderr"], case["stdout"]), ("ignore", "", "hello\n"))
+        self.assertTrue(any("new unstable statistics" in path.read_text() for path in evidence.glob("*-stderr.log")))
 
     def assert_no_success_report(self, directory):
         artifacts = self.root / "artifacts"
@@ -180,7 +277,7 @@ else:
 
     def test_missing_runtime_cannot_match_an_expected_exit_code(self):
         self.spec["apps"][0]["run"] = [str(self.root / "missing-runtime"), "{executable}"]
-        self.case.update(exit_code=126, stdout="", stderr="command could not be started")
+        self.case.update(exit_code=126, stdout="", stderr="command could not be started", stderr_match="ignore")
         self.make_archive()
         self.refresh_selection()
         ran, directory, _ = self.run_phase("test")
@@ -216,7 +313,7 @@ else:
 
     @unittest.skipIf(os.name == "nt", "Windows reports process termination as an exit code")
     def test_signal_cannot_match_expected_exit_255(self):
-        self.case.update(exit_code=255, stdout="", stderr="")
+        self.case.update(exit_code=255, stdout="", stderr="", stderr_match="ignore")
         self.make_archive()
         self.refresh_selection()
         ran, directory, _ = self.run_phase("test", FAKE_CASE_SIGNAL="1")
@@ -262,12 +359,18 @@ else:
         self.assertEqual(json.loads((directory / "result.json").read_text())["failed"], 1)
 
     def test_timeout_keeps_partial_output_and_is_not_a_compatibility_verdict(self):
+        self.case["stderr_match"] = "ignore"
+        self.make_archive()
+        self.refresh_selection()
         ran, directory, _ = self.run_phase("test", FAKE_CASE_SLEEP="1", RA_CASE_TIMEOUT_MS="1000")
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "test-timeout")
         self.assertIn("hello", (directory / "4-stdout.log").read_text())
 
     def test_output_limit_preserves_partial_bytes_and_never_passes(self):
+        self.case["stderr_match"] = "ignore"
+        self.make_archive()
+        self.refresh_selection()
         ran, directory, _ = self.run_phase("test", FAKE_CASE_FLOOD="1")
         self.assertNotEqual(ran.returncode, 0)
         self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "output-limit")
