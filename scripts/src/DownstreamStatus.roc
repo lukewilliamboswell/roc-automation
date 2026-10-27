@@ -125,7 +125,7 @@ DownstreamStatus := [].{
 							$keys = $keys.append("job:${pair.before}")
 							$section = pair.before
 							if pair.before == "uses" {
-								if literal(pair.after.trim()) != "${ref.target}@${ref.revision}" {
+								if !literal_reference(pair.after.trim(), "${ref.target}@${ref.revision}") {
 									return Err("caller workflow revision changed")
 								}
 								$seen_uses = Bool.True
@@ -162,9 +162,45 @@ DownstreamStatus := [].{
 
 	identifier = |value| value != "" and Str.to_utf8(value).all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '_' or byte == '-')
 	literal = |value| value.drop_prefix("\"").drop_suffix("\"").drop_prefix("'").drop_suffix("'")
+	literal_reference = |value, expected| [expected, "\"${expected}\"", "'${expected}'"].any(
+		|candidate| {
+			if !value.starts_with(candidate) {
+				Bool.False
+			} else {
+				tail = value.drop_prefix(candidate)
+				tail == "" or (tail.starts_with(" ") and tail.trim_start().starts_with("#"))
+			}
+		},
+	)
 
 	## Both immutable caller structure and GitHub's resolved reusable-workflow
 	## identity bind display-name verdicts to the only executable job origin.
+	coherent_jobs = |ran, jobs| jobs.total_count == jobs.jobs.len() and jobs.jobs.all(|job| job.run_id == ran.id and job.run_attempt == ran.run_attempt and job.head_sha == ran.head_sha) and unique(jobs.jobs.map(|job| job.id.to_str())).len() == jobs.jobs.len()
+
+	## The pinned report job runs only with both selectors empty. Its success
+	## distinguishes a latest-pair dispatch from an arbitrary historical probe.
+	default_dispatch : Snapshot, Run, Jobs, Str -> Bool
+	default_dispatch = |snapshot, ran, jobs, caller_source| {
+		if ran.event != "workflow_dispatch" or !coherent_jobs(ran, jobs) {
+			return Bool.False
+		}
+		ref = match caller(snapshot) {
+			Ok(value) => value
+			Err(_) => return Bool.False
+		}
+		job_id = match caller_job(caller_source, ref) {
+			Ok(value) => value
+			Err(_) => return Bool.False
+		}
+		if ran.path != ref.file or ran.referenced_workflows != [{ path: "${ref.target}@${ref.revision}", sha: ref.revision }] or ran.run_attempt == 0 or !sha(ran.head_sha) {
+			return Bool.False
+		}
+		match jobs.jobs.keep_if(|job| job.name == "${job_id} / Track release compatibility") {
+			[job] => job.status == "completed" and job.conclusion == "success"
+			_ => Bool.False
+		}
+	}
+
 	compatibility : Snapshot, Run, Jobs, Str, Str -> CompatibilityResult
 	compatibility = |snapshot, ran, jobs, caller_source, cutoff| {
 		url = "https://github.com/${snapshot.repository}/actions/runs/${ran.id.to_str()}"
@@ -178,13 +214,13 @@ DownstreamStatus := [].{
 			Err(reason) => return { ..base, detail: reason }
 		}
 		resolved = [{ path: "${ref.target}@${ref.revision}", sha: ref.revision }]
-		if ran.path != ref.file or ran.referenced_workflows != resolved or ran.run_attempt == 0 or ran.event != "schedule" or !sha(ran.head_sha) {
+		if ran.path != ref.file or ran.referenced_workflows != resolved or ran.run_attempt == 0 or (ran.event != "schedule" and !default_dispatch(snapshot, ran, jobs, caller_source)) or !sha(ran.head_sha) {
 			return { ..base, message: "new configuration · rerun nightly" }
 		}
 		if ran.status != "completed" {
 			return { ..base, message: "running · wait for result", color: "blue" }
 		}
-		if jobs.total_count != jobs.jobs.len() or !jobs.jobs.all(|job| job.run_id == ran.id and job.run_attempt == ran.run_attempt and job.head_sha == ran.head_sha) or unique(jobs.jobs.map(|job| job.id.to_str())).len() != jobs.jobs.len() {
+		if !coherent_jobs(ran, jobs) {
 			return { ..base, detail: "Incomplete job inventory; cannot establish a pass." }
 		}
 		verdict = match jobs.jobs.keep_if(|job| job.name == "${job_id} / Compatibility verdict") {
@@ -349,7 +385,7 @@ DownstreamStatus := [].{
 			),
 			"\n",
 		)
-		"<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Supported downstream status</title><h1>Supported downstream status</h1><p>Checked ${html(checked)} UTC against roc-automation main: <a href=\"https://github.com/${upstream}/commit/${html(latest)}\"><code>${html(latest)}</code></a>.</p><p>Compatibility means the latest scheduled run passed the central published-release gate on every target. This snapshot marks passes over 48 hours old stale. If the check date is over 48 hours old, investigate Documentation publication before relying on green: static badges retain their last colour when publication stops. Legacy updater results are excluded. Open the run for the exact release/nightly pair, per-target raw diagnostics and summary.json. Warnings are visible and nonfatal. Missing evidence requires investigation, not an assumption of compatibility.</p><p>Automation revisions are direct references in default-branch workflows and composite actions. All SHAs must match the observed main commit, including documentation-only changes. Review upgrades manually; matching main is not a security-compliance claim. Nested dependencies inside pinned shared code are outside this inventory. A newer check timestamp requires a successful Documentation deployment.</p><table><thead><tr><th>Repository</th><th>Published-release compatibility / action</th><th>Automation revision / action</th></tr></thead><tbody>${rows}</tbody></table></html>"
+		"<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Supported downstream status</title><h1>Supported downstream status</h1><p>Checked ${html(checked)} UTC against roc-automation main: <a href=\"https://github.com/${upstream}/commit/${html(latest)}\"><code>${html(latest)}</code></a>.</p><p>Compatibility means the latest eligible scheduled or default-selector manual run passed the central published-release gate on every target. Historical manual probes are excluded. This snapshot marks passes over 48 hours old stale. If the check date is over 48 hours old, investigate Documentation publication before relying on green: static badges retain their last colour when publication stops. Legacy updater results are excluded. Open the run for the exact release/nightly pair, per-target raw diagnostics and summary.json. Warnings are visible and nonfatal. Missing evidence requires investigation, not an assumption of compatibility.</p><p>Automation revisions are direct references in default-branch workflows and composite actions. All SHAs must match the observed main commit, including documentation-only changes. Review upgrades manually; matching main is not a security-compliance claim. Nested dependencies inside pinned shared code are outside this inventory. A newer check timestamp requires a successful Documentation deployment.</p><table><thead><tr><th>Repository</th><th>Published-release compatibility / action</th><th>Automation revision / action</th></tr></thead><tbody>${rows}</tbody></table></html>"
 	}
 }
 
@@ -407,6 +443,29 @@ expect DownstreamStatus.compatibility(monitored, ran, { total_count: 0, jobs: []
 expect DownstreamStatus.compatibility(monitored, { ..ran, conclusion: "failure" }, jobs, caller_source, cutoff).color != "brightgreen"
 expect DownstreamStatus.compatibility(monitored, { ..ran, status: "in_progress" }, jobs, caller_source, cutoff).color == "blue"
 expect DownstreamStatus.compatibility(monitored, { ..ran, event: "workflow_dispatch" }, jobs, caller_source, cutoff).color != "brightgreen"
+
+manual = { ..ran, event: "workflow_dispatch" }
+
+tracking = { ..verdict, id: 11, name: "nightly / Track release compatibility", steps: [] }
+
+manual_jobs = { total_count: 2, jobs: [verdict, tracking] }
+
+expect DownstreamStatus.compatibility(monitored, manual, manual_jobs, caller_source, cutoff).color == "brightgreen"
+expect DownstreamStatus.compatibility(monitored, { ..manual, updated_at: "2026-10-18T09:00:00Z" }, manual_jobs, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, total_count: 3 }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { total_count: 3, jobs: [verdict, tracking, { ..tracking, id: 12 }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, conclusion: "skipped" }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, conclusion: "failure" }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, status: "in_progress" }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, run_attempt: 2 }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, run_id: 2 }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, head_sha: current }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, { ..manual_jobs, jobs: [verdict, { ..tracking, name: "local / Track release compatibility" }] }, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, { ..manual, referenced_workflows: [] }, manual_jobs, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, manual, manual_jobs, heredoc, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, { ..manual, event: "push" }, manual_jobs, caller_source, cutoff).color != "brightgreen"
+expect DownstreamStatus.compatibility(monitored, { ..manual, conclusion: "failure" }, { ..manual_jobs, jobs: [{ ..verdict, conclusion: "failure", steps: [{ name: "Published examples failed", conclusion: "failure" }] }, tracking] }, caller_source, cutoff).color == "red"
+
 expect DownstreamStatus.compatibility(monitored, ran, { ..jobs, jobs: [{ ..verdict, steps: [] }] }, caller_source, cutoff).color != "brightgreen"
 expect DownstreamStatus.compatibility(monitored, ran, { ..jobs, jobs: [{ ..verdict, steps: [{ name: "Published examples failed", conclusion: "failure" }] }] }, caller_source, cutoff).color == "red"
 expect DownstreamStatus.compatibility(monitored, ran, { ..jobs, jobs: [{ ..verdict, steps: [{ name: "Compatibility evidence incomplete", conclusion: "failure" }] }] }, caller_source, cutoff).message == "not tested · fix setup / rerun"
@@ -414,6 +473,12 @@ expect DownstreamStatus.caller(sample).is_err()
 
 ## Origin regressions: local display names and source text are not execution.
 expect DownstreamStatus.caller_job(caller_source, nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("@${current}\n", "@${current} # reviewed pin\n"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("@${current}\n", "@${current}   # reviewed pin\n"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("${nightly_ref.target}@${current}", "'${nightly_ref.target}@${current}' # reviewed pin"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("${nightly_ref.target}@${current}", "\"${nightly_ref.target}@${current}\" # reviewed pin"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("@${current}\n", "@${current}#suffix\n"), nightly_ref).is_err()
+expect DownstreamStatus.caller_job(caller_source.replace_each("${nightly_ref.target}@${current}", "\"${nightly_ref.target}@${current} # inside literal\""), nightly_ref).is_err()
 expect DownstreamStatus.caller_job(caller_source.replace_each("    uses:", "    if: false\n    uses:"), nightly_ref).is_err()
 expect DownstreamStatus.caller_job(caller_source.replace_each("    uses:", "    name: forged\n    uses:"), nightly_ref).is_err()
 expect DownstreamStatus.caller_job(caller_source.replace_each("    uses:", "    runs-on: ubuntu-24.04\n    uses:"), nightly_ref).is_err()

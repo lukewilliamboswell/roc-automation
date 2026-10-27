@@ -1,5 +1,13 @@
 = roc-automation 3
 
+== Accept verified default-selector manual compatibility runs
+
+The dashboard accepts a default-branch manual run when the trusted shared
+tracking job proves that both release and compiler selectors were left empty.
+Maintainers can refresh compatibility after a fix without waiting for the next
+daily run. Historical probes remain excluded, and workflow origin, complete
+attempt evidence and freshness checks still apply.
+
 == Preserve single-runner nightly evidence
 
 The nightly aggregate downloads the selection artifact with target results,

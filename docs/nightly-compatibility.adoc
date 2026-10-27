@@ -293,9 +293,23 @@ repository code.
 
 == Read the downstream dashboard
 
-The README's compatibility column reads the fixed verdict gate of the latest
-scheduled shared workflow, checks its immutable caller still uses the configured
-pin, and links to the run. Verification requires the canonical single-job caller
+The README's compatibility column reads the fixed verdict gate of the newest
+eligible shared workflow, checks its immutable caller still uses the configured
+pin, and links to the run. Scheduled runs qualify. A default-branch manual run
+also qualifies when its successful shared `Track release compatibility` job
+proves both effective selectors were empty. The pinned job's guard excludes
+historical release/compiler overrides. The dashboard validates its exact name,
+shared-workflow origin and run, attempt and source identities, alongside the
+verdict; a local lookalike job cannot establish this proof.
+
+The collector scans up to 50 recent runs in API order, skipping historical or
+otherwise unproven manual runs so they cannot hide an older eligible result.
+If none qualifies, the result stays unknown. A manual run with reporting disabled,
+failed reporting or setup failure before a reportable verdict has no selector
+proof and cannot replace eligible evidence. Empty selectors mean latest when
+selection ran, subject to the same 48-hour freshness window as scheduled runs.
+
+Verification requires the canonical single-job caller
 shown above: one literal job-level `uses`, optional `with` and `permissions`,
 and no local jobs, conditional or matrix on that call. Other caller shapes
 remain unverified. GitHub must record the exact resolved shared workflow path
@@ -307,7 +321,7 @@ static badges retain their last colour. Check the snapshot date and investigate
 publication when it is over 48 hours old before relying on a green result. Development CI,
 pin-updater success and weekly floating-input checks are outside this contract.
 An adoption or infrastructure message means compatibility has not been verified,
-and states the follow-up. Manual historical probes do not replace scheduled
+and states the follow-up. Manual historical probes do not replace eligible
 results. The independent revision column tells maintainers which automation
 SHAs need review and upgrade.
 
