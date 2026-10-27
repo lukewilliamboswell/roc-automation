@@ -386,7 +386,7 @@ jobs:
       # The action at an earlier commit of this repository, which runs its
       # script from source. It publishes the executables that later revisions
       # of the action download.
-      - uses: lukewilliamboswell/roc-automation/actions/publish-release@f21044c2035a71b6fcd2a02cdb333fb11dc797e8
+      - uses: lukewilliamboswell/roc-automation/actions/publish-release@2f8bd90acbfba5b1e6e8a50a0ba3c29a7816f25d
         with:
           version: ${{ needs.build.outputs.version }}
           prerelease: ${{ needs.build.outputs.prerelease }}
