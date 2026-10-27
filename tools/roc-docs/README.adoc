@@ -239,8 +239,8 @@ colours in light/dark modes at desktop/mobile widths. Duplicate-heading aliases
 are checked against deliberate repeated sections rather than manual chapter names.
 Set `CHROME` when its executable is not in the default location. These are test
 host dependencies, not dependencies of the released utility. The upstream
-documentation workflow runs this audit and uploads desktop, mobile and dark-mode
-screenshots as the `docs-browser-review` artifact.
+documentation workflow runs this audit and uploads desktop, mobile, dark-mode
+code and rasterized PDF contents screenshots as the `docs-browser-review` artifact.
 
 `SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
 platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source

@@ -47,7 +47,17 @@ jobs:
       - name: Check PDF contents hierarchy, source colours and layout with the independent reader
         env:
           ROC_DOCS_BINARY: ${{ steps.renderer.outputs.renderer-binary }}
-        run: python3 tools/roc-docs/tests/test_cli.py RendererTests.test_pdf_contents_preserves_heading_hierarchy_and_wrapping RendererTests.test_pdf_contents_alignment_leaders_and_multiple_pages RendererTests.test_rc6_page_references_chapter_headers_callouts_and_rich_lists RendererTests.test_unicode_pdf_destinations_are_encoded_consistently RendererTests.test_pdf_highlighting_accepts_each_supported_language RendererTests.test_independent_reader_pagination_tags_colours_and_source -v
+          PDF: ${{ steps.docs.outputs.pdf-path }}
+        run: |
+          python3 tools/roc-docs/tests/test_cli.py \
+            RendererTests.test_pdf_contents_preserves_heading_hierarchy_and_wrapping \
+            RendererTests.test_pdf_contents_alignment_leaders_and_multiple_pages \
+            RendererTests.test_rc6_page_references_chapter_headers_callouts_and_rich_lists \
+            RendererTests.test_unicode_pdf_destinations_are_encoded_consistently \
+            RendererTests.test_pdf_highlighting_accepts_each_supported_language \
+            RendererTests.test_independent_reader_pagination_tags_colours_and_source -v
+          mkdir -p docs-browser-review
+          pdftocairo -png -r 120 -f 1 -l 2 "$PDF" docs-browser-review/contents
 
       # Python here is an independent test oracle, never part of rendering.
       - name: Verify the rendered manual preserves source inventories and links
@@ -66,7 +76,7 @@ jobs:
           ROC_DOCS_BINARY: ${{ steps.renderer.outputs.renderer-binary }}
         run: node tools/roc-docs/tests/check_html_browser.mjs "$SITE" docs-browser-review
 
-      - name: Upload HTML review screenshots
+      - name: Upload HTML and PDF review screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
