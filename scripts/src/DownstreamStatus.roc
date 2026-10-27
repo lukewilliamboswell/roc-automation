@@ -125,7 +125,7 @@ DownstreamStatus := [].{
 							$keys = $keys.append("job:${pair.before}")
 							$section = pair.before
 							if pair.before == "uses" {
-								if literal(pair.after.trim()) != "${ref.target}@${ref.revision}" {
+								if !literal_reference(pair.after.trim(), "${ref.target}@${ref.revision}") {
 									return Err("caller workflow revision changed")
 								}
 								$seen_uses = Bool.True
@@ -162,6 +162,16 @@ DownstreamStatus := [].{
 
 	identifier = |value| value != "" and Str.to_utf8(value).all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '_' or byte == '-')
 	literal = |value| value.drop_prefix("\"").drop_suffix("\"").drop_prefix("'").drop_suffix("'")
+	literal_reference = |value, expected| [expected, "\"${expected}\"", "'${expected}'"].any(
+		|candidate| {
+			if !value.starts_with(candidate) {
+				Bool.False
+			} else {
+				tail = value.drop_prefix(candidate)
+				tail == "" or (tail.starts_with(" ") and tail.trim_start().starts_with("#"))
+			}
+		},
+	)
 
 	## Both immutable caller structure and GitHub's resolved reusable-workflow
 	## identity bind display-name verdicts to the only executable job origin.
@@ -463,6 +473,12 @@ expect DownstreamStatus.caller(sample).is_err()
 
 ## Origin regressions: local display names and source text are not execution.
 expect DownstreamStatus.caller_job(caller_source, nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("@${current}\n", "@${current} # reviewed pin\n"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("@${current}\n", "@${current}   # reviewed pin\n"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("${nightly_ref.target}@${current}", "'${nightly_ref.target}@${current}' # reviewed pin"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("${nightly_ref.target}@${current}", "\"${nightly_ref.target}@${current}\" # reviewed pin"), nightly_ref) == Ok("nightly")
+expect DownstreamStatus.caller_job(caller_source.replace_each("@${current}\n", "@${current}#suffix\n"), nightly_ref).is_err()
+expect DownstreamStatus.caller_job(caller_source.replace_each("${nightly_ref.target}@${current}", "\"${nightly_ref.target}@${current} # inside literal\""), nightly_ref).is_err()
 expect DownstreamStatus.caller_job(caller_source.replace_each("    uses:", "    if: false\n    uses:"), nightly_ref).is_err()
 expect DownstreamStatus.caller_job(caller_source.replace_each("    uses:", "    name: forged\n    uses:"), nightly_ref).is_err()
 expect DownstreamStatus.caller_job(caller_source.replace_each("    uses:", "    runs-on: ubuntu-24.04\n    uses:"), nightly_ref).is_err()

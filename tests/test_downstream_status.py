@@ -28,7 +28,7 @@ head='b'*40
 target='lukewilliamboswell/roc-automation/.github/workflows/nightly-compatibility.yml'
 file='.github/workflows/nightly.yml'
 scenario=os.environ['FAKE_SCENARIO']
-source='name: Nightly\non:\n  schedule:\n    - cron: "0 0 * * *"\npermissions: {}\njobs:\n  compatibility:\n    permissions:\n      contents: read\n      issues: write\n    uses: '+target+'@'+revision+'\n    with:\n      runners: \'["ubuntu-24.04"]\'\n'
+source='name: Nightly\non:\n  schedule:\n    - cron: "0 0 * * *"\npermissions: {}\njobs:\n  compatibility:\n    permissions:\n      contents: read\n      issues: write\n    uses: '+target+'@'+revision+' # reviewed pin\n    with:\n      runners: \'["ubuntu-24.04"]\'\n'
 if scenario == 'local_spoof':
     source+='  local:\n    name: compatibility / Compatibility verdict\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n'
 if scenario in ['quoted_spoof', 'escaped_quote_spoof', 'doubled_quote_spoof', 'flow_spoof']:
