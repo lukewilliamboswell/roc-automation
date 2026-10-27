@@ -205,8 +205,14 @@ links use destinations within the combined manual, absolute URLs, or the
 downloads. Legacy underscore anchors require explicit migration review.
 Markdown remains available, but its PDF uses only the selected entrypoint and
 does not rewrite links between pages. The bundled fonts have finite coverage;
-unsupported glyphs reject. The PDF prints destination page numbers in its hierarchical contents and uses
-chapter-specific continuation headers. PDF table proportions remain unimplemented. Inputs and
+unsupported glyphs reject. The PDF prints destination page numbers at a common
+right edge in its hierarchical contents, with decorative subsection leaders,
+and uses chapter-specific continuation headers. Page references reserve their
+width before pagination and must fit their resolved values. Independent-reader
+checks compare those numbers with final destinations and inspect their positions;
+browser checks verify code colours, transparent token backgrounds and source
+whitespace in light and dark modes. These checks complement visual review of
+the authored content. PDF table proportions remain unimplemented. Inputs and
 PDF preparation have resource limits; no PDF/UA compliance is claimed.
 
 Keep release-snippet generation, compiler-generated API documentation, historical

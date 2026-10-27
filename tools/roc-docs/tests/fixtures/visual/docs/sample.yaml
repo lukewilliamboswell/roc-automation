@@ -1,0 +1,6 @@
+on: true # café <&>
+port: 42
+name: "green"
+run: |-
+  # shell text inside a YAML string
+  echo "hello"

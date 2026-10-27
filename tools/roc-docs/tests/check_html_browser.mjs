@@ -1,23 +1,40 @@
 // Optional real-browser acceptance audit. Uses Node and an installed Chrome only
 // on the test host; the documentation utility has no browser or Node dependency.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 const site = path.resolve(process.argv[2]);
 const screenshots = process.argv[3];
+assert.ok(process.env.ROC_DOCS_BINARY, 'Set ROC_DOCS_BINARY to the native renderer under review');
+const renderer = path.resolve(process.env.ROC_DOCS_BINARY);
+const fixtures = fileURLToPath(new URL('./fixtures/visual/docs/', import.meta.url));
+const sourceCases = {roc:'sample.roc.txt',yaml:'sample.yaml',yml:'sample.yaml',sh:'sample.sh',bash:'sample.sh',shell:'sample.sh',zsh:'sample.sh',json:'sample.json',diff:'sample.diff',patch:'sample.diff','unknown-language':'sample.txt'};
+const sourceText = Object.fromEntries(await Promise.all(Object.entries(sourceCases).map(async ([language, file]) => [language, await fs.readFile(path.join(fixtures, file), 'utf8')])));
+const corpus = Object.values(sourceText).join('');
+assert.ok(corpus.includes('\t') && / {2}\n/.test(corpus) && corpus.includes('\n\n') && corpus.includes('café') && corpus.includes('<&>'), 'Visual fixture lost its whitespace, Unicode or escaping coverage');
 const chrome = process.env.CHROME || (process.platform === 'darwin'
   ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : 'google-chrome');
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'roc-docs-browser-'));
+const fixtureRoot = path.join(profile, 'fixture');
+const fixtureSite = path.join(fixtureRoot, 'out/site');
+const markdownSite = path.join(profile, 'markdown');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const mime = { '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png', '.pdf': 'application/pdf', '.ttf':'font/ttf' };
 const server = http.createServer(async (req, res) => {
   try {
-    const file = path.resolve(site, '.' + decodeURIComponent(new URL(req.url, 'http://localhost').pathname));
-    if (!file.startsWith(site + path.sep)) throw new Error('Outside site');
+    let pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    let root = site;
+    for (const [prefix, candidate] of [['/__visual/', fixtureSite], ['/__markdown/', markdownSite]]) {
+      if (pathname.startsWith(prefix)) { root = candidate; pathname = pathname.slice(prefix.length - 1); break; }
+    }
+    const file = path.resolve(root, '.' + pathname);
+    if (!file.startsWith(root + path.sep)) throw new Error('Outside site');
     const data = await fs.readFile(file);
     res.writeHead(200, { 'Content-Type': mime[path.extname(file)] || 'application/octet-stream' }); res.end(data);
   } catch { res.writeHead(404); res.end(); }
@@ -30,6 +47,16 @@ let browserError;
 child.on('error', error => { browserError = error; });
 let ws;
 try {
+  await fs.cp(fixtures, path.join(fixtureRoot, 'docs'), {recursive:true});
+  const runRenderer = promisify(execFile);
+  const renderOptions = {env:{...process.env,PATH:'/nonexistent'},timeout:60000,maxBuffer:1024*1024};
+  await runRenderer(renderer, ['build','--workspace',fixtureRoot,'--output-directory','out'], renderOptions);
+  // Both adapters must preserve the code they hand to the highlighter.
+  // CommonMark normalizes CRLF, while the AsciiDoc fixture retains LF bytes.
+  const markdown = '# Markdown sources\n\n' + Object.entries(sourceText).map(([language, text]) => '```' + language + '\n' + text + '```\n').join('\n');
+  const markdownInput = path.join(profile, 'sources.md');
+  await fs.writeFile(markdownInput, markdown.replaceAll('\n','\r\n'));
+  await runRenderer(renderer, ['render',markdownInput,markdownSite,'--html-only'], renderOptions);
   let port;
   for (let n = 0; n < 100; n++) {
     if (browserError) throw browserError;
@@ -60,6 +87,54 @@ try {
     if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
     return response.result.value;
   };
+  const navigate = async url => {
+    await cdp('Page.navigate', {url});
+    let ready = false;
+    for (let n = 0; n < 100; n++) {
+      await pause(50);
+      ready = await evaluate(`location.href === ${JSON.stringify(url)} && document.readyState === 'complete'`);
+      if (ready) break;
+    }
+    assert.ok(ready, `${url}: page did not finish loading`);
+    await evaluate('document.fonts.ready.then(() => true)');
+  };
+  const palettes = {
+    light:{comment:[82,101,115],name:[52,84,164],type:[0,90,133],keyword:[118,57,165],number:[156,61,16],string:[36,99,51],symbol:[70,83,105],invalid:[172,38,52]},
+    dark:{comment:[165,180,196],name:[155,188,255],type:[134,213,235],keyword:[214,173,255],number:[255,192,138],string:[166,214,154],symbol:[196,204,214],invalid:[255,172,183]}
+  };
+  const checkSources = async (scheme, label, expected) => {
+    const state = await evaluate(`({
+      overflow:document.documentElement.scrollWidth > innerWidth,
+      snippets:[...document.querySelectorAll('pre code[data-lang]')].map(code => ({
+        language:code.dataset.lang,text:code.textContent,
+        background:getComputedStyle(code).backgroundColor,
+        panel:getComputedStyle(code.closest('pre')).backgroundColor,
+        scrolls:code.closest('pre').scrollWidth > code.closest('pre').clientWidth,
+        tokens:[...code.querySelectorAll('span')].map(span => ({name:span.className,color:getComputedStyle(span).color,background:getComputedStyle(span).backgroundColor}))
+      }))
+    })`);
+    assert.ok(!state.overflow, `${label}: page overflow in ${scheme} mode`);
+    const panel = scheme === 'dark' ? 'rgb(32, 37, 42)' : 'rgb(245, 245, 242)';
+    for (const snippet of state.snippets) {
+      assert.equal(snippet.panel, panel, `${label}: code panel has the wrong ${scheme} background`);
+      assert.ok([panel,'rgba(0, 0, 0, 0)'].includes(snippet.background), `${label}: code background obscures its panel`);
+      for (const token of snippet.tokens) {
+        assert.equal(token.background, 'rgba(0, 0, 0, 0)', `${label}: opaque ${token.name} token background`);
+        const colour = palettes[scheme][token.name.replace('syntax-','')];
+        assert.ok(colour, `${label}: unknown syntax class ${token.name}`);
+        assert.equal(token.color, `rgb(${colour.join(', ')})`, `${label}: ${token.name} has the wrong ${scheme} colour`);
+      }
+      if (expected) {
+        assert.equal(snippet.text, expected[snippet.language], `${label}: ${snippet.language} source whitespace changed`);
+        if (snippet.language === 'unknown-language') assert.equal(snippet.tokens.length, 0, 'Unknown languages must retain plain text');
+        else assert.ok(snippet.tokens.length > 0, `${label}: missing ${snippet.language} highlighting`);
+      }
+    }
+    if (expected) {
+      assert.deepEqual(state.snippets.map(s=>s.language).sort(), Object.keys(expected).sort(), `${label}: source inventory changed`);
+      assert.ok(state.snippets.some(s=>s.scrolls), `${label}: long source should scroll inside its block`);
+    }
+  };
   await cdp('Page.enable');
   await cdp('Page.bringToFront');
   await cdp('Emulation.setFocusEmulationEnabled', {enabled:true});
@@ -68,15 +143,7 @@ try {
   const inventory = {};
   for (const page of pages) {
     const url = base + page;
-    await cdp('Page.navigate', { url });
-    let ready = false;
-    for (let n = 0; n < 100; n++) {
-      await pause(50);
-      ready = await evaluate(`location.href === ${JSON.stringify(url)} && document.readyState === 'complete'`);
-      if (ready) break;
-    }
-    assert.ok(ready, `${page}: page did not finish loading`);
-    await evaluate('document.fonts.ready.then(() => true)');
+    await navigate(url);
     const state = await evaluate(`({
       ids: [...document.querySelectorAll('[id]')].map(e => e.id),
       links: [...document.querySelectorAll('a[href]')].map(e => e.getAttribute('href')),
@@ -107,10 +174,9 @@ try {
       if (targetPage) assert.ok(targetPage.ids.includes(decodeURIComponent(url.hash.slice(1))), `${page}: broken link ${href}`);
     }
   }
-  await cdp('Page.navigate', { url: base + 'index.html' }); await pause(250);
+  await navigate(base + 'index.html');
   const index = inventory['index.html'];
   assert.ok(index.nested > 0, 'Manual TOC has no hierarchy');
-  assert.ok(index.ids.includes('reporting-2') && index.ids.includes('the-three-workflows-2'), 'Legacy anchors missing');
   assert.equal(index.images.filter(image => image.src.endsWith('.svg')).length, 6, 'Manual must use six vector diagrams');
   assert.equal(await evaluate(`['Space Grotesk','Plus Jakarta Sans'].every(name => [...document.fonts].some(face => face.family.includes(name) && face.status === 'loaded'))`), true, 'Vendored reading fonts not loaded');
   assert.ok(index.sidebars > 0, 'Introduction lost its sidebar/description list');
@@ -147,7 +213,30 @@ try {
     await evaluate('scrollTo({top:0,behavior:"instant"})');
     await fs.writeFile(path.join(screenshots, 'mobile.png'), Buffer.from((await cdp('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   }
-  console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:6,darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed'}, null, 2));
+  for (const scheme of ['light','dark']) {
+    await cdp('Emulation.setEmulatedMedia', {features:[{name:'prefers-color-scheme',value:scheme}]});
+    for (const width of [1440,390]) {
+      await cdp('Emulation.setDeviceMetricsOverride', {width,height:1000,deviceScaleFactor:1,mobile:width===390});
+      for (const page of pages) {
+        await navigate(base + page);
+        await checkSources(scheme, `${page} (${width}px)`);
+      }
+      for (const route of ['__visual/','__markdown/']) {
+        await navigate(base + route + 'index.html');
+        await checkSources(scheme, `${route} (${width}px)`, sourceText);
+        if (route === '__visual/') {
+          const alias = await evaluate(`(()=>{const aliases=[...document.querySelectorAll('.anchor-alias')];const alias=aliases.find(e=>e.id==='repeated-section-2');return {count:aliases.length,target:alias?.nextElementSibling?.id}})()`);
+          assert.equal(alias.count, 1, 'Duplicate-heading fixture must retain its legacy alias');
+          assert.equal(alias.target, 'second-repeated-section', 'Legacy alias must precede the second canonical heading');
+          if (screenshots) {
+            await evaluate(`document.querySelector('pre').scrollIntoView({block:'center'})`);
+            await fs.writeFile(path.join(screenshots, `code-${scheme}-${width}.png`), Buffer.from((await cdp('Page.captureScreenshot',{format:'png'})).data,'base64'));
+          }
+        }
+      }
+    }
+  }
+  console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:6,darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed',sourceFixtures:2,displayCombinations:4}, null, 2));
 } finally {
   // Let Chrome flush its profile and stop renderers before removing it. A
   // parent-only SIGTERM can leave Linux helper processes briefly writing files.
