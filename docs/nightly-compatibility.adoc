@@ -277,6 +277,13 @@ target does not cancel the others. A missing, duplicate, stale-attempt or
 mismatched result cannot produce a passing aggregate. Rerun all jobs when
 retrying a matrix; a successful old target is not current-attempt evidence.
 
+The aggregate download includes the mandatory selection artifact alongside
+target results. The download action flattens a single matching artifact into
+its destination; including selection keeps each result in its named directory
+even for one runner. A workflow regression covers one and multiple runners and
+missing results; a hosted downstream run verifies the artifact service handoff.
+The aggregate still validates every selected target's identities before a pass.
+
 Only an established compatibility failure opens or updates the one tracking
 issue. Only a complete current-attempt pass on every target closes it.
 Infrastructure failure, cancellation, timeout and skipped cases leave that issue

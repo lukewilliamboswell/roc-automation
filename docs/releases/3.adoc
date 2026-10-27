@@ -1,5 +1,12 @@
 = roc-automation 3
 
+== Preserve single-runner nightly evidence
+
+The nightly aggregate downloads the selection artifact with target results,
+so a single result keeps its named directory under download-artifact v8.
+One-runner compatibility can reach its verdict without adding another target;
+missing or mismatched evidence remains a setup failure.
+
 == Focus shared package release tooling
 
 The obsolete compiler-pin PR updater, its configuration wrapper and compiler-branch
