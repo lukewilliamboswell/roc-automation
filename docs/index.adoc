@@ -26,7 +26,7 @@ endif::[]
 ****
 New to the model:: Start with <<how-a-roc-repository-is-maintained>> for the
 compilers involved, the three workflows, and what the model leaves out.
-Pure Roc package:: <<a-pure-roc-package>> says which parts of the model a
+Roc package:: <<a-pure-roc-package>> says which parts of the model a
 package with no host code uses, and which it skips.
 Package maintainer:: Read <<pin-the-tooling-environment>>,
 <<lay-out-the-repository>>, <<examples-and-the-examples-archive>>,

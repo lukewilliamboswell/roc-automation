@@ -1,0 +1,33 @@
+{
+  "apps": [
+    {
+      "cases": [
+        {
+          "args": [],
+          "exit_code": 0,
+          "name": "default",
+          "stderr": "",
+          "stdin": "",
+          "stdout": "Hello from a Roc package, Ada\nHello from a Roc package, Grace\n"
+        }
+      ],
+      "path": "examples/greet/main.roc"
+    },
+    {
+      "cases": [
+        {
+          "args": [],
+          "exit_code": 0,
+          "name": "default",
+          "stderr": "",
+          "stdin": "",
+          "stdout": "Hello from a Roc package\n"
+        }
+      ],
+      "path": "examples/hello.roc"
+    }
+  ],
+  "dependencies": [],
+  "release": "working-tree",
+  "schema_version": 1
+}

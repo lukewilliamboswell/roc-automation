@@ -306,6 +306,80 @@ jobs:
       - name: Provoke the refusals a maintainer must see
         run: python3 tests/check_sbom_chain.py
 
+  # The shared release utility against the Roc package starter: the working
+  # tree's examples, then the bundle, archives and notes it would publish, then
+  # the archived examples against that exact bundle over a loopback address.
+  # The package compiler is fixed here because this tests the utility, not the
+  # starter's compatibility with the moving nightly.
+  release-package:
+    name: Build and test a package release with the shared utility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The utility is built here from source with the tooling compiler, as a
+      # tools release builds it; consumers fetch that release through Blueprint.
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-09-258ab27
+      - id: tool
+        name: Build the release utility with the tooling compiler
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tools"
+          roc build scripts/release_package.roc --output="$RUNNER_TEMP/tools/release-package"
+          echo "binary=$RUNNER_TEMP/tools/release-package" >> "$GITHUB_OUTPUT"
+          # setup-roc finds the first compiler extracted into the workspace, so
+          # the tooling installation goes before the package nightly arrives.
+          rm -rf "$GITHUB_WORKSPACE"/roc_nightly-*
+      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: nightly-2026-10-23-18478ff
+      - name: Build and test the starter's release
+        working-directory: examples/pure-package
+        env:
+          TOOL: ${{ steps.tool.outputs.binary }}
+          RP_REPOSITORY: lukewilliamboswell/roc-package-example
+          RP_DIRECTORY: ${{ runner.temp }}/release-package
+        run: |
+          "$TOOL" test-examples
+          "$TOOL" build 0.0.1-dryrun
+          "$TOOL" test-archive
+          test -s dist/release-notes.md
+          # Two bundles: the package and the data package the directory example depends on.
+          bundles=(dist/roc-package-example-*.tar.zst)
+          test "${#bundles[@]}" = 2
+          compgen -G 'dist/roc-package-example-data-*.tar.zst' > /dev/null
+          grep -c 'releases/download/0.0.1-dryrun/roc-package-example-' dist/release-notes.md | grep -qx 2
+          unzip -Z1 dist/roc-package-example-examples-0.0.1-dryrun.zip | grep -qx 'roc-package-example-examples-0.0.1-dryrun/examples/hello.roc'
+          unzip -Z1 dist/roc-package-example-examples-0.0.1-dryrun.zip | grep -qx 'roc-package-example-examples-0.0.1-dryrun/examples/greet/Format.roc'
+          unzip -Z1 dist/roc-package-example-docs-0.0.1-dryrun.zip | grep -qx '0.0.1-dryrun/index.html'
+      - name: Refuse an archive whose examples were edited after testing
+        working-directory: examples/pure-package
+        env:
+          TOOL: ${{ steps.tool.outputs.binary }}
+          RP_REPOSITORY: lukewilliamboswell/roc-package-example
+          RP_DIRECTORY: ${{ runner.temp }}/release-package-tampered
+        run: |
+          mkdir -p "$RUNNER_TEMP/tampered/roc-package-example-examples-0.0.1-dryrun/examples"
+          cd "$RUNNER_TEMP/tampered"
+          unzip -q "$GITHUB_WORKSPACE/examples/pure-package/dist/roc-package-example-examples-0.0.1-dryrun.zip"
+          sed -i 's/Hello from a Roc package/edited/' roc-package-example-examples-0.0.1-dryrun/spec.json
+          rm "$GITHUB_WORKSPACE/examples/pure-package/dist/roc-package-example-examples-0.0.1-dryrun.zip"
+          zip -q -X -D -r "$GITHUB_WORKSPACE/examples/pure-package/dist/roc-package-example-examples-0.0.1-dryrun.zip" roc-package-example-examples-0.0.1-dryrun
+          cd "$GITHUB_WORKSPACE/examples/pure-package"
+          if "$TOOL" test-archive; then
+            echo '::error::an archive with changed expectations passed'
+            exit 1
+          fi
+          compgen -G "$RP_DIRECTORY/*-expected.json" > /dev/null
+
   # The repository's own Roc scripts, on the pinned tooling compiler. This does
   # not ask GitHub about any repository's settings: that needs administration
   # access, which no workflow token has, so a maintainer runs check-settings.
@@ -332,6 +406,10 @@ jobs:
       - name: Lint workflow contracts
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          actionlint
+          # actionlint 1.7 predates job.workflow_repository and job.workflow_sha,
+          # which the shared release workflow uses to check out its own commit.
+          ignore='property "workflow_(repository|sha)" is not defined in object type'
+          actionlint -ignore "$ignore"
           actionlint examples/pure-package/.github/workflows/ci.yml
+          actionlint examples/pure-package/.github/workflows/release.yml
           actionlint examples/sbom-chain/.github/workflows/release.yml

@@ -41,7 +41,7 @@ main! = |_args| {
 
 	Stdout.line!("\n== Scripts")?
 	# The modules without effects carry the tests of the scripts' logic.
-	for module_name in ["AppHeader", "Compatibility", "DownstreamStatus", "GitHub", "NightlyReport", "Pins", "PublishRelease", "Settings"] {
+	for module_name in ["AppHeader", "Compatibility", "DownstreamStatus", "GitHub", "NightlyReport", "Pins", "PublishRelease", "ReleasePackage", "Settings"] {
 		run!(["test", "scripts/src/${module_name}.roc"])?
 	}
 	for script in scripts {

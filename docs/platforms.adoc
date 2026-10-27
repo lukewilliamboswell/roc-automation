@@ -283,7 +283,7 @@ Choose the smallest lifecycle that fits the project:
 |===
 | Project shape | Lifecycle
 
-| Pure Roc package
+| Roc package
 | Bundle source. No native producer.
 
 | Package with a test-only host

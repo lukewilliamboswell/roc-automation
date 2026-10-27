@@ -25,16 +25,19 @@ build inputs, and the trust model behind the shared actions.
 | `actions/fetch-dependency-sboms` | Fetch suppliers' SBOMs beside locked files and record them for Blueprint to verify |
 
 See [Shared actions](https://lukewilliamboswell.github.io/roc-automation/actions.html)
-for how to use them. Pure Roc packages can start with the complete
-[Nix-free adoption guide](https://lukewilliamboswell.github.io/roc-automation/pure-package.html),
-and a release that publishes SBOM sidecars for a bundle and per-system
-executables can start from [`examples/sbom-chain`](examples/sbom-chain/README.adoc).
+for how to use them. A Roc package releases through the reusable
+[`release-package.yml`](https://lukewilliamboswell.github.io/roc-automation/workflows.html#the-shared-release-workflow-for-a-pure-package)
+workflow from a thin caller, starting from
+[`examples/pure-package`](examples/pure-package/README.adoc), and a release that
+publishes SBOM sidecars for a bundle and per-system executables can start from
+[`examples/sbom-chain`](examples/sbom-chain/README.adoc).
 
 ## Shared native utilities
 
 | Utility | Purpose |
 | --- | --- |
 | [roc-docs](tools/roc-docs/README.adoc) | Build an HTML site and PDF from documentation sources |
+| [release-package](https://lukewilliamboswell.github.io/roc-automation/actions.html#release-package) | Bundle, archive, test and describe a package release, behind the shared release workflow |
 | [roc-build-runner](tools/roc-build-runner/README.adoc) | Execute a versioned build specification with verified isolation and checked inputs and outputs |
 
 The build runner is a standalone Roc program. Consumers pin its source and

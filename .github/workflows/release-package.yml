@@ -1,0 +1,403 @@
+name: Release a Roc package
+
+# A package repository's thin release.yml calls this workflow at a full commit
+# SHA. It builds what a release would contain, tests those exact files, and
+# publishes them once from a job that runs no code from the package. A pull
+# request runs the same build and tests under a version that is never published.
+#
+# The package compiler is the latest Roc nightly, resolved once here, so that a
+# release is tested with what its users will install. The utility that fixes
+# the order, names and checks between the compiler's commands is built from
+# this workflow's own commit, so a caller pins exactly one revision.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to publish, such as 0.14.0 or 0.14.0-rc1; empty builds and tests under 0.0.1-dryrun and publishes nothing
+        type: string
+        default: ''
+      nightly-tag:
+        description: Exact Roc nightly for a diagnostic run; empty resolves the latest
+        type: string
+        default: ''
+      check-task:
+        description: Blueprint task that checks the package and its scripts before packaging; empty skips it
+        type: string
+        default: check
+      setup-command:
+        description: 'JSON argv of one program to run in both read-only jobs before the examples, for a prerequisite the runner image lacks, such as ["sudo", "apt-get", "install", "-y", "pandoc"]; empty runs nothing'
+        type: string
+        default: '[]'
+      sbom-imports:
+        description: Path of the committed record of the suppliers' SBOMs the composition imports, which fetch-dependency-sboms rewrites and the run refuses to change; empty imports none
+        type: string
+        default: ''
+      sbom-author:
+        description: 'SPDX agent that authors SBOM sidecars for the bundle, such as "Person: Jane Doe"; empty publishes none'
+        type: string
+        default: ''
+      sbom-task:
+        description: Blueprint task that writes the reviewed composition to dist/sbom-composition.json before the sidecars are generated; empty uses sbom/composition.json as committed
+        type: string
+        default: ''
+      manual:
+        description: Render docs/ as a PDF release asset with the renderer the docs-path Blueprint task resolves
+        type: boolean
+        default: false
+      docs-task:
+        description: Blueprint task that writes generated manual sources before rendering, given RELEASE_VERSION and BUNDLE_URL; empty skips it
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: The version built and tested, 0.0.1-dryrun for a dry run
+        value: ${{ jobs.build.outputs.version }}
+      nightly:
+        description: The Roc nightly the release was built and tested with
+        value: ${{ jobs.build.outputs.nightly }}
+
+permissions: {}
+
+# One release at a time per repository. A caller must not declare its own
+# concurrency group for the calling job.
+concurrency:
+  group: ${{ inputs.version != '' && format('release-{0}', github.repository) || format('release-dry-run-{0}-{1}', github.repository, github.ref) }}
+  cancel-in-progress: ${{ inputs.version == '' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build and test the source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.request.outputs.version }}
+      prerelease: ${{ steps.request.outputs.prerelease }}
+      nightly: ${{ steps.nightly.outputs.tag }}
+      assets: ${{ steps.assets.outputs.list }}
+    steps:
+      - id: request
+        name: Validate the request
+        env:
+          VERSION: ${{ inputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ -n "$VERSION" ]; then
+            if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] || [ "$GITHUB_REF_TYPE" != branch ] || [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
+              echo "::error::A version is published only by dispatching from the default branch"
+              exit 1
+            fi
+            version="$VERSION"
+          else
+            version=0.0.1-dryrun
+          fi
+          case "$version" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          printf 'version=%s\nprerelease=%s\n' "$version" "$prerelease" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # This workflow's own repository, at the commit the caller pinned.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .roc-automation
+          persist-credentials: false
+
+      - id: nightly
+        name: Resolve the package compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.nightly-tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED" ]; then
+            tag="$REQUESTED"
+          else
+            tag="$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)"
+          fi
+          if [[ ! "$tag" =~ ^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}$ ]]; then
+            echo "::error::$tag is not a Roc nightly tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install the package compiler
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ steps.nightly.outputs.tag }}
+
+      # Blueprint provisions the release-package utility the repository's lock
+      # names, and every other locked tool, as it does for a maintainer.
+      - name: Install Blueprint
+        uses: ./.roc-automation/actions/setup-blueprint
+        with:
+          cache: 'true'
+          cache-workload: release
+
+      - name: Install the prerequisites the package's checks need
+        if: inputs.setup-command != '[]'
+        env:
+          SETUP: ${{ inputs.setup-command }}
+        run: |
+          set -euo pipefail
+          mapfile -t argv < <(jq -er '.[]' <<< "$SETUP")
+          "${argv[@]}"
+
+      - name: Check the package
+        if: inputs.check-task != ''
+        env:
+          TASK: ${{ inputs.check-task }}
+        run: blueprint run "$TASK"
+
+      - name: Check the version against the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RP_DIRECTORY: ${{ runner.temp }}/release-package
+          RP_REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ steps.request.outputs.version }}
+        run: blueprint run release-package -- check-version "$VERSION"
+
+      - name: Test the examples against the working tree
+        env:
+          RP_DIRECTORY: ${{ runner.temp }}/release-package
+          RP_REPOSITORY: ${{ github.repository }}
+        run: blueprint run release-package -- test-examples
+
+      - id: build
+        name: Build the bundles, examples archive, documentation archive and notes
+        env:
+          RP_DIRECTORY: ${{ runner.temp }}/release-package
+          RP_REPOSITORY: ${{ github.repository }}
+          RP_AUTOMATION: ${{ job.workflow_repository }}@${{ job.workflow_sha }}
+          VERSION: ${{ steps.request.outputs.version }}
+        run: blueprint run release-package -- build "$VERSION"
+
+      - name: Prepare the reviewed SBOM composition
+        if: inputs.sbom-author != '' && inputs.sbom-task != ''
+        env:
+          TASK: ${{ inputs.sbom-task }}
+          RELEASE_VERSION: ${{ steps.request.outputs.version }}
+          BUNDLE_PATH: ${{ steps.build.outputs.bundle }}
+          BUNDLE_URL: ${{ steps.build.outputs.url }}
+          SBOM_COMPOSITION: dist/sbom-composition.json
+        run: blueprint run "$TASK"
+
+      - name: Fetch the suppliers' SBOMs the composition imports
+        if: inputs.sbom-author != '' && inputs.sbom-imports != ''
+        uses: ./.roc-automation/actions/fetch-dependency-sboms
+        with:
+          target: source
+          composition: ${{ inputs.sbom-task != '' && 'dist/sbom-composition.json' || 'sbom/composition.json' }}
+          output: ${{ inputs.sbom-imports }}
+
+      - name: Refuse supplier documents that differ from the committed record
+        if: inputs.sbom-author != '' && inputs.sbom-imports != ''
+        env:
+          IMPORTS: ${{ inputs.sbom-imports }}
+        run: git diff --exit-code -- "$IMPORTS"
+
+      - id: sbom
+        name: Generate SBOM sidecars bound to the bundles
+        if: inputs.sbom-author != ''
+        uses: ./.roc-automation/actions/sbom-sidecars
+        with:
+          files: ${{ steps.build.outputs.bundles }}
+          version: ${{ steps.request.outputs.version }}
+          target: source
+          author: ${{ inputs.sbom-author }}
+          composition: ${{ inputs.sbom-task != '' && 'dist/sbom-composition.json' || 'sbom/composition.json' }}
+          imports: ${{ inputs.sbom-imports }}
+          archive-members: ${{ inputs.sbom-task != '' && 'reviewed' || 'generate' }}
+          spdx-2-3: 'true'
+          url-base: https://github.com/${{ github.repository }}/releases/download/${{ steps.request.outputs.version }}
+          namespace-base: https://github.com/${{ github.repository }}/sbom/${{ steps.request.outputs.version }}
+
+      - name: Write the generated manual sources
+        if: inputs.manual && inputs.docs-task != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASK: ${{ inputs.docs-task }}
+          RELEASE_VERSION: ${{ steps.request.outputs.version }}
+          BUNDLE_URL: ${{ steps.build.outputs.url }}
+        run: blueprint run "$TASK"
+
+      - id: renderer
+        name: Resolve the documentation renderer
+        if: inputs.manual
+        uses: ./.roc-automation/actions/blueprint-tool
+        with:
+          task: docs-path
+
+      - id: pdf
+        name: Render the manual as a PDF
+        if: inputs.manual
+        uses: ./.roc-automation/actions/build-docs
+        with:
+          renderer-binary: ${{ steps.renderer.outputs.binary }}
+          site-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          pdf-filename: ${{ github.event.repository.name }}-${{ steps.request.outputs.version }}.pdf
+          docs-version: ${{ steps.request.outputs.version }}
+
+      - id: assets
+        name: List the release assets
+        env:
+          BUNDLES: ${{ steps.build.outputs.bundles }}
+          EXAMPLES: ${{ steps.build.outputs.examples }}
+          DOCS: ${{ steps.build.outputs.docs }}
+          SIDECARS: ${{ steps.sbom.outputs.sidecars }}
+          PDF: ${{ steps.pdf.outputs.pdf-path }}
+        run: |
+          set -euo pipefail
+          if [ -n "$PDF" ]; then
+            cp "$PDF" dist/
+          fi
+          if [ -f LICENSE ]; then
+            cp LICENSE dist/
+          fi
+          {
+            echo "list<<EOF"
+            echo "$BUNDLES"
+            echo "$EXAMPLES"
+            echo "$DOCS"
+            if [ -n "$SIDECARS" ]; then echo "$SIDECARS"; fi
+            if [ -n "$PDF" ]; then echo "dist/$(basename "$PDF")"; fi
+            if [ -f dist/LICENSE ]; then echo "dist/LICENSE"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain command logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-build-logs
+          path: ${{ runner.temp }}/release-package/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  test:
+    name: Test the release candidate
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # The candidate files are tested as the exact bytes that would be
+      # published. The repository is checked out only for its Blueprint, which
+      # provisions the locked utility; no package source is built or run.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .roc-automation
+          persist-credentials: false
+
+      - name: Install the package compiler this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.build.outputs.nightly }}
+
+      - name: Install Blueprint
+        uses: ./.roc-automation/actions/setup-blueprint
+        with:
+          cache: 'true'
+          cache-workload: release
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-candidate
+          path: dist
+
+      # The archived examples need the same prerequisites as the working tree's.
+      - name: Install the prerequisites the examples need
+        if: inputs.setup-command != '[]'
+        env:
+          SETUP: ${{ inputs.setup-command }}
+        run: |
+          set -euo pipefail
+          mapfile -t argv < <(jq -er '.[]' <<< "$SETUP")
+          "${argv[@]}"
+
+      # The archived examples name the release URLs of the bundles, which do not
+      # exist yet: the bundles are served from a loopback address in their place.
+      - name: Test the examples archive, unchanged, against the bundles
+        env:
+          RP_DIRECTORY: ${{ runner.temp }}/release-package
+          RP_REPOSITORY: ${{ github.repository }}
+        run: blueprint run release-package -- test-archive
+
+      - name: Retain command logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-test-logs
+          path: ${{ runner.temp }}/release-package/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish the release
+    needs: [build, test]
+    if: inputs.version != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      # This job checks out no package source and runs no package code. It
+      # publishes the files the jobs above built and tested, through the
+      # shared publisher at this workflow's own commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .roc-automation
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-candidate
+          path: dist
+
+      - name: Attest the tested release assets
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ needs.build.outputs.assets }}
+
+      - name: Stage a draft, verify every uploaded asset, then publish
+        uses: ./.roc-automation/actions/publish-release
+        with:
+          version: ${{ needs.build.outputs.version }}
+          prerelease: ${{ needs.build.outputs.prerelease }}
+          notes-file: dist/release-notes.md
+          assets: ${{ needs.build.outputs.assets }}
+          target: ${{ github.sha }}

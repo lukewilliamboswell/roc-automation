@@ -1,5 +1,17 @@
 = roc-automation 3
 
+== Focus shared package release tooling
+
+The obsolete compiler-pin PR updater, its configuration wrapper and compiler-branch
+release policy are removed. Published-release compatibility reporting and
+maintainer-reviewed updates remain the supported model. Historical full-SHA
+callers retain their old revisions.
+
+Guidance and the starter use "Roc package"; platforms provide host implementations
+and may include native libraries. Repeated starter instructions are consolidated
+in the adoption chapter, and unused release helpers are removed. The starter
+retains file, directory, sibling-module and multiple-bundle release coverage.
+
 == Shared SBOM sidecars and supplier chaining
 
 Two shared actions put Blueprint's standalone SBOM tool, the native
@@ -46,7 +58,7 @@ says where the composition and imports live and what the chain does not prove.
 [#blueprint-08-adoption]
 == Blueprint 0.8 adoption
 
-The repository and the copyable pure-package starter use Blueprint 0.8.0, and
+The repository and the copyable Roc package starter use Blueprint 0.8.0, and
 `actions/setup-blueprint` admits its reviewed `blueprint` binaries on the three
 supported installer systems. The release keeps Spec major 3, Lock 2, lock report
 format 2 and the embedded configuration compiler `nightly-2026-10-21-5349569`,
@@ -61,7 +73,7 @@ reference to a revision on or after this change, as before.
 [#blueprint-parser-adoption]
 == Blueprint 0.7 and parser 3 adoption
 
-The repository and copyable pure-package starter use Blueprint 0.7.0, with
+The repository and copyable Roc package starter use Blueprint 0.7.0, with
 Spec major 3 and Lock 2. Task-only Roc bundles retain their committed URL
 content hashes without provider-lock entries; sandboxed-build bundles remain
 provider-locked. Guidance distinguishes initial bundle verification from reuse
@@ -100,7 +112,7 @@ the simplest kind of repository.
 == A concrete shared utility starter
 
 The shared utility guide gives a working Blueprint consumer, a producer layout
-and interface conventions for new tools. The existing pure-package example
+and interface conventions for new tools. The existing Roc package example
 includes copyable read-only CI and a local quickstart using a real released
 renderer and reviewed lock. Guidance prefers named tasks invoking shared
 executables; local Roc scripts supply product-specific behavior. CI checks the
@@ -270,9 +282,9 @@ The chapter is more exact in three places so that the task can check them:
 This repository now has a `Blueprint.roc` and Roc scripts of its own, checked
 by `blueprint run check`.
 
-== A pure Roc package tests on one runner
+== A Roc package tests on one runner
 
-xref:overview.adoc#a-pure-roc-package[A pure Roc package] names the profile
+xref:overview.adoc#a-pure-roc-package[A Roc package] names the profile
 most repositories follow: no host code, no native inputs, nothing that differs
 by target. Such a package runs each workflow on `ubuntu-latest` only, has no
 matrix and no aggregate job, and skips the platform chapters.
@@ -335,7 +347,7 @@ bundled reading fonts and supports light and dark colour schemes.
 The shared Blueprint setup admits `0.7.0` as well as previously reviewed releases,
 installs Nix only when requested,
 and can cache verified download artifacts by locked logical tool set. A complete
-pure-package example keeps the package nightly floating and declares fixed
+Roc package example keeps the package nightly floating and declares fixed
 tooling and released utilities through `Programs`/`Fetch`. The shared
 `blueprint-tool` handoff resolves persistent paths and optionally reports
 provisioning time, command time/RSS and output sizes. Cold/warm CI fixtures

@@ -146,7 +146,7 @@ See xref:platforms.adoc#upgrade-the-bindings[Upgrade the bindings].
 
 == Maintain released utility downloads
 
-For pure packages, `Programs` and `Fetch` lock released utilities and fixed
+For Roc packages, `Programs` and `Fetch` lock released utilities and fixed
 tooling without Nix. Change the utility recipe in `Blueprint.roc`, run
 `blueprint update`, review per-system URLs, hashes, lengths and download hosts,
 and commit the lock. Keep the package compiler floating independently. Native

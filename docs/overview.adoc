@@ -162,10 +162,13 @@ been released. xref:workflows.adoc#the-three-workflows[The three workflows]
 describes each in full.
 
 [#a-pure-roc-package]
-== A pure Roc package
+== A Roc package
 
-Most repositories are the simplest kind, and the model is at its smallest for
-them. A repository is a pure Roc package when all of these hold:
+Roc packages contain Roc code. Platforms provide the host implementation and
+may include native libraries.
+
+The one-runner testing profile applies to a package repository when all of
+these hold:
 
 * it publishes a package and has no host or platform code;
 * it fetches no native build inputs;
@@ -177,7 +180,7 @@ own CI is there to find. It therefore tests on one runner.
 
 [cols="1,3",options="header"]
 |===
-| Concern | A pure Roc package
+| Concern | A Roc package
 
 | Runners
 | One. `ci.yml`, the test job of `release.yml` and `nightly.yml` each run on `ubuntu-latest` only.

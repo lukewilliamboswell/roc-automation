@@ -11,7 +11,7 @@ installer platforms, each by the reviewed SHA-256 of the published binary.
 Spec major 3, Lock 2, lock report format 2 and the embedded configuration compiler
 `nightly-2026-10-21-5349569` are as in 0.7.0, so a `Blueprint.roc` and
 `Blueprint.lock` written for 0.7.0 are read unchanged and no configuration
-migrates. The repository's own lock and the copyable pure-package starter's lock
+migrates. The repository's own lock and the copyable Roc package starter's lock
 regenerated without a change under 0.8.0.
 
 ## SBOM sidecars and supplier chaining

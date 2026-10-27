@@ -58,6 +58,18 @@ upstream compiler produced a harmless artifact.
 | `contents: write`, behind a protected environment
 | No: it runs `actions/publish-release` on artifacts produced by earlier jobs
 
+| Shared `release-package.yml` build
+| `contents: read`
+| Yes: one prerequisite program the caller names, the package's `check` task, its examples and the compiler, beside the `release-package` utility its lock fixes
+
+| Shared `release-package.yml` test
+| `contents: read`
+| The repository's Blueprint, to provision the locked utility; otherwise only the archived examples from the build job's artifact, against the bundles from the same artifact
+
+| Shared `release-package.yml` publish
+| `contents: write`, `id-token: write`, `attestations: write`, behind the `release` environment
+| No: roc-automation's own checkout at the caller's pinned SHA, `actions/attest` and `actions/publish-release` on the build job's artifact
+
 | `release.yml` site deploy
 | `pages: write`, `id-token: write`
 | No: it deploys an artifact built by a read-only job
@@ -251,7 +263,7 @@ can configure Nix with the job's default token. The report/publisher actions
 retain their explicit token-clearing checks described above. An optional cache
 requiring `id-token: write` must remain an explicit caller choice; the artifact
 cache here requires no such token permission. See
-xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete pure-package adoption guide].
+xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Roc package adoption guide].
 
 == SBOM sidecars and supplier documents
 

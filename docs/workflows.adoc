@@ -9,12 +9,12 @@ one question, and none of them changes the repository.
 
 | `ci.yml`
 | Pull request; push to the default branch
-| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly.
+| Scripts pass on `roc-stable`. The working tree and its examples pass on the latest nightly. A platform's committed host bindings match that nightly. A Roc package has no `ci.yml`: its release dry run proves the same things.
 | `contents: read`
 
 | `release.yml`
 | Manual dispatch; pull request as a dry run
-| The exact bundle, examples archive and documentation proposed for publication work.
+| The exact bundle, examples archive and documentation proposed for publication work. A Roc package's `release.yml` is a thin caller of the shared `release-package.yml`.
 | `contents: read`. The publish job alone has `contents: write`, behind a protected environment.
 
 | `nightly.yml`
@@ -69,8 +69,10 @@ per target. Compilation has its own budget. Sustained searches and measured
 benchmarks run only in schedule/manual jobs with explicit event guards; see
 xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[Heavy runs stay out of pull-request CI].
 
-A xref:overview.adoc#a-pure-roc-package[pure Roc package] runs this as one job
-on `ubuntu-latest`, and that job's name is the required status check.
+A xref:overview.adoc#a-pure-roc-package[Roc package] has no `ci.yml`. The
+xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[shared release workflow]
+runs `blueprint run check` and the examples on every pull request as part of
+its dry run, and its two job names are the required status checks.
 
 A repository whose code can behave differently by target runs it as a matrix,
 one job per runner, and ends with a single aggregate job that requires every
@@ -90,6 +92,87 @@ branch before treating a failure as a regression in the pull request.
 publishes them once. A maintainer dispatches it from the default branch with a
 version. A pull request runs the same build and tests as a dry run and publishes
 nothing.
+
+[#the-shared-release-workflow-for-a-pure-package]
+=== The shared release workflow for a Roc package
+
+A Roc package keeps no release logic of its own. Its `release.yml` calls
+roc-automation's `.github/workflows/release-package.yml` at a full commit SHA:
+
+[source,yaml]
+----
+include::../examples/pure-package/.github/workflows/release.yml[]
+----
+
+The shared workflow runs three jobs. *Build and test the source* resolves the
+latest nightly once, runs the package's `check` task, checks the version with
+`roc bump` against the latest release, runs the working-tree examples, and
+builds the bundle, the examples archive, the API documentation archive and the
+notes. *Test the release candidate* checks out no package source: it downloads
+those exact files and runs the archived examples against the bundle over a
+loopback address. *Publish the release* runs only for a dispatched version on
+the default branch, in the `release` environment; it attests the tested files
+and hands them to xref:actions.adoc#publish-release[`actions/publish-release`].
+
+The bundles, the archives, the notes and both example runs are one utility,
+xref:actions.adoc#release-package[`release-package`], a static executable from
+a roc-automation tools release that the repository's Blueprint fetches by
+digest and names as the `release-package` task. The workflow checks out its
+own repository with `job.workflow_sha` for the shared actions it uses, so the
+caller's SHA fixes the workflow and the lock fixes the utility; the package
+compiler is the latest nightly, installed by the workflow. A maintainer runs
+the same task locally with that compiler on `PATH`:
+
+[source,sh]
+----
+blueprint run release-package -- test-examples            # the working tree's examples against tests/spec.json
+blueprint run release-package -- test-examples --update   # record what they print now, as a reviewable diff
+blueprint run release-package -- build 0.0.1-dryrun       # the bundles, archives and notes, into dist/
+blueprint run release-package -- test-archive             # the archive in dist/ against the bundles in dist/
+----
+
+The inputs are the version, an exact nightly for a diagnostic run, the name of
+the Blueprint task that checks the package and one program to run before it for
+a prerequisite the runner lacks, an SBOM author with an optional composition
+task and supplier-imports record when the release publishes sidecars, and a
+`manual` switch with an optional task that writes generated manual sources
+before the PDF is rendered. With the
+calling job named `Release`, the required status checks are
+`Release / Build and test the source` and `Release / Test the release candidate`.
+The caller declares no concurrency group: the shared workflow holds one release
+at a time per repository.
+
+A platform keeps a `release.yml` of its own along the lines below.
+
+==== Adopt the shared workflow in an existing repository
+
+The move from a copied release workflow is the same in every package so far.
+
+. Blueprint 0.8 with a `check` task that runs the package's own checks, and the
+  `release` environment and `release-package` task from
+  xref:actions.adoc#release-package[the utility's section], followed by
+  `blueprint update` for the lock. A check that takes longer than a few
+  minutes, such as fuzzing or conformance suites, stays in the repository's own
+  `ci.yml`; pass `check-task: ''` then, so that the release dry run stays fast.
+. Every example depends on the package by relative path and names no `roc`
+  compiler; the release notes record the compiler instead. A `.roc` file under
+  `examples/` without an `app` header is a shared module. An example that
+  prints the clock or anything else that varies takes an argument or input
+  that makes a case deterministic: a skipped case never passes.
+. `release-package test-examples --update` writes `tests/spec.json` with one
+  case per application and records what it prints; review that diff, then add
+  cases.
+. Notes in `docs/releases/<version>.adoc` open with `= <name> <version>` and
+  use `{package-url}`, plus `{<dir>-url}` for each further bundle.
+. The thin `release.yml`, then delete the scripts and workflow jobs that
+  bundled, archived, tested examples, rendered notes or published, and `ci.yml`
+  when `check-task` runs the checks.
+. SBOM sidecars need Blueprint 0.8, `sbom/composition.json` and an author; a
+  manual PDF needs the roc-docs renderer behind a `docs-path` task. A
+  repository without either leaves those inputs unset and keeps its own
+  documentation workflow.
+. Update the ruleset's required checks to the two shared job names, and after
+  the first green dry run, a maintainer dispatches the next release.
 
 === What a release contains
 
@@ -276,11 +359,20 @@ hosting.
 
 === Several bundles in one release
 
-A repository that publishes several packages or platforms builds one bundle and
-one examples archive for each, in the same run, under the same version. Each
-archive names only its own bundle, plus any sibling bundle its examples need.
-The release notes list every bundle URL by name. All of them are tested before
-any of them is published.
+A repository that publishes several packages or platforms builds one bundle for
+each, in the same run, under the same version, and one examples archive whose
+specification names every bundle URL. The release notes list every bundle URL
+by name. All of them are tested before any of them is published.
+
+The shared release workflow derives the bundles from the examples: every
+package root an example depends on by relative path is bundled, tested and
+published, and a package no example exercises is not released. The repository's
+own package is `package/main.roc`; another is `<dir>/package/main.roc`, such as
+`tzdb/package/main.roc`. A release with one bundle keeps the bare `<hash>.tar.zst`
+name. With several, the repository's own package becomes `<name>-<hash>.tar.zst`
+and the other `<name>-<dir>-<hash>.tar.zst`, and its placeholder in the notes
+is `{<dir>-url}` beside `{package-url}`. Every tracked file in a package's
+directory goes into its bundle, modules and data alike.
 
 Two bundles under one tag need different names as well as different hashes.
 Roc identifies a package by its URL with the version and the content hash
@@ -396,7 +488,7 @@ flowchart LR
   compiler invocation. Default-branch code may only provision native prerequisites
   in the read-only test job.
 * Run on every target the release is tested on: the one runner of a
-  xref:overview.adoc#a-pure-roc-package[pure Roc package], or the same matrix
+  xref:overview.adoc#a-pure-roc-package[Roc package], or the same matrix
   as `ci.yml`.
 * A platform's host bindings are not checked here. A released host is fixed;
   what matters is whether its applications still build and run.

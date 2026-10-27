@@ -26,7 +26,7 @@ consumer configuration retain their own verification and trust requirements.
 
 Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
 installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
-and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the pure-package adoption guide].
+and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the Roc package adoption guide].
 The setup action builds nothing.
 
 The executable cache is enabled by default. Its exact identity includes the
@@ -193,6 +193,38 @@ runners provide. On a runner with an empty Nix store, installing Nix and
 downloading the environment is most of the job's time: the environment is about
 a gigabyte once unpacked, so allow a minute or two. The script itself finishes
 in seconds.
+
+[#release-package]
+== The `release-package` utility
+
+The utility behind the
+xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[shared release workflow]
+is not an action. It is `scripts/release_package.roc`, built by the tooling
+compiler and published as a static executable in each tools release, like
+roc-docs. A repository's `Blueprint.roc` fetches it by digest and names it as
+the `release-package` task, so the workflow and a maintainer run the same bytes:
+
+[source,roc]
+----
+Environment("release", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.5.0/release-package-{system}"))]), Expect(["roc", "git", "gh", "tar", "unzip", "zip", "chmod", "touch", "env"])]),
+Task("release-package", [Use("release"), Run(["release-package"])]),
+----
+
+[source,sh]
+----
+blueprint run release-package -- test-examples            # the working tree's examples against tests/spec.json
+blueprint run release-package -- test-examples --update   # record what they print now; writes the specification when it is missing
+blueprint run release-package -- check-version 0.14.0     # roc bump against the latest release's bundles; needs gh
+blueprint run release-package -- build 0.14.0             # dist/: bundles, examples archive, API docs archive, notes
+blueprint run release-package -- test-archive             # the archive in dist/ against the bundles in dist/
+----
+
+The package compiler is the `roc` on `PATH`, or `RP_COMPILER`. `RP_REPOSITORY`
+is the `owner/name` the bundle URLs name; it defaults to `GITHUB_REPOSITORY`
+and then to the `origin` remote. `RP_DIRECTORY` keeps the numbered command
+records and output streams of every compiler and example command, the same
+files the nightly runner preserves. The tools release names the compiler the
+utility was built with; the lock fixes its bytes.
 
 == `actions/release-compatibility`
 
