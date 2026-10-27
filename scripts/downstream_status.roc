@@ -62,38 +62,42 @@ compatibility! = |snapshot, cutoff| {
 		Ok(value) => value
 		Err(reason) => return Ok({ ..fallback, message: reason, detail: "Adopt the pinned shared published-release nightly workflow. Pin updaters, development CI and weekly floating-input checks do not establish this compatibility result." })
 	}
-	runs_source = match get!("repos/${snapshot.repository}/actions/workflows/${ref.file.drop_prefix(".github/workflows/")}/runs?event=schedule&per_page=1", "application/vnd.github+json", "[.workflow_runs[] | {id, run_attempt, path, referenced_workflows: [(.referenced_workflows // [])[] | {path, sha}], head_sha, head_branch, event, status, conclusion: (.conclusion // \"\"), updated_at}]")? {
+	runs_source = match get!("repos/${snapshot.repository}/actions/workflows/${ref.file.drop_prefix(".github/workflows/")}/runs?per_page=50", "application/vnd.github+json", "[.workflow_runs[] | {id, run_attempt, path, referenced_workflows: [(.referenced_workflows // [])[] | {path, sha}], head_sha, head_branch, event, status, conclusion: (.conclusion // \"\"), updated_at}]")? {
 		Ok(source) => source
 		Err(_) => return Ok(fallback)
 	}
 	runs : Try(List(DownstreamStatus.Run), _)
 	runs = Json.parse(runs_source)
-	ran = match runs {
-		Ok([found]) if DownstreamStatus.sha(found.head_sha) => found
-		Ok([]) => return Ok({ ..fallback, message: "no scheduled result · run nightly" })
-		_ => return Ok(fallback)
+	found = match runs {
+		Ok(values) => values
+		Err(_) => return Ok(fallback)
 	}
 	default_branch = match get!("repos/${snapshot.repository}", "application/vnd.github+json", ".default_branch")? {
 		Ok(source) => source.trim()
 		Err(_) => return Ok(fallback)
 	}
-	if ran.head_branch != default_branch {
-		return Ok(fallback)
+	# The API lists newest runs first. Historical manual probes must not hide
+	# an older eligible run; a bounded scan with no evidence stays unknown.
+	for ran in found.keep_if(|candidate| ["schedule", "workflow_dispatch"].contains(candidate.event) and candidate.head_branch == default_branch and DownstreamStatus.sha(candidate.head_sha)) {
+		caller_source = match get!("repos/${snapshot.repository}/contents/${ref.file}?ref=${ran.head_sha}", "application/vnd.github.raw+json", "")? {
+			Ok(source) => source
+			Err(_) => return Ok(fallback)
+		}
+		jobs_source = match get!("repos/${snapshot.repository}/actions/runs/${ran.id.to_str()}/attempts/${ran.run_attempt.to_str()}/jobs?per_page=100", "application/vnd.github+json", "{total_count, jobs: [.jobs[] | {id, run_id, run_attempt, head_sha, name, status, conclusion: (.conclusion // \"\"), steps: [(.steps // [])[] | {name, conclusion: (.conclusion // \"\")}]}]}")? {
+			Ok(source) => source
+			Err(_) => return Ok(fallback)
+		}
+		jobs : Try(DownstreamStatus.Jobs, _)
+		jobs = Json.parse(jobs_source)
+		complete = match jobs {
+			Ok(value) => value
+			Err(_) => return Ok(fallback)
+		}
+		if ran.event == "schedule" or DownstreamStatus.default_dispatch(snapshot, ran, complete, caller_source) {
+			return Ok(DownstreamStatus.compatibility(snapshot, ran, complete, caller_source, cutoff))
+		}
 	}
-	caller_source = match get!("repos/${snapshot.repository}/contents/${ref.file}?ref=${ran.head_sha}", "application/vnd.github.raw+json", "")? {
-		Ok(source) => source
-		Err(_) => return Ok(fallback)
-	}
-	jobs_source = match get!("repos/${snapshot.repository}/actions/runs/${ran.id.to_str()}/attempts/${ran.run_attempt.to_str()}/jobs?per_page=100", "application/vnd.github+json", "{total_count, jobs: [.jobs[] | {id, run_id, run_attempt, head_sha, name, status, conclusion: (.conclusion // \"\"), steps: [(.steps // [])[] | {name, conclusion: (.conclusion // \"\")}]}]}")? {
-		Ok(source) => source
-		Err(_) => return Ok(fallback)
-	}
-	jobs : Try(DownstreamStatus.Jobs, _)
-	jobs = Json.parse(jobs_source)
-	match jobs {
-		Ok(found) => Ok(DownstreamStatus.compatibility(snapshot, ran, found, caller_source, cutoff))
-		Err(_) => Ok(fallback)
-	}
+	Ok({ ..fallback, message: "no eligible result · run nightly" })
 }
 
 head! = |repository| {

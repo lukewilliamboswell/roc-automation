@@ -110,6 +110,36 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
         self.assertNotIn("setup-command:", report)
         self.assertIn("inputs.nightly-tag == '' && inputs.release-tag == ''", report)
 
+    def test_report_job_proves_default_selectors_for_manual_badges(self):
+        import ast
+        import itertools
+        import re
+
+        def evaluate(node):
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.BoolOp):
+                values = [evaluate(value) for value in node.values]
+                return all(values) if isinstance(node.op, ast.And) else any(values)
+            if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq):
+                return evaluate(node.left) == evaluate(node.comparators[0])
+            raise AssertionError("unsupported report guard")
+
+        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
+        report = workflow.split("\n  report:\n", 1)[1]
+        self.assertIn("name: Track release compatibility", report)
+        guard = re.search(r"^    if: (.+)$", report, re.MULTILINE).group(1)
+        guard = guard.replace("always()", "True").replace("&&", " and ").replace("||", " or ")
+        for enabled, nightly, release, outcome in itertools.product(
+                (False, True), ("", "nightly-old"), ("", "old-release"), ("success", "failure", "none")):
+            with self.subTest(enabled=enabled, nightly=nightly, release=release, outcome=outcome):
+                context = {"inputs.report-issue": enabled, "inputs.nightly-tag": nightly,
+                           "inputs.release-tag": release, "needs.aggregate.outputs.report": outcome}
+                expression = re.sub(r"\b(?:inputs|needs)\.[A-Za-z_.-]+",
+                                    lambda match: repr(context[match.group()]), guard)
+                self.assertEqual(evaluate(ast.parse(expression, mode="eval").body),
+                                 enabled and not nightly and not release and outcome in ("success", "failure"))
+
     def test_every_remote_reference_is_immutable_and_only_report_can_write(self):
         import re
         workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
