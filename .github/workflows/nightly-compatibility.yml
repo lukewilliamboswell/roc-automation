@@ -153,7 +153,9 @@ jobs:
           path: ${{ runner.temp }}/nightly-selection
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          pattern: compatibility-*
+          # A single match is flattened even with merge-multiple: false. The
+          # mandatory selection artifact preserves named target directories.
+          pattern: '{compatibility-*,nightly-selection}'
           path: ${{ runner.temp }}/nightly-evidence
       - id: aggregate
         name: Classify target evidence

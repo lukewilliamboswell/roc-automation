@@ -10,6 +10,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless((ROOT / ".github/workflows/nightly-compatibility.yml").is_file(), "workflow source is not part of the standalone artifact")
 class CompatibilityWorkflowSecurityTests(unittest.TestCase):
+    def test_aggregate_finds_single_and_multiple_target_artifacts(self):
+        import fnmatch
+
+        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
+        aggregate = workflow.split("\n  aggregate:\n", 1)[1].split("\n  report:\n", 1)[0]
+        download = aggregate.split("pattern:", 1)[1].split("      - id: aggregate", 1)[0]
+        pattern = download.splitlines()[0].strip().strip("'\"")
+        # The pinned action uses Minimatch brace alternatives. These fixtures
+        # use its simple name globs and cardinality-dependent extraction layout.
+        alternatives = pattern.strip("{}").split(",")
+        for runners in (("ubuntu-24.04",), ("ubuntu-24.04", "macos-15")):
+            for missing in (False, True):
+                with self.subTest(runners=runners, missing=missing), tempfile.TemporaryDirectory() as temporary:
+                    names = ["nightly-selection", "unrelated-artifact"]
+                    names += [f"compatibility-{runner}" for runner in runners if not missing or runner != runners[-1]]
+                    selected = [name for name in names if any(fnmatch.fnmatchcase(name, glob) for glob in alternatives)]
+                    self.assertNotIn("unrelated-artifact", selected)
+                    for name in selected:
+                        # download-artifact v8 flattens exactly one match.
+                        destination = Path(temporary) if len(selected) == 1 else Path(temporary) / name
+                        destination.mkdir(exist_ok=True)
+                        filename = "selection.json" if name == "nightly-selection" else "result.json"
+                        (destination / filename).write_text("{}")
+                    discovered = [(Path(temporary) / f"compatibility-{runner}" / "result.json").is_file()
+                                  for runner in runners]
+                    self.assertEqual(all(discovered), not missing)
+
     def test_consumer_checkout_requires_default_branch_schedule_or_dispatch(self):
         import ast
         import itertools
