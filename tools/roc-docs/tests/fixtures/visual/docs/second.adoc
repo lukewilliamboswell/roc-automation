@@ -1,0 +1,7 @@
+= Second chapter
+
+== Repeated section
+
+These headings deliberately exercise the legacy duplicate-heading alias.
+
+xref:first.adoc#repeated-section[First occurrence].

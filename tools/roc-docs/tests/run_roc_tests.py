@@ -14,7 +14,6 @@ import sys
 PACKAGES = {
     'BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze',
     '4W8SHzvwet9hH9qZewJ1J1CVQoH7YKA6zyijWFTB3y1w',
-    'BRKYfdjzNFJmhx5c3Do9gTnW7FrZuYqoUzMcg1FHkYBf',
 }
 SUITES = ['highlight', 'html', 'assets', 'png', 'preparation', 'source_includes', 'build_options']
 
@@ -34,7 +33,7 @@ def known_warnings(output):
 
 
 def build_with_known_warnings(status, output):
-    return status == 2 and bool(re.search(r'(?m)^0 errors and [1-9][0-9]* warnings found .* while successfully building:', output)) and known_warnings(output)
+    return status == 2 and bool(re.search(r'(?m)^0 errors and [1-9][0-9]* warnings? found .* while successfully building:', output)) and known_warnings(output)
 
 
 def main():

@@ -1,0 +1,8 @@
+= Visual regression fixture
+:doctype: book
+:sectnums:
+:toclevels: 3
+
+include::first.adoc[leveloffset=+1]
+
+include::second.adoc[leveloffset=+1]

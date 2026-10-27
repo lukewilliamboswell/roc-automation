@@ -12,10 +12,12 @@ class CompilerWarningsTests(unittest.TestCase):
         diagnostic = '── ● unreachable code ─ ../../.cache/roc/packages/'+next(iter(runner.PACKAGES))+'/Module.roc:1:1\n'
         output = diagnostic+'0 errors and 19 warnings found in 5m while successfully building:\n'
         self.assertTrue(runner.build_with_known_warnings(2, output))
+        self.assertTrue(runner.build_with_known_warnings(2, output.replace('19 warnings','1 warning')))
         self.assertFalse(runner.build_with_known_warnings(1, output))
         self.assertFalse(runner.build_with_known_warnings(2, output.replace('0 errors','1 errors')))
         self.assertFalse(runner.build_with_known_warnings(2, diagnostic))
         self.assertFalse(runner.build_with_known_warnings(2, output.replace('unreachable code','unused variable')))
+        self.assertFalse(runner.build_with_known_warnings(2, output.replace(next(iter(runner.PACKAGES)), 'unreviewed-package')))
 
     def test_only_passing_tests_with_pinned_dependency_warning_are_accepted(self):
         diagnostic = '── ● unreachable code ─ ../../.cache/roc/packages/'+next(iter(runner.PACKAGES))+'/Module.roc:1:1\n'

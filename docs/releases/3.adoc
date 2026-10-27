@@ -390,3 +390,15 @@ Markdown links and standard discovery relations; chapter references and anchors
 remain usable under project-site paths. The manual uses this default, with
 independent content and link verification before publication. Literal AsciiDoc
 inline code preserves attribute placeholders across all published formats.
+
+== PDF contents layout and HTML visual checks
+
+The native PDF contents aligns page numbers at a common right edge and uses
+dotted leaders for subsections. Wrapped titles keep their indentation, and
+their page numbers remain beside the final title line. Entries retain linked,
+selectable text; decorative leaders stay out of text extraction.
+
+The HTML browser audit now verifies actual source colours and transparent token
+backgrounds in light and dark modes at desktop and mobile widths. Dedicated
+AsciiDoc and Markdown fixtures check tabs, trailing spaces, Unicode, long lines,
+plain-code fallback and duplicate-heading aliases.

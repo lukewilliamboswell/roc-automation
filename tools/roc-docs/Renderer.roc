@@ -279,11 +279,11 @@ Renderer :: [].{
 			_ => entries
 		}
 		tree = contents_items(selected, 0, 0, 0)
-		if (tree.items.is_empty()) contents else contents.append(Pdf.bullet_list(tree.items))
+		contents.concat(tree.items)
 	}
 
 	ContentsEntry : { level : U8, label : Str, id : Str }
-	contents_items : List(ContentsEntry), U64, U8, U8 -> { items : List(Pdf.ListItem), next : U64 }
+	contents_items : List(ContentsEntry), U64, U8, U8 -> { items : List(Document.Block), next : U64 }
 	contents_items = |entries, start, parent_level, depth| {
 		var $next = start
 		var $items = []
@@ -298,8 +298,10 @@ Renderer :: [].{
 			# a book's H2/H3/H4 chapters receive three useful contents levels.
 			if depth < 3 {
 				label = if (depth == 0) [Pdf.strong([Pdf.text(entry.label)])] else [Pdf.text(entry.label)]
-				body = [Pdf.rich_paragraph([Pdf.inline_internal_link(label, Destination.encode(entry.id)), Pdf.text("  "), Pdf.inline_internal_link([Pdf.page_reference({ destination: Destination.encode(entry.id), width: 32 })], Destination.encode(entry.id))])]
-				$items = $items.append(Pdf.list_item(if (children.items.is_empty()) body else body.append(Pdf.bullet_list(children.items))))
+				$items = $items.append(Pdf.contents_entry({ title: label, reference: { destination: Destination.encode(entry.id), width: 32 }, indent: Layout.Unit.points(depth.to_i64() * 18), leader: if (depth == 0) NoLeader else Dots }))
+				for child in children.items {
+					$items = $items.append(child)
+				}
 			}
 		}
 		{ items: $items, next: $next }

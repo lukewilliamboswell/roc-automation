@@ -1,0 +1,4 @@
+  plain café <&>
+	spaces and tabs stay readable  
+
+last line

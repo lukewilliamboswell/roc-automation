@@ -219,6 +219,65 @@ class RendererTests(unittest.TestCase):
         self.assertNotIn('OmittedDeep', words)
         line = next(line for line in page.findall('.//{*}line') if any(w.text == 'WrappedMarker' for w in line.findall('{*}word')))
         self.assertAlmostEqual(float(line.findall('{*}word')[0].attrib['xMin']), words['SectionBeta'], delta=0.5)
+        numbers = [w for w in page.findall('.//{*}word') if (w.text or '').isdigit() and float(w.attrib['yMin']) < 780]
+        self.assertEqual(len(numbers), 7)
+        for number in numbers:
+            self.assertAlmostEqual(float(number.attrib['xMax']), 533, delta=0.5)
+        final_baseline = float(next(w for w in line.findall('{*}word') if w.text == 'WrappedMarker').attrib['yMax'])
+        self.assertEqual(sum(abs(float(w.attrib['yMax']) - final_baseline) < .5 for w in numbers), 1)
+        self.assertNotIn('•', ''.join(w.text or '' for w in page.findall('.//{*}word')))
+
+    @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler independent reader')
+    def test_pdf_contents_alignment_leaders_and_multiple_pages(self):
+        chapters = ['## Entry%03d {#entry-%03d}\n\nBody%03d.\n' % (n, n, n) for n in range(105)]
+        chapters[0] += '\n### Café subsection {#café}\n\n#### Detail marker {#detail}\n\n##### Omitted marker\n'
+        source = '# Contents layout probe\n\n' + '\n'.join(chapters)
+        output, _ = self.run_doc(source, '--title', 'Contents layout probe', '--version', 'audit', '--pdf-only')
+        pdf = output/'manual.pdf'
+        destinations = subprocess.check_output(['pdfinfo', '-dests', str(pdf)], text=True)
+        targets = {name:int(page) for page,name in re.findall(r'^\s*(\d+) .*"([^"]+)"$', destinations, re.M)}
+        first_body = targets['entry-000']
+        self.assertGreater(first_body, 2, 'Fixture must require multiple contents pages')
+        bbox = ET.fromstring(subprocess.check_output(['pdftotext', '-bbox-layout', str(pdf), '-'], text=True))
+        pages = bbox.findall('.//{*}page')[:first_body-1]
+        references = []
+        for page in pages:
+            words = [w for w in page.findall('.//{*}word') if float(w.attrib['yMin']) < 780]
+            numbers = [w for w in words if (w.text or '').isdigit()]
+            references.extend(numbers)
+            for number in numbers:
+                self.assertAlmostEqual(float(number.attrib['xMax']), 533, delta=.5)
+            for word in words:
+                target = ('entry-' + word.text[5:]) if re.fullmatch(r'Entry\d{3}', word.text or '') else {'Café':'caf%C3%A9','Detail':'detail'}.get(word.text)
+                if target:
+                    same_row = [n for n in numbers if abs(float(n.attrib['yMax']) - float(word.attrib['yMax'])) < .5]
+                    self.assertEqual(len(same_row), 1, word.text)
+                    self.assertEqual(int(same_row[0].text), targets[target])
+            self.assertNotIn('•', ''.join(w.text or '' for w in words))
+        self.assertEqual(len(references), 107)
+        self.assertEqual({len(w.text) for w in references}, {1,2,3})
+        text = subprocess.check_output(['pdftotext', '-layout', str(pdf), '-'], text=True).split('\f')[:first_body-1]
+        self.assertNotRegex(''.join(text), r'\.{3,}', 'Decorative leaders must not enter extracted text')
+        structure = subprocess.run(['pdfinfo', '-struct-text', str(pdf)], capture_output=True, text=True, check=True).stdout
+        self.assertIn('Entry000', structure)
+        self.assertIn('Link', structure)
+        self.assertNotIn('•', structure)
+        # Every subsection leader is visible geometry, rather than selectable dots.
+        svg = self.root/'contents.svg'
+        subprocess.run(['pdftocairo', '-svg', '-f', '1', '-l', '1', str(pdf), str(svg)], check=True, capture_output=True)
+        dots = []
+        for path in ET.parse(svg).findall('.//{*}path'):
+            drawing = path.attrib.get('d', '')
+            if set(re.findall(r'[A-Za-z]', drawing)) - {'M','L','Z'}:
+                continue
+            values = [float(n) for n in re.findall(r'-?\d+(?:\.\d+)?', drawing)]
+            if len(values) not in (8,10):
+                continue
+            xs, ys = values[::2], values[1::2]
+            if min(xs) >= 62 and .45 <= max(xs)-min(xs) <= .75 and .45 <= max(ys)-min(ys) <= .75:
+                dots.append((min(xs),min(ys)))
+        self.assertGreater(len(dots), 20, 'Subsection leaders must paint visible decorative dots')
+
     @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdfinfo') and shutil.which('pdftocairo'), 'Poppler optional independent reader')
     def test_pdf_highlighting_accepts_each_supported_language(self):
         snippets = {

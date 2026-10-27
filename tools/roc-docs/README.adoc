@@ -47,7 +47,7 @@ a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
 The parser package pins roc-parser 3.0.0. `Preparation.roc` adapts its real
 AsciiDoc syntax tree and virtual-file preprocessor. HTML preserves description
 lists, sidebars, captions and table column weights directly from that tree;
-PDF uses roc-pdf 0.1.0-rc6 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
+PDF uses roc-pdf 0.2.0-rc1 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
 Includes, backend conditionals, attributes and cross-references are resolved
 against the supplied source tree; there is no remote include loader or source
 execution. See link:PREPARATION.adoc[the preparation contract] for the supported
@@ -73,16 +73,18 @@ Supported rendering blocks include headings, paragraphs, fenced source,
 ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported
 rendering nodes reject explicitly. PDF quotes, sidebars and admonitions use
 splittable callouts; rich lists retain attached source, figures and tables.
-The PDF uses rc6 destination page references and chapter-aware running headers.
+The PDF uses exact destination page references and chapter-aware running headers.
 PDF table column weights remain unimplemented. Existing Asciidoctor YAML themes are
 incompatible and reject on the native backend; the initial native theme is
 built in. These are explicit experimental authoring/presentation boundaries,
 not a claim of complete Asciidoctor compatibility.
 
-The printed PDF contents uses nested linked lists with bold chapter entries
-and three levels of heading ancestry. A leading heading matching the book
-title is omitted from the contents, and wrapped titles keep their item's
-indentation. Printed page numbers resolve to the final physical destination pages.
+The printed PDF contents has linked entries with bold chapter titles and three
+levels of heading ancestry. Page numbers share the content area's right edge;
+subsections use dotted leaders. A leading heading matching the book title is
+omitted. Wrapped titles retain their indentation, with the number beside the
+final title line. Printed numbers resolve to final physical destination pages;
+leaders are decoration and do not enter extracted text.
 
 Use `--site-url https://example.com/project/` (or the action's `site-url` input)
 for PDF links to website-only chapters, API routes and downloads. The utility
@@ -203,8 +205,8 @@ python3 tools/roc-docs/tests/run_roc_tests.py
 ----
 
 The suite runner requires a passing test summary. On the pinned compiler it
-accepts warning status 2 only for unreachable-code warnings in the three pinned
-dependencies; warnings in local code, other diagnostics and failed tests reject.
+accepts warning status 2 only for unreachable-code warnings in the explicitly
+listed pinned dependencies; warnings in local code, other diagnostics and failed tests reject.
 
 Python is used by the upstream build/test harness and independent reference
 adapter under `tests/`. The build wrapper applies the same pinned-dependency
@@ -225,11 +227,16 @@ For a real-browser acceptance audit of the built roc-automation manual, use Node
 
 [source,sh]
 ----
-node tools/roc-docs/tests/check_html_browser.mjs .docs-out/site /tmp/roc-docs-screenshots
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  node tools/roc-docs/tests/check_html_browser.mjs .docs-out/site /tmp/roc-docs-screenshots
 ----
 
 The audit checks every page's links, loaded images and highlighting, then desktop
 navigation, mobile overflow/contents controls, column ratios and vector selection.
+It builds dedicated AsciiDoc and Markdown fixtures with the supplied renderer,
+checking source whitespace, transparent token backgrounds and actual palette
+colours in light/dark modes at desktop/mobile widths. Duplicate-heading aliases
+are checked against deliberate repeated sections rather than manual chapter names.
 Set `CHROME` when its executable is not in the default location. These are test
 host dependencies, not dependencies of the released utility. The upstream
 documentation workflow runs this audit and uploads desktop, mobile and dark-mode
