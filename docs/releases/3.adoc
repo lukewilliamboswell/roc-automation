@@ -1,5 +1,19 @@
 = roc-automation 3
 
+== Correctness and memory testing with roc-fuzz
+
+The testing guidance recommends roc-fuzz 0.5 alongside unit and integration
+tests for pure Roc code. It covers named regression examples, allocation
+assertions and measurements, exact accepted baselines, logical trace rules and
+coverage-guided exploration. Compact properties provide broad generated input
+coverage without large committed datasets, and downstream projects evolve
+targets as review reveals new invariants. Exact baseline review is distinguished from
+ceiling-based ratchets: both increases and reductions require acceptance.
+Fast PR checks select examples and bounded replay explicitly; sustained searches
+retain their separate schedule/manual workflow. Verification never accepts
+baselines automatically, and unbaselined or inconclusive work establishes no
+allocation protection or passing search evidence.
+
 == Fuzz targets in the shared examples suite
 
 Schema 1 suites may opt an application into `roc build --fuzz` through an

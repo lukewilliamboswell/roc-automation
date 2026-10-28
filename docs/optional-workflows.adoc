@@ -94,8 +94,10 @@ permissions and deploys an artifact built by a read-only job.
 == Fuzzing
 
 Fuzz targets are written with roc-fuzz; see
-xref:testing.adoc#property-based-tests-with-roc-fuzz[Property-based tests with roc-fuzz]
-for why and how.
+xref:testing.adoc#property-based-tests-with-roc-fuzz[Correctness and memory properties with roc-fuzz]
+for why and how. Named regression examples, memory assertions and accepted
+allocation baselines run in fast PR checks. This workflow adds sustained
+exploration; roc-fuzz's default 60-second `run` is not a PR smoke command.
 
 `fuzz.yml` runs sustained campaigns on a schedule or manual dispatch. It has no
 pull-request trigger, and campaign jobs explicitly accept only those two event
@@ -120,17 +122,25 @@ campaign; ten minutes per target across dozens of targets is not a ten-minute
 job. Bound each input's time and memory as well as the campaign's search time,
 and leave headroom in the job timeout for building, cleanup and uploading logs.
 
+Use `TARGET run CORPUS --report-dir=PATH` to check declared examples and exact
+baselines before exploration, and write one supervised report. Choose a fresh
+report directory for each invocation. Baseline failures skip exploration;
+verification never invokes `accept`. Missing baseline entries are `unbaselined`,
+so review and commit the intended baseline inventory before relying on it.
+
 Restore and save the evolving corpus through the Actions cache, separately
 from the small committed PR smoke corpus. Cache absence starts a new search;
 it never excuses a missing target. Preserve crash inputs, raw stdout/stderr and
 the run metadata as artifacts even when testing fails. Reproduce findings with
 the saved input, not the random seed alone. A property failure, crash or
-per-input timeout fails the job; a campaign that reaches its configured search
-limit normally may pass. Job cancellation, missing reports and infrastructure
-timeouts are incomplete work, never a successful campaign.
+per-input timeout, allocation assertion or baseline change fails the job. A
+campaign that reaches its configured search limit normally may pass. Zero
+accepted exploration inputs are inconclusive and unsuccessful. Job cancellation,
+missing reports and infrastructure timeouts are incomplete work, never a
+successful campaign.
 
-`ci.yml` gives every target a smoke run: it builds the target and replays the
-small committed corpus within the
+`ci.yml` gives every target a smoke run: it builds the target, checks named
+examples and accepted baselines, and replays the small committed corpus within the
 xref:testing.adoc#heavy-runs-stay-out-of-pull-request-ci[one-second workload budget].
 That keeps targets building between campaigns. Sustained searches and their
 `--opt=speed` builds stay in the campaign job.
@@ -166,11 +176,11 @@ conditions. Record source and compiler identities beside the baseline and raw
 measurements so a comparison is interpretable. Hosted-runner variance needs an
 explicit measurement policy; do not turn timing noise into a PR failure.
 
-A measurement that depends on the compiler, such as an allocation count, is
-compared as a ratchet: the build fails when the value is worse than the recorded
-ceiling, and a maintainer lowers the ceiling when it improves. It is never
-compared for equality, because the compiler floats and an exact value would fail
-on a compiler that did better.
+For a ceiling-based allocation ratchet, fail when the count exceeds the bound
+and lower the ceiling when it improves. roc-fuzz's accepted allocation baselines
+use exact matching instead, so both increases and reductions need review. See
+xref:testing.adoc#allocation-properties-and-exact-baselines[Allocation properties and exact baselines]
+for choosing and maintaining these checks.
 
 == Linker inputs
 
