@@ -75,9 +75,11 @@ on the actual default branch. The shared concurrency group serializes runs, so
 an older failure cannot race a newer passing report.
 
 `runners` accepts a unique, non-empty JSON array drawn from `ubuntu-22.04`,
-`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, `macos-26`, `windows-2022` and
-`windows-2025`. The Windows labels run native x64 executables. Name the complete
-release matrix. Windows uses the same archive admission, compiler diagnostics,
+`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, `macos-15-intel`, `macos-26`,
+`windows-2022` and `windows-2025`. `macos-15-intel` runs the `x64mac` target
+natively, and the Windows labels run native x64 executables. Name the complete
+release matrix: a target no runner executes contributes no evidence, so it is
+cross-compiled only. Windows uses the same archive admission, compiler diagnostics,
 case deadlines and aggregate evidence contract as Linux and macOS; the runner
 adds the native `.exe` suffix automatically.
 

@@ -26,8 +26,8 @@ Compatibility := [].{
 	native_path = |value, windows| if windows value.replace_each("/", "\\") else value
 	valid_repository = GitHub.valid_repository
 
-	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-26", "windows-2022", "windows-2025"]
-	valid_runners = |values| !values.is_empty() and values.len() <= 7 and values.all(|value| runners.contains(value)) and unique(values).len() == values.len()
+	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "macos-26", "windows-2022", "windows-2025"]
+	valid_runners = |values| !values.is_empty() and values.len() <= runners.len() and values.all(|value| runners.contains(value)) and unique(values).len() == values.len()
 	tag = |value| value != "" and Str.to_utf8(value).len() <= 100 and GitHub.is_plain(value, "-._+") and !value.starts_with("-")
 	version = |value| match Str.split_on(value.drop_prefix("v"), ".") {
 		[a, b, c] => [a, b, c].all(GitHub.is_digits)
@@ -237,6 +237,13 @@ expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "inco
 expect Compatibility.aggregate(selection, "10", "1", [{ ..result, asset_digest: "changed" }]).report == "none"
 expect Compatibility.aggregate(selection, "10", "1", [result, result]).report == "none"
 
+# Intel macOS is one target among the others: it must report, and its failure fails the whole.
+macs = { ..selection, runners: ["macos-15", "macos-15-intel"] }
+expect Compatibility.aggregate(macs, "10", "1", [{ ..result, runner: "macos-15" }, { ..result, runner: "macos-15-intel" }]) == { outcome: "compatible", report: "success" }
+expect Compatibility.aggregate(macs, "10", "1", [{ ..result, runner: "macos-15" }]) == { outcome: "setup-failed", report: "none" }
+expect Compatibility.aggregate(macs, "10", "1", [{ ..result, runner: "macos-15" }, { ..result, runner: "macos-15-intel", outcome: "incompatible", failed: 1 }]) == { outcome: "incompatible", report: "failure" }
+expect Compatibility.aggregate(macs, "10", "1", [{ ..result, runner: "macos-15" }, { ..result, runner: "macos-15-intel", tested: 0 }]) == { outcome: "not-tested", report: "none" }
+
 expect Compatibility.valid_environment([{ name: "DISPLAY", value: ":99" }])
 expect !Compatibility.valid_environment([{ name: "GH_TOKEN", value: "secret" }])
 expect !Compatibility.valid_environment([{ name: "PATH", value: "/tmp" }])
@@ -246,6 +253,7 @@ expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "test
 expect Compatibility.aggregate(selection, "10", "1", [{ ..result, outcome: "output-limit" }]) == { outcome: "output-limit", report: "none" }
 
 expect Compatibility.valid_runners(["windows-2022", "windows-2025"])
+expect Compatibility.valid_runners(["macos-15", "macos-15-intel"]) and !Compatibility.valid_runners(["macos-13"])
 expect !Compatibility.valid_environment([{ name: "Path", value: "x" }])
 expect !Compatibility.valid_environment([{ name: "gh_token", value: "x" }])
 expect !Compatibility.valid_environment([{ name: "Display", value: "x" }, { name: "DISPLAY", value: "y" }])
