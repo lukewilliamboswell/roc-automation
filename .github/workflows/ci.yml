@@ -145,8 +145,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        include:
+          - { runner: ubuntu-24.04, nix: 'true', version: '' }
+          - { runner: ubuntu-24.04-arm, nix: 'true', version: '' }
+          - { runner: macos-15, nix: 'true', version: '' }
+          # Windows runs Blueprint without Nix, from the first release with a
+          # Windows binary; this repository's own Blueprint.roc names an older one.
+          - { runner: windows-2025, nix: 'false', version: 0.9.0 }
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -154,18 +163,23 @@ jobs:
       - id: blueprint
         uses: ./actions/setup-blueprint
         with:
-          install-nix: 'true'
+          install-nix: ${{ matrix.nix }}
+          version: ${{ matrix.version }}
       - name: Check the installed command
         env:
           BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
           VERSION: ${{ steps.blueprint.outputs.version }}
+          NIX: ${{ matrix.nix }}
         run: |
-          # The action took the release from Blueprint.roc; the binary must agree.
+          # The action took the release from Blueprint.roc or its input; the binary must agree.
           test -n "$VERSION"
           test "$(blueprint --version)" = "$VERSION"
-          test "$(command -v blueprint)" = "$BLUEPRINT"
-          nix --version
-          blueprint --help
+          # Git Bash spells the Windows path differently; the file must still be the one installed.
+          if [ "$RUNNER_OS" = Windows ]; then test -f "$BLUEPRINT"; else test "$(command -v blueprint)" = "$BLUEPRINT"; fi
+          if [ "$NIX" = true ]; then
+            nix --version
+            blueprint --help
+          fi
   nightly-report-action:
     runs-on: ubuntu-24.04
     permissions:
