@@ -270,8 +270,8 @@ Use two complementary checks:
   baseline. Named measurements isolate operations within the property.
 
 These checks have different review rules. A ceiling fails only when the count
-exceeds the bound; lower it when an improvement should be protected. roc-fuzz
-0.5's baselines match exactly, including example inventory, revisions, actual
+exceeds the bound; lower it when an improvement should be protected. roc-fuzz's
+baselines match exactly, including example inventory, revisions, actual
 input digests, measurement regions, metric version and statistics. Reductions
 also require review and explicit acceptance. A compiler improvement should
 therefore update a baseline deliberately, rather than silently changing what
@@ -311,7 +311,7 @@ delimiter, the two values that are equal, the length one past a boundary.
 A property-based test helps close that gap. You state a rule that must hold for
 every valid input, and a tool searches for an input that breaks it.
 
-https://github.com/lukewilliamboswell/roc-fuzz/releases/tag/0.5.0[roc-fuzz 0.5.0]
+https://github.com/lukewilliamboswell/roc-fuzz[roc-fuzz]
 combines correctness properties, named examples, allocation baselines, logical
 traces and coverage-guided exploration in one self-contained target executable.
 It is a development platform: a target is a small Roc application that imports

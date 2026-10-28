@@ -2,7 +2,7 @@
 
 == Correctness and memory testing with roc-fuzz
 
-The testing guidance recommends roc-fuzz 0.5 alongside unit and integration
+The testing guidance recommends roc-fuzz alongside unit and integration
 tests for pure Roc code. It covers named regression examples, allocation
 assertions and measurements, exact accepted baselines, logical trace rules and
 coverage-guided exploration. Compact properties provide broad generated input
