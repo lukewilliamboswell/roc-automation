@@ -9,6 +9,13 @@ The rule is that every Roc program in the repository runs in pull-request CI,
 even if only briefly. This chapter says what runs, how much of it, and how the
 tests are organised.
 
+Start with `expect` tests for concrete behavior and integration cases for the
+program boundary. Use roc-fuzz alongside them to check rules over generated
+inputs, preserve named regressions and measure memory behavior. Pure Roc code
+needs both value correctness and allocation properties: returning the right
+value does not show whether an update reused storage or copied it. Keep these
+checks fast on pull requests, and explore new inputs in separate campaigns.
+
 [#risk-test-evidence]
 == Risks and controls for test evidence
 
@@ -39,14 +46,14 @@ establish search depth, performance or complete test coverage.
 | Integration tests
 | The test driver, over its full list of cases
 
-| Allocation ratchets
-| The cases that record an allocation ceiling, on a test platform that counts allocations
+| Allocation checks
+| Allocation properties and recorded examples, checked against reviewed ceilings or accepted exact baselines
 
 | Benchmarks
 | A smoke run: each benchmark builds and completes a small, bounded iteration
 
 | Fuzz targets
-| A smoke run: each target builds and replays a small committed corpus
+| A smoke run: each target builds, checks its declared examples and replays a small committed corpus
 
 | Scripts
 | The `expect` tests of the modules under `scripts/src/`
@@ -239,37 +246,76 @@ can turn an in-place update into a copy of a whole list, on every call. The
 result is still correct, every test still passes, and the package is now
 several times slower for its users.
 
-Most packages and platforms should therefore test on a platform that counts
-allocations, and hold the counts with ratchets.
+Use https://github.com/lukewilliamboswell/roc-fuzz[roc-fuzz] as a test platform
+for pure package code. Its host measures allocations, reallocations,
+deallocations, requested bytes and live/peak memory. Test the hot paths and
+operations users call in a loop, including empty, boundary-sized, uniquely
+owned and shared inputs.
 
-* Use a test platform whose host records allocations, reallocations and frees
-  while a case runs, and reports the counts to the harness.
-* Record a ceiling for the cases that matter: the hot paths, and the
-  operations users will call in a loop.
-* The harness fails a case whose count exceeds its ceiling, and prints the
-  ceiling beside the measured value.
-* A ceiling is a ratchet. It is compared as "no more than", never for
-  equality, because the compiler floats and a newer one may do better. When a
-  count improves, lower the ceiling in the same pull request so the gain cannot
-  be lost quietly.
-* Raising a ceiling is a reviewed decision with a stated reason, not a way to
-  make a red build green.
+=== Allocation properties and exact baselines
 
-Allocation counts are deterministic for a given compiler, which makes them a
-far steadier signal than timing. They run in pull-request CI with everything
-else; wall-clock benchmarks do not.
+Use two complementary checks:
 
-== Property-based tests with roc-fuzz
+* *Properties over inputs.* Assert a memory rule inside the target, such as
+  "this operation allocates nothing" or "this update performs at most one
+  allocation or reallocation". The assertion runs for declared examples,
+  replayed inputs and generated inputs. Use `Fuzz.expect_allocs_at_most!` for
+  a ceiling, or use a named `Fuzz.measure!` region and inspect its statistics
+  for a more specific rule. A measurement returns
+  `{ value, stats }`, so correctness and memory behavior can be checked together.
+* *Exact observations for named examples.* Declare representative cases with
+  `Fuzz.example({ name, revision, make: || value })`, or preserve a witness
+  with `Fuzz.saved({ name, revision, bytes })`. roc-fuzz checks each in a fresh
+  process and compares its allocation observations with an explicitly accepted
+  baseline. Named measurements isolate operations within the property.
+
+These checks have different review rules. A ceiling fails only when the count
+exceeds the bound; lower it when an improvement should be protected. roc-fuzz's
+baselines match exactly, including example inventory, revisions, actual
+input digests, measurement regions, metric version and statistics. Reductions
+also require review and explicit acceptance. A compiler improvement should
+therefore update a baseline deliberately, rather than silently changing what
+CI accepts. Commit baselines for each supported host and named profile; record
+the compiler and build options with the evidence.
+
+`check` verifies examples and accepted baselines without exploration. A missing
+entry is reported as `unbaselined` and permits normal execution; it is not
+allocation regression protection. Review the declared inventory and measurements,
+run `accept` explicitly, and commit the resulting baseline before treating
+checks as evidence of a protected allocation contract. CI runs `check` or `run`,
+never `accept`.
+
+Allocation evidence depends on the measured scope and storage shape. roc-fuzz
+measures the property after input generation/decoding and before adapter teardown;
+named regions narrow that scope further. Keep aliases alive when testing shared
+storage, and observe returned values so the intended operation remains relevant.
+A logically equal value can have different capacity, sharing or slices. Preserve
+original witness bytes for storage-sensitive failures: reconstructing a value
+in an `expect` test may lose the allocation behavior that exposed the bug.
+
+Counts are a steadier PR signal than wall-clock timings, but they depend on the
+compiler, host, build and lifetime of values. Review baseline diffs alongside
+correctness results, and use a deliberate failing assertion or changed baseline
+to verify that the harness detects a regression. A pass covers the checked
+examples and explored inputs; it does not prove an allocation bound for all
+inputs. roc-fuzz also supports logical trace rules (`Before`, `Count` and
+`Forbidden`) for ordering and event invariants. These are logical observations;
+wall-clock performance belongs in the separate benchmark workflow.
+
+[#property-based-tests-with-roc-fuzz]
+== Correctness and memory properties with roc-fuzz
 
 Unit tests and integration cases check the inputs someone thought of. Most bugs
 live in the inputs nobody thought of: the empty list, the string that ends in a
 delimiter, the two values that are equal, the length one past a boundary.
-A property-based test closes that gap. You state a rule that must hold for
-every input, and a tool searches for an input that breaks it.
+A property-based test helps close that gap. You state a rule that must hold for
+every valid input, and a tool searches for an input that breaks it.
 
-https://github.com/lukewilliamboswell/roc-fuzz[roc-fuzz] is that tool for Roc.
-It is a platform: a fuzz target is a small Roc application that names what
-values to try, what code to run, and what must be true afterwards.
+https://github.com/lukewilliamboswell/roc-fuzz[roc-fuzz]
+combines correctness properties, named examples, allocation baselines, logical
+traces and coverage-guided exploration in one self-contained target executable.
+It is a development platform: a target is a small Roc application that imports
+the package under test. The shipped package does not depend on roc-fuzz.
 
 [cols="1,3",options="header"]
 |===
@@ -282,7 +328,10 @@ values to try, what code to run, and what must be true afterwards.
 | Calls the package code under test
 
 | Property
-| Decides whether the result is acceptable for that input
+| Checks value correctness, memory behavior or a logical invariant
+
+| Examples
+| Named cases and saved witnesses that run independently of corpus retention
 |===
 
 === Why it suits pure Roc code
@@ -292,13 +341,18 @@ for this kind of testing.
 
 * *Nothing to set up.* A pure function needs no files, network, clock or
   state. The target calls it with a generated value and inspects the result.
-* *Failures reproduce exactly.* The same input always gives the same output, so
-  a saved failing input is a complete bug report. There is no flakiness to rule
-  out.
+* *Value failures reproduce readily.* Pure functions have no external state
+  to recreate. Preserve the original input and the matching target, compiler
+  and build configuration, especially when memory behavior is involved.
 * *Properties are easy to state.* Pure code invites rules that hold for every
   input: decoding an encoded value returns the original; formatting twice
   changes nothing the second time; a parser returns an error and never crashes;
   an optimised implementation agrees with a simple one.
+* *Compact tests cover many cases.* A short property and generator can exercise
+  millions of inputs over successive campaigns without committing a large
+  dataset. Keep a small set of named examples and useful regression witnesses
+  in source control; let generated inputs supply the breadth. The number
+  explored depends on the operation and budget, so report actual counts.
 * *The search is guided.* roc-fuzz watches which parts of the compiled program
   each input reaches and keeps the inputs that reach something new, so it works
   its way into branches that random values would rarely hit.
@@ -335,6 +389,10 @@ test = |initial| {
 }
 
 target = Fuzz.target_with({
+	examples: [
+		Fuzz.example({ name: "empty", revision: "1", make: || [] }),
+		Fuzz.example({ name: "nonempty", revision: "1", make: || [1, 2, 3] }),
+	],
 	name: "stack-push-pop",
 	generator: Fuzz.list(Fuzz.u8, 8),
 	test,
@@ -344,23 +402,86 @@ target = Fuzz.target_with({
 
 The target depends on the working tree by relative path, like every other Roc
 application in the repository, and on a roc-fuzz release by URL. It lives
-under `fuzz/`, outside the package root, so it is never bundled.
+under `fuzz/`, outside the package root, so it is never bundled. Use the
+content-addressed platform URL and compatible compiler documented in the
+https://github.com/lukewilliamboswell/roc-fuzz/releases/latest[release notes].
+
+Build once, then use the commands embedded in the executable:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+./stack-fuzz check
+# After reviewing the observations, explicitly accept and commit the baseline.
+./stack-fuzz accept
+./stack-fuzz check
+# Local exploration; the default run searches for 60 seconds after checking.
+./stack-fuzz run
+----
+
+`check` runs declared examples and baseline checks without searching. `run`
+checks them before exploring, and skips exploration when those checks fail.
+Use `run --report-dir=PATH` for campaign evidence; the report directory must be
+absent or empty. Bare invocation also runs the default workflow, so PR tasks
+must select `check` and bounded replay explicitly rather than accidentally
+starting a 60-second search. The default baseline is
+`<declared-target-name>_baseline.json` in the working directory; use
+`--baseline=PATH` and `--profile=NAME` when needed.
+
+For an allocation-aware target, use an effectful property and
+`Fuzz.target_with!`. For example, popping a stack can check the returned
+length while asserting that it performs no allocations or reallocations:
+
+[source,roc]
+----
+test! : List(U8) => Fuzz.Outcome
+test! = |initial| {
+	popped = Fuzz.expect_allocs_at_most!(0, || Stack.pop(initial))
+	match popped {
+		Ok({ value: _, rest }) if rest.len() + 1 == initial.len() => Fuzz.keep
+		Err(Empty) if initial.is_empty() => Fuzz.keep
+		_ => crash "pop returned the wrong length"
+	}
+}
+----
+
+Pass `test!` in place of `test` to `Fuzz.target_with!`, keeping the generator,
+examples and display function. Replace the measured operation and property
+with the package's actual memory contract. The
+https://lukewilliamboswell.github.io/roc-fuzz/quality.html[roc-fuzz quality guide]
+explains named measurements, baselines, trace rules and report fields.
 
 === How targets are managed
+
+Treat targets as part of continuing downstream development. During reviews,
+ask which rules the code relies on and which memory behaviors matter to its
+callers. Turn newly discovered invariants into properties, refine generators
+as the useful input domain becomes clearer, and add named examples when a
+failure exposes a missing case. Revisit targets as APIs and implementations
+evolve: a growing understanding of the package should produce stronger checks,
+not just a larger collection of fixed test data.
 
 * Write one operation and one property per target, so that a failure says what
   went wrong.
 * Add a target when a module has a rule that should hold for all inputs. Every
   parser and every encode and decode pair should have one.
-* When roc-fuzz finds a bug, fix it and keep the minimised input as an ordinary
-  `expect` test. The unit test stops that bug returning; the target keeps
-  searching for the next one.
+* When roc-fuzz finds a bug, replay and minimise it, fix it, and use `retain`
+  to preserve the witness as a named `Fuzz.saved` example. Add an ordinary
+  `expect` test for the value-level regression when useful. Keep original
+  storage-sensitive witnesses even when a smaller logical example is available.
 * Commit a small corpus for each target. Pull-request CI builds every target
-  and replays that corpus as its smoke run.
+  and checks its named examples and allocation assertions, accepted baselines
+  and bounded corpus replay as its smoke run.
 * Run the real search on a schedule, as described in
   xref:optional-workflows.adoc#fuzzing[Fuzzing].
 
-A weak property finds nothing, and a passing fuzz run is not a proof. The
+Validate preconditions for decoded examples as well as generated values;
+generator bounds express search bias, not input validation. Report attempted,
+accepted and rejected inputs. Exploration with zero accepted inputs is
+inconclusive and unsuccessful. Distinguish the outcome from allocation validity,
+trace-rule results and capture completeness in the evidence.
+
+A weak property finds nothing, and a passing run is not a proof. The
 https://lukewilliamboswell.github.io/roc-fuzz/[roc-fuzz manual] covers writing
 generators and properties, running campaigns, and reading a saved failure.
 
