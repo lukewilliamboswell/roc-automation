@@ -168,9 +168,13 @@ run! = |argv, cwd, problem| {
 ## symbolic link or special file is an error, so nothing outside the tree is
 ## ever read or archived.
 all_files! = |directory| {
-	prefix = "${Path.display(directory)}/"
 	found = walk!(Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")?, [])?
-	Ok(GitHub.sort(found.map(|path| Path.display(path).drop_prefix(prefix))))
+	windows = match Env.platform!().os {
+		WINDOWS => Bool.True
+		_ => Bool.False
+	}
+	relative = found.map_try(|path| ReleasePackage.relative_file(Path.display(directory), Path.display(path), windows).map_err(|_| "${Path.display(path)} is outside ${Path.display(directory)}"))?
+	Ok(GitHub.sort(relative))
 }
 
 walk! = |entries, found|

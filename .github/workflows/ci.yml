@@ -43,6 +43,7 @@ jobs:
         run: |
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_archive.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_compatibility.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_release_package_examples.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_workflow.py -v
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_compatibility_packaging.py -v
       - name: Verify dashboard verdict origin using the native utility

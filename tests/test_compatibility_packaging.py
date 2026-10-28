@@ -53,7 +53,7 @@ class CompatibilityPackagingTests(unittest.TestCase):
                                   str(artifact / "compatibility-tests/tests"), "-v"],
                                  cwd=artifact, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-            self.assertIn("Ran 41 tests", ran.stderr)
+            self.assertIn("Ran 40 tests", ran.stderr)
             if os.name == "nt":
                 self.assertIn("OK (skipped=2)", ran.stderr)
                 self.assertIn("POSIX executable permission admission", ran.stderr)

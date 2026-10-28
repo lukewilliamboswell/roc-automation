@@ -8,6 +8,8 @@ while preserving its diagnostics and requiring exact stdout and normal exit
 codes. Missing fields preserve ordinary builds and exact comparisons. The
 shared release and nightly runners use the same behavior, with hosted Linux
 and Apple Silicon tests for replay, bounded search and expected target failures.
+Working-tree baseline updates normalize Windows directory-listing separators
+before copying relative files into their scratch tree.
 
 == Accept verified default-selector manual compatibility runs
 

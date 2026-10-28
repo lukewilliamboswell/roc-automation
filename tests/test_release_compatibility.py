@@ -240,32 +240,6 @@ else:
                 self.assertNotEqual(ran.returncode, 0)
                 self.assertEqual(json.loads((directory / "result.json").read_text())["failed"], 1)
 
-    @unittest.skipUnless(os.environ.get("ROC_RELEASE_PACKAGE_BINARY"), "set ROC_RELEASE_PACKAGE_BINARY to test baseline updates")
-    def test_baseline_update_preserves_build_and_stream_policies(self):
-        (self.root / "examples").mkdir()
-        (self.root / "package").mkdir()
-        (self.root / "tests").mkdir()
-        (self.root / "package/main.roc").write_text("package []\n")
-        (self.root / "examples/main.roc").write_text('app [main!] { lib: "../package/main.roc" }\n')
-        self.spec.update(release="working-tree", dependencies=[])
-        self.spec["apps"][0]["build_args"] = ["--fuzz"]
-        self.case.update(stderr_match="ignore", stderr="old unstable statistics", stdout="old output")
-        specification = self.root / "tests/spec.json"
-        specification.write_text(json.dumps(self.spec))
-        evidence = self.root / "update-evidence"
-        ran = subprocess.run([os.environ["ROC_RELEASE_PACKAGE_BINARY"], "test-examples", "--update"],
-                             cwd=self.root, env={**self.env, "RP_REPOSITORY": "o/pkg", "RP_NAME": "pkg",
-                             "RP_COMPILER": self.env["RA_COMPILER"], "RP_DIRECTORY": str(evidence),
-                             "XDG_CACHE_HOME": str(self.root / "update-cache"),
-                             "FAKE_CASE_STDERR": "new unstable statistics"},
-                             capture_output=True, text=True, timeout=30)
-        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-        updated = json.loads(specification.read_text())
-        self.assertEqual(updated["apps"][0]["build_args"], ["--fuzz"])
-        case = updated["apps"][0]["cases"][0]
-        self.assertEqual((case["stderr_match"], case["stderr"], case["stdout"]), ("ignore", "", "hello\n"))
-        self.assertTrue(any("new unstable statistics" in path.read_text() for path in evidence.glob("*-stderr.log")))
-
     def assert_no_success_report(self, directory):
         artifacts = self.root / "artifacts"
         target = artifacts / ("compatibility-" + self.env["RA_RUNNER"])
