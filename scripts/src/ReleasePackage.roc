@@ -28,6 +28,16 @@ ReleasePackage := [].{
 	valid_name : Str -> Bool
 	valid_name = |name| GitHub.is_plain(name, "-_") and !name.starts_with("-") and GitHub.count(name) <= 100
 
+	## Directory listings use native separators. Archive and scratch-copy paths
+	## are relative forward-slash names on every host, including mixed input paths.
+	relative_file : Str, Str, Bool -> Try(Str, [OutsideDirectory])
+	relative_file = |directory, file, windows| {
+		portable = |value| if windows value.replace_each("\\", "/") else value
+		prefix = "${portable(directory).drop_suffix("/")}/"
+		name = portable(file)
+		if name.starts_with(prefix) Ok(name.drop_prefix(prefix)) else Err(OutsideDirectory)
+	}
+
 	## `x.y.z`, optionally with a `-prerelease` suffix of letters, digits,
 	## dots and hyphens.
 	valid_version : Str -> Bool
@@ -415,3 +425,10 @@ expect ReleasePackage.render_notes("= roc-ansi 0.14.0\n\n----\n{package-url}\n--
 expect ReleasePackage.render_notes("", release) == Err(WrongTitle(""))
 expect ReleasePackage.built_with({ compiler: "nightly-2", automation: "" }) == "## Built with\n\n- Package and examples built and tested with `roc` nightly-2\n"
 expect ReleasePackage.built_with({ compiler: "nightly-2", automation: "lukewilliamboswell/roc-automation@abc" }).contains("workflow at `lukewilliamboswell/roc-automation@abc`\n")
+
+expect ReleasePackage.relative_file("package", "package/main.roc", Bool.False) == Ok("main.roc")
+expect ReleasePackage.relative_file("package", "package\\main.roc", Bool.True) == Ok("main.roc")
+expect ReleasePackage.relative_file("examples/nested", "examples\\nested\\data\\seed", Bool.True) == Ok("data/seed")
+expect ReleasePackage.relative_file("D:\\suite/package", "D:\\suite\\package\\main.roc", Bool.True) == Ok("main.roc")
+expect ReleasePackage.relative_file("package", "other/main.roc", Bool.True) == Err(OutsideDirectory)
+expect ReleasePackage.relative_file("package", "package\\main.roc", Bool.False) == Err(OutsideDirectory)

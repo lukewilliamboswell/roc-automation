@@ -213,8 +213,11 @@ examples! = |context, options| {
 		native_executable = native(context, executable)
 		native_root = native(context, options.root)
 		build_target = if target == "native" [] else ["--target=${target}"]
+		# Fuzz instrumentation requires LLVM; the development backend cannot link
+		# a runnable libFuzzer target. Ordinary examples keep their existing mode.
+		optimization = if (example.build_args ?? []).contains("--fuzz") "speed" else "dev"
 		var $built = Bool.True
-		for argv in [[options.compiler, "check", example.path, "--no-cache"].concat(replace), [options.compiler, "build", example.path, "--no-cache", "--opt=dev", "--output=${native_executable}"].concat(build_target).concat(replace)] {
+		for argv in [[options.compiler, "check", example.path, "--no-cache"].concat(replace), [options.compiler, "build", example.path, "--no-cache", "--opt=${optimization}", "--output=${native_executable}"].concat(build_target).concat(example.build_args ?? []).concat(replace)] {
 			$result = { ..$result, number: $result.number + 1 }
 			ran = logged!(context, $result.number, argv, options.root, [], 300_000)?
 			if ran.timed_out or ran.limited {
@@ -251,10 +254,10 @@ examples! = |context, options| {
 					match options.mode {
 						Update => {
 							$result = { ..$result, tested: $result.tested + 1 }
-							$cases = $cases.append({ ..case, stdout: Str.from_utf8_lossy(ran.stdout), stderr: Str.from_utf8_lossy(ran.stderr), exit_code: if ran.status == "exited" ran.code else case.exit_code })
+							$cases = $cases.append({ ..case, stdout: Str.from_utf8_lossy(ran.stdout), stderr: if (case.stderr_match ?? "exact") == "ignore" "" else Str.from_utf8_lossy(ran.stderr), exit_code: if ran.status == "exited" ran.code else case.exit_code })
 						}
 						Compare => {
-							passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and ran.stderr == Str.to_utf8(case.stderr)
+							passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and Compatibility.stderr_matches(case, ran.stderr)
 							$result = { ..$result, tested: $result.tested + 1, failed: $result.failed + if passed 0 else 1 }
 							$cases = $cases.append(case)
 							if !passed {

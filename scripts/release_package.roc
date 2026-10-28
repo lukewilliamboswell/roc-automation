@@ -168,9 +168,13 @@ run! = |argv, cwd, problem| {
 ## symbolic link or special file is an error, so nothing outside the tree is
 ## ever read or archived.
 all_files! = |directory| {
-	prefix = "${Path.display(directory)}/"
 	found = walk!(Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")?, [])?
-	Ok(GitHub.sort(found.map(|path| Path.display(path).drop_prefix(prefix))))
+	windows = match Env.platform!().os {
+		WINDOWS => Bool.True
+		_ => Bool.False
+	}
+	relative = found.map_try(|path| ReleasePackage.relative_file(Path.display(directory), Path.display(path), windows).map_err(|_| "${Path.display(path)} is outside ${Path.display(directory)}"))?
+	Ok(GitHub.sort(relative))
 }
 
 walk! = |entries, found|
@@ -279,7 +283,7 @@ initial_suite! = || {
 		schema_version: 1,
 		release: Compatibility.working_tree,
 		dependencies: [],
-		apps: apps.map(|path| { path, target: Err(Missing), run: Err(Missing), cases: [{ name: "default", args: [], stdin: "", stdout: "", stderr: "", exit_code: 0, skip: Err(Missing) }] }),
+		apps: apps.map(|path| { path, target: Err(Missing), run: Err(Missing), build_args: Err(Missing), cases: [{ name: "default", args: [], stdin: "", stdout: "", stderr: "", stderr_match: Err(Missing), exit_code: 0, skip: Err(Missing) }] }),
 	}
 	Ok(suite)
 }
