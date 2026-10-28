@@ -115,14 +115,23 @@ AppHeader := [].{
 	}
 
 	## The same source with the field `shorthand`, currently `declared`,
-	## pointing at `replacement`. Nothing else changes. The header must be
-	## formatted by `roc fmt`, so that `shorthand: "declared"` is found inside
-	## the header; the body may mention the same text afterwards.
+	## pointing at `replacement`; a platform field keeps its `platform`
+	## keyword. Nothing else changes. The header must be formatted by
+	## `roc fmt`, so that `shorthand: "declared"` or
+	## `shorthand: platform "declared"` is found inside the header; the body
+	## may mention the same text afterwards.
 	with_dependency : Str, Str, Str, Str -> Try(Str, [UnformattedDependency(Str)])
 	with_dependency = |source, shorthand, declared, replacement| {
-		needle = "${shorthand}: \"${declared}\""
-		match Str.split_first(source, needle) {
-			Ok({ before, after }) if opens_header(before) => Ok("${before}${shorthand}: \"${replacement}\"${after}")
+		forms = ["${shorthand}: \"", "${shorthand}: platform \""]
+		replaced = forms.keep_oks(
+			|prefix|
+				match Str.split_first(source, "${prefix}${declared}\"") {
+					Ok({ before, after }) if opens_header(before) => Ok("${before}${prefix}${replacement}\"${after}")
+					_ => Err(NotFound)
+				},
+		)
+		match replaced {
+			[one] => Ok(one)
 			_ => Err(UnformattedDependency(shorthand))
 		}
 	}
@@ -170,3 +179,5 @@ expect AppHeader.shorthand_of("app [main!] { a: \"x\", b: \"x\", pf: platform \"
 expect AppHeader.with_dependency(example, "ansi", "../package/main.roc", "https://example.com/abc.tar.zst") == Ok("app [main!] {\n\tansi: \"https://example.com/abc.tar.zst\",\n\tpf: platform \"https://example.com/cli.tar.zst\",\n}\n\nmain! = |_| { ansi: \"../package/main.roc\" }\n")
 expect AppHeader.with_dependency("app [main!] { ansi : \"../package/main.roc\" }\n", "ansi", "../package/main.roc", "x") == Err(UnformattedDependency("ansi"))
 expect AppHeader.with_dependency("# ansi: \"x\"\napp [main!] { ansi: \"x\" }\n", "ansi", "x", "y") == Err(UnformattedDependency("ansi"))
+expect AppHeader.with_dependency("app [main!] {\n\tpf: platform \"../../platform/main.roc\",\n}\n", "pf", "../../platform/main.roc", "https://example.com/abc.tar.zst") == Ok("app [main!] {\n\tpf: platform \"https://example.com/abc.tar.zst\",\n}\n")
+expect AppHeader.with_dependency("app [main!] { pf : platform \"../platform/main.roc\" }\n", "pf", "../platform/main.roc", "x") == Err(UnformattedDependency("pf"))

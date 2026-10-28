@@ -90,8 +90,13 @@ flowchart LR
 * One job, on one runner, cross-compiles the host for every supported target.
   A single toolchain version then produces every host, and the expensive work
   happens in one place where its cache is easy to manage.
-* It assembles the hosts with the locked linker inputs and bundles once. The
-  bundle is uploaded as a workflow artifact.
+* It assembles the hosts with the locked linker inputs and bundles once, with
+  the repository's own bundle command. The shared
+  xref:actions.adoc#release-package-platform[`release-package`] utility then
+  runs the examples against the working tree, and its
+  `build VERSION --platform-bundle DIR` checks that bundle, names it, and writes
+  the examples archive, documentation and notes beside it. `dist/` is uploaded
+  as a workflow artifact.
 * Where a target cannot be cross-compiled, because it needs an SDK or a
   toolchain that exists on one operating system only, that host is built by a
   job on that system and handed to the builder as an artifact. This is the
@@ -102,6 +107,10 @@ flowchart LR
 * One job per supported target downloads the bundle and runs applications
   against it. A runner job never rebuilds the host or the bundle, so every
   target tests the same bytes, and those are the bytes a release publishes.
+  `blueprint run release-test -- test-archive` runs the archived examples,
+  unchanged, against the bundle served from a loopback address with an empty
+  package cache, as a first user would fetch it. Blueprint and the utility run
+  on Windows too, so the Windows runners use the same task.
 * One aggregate job requires every runner job to have passed. Its name is the
   required status check.
 

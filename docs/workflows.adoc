@@ -125,10 +125,10 @@ the same task locally with that compiler on `PATH`:
 
 [source,sh]
 ----
-blueprint run release-package -- test-examples            # the working tree's examples against tests/spec.json
-blueprint run release-package -- test-examples --update   # record what they print now, as a reviewable diff
+blueprint run release-test -- test-examples               # the working tree's examples against tests/spec.json
+blueprint run release-test -- test-examples --update      # record what they print now, as a reviewable diff
 blueprint run release-package -- build 0.0.1-dryrun       # the bundles, archives and notes, into dist/
-blueprint run release-package -- test-archive             # the archive in dist/ against the bundles in dist/
+blueprint run release-test -- test-archive                # the archive in dist/ against the bundles in dist/
 ----
 
 The inputs are the version, an exact nightly for a diagnostic run, the name of
@@ -142,14 +142,15 @@ calling job named `Release`, the required status checks are
 The caller declares no concurrency group: the shared workflow holds one release
 at a time per repository.
 
-A platform keeps a `release.yml` of its own along the lines below.
+A platform keeps a `release.yml` of its own, described in
+xref:workflows.adoc#a-platform-release-workflow[A platform's release workflow].
 
 ==== Adopt the shared workflow in an existing repository
 
 The move from a copied release workflow is the same in every package so far.
 
 . Blueprint 0.8 with a `check` task that runs the package's own checks, and the
-  `release` environment and `release-package` task from
+  `release` and `release-test` environments and tasks from
   xref:actions.adoc#release-package[the utility's section], followed by
   `blueprint update` for the lock. A check that takes longer than a few
   minutes, such as fuzzing or conformance suites, stays in the repository's own
@@ -173,6 +174,35 @@ The move from a copied release workflow is the same in every package so far.
   documentation workflow.
 . Update the ruleset's required checks to the two shared job names, and after
   the first green dry run, a maintainer dispatches the next release.
+
+[#a-platform-release-workflow]
+=== A platform's release workflow
+
+A platform's host is built with its own toolchain, and its bundle holds that
+host for every target, so its `release.yml` builds them itself and hands the
+rest to the same utility, as
+xref:actions.adoc#release-package-platform[A platform release] describes.
+It has the shape of xref:platforms.adoc#cross-compile-once-run-on-every-target[one builder and a matrix of runners]:
+
+. *Build*, on one Linux runner: build the host for every target, then
+  `release-test -- test-examples`, the repository's bundle command with
+  `--output-dir build/platform`, and
+  `release-package -- build "$VERSION" --platform-bundle build/platform`.
+  Upload `dist/`.
+. *Test the release candidate*, one job per supported system, Windows
+  included: install Blueprint with
+  xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`] and the nightly
+  the build resolved, download `dist/`, and run
+  `release-test -- test-archive`. Nothing is rebuilt.
+. *Publish*, as for a package: from the default branch, in the `release`
+  environment, attest the tested files and hand them to
+  xref:actions.adoc#publish-release[`actions/publish-release`], with no
+  checkout of the platform's source.
+
+The repository keeps only what is its own: the host build, the target layout,
+the linker inputs and the bundle command with its inventory. Its examples,
+`tests/spec.json` and notes follow the package rules, with `{platform-url}`
+for the platform's URL.
 
 === What a release contains
 
@@ -283,9 +313,9 @@ The bundle URL cannot be written by hand, because it contains the content hash
 of a bundle that does not exist until the release builds it. The notes
 therefore use a placeholder, and the workflow fills it in:
 
-* `+{package-url}+` stands for the released bundle's URL. A release with several
-  bundles has one placeholder for each, named after the package, such as
-  `+{tzdb-url}+`.
+* `+{package-url}+` stands for the released bundle's URL, and `+{platform-url}+`
+  for a platform's. A release with several bundles has one placeholder for
+  each, named after the package, such as `+{tzdb-url}+`.
 * After building the bundles, `release.yml` renders the notes with each
   placeholder set to the real URL, tag and hash. A placeholder that is left
   unresolved, or one the notes never use, fails the release.
