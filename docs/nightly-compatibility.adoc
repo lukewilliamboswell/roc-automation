@@ -75,9 +75,11 @@ on the actual default branch. The shared concurrency group serializes runs, so
 an older failure cannot race a newer passing report.
 
 `runners` accepts a unique, non-empty JSON array drawn from `ubuntu-22.04`,
-`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, `macos-26`, `windows-2022` and
-`windows-2025`. The Windows labels run native x64 executables. Name the complete
-release matrix. Windows uses the same archive admission, compiler diagnostics,
+`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, `macos-15-intel`, `macos-26`,
+`windows-2022` and `windows-2025`. `macos-15-intel` runs the `x64mac` target
+natively, and the Windows labels run native x64 executables. Name the complete
+release matrix: a target no runner executes contributes no evidence, so it is
+cross-compiled only. Windows uses the same archive admission, compiler diagnostics,
 case deadlines and aggregate evidence contract as Linux and macOS; the runner
 adds the native `.exe` suffix automatically.
 
@@ -89,11 +91,8 @@ consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
 an environment that needs it. Leave both false for a runner that needs neither.
 Toolchain installation precedes the prerequisite command. Windows prerequisites
 must use native tools through `setup-command`, such as a checked-in Python setup
-script. Blueprint 0.8.0 publishes a native Windows binary;
-`actions/setup-blueprint` does not install it on Windows runners yet
-(https://github.com/lukewilliamboswell/roc-automation/issues/59[#59]). Nix is not
-a Windows prerequisite backend. Requesting either shared installer on Windows
-fails explicitly.
+script. Nix is not a Windows prerequisite backend. Requesting either shared
+installer on Windows fails explicitly.
 For a mixed matrix, keep both installers disabled and let a portable setup script
 select the native provisioning steps for each operating system. A prerequisite
 failure is a setup failure, never a compatibility pass.

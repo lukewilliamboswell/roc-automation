@@ -126,11 +126,12 @@ class PureTests(unittest.TestCase):
             self.assertEqual(sidecars.sbom_tool("0.7.0", path)["binaries"], {"x86_64-linux": "a" * 64})
             path.write_text(json.dumps({"0.7.0": {**good["0.7.0"], "binaries": {}}}))
             self.assertEqual(sidecars.sbom_tool("0.7.0", path)["binaries"], {})
-            for binaries in ({"x86_64-windows": "a" * 64}, {"x86_64-linux": "A" * 64}, {"x86_64-linux": "a" * 63}, ["a" * 64]):
+            for binaries in ({"x86_64-freebsd": "a" * 64}, {"x86_64-linux": "A" * 64}, {"x86_64-linux": "a" * 63}, ["a" * 64]):
                 path.write_text(json.dumps({"0.7.0": {**good["0.7.0"], "binaries": binaries}}))
                 with self.subTest(binaries=binaries), self.assertRaisesRegex(ValueError, "released systems to 64 lowercase"):
                     sidecars.sbom_tool("0.7.0", path)
         self.assertEqual(sidecars.binary_url("0.8.0", "aarch64-linux"), "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/blueprint-sbom-aarch64-linux")
+        self.assertTrue(sidecars.binary_url("0.9.0", "x86_64-windows").endswith("/0.9.0/blueprint-sbom-x86_64-windows.exe"))
 
     def test_a_binary_is_admitted_only_by_its_reviewed_digest(self):
         content = b"#!/bin/sh\necho tool\n"

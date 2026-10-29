@@ -24,8 +24,12 @@ consumer configuration retain their own verification and trust requirements.
 [#setup-blueprint]
 == `actions/setup-blueprint`
 
-Installs the verified `blueprint` binary that `Blueprint.roc` names. Nix is
-installed only with `install-nix: 'true'`. For a complete recipe, lock, cache
+Installs the verified `blueprint` binary that `Blueprint.roc` names, on x86-64
+and arm64 Linux, Apple Silicon and Intel macOS, and x86-64 Windows. Nix is
+installed only with `install-nix: 'true'`, which Windows refuses. On Windows
+and Intel macOS Blueprint runs without a provider, from fetched programs and
+the tools the runner already has; a project that tests on Windows lists
+`"x86_64-windows"` in its `Systems`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the Roc package adoption guide].
 The setup action builds nothing.
 
@@ -71,6 +75,8 @@ workflow cannot disagree with it.
 | `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-darwin` | Reviewed SHA-256 of the binary for Apple Silicon macOS runners. Overrides the recorded value.
+| `sha256-x86_64-darwin` | Reviewed SHA-256 of the binary for Intel macOS runners. Overrides the recorded value.
+| `sha256-x86_64-windows` | Reviewed SHA-256 of `blueprint-x86_64-windows.exe` for x86-64 Windows runners. Overrides the recorded value.
 |===
 
 Outputs are `blueprint-path`, the absolute path of the installed binary,
@@ -200,24 +206,72 @@ in seconds.
 The utility behind the
 xref:workflows.adoc#the-shared-release-workflow-for-a-pure-package[shared release workflow]
 is not an action. It is `scripts/release_package.roc`, built by the tooling
-compiler and published as a static executable in each tools release, like
-roc-docs. A repository's `Blueprint.roc` fetches it by digest and names it as
-the `release-package` task, so the workflow and a maintainer run the same bytes:
+compiler and published as an executable in each tools release, like roc-docs,
+for x86-64 and arm64 Linux, Apple Silicon and Intel macOS, and x86-64 Windows. Every
+asset is named `release-package-<system>`, so one recipe serves every system;
+Blueprint adds `.exe` where Windows needs it. A repository's `Blueprint.roc`
+fetches it by digest and names it as tasks, so the workflow and a maintainer
+run the same bytes:
 
 [source,roc]
 ----
-Environment("release", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.5.0/release-package-{system}"))]), Expect(["roc", "git", "gh", "tar", "unzip", "zip", "chmod", "touch", "env"])]),
+Environment("release", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/REVIEWED_TOOLS_RELEASE/release-package-{system}"))]), Expect(["roc", "git", "gh", "tar", "unzip", "zip", "chmod", "touch", "env"])]),
+Environment("release-test", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/REVIEWED_TOOLS_RELEASE/release-package-{system}"))]), Expect(["roc"])]),
 Task("release-package", [Use("release"), Run(["release-package"])]),
+Task("release-test", [Use("release-test"), Run(["release-package"])]),
 ----
+
+`REVIEWED_TOOLS_RELEASE` is the `tools-<version>` tag the repository reviewed,
+as `REVIEWED_FULL_SHA` is the commit of an action; `blueprint update` locks its
+digests.
 
 [source,sh]
 ----
-blueprint run release-package -- test-examples            # the working tree's examples against tests/spec.json
-blueprint run release-package -- test-examples --update   # record what they print now; writes the specification when it is missing
+blueprint run release-test -- test-examples               # the working tree's examples against tests/spec.json
+blueprint run release-test -- test-examples --update      # record what they print now; writes the specification when it is missing
 blueprint run release-package -- check-version 0.14.0     # roc bump against the latest release's bundles; needs gh
 blueprint run release-package -- build 0.14.0             # dist/: bundles, examples archive, API docs archive, notes
-blueprint run release-package -- test-archive             # the archive in dist/ against the bundles in dist/
+blueprint run release-test -- test-archive                # the archive in dist/ against the bundles in dist/
 ----
+
+`build` and `check-version` need Git, `gh` and the archive tools, and run on
+Linux or macOS. `test-examples` and `test-archive` start nothing but the
+compiler, which is why `release-test` expects only `roc`: they run on every
+system a repository releases for, Windows included. On Windows the archive is
+read by the system's own `%SystemRoot%\System32\tar.exe`, by its full path,
+because Windows has no `unzip` and the `tar` of Git Bash cannot read a ZIP.
+
+[#release-package-platform]
+=== A platform release
+
+A platform repository releases its platform the same way. Its platform root
+is `platform/main.roc`, and its examples name it by relative path,
+`pf: platform "../../platform/main.roc"`. The platform is then the primary
+bundle: notes write its URL as `{platform-url}`, `roc docs` documents it, and a
+package at `package/main.roc` beside it is named `<name>-package-<hash>.tar.zst`
+and written `{package-url}`. A local platform anywhere else, or a package field
+that names `platform/main.roc`, is refused.
+
+A platform bundle holds what only its repository knows how to make: each
+target's host library and linker inputs, their licences and the bundle's
+inventory. So the repository builds the host and writes the bundle with its own
+command, and `build` takes the directory it wrote:
+
+[source,sh]
+----
+blueprint run release-test -- test-examples               # the examples against platform/, host outputs included
+blueprint run bundle -- --output-dir build/platform       # the repository's own bundle command
+blueprint run release-package -- build "$VERSION" --platform-bundle build/platform
+blueprint run release-test -- test-archive                # on every system the platform supports
+----
+
+The directory must hold exactly one `.tar.zst`, and that bundle must hold every
+tracked `.roc` file of `platform/`; other members are expected. `build` copies
+it into `dist/` under its release name and continues as for a package: the
+archived examples name `platform "<release URL>"`, and `test-archive` serves the
+bundle from a loopback address in place of that URL. `release-package` checks
+the platform bundle and never runs the command that made it, so the host build
+and the bundle's contents remain the repository's to review.
 
 The package compiler is the `roc` on `PATH`, or `RP_COMPILER`. `RP_REPOSITORY`
 is the `owner/name` the bundle URLs name; it defaults to `GITHUB_REPOSITORY`

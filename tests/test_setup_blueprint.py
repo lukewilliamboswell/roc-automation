@@ -14,6 +14,7 @@ BINARY = b"#!/bin/sh\necho blueprint\n"
 DIGEST = hashlib.sha256(BINARY).hexdigest()
 OTHER = "1" * 64
 KNOWN = {"0.4.0": {"x86_64-linux": DIGEST, "aarch64-darwin": DIGEST}}
+UNIX_SYSTEMS = {"x86_64-linux", "aarch64-linux", "aarch64-darwin"}
 PLATFORM = "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/{}/4jmnCGtQeuXTJJYc1rPrnA1pQFPRqUecY5oau1te8cYn.tar.zst"
 
 
@@ -34,9 +35,11 @@ class SetupBlueprintTests(unittest.TestCase):
         self.assertEqual(setup.system_for("Linux", "X64"), "x86_64-linux")
         self.assertEqual(setup.system_for("Linux", "ARM64"), "aarch64-linux")
         self.assertEqual(setup.system_for("macOS", "ARM64"), "aarch64-darwin")
+        self.assertEqual(setup.system_for("macOS", "X64"), "x86_64-darwin")
+        self.assertEqual(setup.system_for("Windows", "X64"), "x86_64-windows")
 
     def test_unreleased_systems_are_rejected(self):
-        for runner in (("Windows", "X64"), ("macOS", "X64"), ("Linux", "ARM"), ("", "")):
+        for runner in (("Windows", "ARM64"), ("Linux", "ARM"), ("", "")):
             with self.subTest(runner=runner), self.assertRaisesRegex(ValueError, "no blueprint binary"):
                 setup.system_for(*runner)
 
@@ -46,6 +49,7 @@ class SetupBlueprintTests(unittest.TestCase):
             "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.4.0/blueprint-x86_64-linux",
         )
         self.assertTrue(setup.asset_url("0.5.0-rc1", "aarch64-darwin").endswith("/0.5.0-rc1/blueprint-aarch64-darwin"))
+        self.assertTrue(setup.asset_url("0.9.0", "x86_64-windows").endswith("/0.9.0/blueprint-x86_64-windows.exe"))
 
     def test_versions_that_could_redirect_the_download_are_rejected(self):
         for version in ("", "latest", "v0.4.0", "0.4", "0.4.0/../../evil", "0.4.0?x=1", "0.4.0 ", "0.4.0\n0.3.0", "main", "0.04.0"):
@@ -80,9 +84,13 @@ class SetupBlueprintTests(unittest.TestCase):
         for version, checksums in releases.items():
             with self.subTest(version=version):
                 self.assertTrue(setup.VERSION.fullmatch(version))
-                self.assertEqual(set(checksums), set(setup.SYSTEMS.values()))
+                # Windows binaries start with roc-blueprint 0.9.0, Intel macOS with 0.10.0.
+                self.assertLessEqual(UNIX_SYSTEMS, set(checksums))
+                self.assertLessEqual(set(checksums), set(setup.SYSTEMS.values()))
                 for checksum in checksums.values():
                     self.assertTrue(setup.SHA256.fullmatch(checksum))
+        self.assertEqual(set(releases["0.9.0"]), UNIX_SYSTEMS | {"x86_64-windows"})
+        self.assertEqual(set(releases["0.10.0"]), set(setup.SYSTEMS.values()))
 
     def test_version_is_read_from_the_platform_url(self):
         self.assertEqual(setup.version_in(config("0.4.0")), "0.4.0")
@@ -223,10 +231,54 @@ class SetupBlueprintTests(unittest.TestCase):
                 self.run_main(root, {}, content=BINARY + b"tampered")
             self.assertFalse((root / "path").exists())
 
+    def test_windows_installs_the_exe_of_a_release_that_has_one(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            seen = self.run_main(root, {"RUNNER_OS": "Windows", "INPUT_VERSION": "0.9.0"},
+                                 known={"0.9.0": {"x86_64-windows": DIGEST}})
+            self.assertEqual(seen, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.9.0/blueprint-x86_64-windows.exe"])
+            installed = root / "temp" / "roc-automation-blueprint" / "blueprint.exe"
+            self.assertEqual(installed.read_bytes(), BINARY)
+            self.assertIn(f"blueprint-path={installed}\n", (root / "output").read_text())
+            self.assertIn("system=x86_64-windows\n", (root / "output").read_text())
+
+    def test_windows_fails_before_downloading_a_release_without_a_windows_binary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "no reviewed SHA-256 is recorded for roc-blueprint 0.4.0 on x86_64-windows"):
+                self.run_main(root, {"RUNNER_OS": "Windows", "INPUT_VERSION": "0.4.0"})
+            self.assertFalse((root / "path").exists())
+
+    def test_windows_refuses_nix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "Nix does not run on Windows"):
+                self.run_main(root, {"RUNNER_OS": "Windows", "INPUT_VERSION": "0.9.0", "INPUT_INSTALL_NIX": "true"},
+                              known={"0.9.0": {"x86_64-windows": DIGEST}})
+            self.assertFalse((root / "path").exists())
+
+    def test_intel_macos_installs_a_recorded_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            seen = self.run_main(root, {"RUNNER_OS": "macOS", "INPUT_VERSION": "0.10.0"},
+                                 known={"0.10.0": {"x86_64-darwin": DIGEST}})
+            self.assertEqual(seen, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.10.0/blueprint-x86_64-darwin"])
+            self.assertIn("system=x86_64-darwin\n", (root / "output").read_text())
+
+    def test_intel_macos_needs_a_supplied_digest_before_0_10_0(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "on x86_64-darwin; set the sha256-x86_64-darwin input"):
+                self.run_main(root, {"RUNNER_OS": "macOS", "INPUT_VERSION": "0.9.0"}, known=setup.known_releases())
+            self.assertFalse((root / "path").exists())
+            seen = self.run_main(root, {"RUNNER_OS": "macOS", "INPUT_VERSION": "0.9.0", "INPUT_SHA256_X86_64_DARWIN": DIGEST})
+            self.assertEqual(seen, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.9.0/blueprint-x86_64-darwin"])
+            self.assertIn("system=x86_64-darwin\n", (root / "output").read_text())
+
     def test_main_fails_before_downloading_on_an_unsupported_runner(self):
         seen = []
         with tempfile.TemporaryDirectory() as temporary:
-            env = {"RUNNER_OS": "Windows", "RUNNER_ARCH": "X64", "RUNNER_TEMP": temporary, "INPUT_VERSION": "0.4.0"}
+            env = {"RUNNER_OS": "Linux", "RUNNER_ARCH": "ARM", "RUNNER_TEMP": temporary, "INPUT_VERSION": "0.4.0"}
             with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", serving(BINARY, seen)):
                 with self.assertRaisesRegex(ValueError, "no blueprint binary"):
                     setup.main()
@@ -259,6 +311,15 @@ class ArtifactCacheTests(unittest.TestCase):
         self.assertNotEqual(docs, self.settings()[1])
         self.assertNotEqual(self.settings()[1], self.settings(GITHUB_WORKFLOW="Release")[1])
 
+    def test_windows_store_is_under_localappdata_unless_xdg_names_one(self):
+        local = self.root / "local"
+        path, _ = setup.cache_settings({**self.env, "LOCALAPPDATA": str(local)}, "0.9.0", "x86_64-windows")
+        self.assertEqual(Path(path), local / "blueprint/v1/artifacts")
+        path, _ = setup.cache_settings({**self.env, "LOCALAPPDATA": str(local), "XDG_CACHE_HOME": str(self.root / "xdg")}, "0.9.0", "x86_64-windows")
+        self.assertEqual(Path(path), self.root / "xdg/blueprint/v1/artifacts")
+        path, _ = self.settings(LOCALAPPDATA=str(local))
+        self.assertEqual(Path(path), self.root / ".cache/blueprint/v1/artifacts")
+
     def test_xdg_path_and_disabled_cache(self):
         path, _ = self.settings(XDG_CACHE_HOME=str(self.root / "xdg"))
         self.assertEqual(Path(path), self.root / "xdg/blueprint/v1/artifacts")
@@ -277,8 +338,10 @@ class ArtifactCacheTests(unittest.TestCase):
 
     def test_rc1_version_selection_and_reviewed_registry_cover_native_runners(self):
         self.assertEqual(setup.version_in(config("0.6.0-rc1")), "0.6.0-rc1")
-        for system in setup.SYSTEMS.values():
+        for system in UNIX_SYSTEMS:
             self.assertRegex(setup.expected_sha256({}, setup.known_releases(), "0.6.0-rc1", system), r"^[0-9a-f]{64}$")
+        for system in UNIX_SYSTEMS | {"x86_64-windows"}:
+            self.assertRegex(setup.expected_sha256({}, setup.known_releases(), "0.9.0", system), r"^[0-9a-f]{64}$")
 
 
 class ExecutableCacheTests(unittest.TestCase):

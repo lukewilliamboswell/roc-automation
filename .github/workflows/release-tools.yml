@@ -87,11 +87,28 @@ jobs:
           if-no-files-found: error
           path: dist/roc-docs-${{ matrix.system }}
 
-  # The Linux executables of the release utility come from build-tools; Apple
-  # Silicon maintainers run the same utility locally, so it is built there too.
+  # The Linux executables of the release utility come from build-tools. Apple
+  # Silicon maintainers, and platform repositories testing their examples on
+  # Intel macOS and Windows, run the same utility, so it is built natively
+  # there too. Every
+  # asset is named release-package-<system>, so one Blueprint recipe fetches it
+  # on any system; Blueprint adds .exe where Windows needs it.
   release-package-build:
-    name: Build release utility (aarch64-darwin)
-    runs-on: macos-15
+    name: Build release utility (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            system: aarch64-darwin
+            suffix: ''
+          - runner: macos-15-intel
+            system: x86_64-darwin
+            suffix: ''
+          - runner: windows-2025
+            system: x86_64-windows
+            suffix: .exe
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -104,16 +121,20 @@ jobs:
           nightly-tag: nightly-2026-10-09-258ab27
       - name: Build the native release artifact
         shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          roc build scripts/release_package.roc --opt=size --output=dist/release-package-aarch64-darwin
-          dist/release-package-aarch64-darwin > /dev/null 2>&1 || test $? = 1
+          roc build scripts/release_package.roc --opt=size --output="dist/release-package-$SYSTEM$SUFFIX"
+          "dist/release-package-$SYSTEM$SUFFIX" > /dev/null 2>&1 || test $? = 1
+          if [ -n "$SUFFIX" ]; then mv "dist/release-package-$SYSTEM$SUFFIX" "dist/release-package-$SYSTEM"; fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-package-tool-aarch64-darwin
+          name: release-package-tool-${{ matrix.system }}
           if-no-files-found: error
-          path: dist/release-package-aarch64-darwin
+          path: dist/release-package-${{ matrix.system }}
 
   build:
     name: Build the tools
@@ -165,8 +186,9 @@ jobs:
       - name: Include the compatibility utility standalone regression harness
         run: |
           mkdir -p compatibility-tests/tests/fixtures
-          cp tests/test_release_compatibility.py tests/test_compatibility_archive.py compatibility-tests/tests/
+          cp tests/test_release_compatibility.py tests/test_compatibility_archive.py tests/test_release_package_examples.py compatibility-tests/tests/
           cp tests/fixtures/compatibility_example.py tests/fixtures/compatibility_launcher.c compatibility-tests/tests/fixtures/
+          cp -R tests/fixtures/platform compatibility-tests/tests/fixtures/
           test -s dist/release-compatibility-archive.py
       - name: Include the policy dictionary permission notice
         run: cp tools/roc-policy/vendor/typos/LICENSE-MIT dist/roc-policy-dictionary-LICENSE-MIT.txt
@@ -280,10 +302,11 @@ jobs:
           if tools/dist/publish-release-"$SYSTEM" 2> error.txt; then exit 1; fi
           cat error.txt
           grep -q 'prerelease' error.txt
-      - name: Test the exact published compatibility utility
+      - name: Test the exact published compatibility and release utilities
         env:
           ROC_COMPATIBILITY_BINARY: ${{ github.workspace }}/tools/dist/release-compatibility-${{ matrix.system }}
           ROC_COMPATIBILITY_ARCHIVE_HELPER: ${{ github.workspace }}/tools/dist/release-compatibility-archive.py
+          ROC_RELEASE_PACKAGE_BINARY: ${{ github.workspace }}/tools/dist/release-package-${{ matrix.system }}
         run: python3 -m unittest discover -s tools/compatibility-tests/tests -v
       # The release utility refuses to run without a command and says what it takes.
       - name: The release utility runs without a compiler and states its usage
@@ -292,6 +315,47 @@ jobs:
         run: |
           if tools/dist/release-package-"$SYSTEM" 2> error.txt; then exit 1; fi
           grep -q 'usage: release-package build VERSION' error.txt
+
+  # A platform repository tests its examples and archive on Intel macOS and
+  # Windows with these exact files; Blueprint exposes the Windows one as
+  # release-package.exe.
+  release-package-native-test:
+    name: Test the release utility (${{ matrix.system }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15-intel, system: x86_64-darwin, executable: release-package, python: python3 }
+          - { runner: windows-2025, system: x86_64-windows, executable: release-package.exe, python: python }
+    runs-on: ${{ matrix.runner }}
+    permissions: {}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tools
+          path: tools
+      - name: Check the digests
+        working-directory: tools/dist
+        run: |
+          if command -v sha256sum > /dev/null; then
+            sha256sum --check --strict sha256sums.txt
+          else
+            shasum -a 256 --check sha256sums.txt
+          fi
+      - name: Test working-tree examples, a platform build and its archive
+        env:
+          SYSTEM: ${{ matrix.system }}
+          EXECUTABLE: ${{ matrix.executable }}
+          PYTHON: ${{ matrix.python }}
+        run: |
+          set -euo pipefail
+          cp "tools/dist/release-package-$SYSTEM" "$RUNNER_TEMP/$EXECUTABLE"
+          chmod +x "$RUNNER_TEMP/$EXECUTABLE"
+          ROC_RELEASE_PACKAGE_BINARY="$RUNNER_TEMP/$EXECUTABLE" "$PYTHON" -m unittest discover -s tools/compatibility-tests/tests -p test_release_package_examples.py -v
 
   policy-test:
     name: Test exact policy artifact (${{ matrix.system }})
@@ -372,7 +436,7 @@ jobs:
 
   publish:
     name: Publish the tools
-    needs: [build, test, policy-test, docs-test]
+    needs: [build, test, release-package-native-test, policy-test, docs-test]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: release

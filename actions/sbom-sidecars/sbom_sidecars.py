@@ -124,7 +124,7 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
 
 
 def binary_url(version: str, system: str) -> str:
-    return f"{setup_blueprint.RELEASES}/{setup_blueprint.checked_version(version)}/blueprint-sbom-{system}"
+    return f"{setup_blueprint.RELEASES}/{setup_blueprint.checked_version(version)}/blueprint-sbom-{system}{'.exe' if setup_blueprint.windows(system) else ''}"
 
 
 def install_binary(version: str, system: str, expected: str, directory: Path, download: setup_blueprint.Fetch = setup_blueprint.fetch) -> Path:

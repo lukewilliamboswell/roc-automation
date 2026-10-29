@@ -63,6 +63,8 @@ names that release.
 
 Every example names the package by relative path, as described in
 xref:repository.adoc#roc-applications-in-the-repository[Roc applications in the repository].
+A platform's examples name it the same way, `pf: platform "../../platform/main.roc"`,
+and run against the host outputs the repository built under `platform/`.
 A pull request that changes the package and breaks an example fails on that pull
 request.
 
@@ -81,7 +83,8 @@ xref:testing.adoc#integration-tests[Integration tests].
   and no dependencies: the arguments each example runs with, its standard
   input, and the exact standard output, standard error and exit code expected.
 * `release-package test-examples` runs every example and fails on a difference;
-  the shared release workflow runs it on every pull request.
+  the shared release workflow, or a platform's own release workflow, runs it on
+  every pull request. It needs only the compiler, so it runs on Windows too.
 * `release-package test-examples --update` rewrites the expected output, so
   that an intended change is a reviewed diff.
 * An example that cannot run in CI, such as one needing a display or a console

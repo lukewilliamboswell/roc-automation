@@ -71,6 +71,17 @@ else:
     print('compiler stdout detail')
     print('warning: successful compilation diagnostic ::error::not an annotation',file=sys.stderr)
     if os.environ.get('FAKE_COMPILER_FAIL'): sys.exit(1)
+    if sys.argv[1]=='docs':
+        out=Path(next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output=')))
+        out.mkdir(parents=True)
+        (out/'index.html').write_text('<html></html>')
+    if sys.argv[1]=='bundle':
+        # An uncompressed tar under the bundle's name: tar -tf reads either.
+        import tarfile
+        args=sys.argv[2:]
+        files=args[:args.index('--output-dir')]
+        with tarfile.open(Path(args[args.index('--output-dir')+1])/'FakePackageBundle.tar.zst','w') as bundle:
+            for name in files: bundle.add(name)
     if sys.argv[1]=='build':
         output=next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output='))
         if os.name == 'nt': assert '/' not in output, 'compiler output must use native Windows separators'

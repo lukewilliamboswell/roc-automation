@@ -1,0 +1,10 @@
+= pf 0.0.1
+
+A platform whose host the repository builds.
+
+== Use this release
+
+[source,roc]
+----
+app [main!] { pf: platform "{platform-url}" }
+----

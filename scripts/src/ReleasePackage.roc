@@ -9,10 +9,11 @@ ReleasePackage := [].{
 	## the GitHub repository that publishes it, as `owner/name`.
 	Package : { name : Str, repository : Str }
 
-	## One bundle a release publishes. `root` is its package root, such as
-	## `package/main.roc` or `tzdb/package/main.roc`; `infix` names it in file
-	## names and notes, and is "" for the repository's own package.
-	Bundle : { root : Str, infix : Str }
+	## One bundle a release publishes. `root` is its package or platform root,
+	## such as `package/main.roc`, `tzdb/package/main.roc` or
+	## `platform/main.roc`; `infix` names it in file names and notes, and is ""
+	## for the repository's own package or platform.
+	Bundle : { root : Str, infix : Str, kind : [Package, Platform] }
 
 	## The version a pull request builds and tests its release under. It is
 	## never published. Roc reads 0.0.0 in a package URL as "no version", so
@@ -20,9 +21,14 @@ ReleasePackage := [].{
 	dry_run_version : Str
 	dry_run_version = "0.0.1-dryrun"
 
-	## The package root every repository has.
-	primary_root : Str
-	primary_root = "package/main.roc"
+	## The root of a package repository's own package.
+	package_root : Str
+	package_root = "package/main.roc"
+
+	## The root of a platform repository's own platform. A platform has no
+	## other place: its host outputs and bundle inventory are the repository's.
+	platform_root : Str
+	platform_root = "platform/main.roc"
 
 	## A package name usable in asset file names.
 	valid_name : Str -> Bool
@@ -104,12 +110,15 @@ ReleasePackage := [].{
 		Ok(Str.join_with(resolved, "/"))
 	}
 
-	## The bundle whose package root is `root`. The root is `main.roc` in a
-	## directory; the directory `package` is the repository's own package, and
-	## any other directory, with a trailing `/package` dropped, names the bundle
-	## in file names and notes, so `tzdb/package/main.roc` is `tzdb`.
+	## The bundle whose root is `root`. The root is `main.roc` in a directory;
+	## `platform` is the repository's own platform, `package` its own package,
+	## and any other directory, with a trailing `/package` dropped, names the
+	## bundle in file names and notes, so `tzdb/package/main.roc` is `tzdb`.
 	bundle_for_root : Str -> Try(Bundle, [NotABundleRoot(Str)])
 	bundle_for_root = |root| {
+		if root == platform_root {
+			return Ok({ root, infix: "", kind: Platform })
+		}
 		directory = root.drop_suffix("/main.roc")
 		if !root.ends_with("/main.roc") or directory == "" or !GitHub.is_plain(directory, "-_/") or directory.contains("//") {
 			return Err(NotABundleRoot(root))
@@ -118,13 +127,45 @@ ReleasePackage := [].{
 		if infix != "" and (!GitHub.is_plain(infix, "-_") or infix.starts_with("-")) {
 			return Err(NotABundleRoot(root))
 		}
-		Ok({ root, infix })
+		Ok({ root, infix, kind: Package })
 	}
 
-	## The placeholder a bundle's URL has in notes: `{package-url}` for the
-	## repository's own package, `{<infix>-url}` for another.
+	## The bundles a release publishes, its primary first: the platform when
+	## the examples depend on one, otherwise the package at `package/main.roc`.
+	## The others follow in root order. Beside a platform, the package at
+	## `package/main.roc` is named by the infix `package`, so that no two
+	## bundles share a file name prefix.
+	release_bundles : List(Bundle) -> Try(List(Bundle), [NoPrimary(Str)])
+	release_bundles = |found| {
+		has_platform = found.any(|bundle| bundle.kind == Platform)
+		primary = if has_platform platform_root else package_root
+		named = found.map(|bundle| if has_platform and bundle.root == package_root { ..bundle, infix: "package" } else bundle)
+		ordered = named.sort_with(|a, b| if a.root == b.root Same else if a.root == primary Before else if b.root == primary After else if GitHub.sort([a.root, b.root]) == [a.root, b.root] Before else After)
+		match ordered {
+			[first, ..] if first.root == primary => Ok(ordered)
+			_ => Err(NoPrimary(primary))
+		}
+	}
+
+	## The placeholder a bundle's URL has in notes: `{platform-url}` for the
+	## repository's platform, `{package-url}` for its package, `{<infix>-url}`
+	## for another.
 	placeholder : Bundle -> Str
-	placeholder = |bundle| if bundle.infix == "" "{package-url}" else "{${bundle.infix}-url}"
+	placeholder = |bundle|
+		match bundle.kind {
+			Platform => "{platform-url}"
+			Package => if bundle.infix == "" or bundle.root == package_root "{package-url}" else "{${bundle.infix}-url}"
+		}
+
+	## The tracked `.roc` files of the platform directory, relative to it,
+	## that its bundle does not hold. The repository builds the platform bundle
+	## with its host outputs, so other members are expected; leaving out a
+	## module would publish a platform that cannot compile.
+	missing_platform_members : List(Str), List(Str) -> List(Str)
+	missing_platform_members = |tracked, members| {
+		held = members.map(|member| member.drop_prefix("./"))
+		tracked.keep_if(|path| path.starts_with("platform/") and path.ends_with(".roc")).map(|path| path.drop_prefix("platform/")).keep_if(|path| !held.contains(path))
+	}
 
 	## The file name a bundle is published under. `roc bundle` writes
 	## `<hash>.tar.zst`; a release with one bundle keeps that name. With several,
@@ -351,10 +392,13 @@ pkg : ReleasePackage.Package
 pkg = { name: "roc-ansi", repository: "lukewilliamboswell/roc-ansi" }
 
 main_bundle : ReleasePackage.Bundle
-main_bundle = { root: "package/main.roc", infix: "" }
+main_bundle = { root: "package/main.roc", infix: "", kind: Package }
 
 tzdb : ReleasePackage.Bundle
-tzdb = { root: "tzdb/package/main.roc", infix: "tzdb" }
+tzdb = { root: "tzdb/package/main.roc", infix: "tzdb", kind: Package }
+
+platform_bundle : ReleasePackage.Bundle
+platform_bundle = { root: "platform/main.roc", infix: "", kind: Platform }
 
 url = "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.14.0/Abc123.tar.zst"
 
@@ -375,7 +419,21 @@ expect ReleasePackage.resolve_local("examples/colors.roc", url) == Err(NotLocal)
 expect ReleasePackage.resolve_local("examples/colors.roc", "/package/main.roc") == Err(NotLocal)
 expect ReleasePackage.bundle_for_root("package/main.roc") == Ok(main_bundle)
 expect ReleasePackage.bundle_for_root("tzdb/package/main.roc") == Ok(tzdb)
-expect ReleasePackage.bundle_for_root("extras/main.roc") == Ok({ root: "extras/main.roc", infix: "extras" })
+expect ReleasePackage.bundle_for_root("extras/main.roc") == Ok({ root: "extras/main.roc", infix: "extras", kind: Package })
+expect ReleasePackage.bundle_for_root("platform/main.roc") == Ok(platform_bundle)
+expect ReleasePackage.bundle_for_root("other/platform/main.roc") == Ok({ root: "other/platform/main.roc", infix: "other-platform", kind: Package })
+expect ReleasePackage.release_bundles([tzdb, main_bundle]) == Ok([main_bundle, tzdb])
+expect ReleasePackage.release_bundles([tzdb]) == Err(NoPrimary("package/main.roc"))
+expect ReleasePackage.release_bundles([main_bundle, platform_bundle]) == Ok([platform_bundle, { ..main_bundle, infix: "package" }])
+expect ReleasePackage.release_bundles([tzdb, platform_bundle]) == Ok([platform_bundle, tzdb])
+expect ReleasePackage.release_bundles([]) == Err(NoPrimary("package/main.roc"))
+expect ReleasePackage.placeholder(platform_bundle) == "{platform-url}" and ReleasePackage.placeholder({ ..main_bundle, infix: "package" }) == "{package-url}"
+expect ReleasePackage.bundle_file(pkg, platform_bundle, "Abc123.tar.zst", Bool.True) == "Abc123.tar.zst" and ReleasePackage.bundle_file(pkg, platform_bundle, "Abc123.tar.zst", Bool.False) == "roc-ansi-Abc123.tar.zst"
+expect ReleasePackage.bundle_file(pkg, { ..main_bundle, infix: "package" }, "Xyz.tar.zst", Bool.False) == "roc-ansi-package-Xyz.tar.zst"
+expect ReleasePackage.published_bundle_file(pkg, platform_bundle, ["roc-ansi-Abc.tar.zst", "roc-ansi-package-Xyz.tar.zst"]) == One("roc-ansi-Abc.tar.zst")
+expect ReleasePackage.published_bundle_file(pkg, { ..main_bundle, infix: "package" }, ["roc-ansi-Abc.tar.zst", "roc-ansi-package-Xyz.tar.zst"]) == One("roc-ansi-package-Xyz.tar.zst")
+expect ReleasePackage.missing_platform_members(["platform/main.roc", "platform/Stdout.roc", "platform/README.md", "examples/hello/main.roc"], ["main.roc", "Stdout.roc", "targets/x64musl/libhost.a"]) == []
+expect ReleasePackage.missing_platform_members(["platform/main.roc", "platform/Stdout.roc"], ["./main.roc", "targets/x64musl/libhost.a"]) == ["Stdout.roc"]
 expect ReleasePackage.bundle_for_root("examples/greet/Names.roc").is_err() and ReleasePackage.bundle_for_root("main.roc").is_err() and ReleasePackage.bundle_for_root("a//package/main.roc").is_err()
 expect ReleasePackage.placeholder(main_bundle) == "{package-url}" and ReleasePackage.placeholder(tzdb) == "{tzdb-url}"
 expect ReleasePackage.bundle_file(pkg, main_bundle, "Abc123.tar.zst", Bool.True) == "Abc123.tar.zst"

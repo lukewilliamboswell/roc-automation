@@ -25,7 +25,12 @@ SYSTEMS = {
     ("Linux", "X64"): "x86_64-linux",
     ("Linux", "ARM64"): "aarch64-linux",
     ("macOS", "ARM64"): "aarch64-darwin",
+    ("macOS", "X64"): "x86_64-darwin",
+    ("Windows", "X64"): "x86_64-windows",
 }
+# Blueprint runs on Windows without a provider: fetched programs and expected
+# tools only, never Nix, and so does Intel macOS, which nixpkgs dropped.
+# Older releases publish no binary for either; releases.json records which do.
 MAX_BYTES = 256 * 1024 * 1024
 # The platform URL in a Blueprint.roc header names the release whose binary must evaluate it.
 PLATFORM_URL = re.compile(r"\bplatform\s+\"" + re.escape(RELEASES) + r"/([^/\s\"]+)/[0-9A-Za-z]+\.tar\.zst\"")
@@ -49,8 +54,16 @@ def checked_version(version: str) -> str:
     return version
 
 
+def windows(system: str) -> bool:
+    return system.endswith("-windows")
+
+
+def executable_name(system: str) -> str:
+    return "blueprint.exe" if windows(system) else "blueprint"
+
+
 def asset_url(version: str, system: str) -> str:
-    return f"{RELEASES}/{checked_version(version)}/blueprint-{system}"
+    return f"{RELEASES}/{checked_version(version)}/blueprint-{system}{'.exe' if windows(system) else ''}"
 
 
 def version_in(config: str) -> str:
@@ -128,8 +141,11 @@ def private_directory(directory: Path) -> None:
 
 def copy_cached(source: Path, destination: Path) -> bool:
     """Copy only a bounded regular file; admission uses the copied bytes' hash."""
+    # Windows has neither flag, so a symlink is refused before it is opened.
+    if source.is_symlink():
+        raise ValueError("Blueprint executable cache must contain a regular file, never a symlink")
     try:
-        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
     except FileNotFoundError:
         return False
     except OSError as error:
@@ -183,7 +199,7 @@ def install(version: str, system: str, expected: str, directory: Path, download:
         if cache_status is not None:
             cache_status.append(bool(hit))
         candidate.chmod(stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-        installed = directory / "blueprint"
+        installed = directory / executable_name(system)
         candidate.replace(installed)
         return installed
     finally:
@@ -198,7 +214,8 @@ def boolean_input(value: str, name: str) -> bool:
 
 def cache_settings(env: dict[str, str], version: str, system: str) -> tuple[str, str]:
     """Cache only Blueprint's verified download bytes, scoped by locked tool set."""
-    boolean_input(env.get("INPUT_INSTALL_NIX", "false"), "install-nix")
+    if boolean_input(env.get("INPUT_INSTALL_NIX", "false"), "install-nix") and windows(system):
+        raise ValueError("Nix does not run on Windows; Blueprint runs there without it, so leave install-nix false")
     if not boolean_input(env.get("INPUT_CACHE", "false"), "cache"):
         return "", ""
     workload = env.get("INPUT_CACHE_WORKLOAD", "")
@@ -215,7 +232,9 @@ def cache_settings(env: dict[str, str], version: str, system: str) -> tuple[str,
     lock_digest = hashlib.sha256(content).hexdigest()
     installer_digest = hashlib.sha256(Path(__file__).read_bytes() + KNOWN_RELEASES.read_bytes()).hexdigest()
     workflow = hashlib.sha256(env.get("GITHUB_WORKFLOW", "local").encode()).hexdigest()[:16]
-    cache_home = env.get("XDG_CACHE_HOME") or str(Path(env["HOME"]) / ".cache")
+    # Where Blueprint keeps its store: XDG_CACHE_HOME, then LOCALAPPDATA on
+    # Windows, then .cache in HOME.
+    cache_home = env.get("XDG_CACHE_HOME") or (windows(system) and env.get("LOCALAPPDATA")) or str(Path(env["HOME"]) / ".cache")
     if not Path(cache_home).is_absolute() or any(ord(c) < 32 or ord(c) == 127 for c in cache_home):
         raise ValueError("the Blueprint cache home must be an absolute path without control characters")
     artifacts = str(Path(cache_home) / "blueprint" / "v1" / "artifacts")
