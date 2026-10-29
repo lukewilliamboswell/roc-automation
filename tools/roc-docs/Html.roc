@@ -295,25 +295,6 @@ Html :: [].{
 		"<!doctype html><html lang=\"${escape(metadata.language)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${escape($page_title)}</title><style>${stylesheet}${highlight_styles()}</style></head><body class=\"${if (selected.is_empty()) "no-toc" else "with-toc"}\"><a class=\"skip-link\" href=\"#${main_id}\">Skip to content</a><header id=\"${header_id}\">${$title}<div class=\"metadata\">${author}${version}${description}<a href=\"${escape(metadata.pdf_filename)}\">Download PDF</a></div></header>${navigation}<main id=\"${main_id}\" tabindex=\"-1\">${$body}</main><footer id=\"${footer_id}\"><span id=\"${footer_text_id}\">${escape(metadata.author)}</span></footer><script>${behavior}</script></body></html>"
 	}
 
-	## Prefer a separately validated vector image; retain the original PNG as
-	## fallback and as the PDF's source. No SVG markup enters the page DOM.
-	vector_images = |html, images| {
-		var $html = html
-		for image in images {
-			if image.svg_href != "" {
-				prefix = "<img src=\"${escape(image.href)}\""
-				parts = $html.split_on(prefix)
-				var $next = parts.first() ?? ""
-				for tail in parts.drop_first(1) {
-					pieces = tail.split_on(">")
-					$next = "${$next}<picture><source type=\"image/svg+xml\" srcset=\"${escape(image.svg_href.replace_each("%", "%25").replace_each(" ", "%20").replace_each(",", "%2C").replace_each("#", "%23").replace_each("?", "%3F"))}\">${prefix}${pieces.first() ?? ""}></picture>${Str.join_with(pieces.drop_first(1), ">")}"
-				}
-				$html = $next
-			}
-		}
-		$html
-	}
-
 	chrome_id = |base, body| {
 		var $id = base
 		while body.contains("id=\"${$id}\"") {

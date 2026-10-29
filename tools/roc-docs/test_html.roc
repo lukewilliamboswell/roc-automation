@@ -39,11 +39,6 @@ expect {
 	code = "on: off\nyes: no\n"
 	CodeHighlight.highlight("yaml", code).all(|span| span.category != ReservedWord)
 }
-expect {
-	body = "<p><img src=\"a.png\" alt=\"one &gt; two\"></p>"
-	result = Html.vector_images(body, [{ href: "a.png", svg_href: "a.svg" }])
-	result == "<p><picture><source type=\"image/svg+xml\" srcset=\"a.svg\"><img src=\"a.png\" alt=\"one &gt; two\"></picture></p>"
-}
 
 expect {
 	bad = ["<svg><script>bad()</script></svg>", "<svg onload='bad()'/>", "<svg><style>@import 'https://example.com/x';</style></svg>", "<svg><path fill='url(https://example.com/x)'/></svg>", "<svg><image href='https://example.com/x'/></svg>", "<?xml-stylesheet href='https://example.com/x'?><svg/>", "<svg><style>p{background:u\\rl(https://example.com/x)}</style></svg>"]
@@ -73,8 +68,6 @@ expect {
 		_ => False
 	}
 }
-
-expect Html.vector_images("<img src=\"a.png\" alt=\"A\">", [{ href: "a.png", svg_href: "images/a b,c#?.svg" }]).contains("srcset=\"images/a%20b%2Cc%23%3F.svg\"")
 
 expect Svg.validate("<svg xmlns='http://www.w3.org/1999/xhtml'/>".to_utf8()).is_err()
 expect Svg.validate("<svg/>".to_utf8()).is_err()

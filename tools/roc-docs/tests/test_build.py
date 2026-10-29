@@ -18,10 +18,10 @@ import zlib
 BINARY = str(Path(os.environ['ROC_DOCS_BINARY']).resolve())
 
 
-def png_bytes():
+def png_bytes(width=1, height=1):
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
-    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\0\x12\x34\x56')) + chunk(b'IEND', b'')
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress((b'\0' + b'\x12\x34\x56' * width) * height)) + chunk(b'IEND', b'')
 
 
 class Html(HTMLParser):
@@ -406,6 +406,39 @@ class RepositoryTests(unittest.TestCase):
                             self.assertGreaterEqual(float(word.attrib['yMin']),0)
                             self.assertLessEqual(float(word.attrib['xMax']),float(page.attrib['width']))
                             self.assertLessEqual(float(word.attrib['yMax']),float(page.attrib['height']))
+
+    def test_mixed_assets_keep_original_raster_evidence_when_pdf_resamples(self):
+        self.source('index.md', '# Mixed assets\n\n![Raster](wide.png)\n\n```mermaid\nflowchart LR\n A --> B\n```\n')
+        png = png_bytes(width=1000, height=10)
+        rgb = b'\x12\x34\x56' * 1000 * 10
+        (self.docs/'wide.png').write_bytes(png)
+        options = ('--entrypoint', 'index.md', '--pdf-image-dpi', '72')
+        self.run_build(*options, command='prepare')
+        prepared = self.root/'.docs-prepared'
+        manifest = json.loads((prepared/'manifest.json').read_text())
+        assets = {asset['kind']: asset for asset in manifest['assets']}
+        self.assertEqual(set(assets), {'raster', 'vector'})
+        raster = assets['raster']
+        self.assertEqual((raster['width'], raster['height']), (1000, 10))
+        self.assertEqual((prepared/raster['png']).read_bytes(), png)
+        self.assertEqual((prepared/raster['rgb']).read_bytes(), rgb)
+        self.assertEqual(raster['png_sha256'], hashlib.sha256(png).hexdigest())
+        self.assertEqual(raster['rgb_sha256'], hashlib.sha256(rgb).hexdigest())
+        self.assertEqual((raster['svg'], raster['svg_sha256']), ('', ''))
+        vector = assets['vector']
+        svg = (prepared/vector['svg']).read_bytes()
+        self.assertEqual(vector['svg_sha256'], hashlib.sha256(svg).hexdigest())
+        self.assertEqual((vector['png'], vector['rgb'], vector['width'], vector['height']), ('', '', 0, 0))
+        self.run_build(*options)
+        site = self.root/'.docs-out/site'
+        self.assertEqual((site/'wide.png').read_bytes(), png)
+        self.assertEqual((site/vector['href']).read_bytes(), svg)
+        self.assertIn(f"![Diagram]({vector['href']})", (site/'index.md').read_text())
+        if shutil.which('pdfimages'):
+            images = subprocess.check_output(['pdfimages', '-list', str(site/'manual.pdf')], text=True)
+            dimensions = [(int(fields[3]), int(fields[4])) for line in images.splitlines()
+                          if len(fields := line.split()) > 4 and fields[0].isdigit() and fields[2] == 'image']
+            self.assertEqual(dimensions, [(471, 4)])
 
     def test_diagram_rejections_preserve_previous_publication(self):
         output = self.prior()

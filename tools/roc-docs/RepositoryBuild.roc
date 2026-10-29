@@ -77,7 +77,7 @@ RepositoryBuild :: [].{
 		if metadata.title.is_empty() or metadata.language.is_empty() or ![metadata.title, metadata.author, metadata.language, metadata.version].all(BuildOptions.safe_text) {
 			return Err("invalid document metadata")
 		}
-		assets = load_assets!(docs, prepared.images, prepared.diagrams, options.pdf_image_dpi)?
+		assets = load_assets!({ docs, hrefs: prepared.images, diagrams: prepared.diagrams, dpi: options.pdf_image_dpi })?
 		stage = Path.utf8("${Path.display(output)}.roc-docs-stage")
 		backup = Path.utf8("${Path.display(output)}.roc-docs-backup")
 		if Path.exists!(stage).map_err(|e| Str.inspect(e))? or Path.exists!(backup).map_err(|e| Str.inspect(e))? {
@@ -109,10 +109,21 @@ RepositoryBuild :: [].{
 	}
 }
 
-LoadedAsset : { href : Str, png : List(U8), rgb : List(U8), width : U64, height : U64, rendered : Renderer.Asset, svg : List(U8), svg_href : Str }
+## Keep original decoded raster evidence distinct from the fitted PDF pixels.
+## The tag is the sole authority for publication and rendering behavior.
+LoadedAsset : { href : Str, data : [Raster({ png : List(U8), original : Png.Raster, fitted : Png.Raster, size : Layout.Size }), Vector({ diagram : DiagramAdapter.Diagram, svg : List(U8) })] }
 
-load_assets! : Path, List(Str), List(DiagramAdapter.Diagram), U64 => Try(List(LoadedAsset), Str)
-load_assets! = |docs, hrefs, diagrams, dpi| {
+rendered_asset : LoadedAsset -> Renderer.Asset
+rendered_asset = |asset| {
+	data = match asset.data {
+		Raster(raster) => Raster({ dimensions: { width: raster.fitted.width.to_u32_wrap(), height: raster.fitted.height.to_u32_wrap() }, png: raster.png, pixels: raster.fitted.pixels, size: raster.size })
+		Vector(vector) => Vector({ picture: DiagramAdapter.picture(vector.diagram), svg: vector.svg })
+	}
+	{ href: asset.href, name: asset.href, data }
+}
+
+load_assets! : { docs : Path, hrefs : List(Str), diagrams : List(DiagramAdapter.Diagram), dpi : U64 } => Try(List(LoadedAsset), Str)
+load_assets! = |{ docs, hrefs, diagrams, dpi }| {
 	var $assets = []
 	var $total = 0
 	for href in hrefs {
@@ -127,17 +138,14 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 					if $total > 134217728 {
 						return Err("prepared assets exceed aggregate byte limit")
 					}
-					rendered : Renderer.Asset
-					rendered = { href, name: href, data: Vector({ picture: DiagramAdapter.picture(d), svg }) }
-					$assets = $assets.append({ href, png: [], rgb: [], width: 0, height: 0, rendered, svg, svg_href: href })
+					$assets = $assets.append({ href, data: Vector({ diagram: d, svg }) })
 				}
 				Err(_) => {}
 			}
 			if !$assets.any(|a| a.href == href) {
-				svg = []
 				png = BuildFiles.read!(BuildFiles.inside!(docs, href)?, 16777216)?
 				decoded = Png.decode(png)?
-				$total = $total + png.len() + decoded.pixels.len() + svg.len()
+				$total = $total + png.len() + decoded.pixels.len()
 				if $total > 134217728 {
 					return Err("prepared image assets exceed aggregate byte limit")
 				}
@@ -148,9 +156,8 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 				rendered_height = if (height_fit > 620000) 620000 else height_fit
 				rendered_width = width_fit * rendered_height // height_fit
 				raster = ImageAssets.fit(decoded.pixels, decoded.width, decoded.height, if (rendered_width * dpi < 72000) 1 else rendered_width * dpi // 72000, if (rendered_height * dpi < 72000) 1 else rendered_height * dpi // 72000).map_err(|_| "invalid decoded image")?
-				rendered : Renderer.Asset
-				rendered = { href, name: href, data: Raster({ dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } }) }
-				$assets = $assets.append({ href, png, rgb: decoded.pixels, width: decoded.width, height: decoded.height, rendered, svg, svg_href: "" })
+				size = { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) }
+				$assets = $assets.append({ href, data: Raster({ png, original: decoded, fitted: raster, size }) })
 			}
 		}
 	}
@@ -176,14 +183,13 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 		}
 		$routes = $routes.append(page.route)
 		html = match page.html {
-			MarkdownSource => Renderer.render(page.source, metadata, assets.map(|a| a.rendered), HtmlOnly).map_ok(|r| r.html).map_err(|e| Str.inspect(e))?
+			MarkdownSource => Renderer.render(page.source, metadata, assets.map(rendered_asset), HtmlOnly).map_ok(|r| r.html).map_err(|e| Str.inspect(e))?
 			Prepared(presentation) => Html.document(presentation.body, Markdown.parse_str(page.source), metadata, presentation.numbered, presentation.toc_depth, presentation.remark)
 		}
-		vector_html = Html.vector_images(html, assets.keep_if(|a| a.href != a.svg_href).map(|a| { href: a.href, svg_href: a.svg_href }))
-		BuildFiles.write_text!(site, page.route, if (options.markdown) MarkdownExport.discover(vector_html, MarkdownExport.route(page.route)) else vector_html)?
+		BuildFiles.write_text!(site, page.route, if (options.markdown) MarkdownExport.discover(html, MarkdownExport.route(page.route)) else html)?
 		if options.markdown {
 			if page.route == entry_html and !prepared.pages.any(|p| p.route == "index.html") {
-				BuildFiles.write_text!(site, "index.html", MarkdownExport.discover(vector_html, "index.md"))?
+				BuildFiles.write_text!(site, "index.html", MarkdownExport.discover(html, "index.md"))?
 			}
 			markdown = MarkdownExport.page(page.source, prepared.pages.map(|p| p.route).concat(["index.html"]), metadata.version, MarkdownExport.url(options.site_url, page.route))?
 			BuildFiles.write_text!(site, MarkdownExport.route(page.route), markdown)?
@@ -202,23 +208,17 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 		BuildFiles.write_text!(site, "llms.txt", MarkdownExport.index(metadata.title, metadata.version, prepared.pages.map(|p| { route: p.route, title: MarkdownExport.title(p.source) }), options.site_url))?
 	}
 	for asset in assets {
-		if markdown_routes.contains(asset.href) or markdown_routes.contains(asset.svg_href) {
+		if markdown_routes.contains(asset.href) {
 			return Err("image asset conflicts with Markdown publication output")
 		}
-		if WebAssets.list.any(|f| f.path == asset.href or f.path == asset.svg_href) or $routes.contains(asset.href) or asset.href == "index.html" or asset.href == metadata.pdf_filename or (options.api_entrypoint != "" and (asset.href == "api" or asset.href.starts_with("api/"))) {
+		if WebAssets.list.any(|f| f.path == asset.href) or $routes.contains(asset.href) or asset.href == "index.html" or asset.href == metadata.pdf_filename or (options.api_entrypoint != "" and (asset.href == "api" or asset.href.starts_with("api/"))) {
 			return Err("image asset conflicts with publication output")
 		}
-		if asset.svg_href == asset.href {
-			BuildFiles.write_bytes!(site, asset.href, asset.svg)?
-		} else {
-			BuildFiles.write_bytes!(site, asset.href, asset.png)?
+		bytes = match asset.data {
+			Raster(raster) => raster.png
+			Vector(vector) => vector.svg
 		}
-		if asset.svg_href != "" and asset.svg_href != asset.href {
-			if $routes.contains(asset.svg_href) or asset.svg_href == metadata.pdf_filename or asset.svg_href == "index.html" or assets.any(|other| other.href == asset.svg_href or (other.href != asset.href and other.svg_href == asset.svg_href)) {
-				return Err("vector image asset conflicts with publication output")
-			}
-			BuildFiles.write_bytes!(site, asset.svg_href, asset.svg)?
-		}
+		BuildFiles.write_bytes!(site, asset.href, bytes)?
 	}
 	for file in files {
 		if !file.path.ends_with(".adoc") and !file.path.ends_with(".md") and !file.path.ends_with(".markdown") and !file.path.starts_with("theme/") {
@@ -232,7 +232,7 @@ render_site! = |stage, prepared, metadata, assets, files, options, workspace| {
 			}
 		}
 	}
-	rendered = Renderer.render(prepared.manual, metadata, assets.map(|a| a.rendered), PdfOnly).map_err(|e| Str.inspect(e))?
+	rendered = Renderer.render(prepared.manual, metadata, assets.map(rendered_asset), PdfOnly).map_err(|e| Str.inspect(e))?
 	pdf_in_site = Path.join(site, metadata.pdf_filename)
 	if Path.exists!(pdf_in_site).map_err(|e| Str.inspect(e))? {
 		existing_pdf = BuildFiles.read!(pdf_in_site, 16777216)?
@@ -268,17 +268,17 @@ write_prepared! = |stage, prepared, metadata, assets, sources, includes| {
 	BuildFiles.write_text!(stage, "manual.md", prepared.manual)?
 	var $inventory = []
 	for asset in assets {
-		match asset.rendered.data {
-			Vector(_) => {
-				path = "assets/${Sha256.hex(asset.svg)}.svg"
-				BuildFiles.write_bytes!(stage, path, asset.svg)?
-				$inventory = $inventory.append({ kind: "vector", href: asset.href, svg: path, svg_sha256: Sha256.hex(asset.svg), png: "", rgb: "", width: 0.U64, height: 0.U64, png_sha256: "", rgb_sha256: "" })
+		match asset.data {
+			Vector(vector) => {
+				path = "assets/${Sha256.hex(vector.svg)}.svg"
+				BuildFiles.write_bytes!(stage, path, vector.svg)?
+				$inventory = $inventory.append({ kind: "vector", href: asset.href, svg: path, svg_sha256: Sha256.hex(vector.svg), png: "", rgb: "", width: 0.U64, height: 0.U64, png_sha256: "", rgb_sha256: "" })
 			}
-			Raster(_) => {
-				stem = Sha256.hex(asset.png)
-				BuildFiles.write_bytes!(stage, "assets/${stem}.png", asset.png)?
-				BuildFiles.write_bytes!(stage, "assets/${stem}.rgb", asset.rgb)?
-				$inventory = $inventory.append({ kind: "raster", href: asset.href, svg: "", svg_sha256: "", png: "assets/${stem}.png", rgb: "assets/${stem}.rgb", width: asset.width, height: asset.height, png_sha256: Sha256.hex(asset.png), rgb_sha256: Sha256.hex(asset.rgb) })
+			Raster(raster) => {
+				stem = Sha256.hex(raster.png)
+				BuildFiles.write_bytes!(stage, "assets/${stem}.png", raster.png)?
+				BuildFiles.write_bytes!(stage, "assets/${stem}.rgb", raster.original.pixels)?
+				$inventory = $inventory.append({ kind: "raster", href: asset.href, svg: "", svg_sha256: "", png: "assets/${stem}.png", rgb: "assets/${stem}.rgb", width: raster.original.width, height: raster.original.height, png_sha256: Sha256.hex(raster.png), rgb_sha256: Sha256.hex(raster.original.pixels) })
 			}
 		}
 	}
