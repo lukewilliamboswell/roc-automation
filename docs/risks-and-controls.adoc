@@ -52,8 +52,8 @@ content identity, provenance and product correctness are different evidence.
 | Schema/graph checks, wrong-subject fixtures, transitive/build-only queries, and supplier documents bound by digest with stale opt-outs reported. Consistent records do not prove discovery completeness, supplier authorship or vulnerability exploitability.
 
 | Documentation or an assessment overstates the checks
-| Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims], xref:documentation.adoc#publish-static-markdown[retrievable documentation formats] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
-| Executable examples, rendered-content/link checks and review of operational evidence. A valid publication does not prove every technical assertion.
+| Keep claims bounded and rationale close to the task. See xref:documentation.adoc#risk-documentation-claims[documentation claims], xref:documentation.adoc#publish-static-markdown[retrievable documentation formats], xref:documentation.adoc#write-for-the-shared-renderer[bounded diagram rendering] and xref:contributing.adoc#explain-the-risk-and-control-where-they-apply[maintaining explanations].
+| Executable examples, native diagram limit/escaping/publication regressions, rendered-content/link checks and review of operational evidence. A valid publication does not prove every technical assertion.
 |===
 
 == Use research without turning it into a framework checklist

@@ -47,6 +47,10 @@ Publishing component inventories:: <<publish-and-consume-software-bills-of-mater
 defines release SBOM scope, generation, validation and downstream use.
 Writing a project manual:: <<write-project-documentation>> covers the
 conventions this manual itself follows.
+Building documentation:: <<build-documentation-with-roc-docs>> gives the utility
+commands and supported source profile.
+Changing the renderer:: <<maintain-the-documentation-renderer>> covers renderer
+builds, architecture, fonts and verification.
 Changing roc-automation:: <<contribute-to-roc-automation>> covers the manual
 and the shared actions.
 Sharing automation:: <<share-automation-through-executable-utilities>> gives a
@@ -95,9 +99,13 @@ include::security-model.adoc[leveloffset=+1]
 
 include::documentation.adoc[leveloffset=+1]
 
+include::roc-docs.adoc[leveloffset=+1]
+
 include::project-practices.adoc[leveloffset=+1]
 
 include::contributing.adoc[leveloffset=+1]
+
+include::maintain-roc-docs.adoc[leveloffset=+1]
 
 include::releases.adoc[leveloffset=+1]
 

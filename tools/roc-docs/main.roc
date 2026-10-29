@@ -1,8 +1,10 @@
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0-rc2/Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst",
 	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.4.0-rc2/BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze.tar.zst",
+	font: "https://github.com/lukewilliamboswell/roc-font/releases/download/0.1.0-rc2/A14BmicBaf6dm4K9kdYH9j8Y6BoAZrpUmxWh9sojsFy5.tar.zst",
+	mermaid: "https://github.com/lukewilliamboswell/roc-graph-layout/releases/download/0.3.0-rc3/mermaid-A9th2FTnD4nQrV1nkr9mMZFp6JkK4aNzt7Gi6HAGHWrr.tar.zst",
 	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/3.0.0/6xsRdRqenJrAb4wG7HaST4Xh349vD5sHAJDsKTK6E3dr.tar.zst",
-	pdf: "https://github.com/lukewilliamboswell/roc-pdf/releases/download/0.2.0-rc1/J3ssr9CQcBBnd66d7677qWM3AJwvdaHMN3RbHp75VpPa.tar.zst",
+	pdf: "https://github.com/lukewilliamboswell/roc-pdf/releases/download/0.2.0/2hTpvYoKFHy8C6VeEgiv4FgWkP4oNTVupc1XCN8UwdiZ.tar.zst",
 }
 
 import cli.OsStr
@@ -15,13 +17,18 @@ import BuildFiles
 import Png
 import RepositoryBuild
 import ImageAssets
+import DiagramAdapter
+import DiagramSvg
+import MarkdownExport
+import parser.Markdown
 import pdf.Layout
 import "vendor/roc-deflate-LICENSE" as deflate_license : Str
 import "vendor/NOTICE.adoc" as deflate_notice : Str
-import "fonts/NotoSans-OFL.txt" as noto_license : Str
-import "fonts/NotoSans-Italic-OFL.txt" as noto_italic_license : Str
+import "fonts/Inter-OFL.txt" as inter_license : Str
+import "fonts/Merriweather-OFL.txt" as serif_license : Str
 import "fonts/SourceCodePro-OFL.md" as mono_license : Str
 
+main! : List(OsStr) => Try({}, _)
 main! = |arguments| {
 	args = arguments.map(OsStr.display)
 	match args.first() {
@@ -30,8 +37,8 @@ main! = |arguments| {
 	}
 	if args == ["--licenses"] {
 		Stdout.line!("Renderer adapted from roc-ansi. Copyright © 2023 Luke Boswell and subsequent authors. Licensed under the Universal Permissive License (UPL), Version 1.0.")?
-		Stdout.line!(noto_license)?
-		Stdout.line!(noto_italic_license)?
+		Stdout.line!(inter_license)?
+		Stdout.line!(serif_license)?
 		Stdout.line!(mono_license)?
 		for file in WebAssets.list.keep_if(|f| f.path.ends_with(".txt")) {
 			Stdout.line!(Str.from_utf8_lossy(file.bytes))?
@@ -97,9 +104,24 @@ main! = |arguments| {
 		rendered_height = if (height_fit > 620000) 620000 else height_fit
 		rendered_width = width_fit * rendered_height // height_fit
 		raster = ImageAssets.fit(pixels, original.width, original.height, if (rendered_width * options.pdf_image_dpi < 72000) 1 else rendered_width * options.pdf_image_dpi // 72000, if (rendered_height * options.pdf_image_dpi < 72000) 1 else rendered_height * options.pdf_image_dpi // 72000)?
-		$assets = $assets.append({ href: spec.href, name: spec.href, dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } })
+		$assets = $assets.append({ href: spec.href, name: spec.href, data: Raster({ dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } }) })
 	}
-	rendered = Renderer.render(source, options.metadata, $assets, options.mode)?
+	adapted = DiagramAdapter.markdown({ blocks: Markdown.parse_str(source), path: options.input, ordinal: 0, cache: DiagramAdapter.empty_cache, depth: 0 }).map_err(|e| DiagramRejected(DiagramAdapter.message(e)))?
+	for diagram in DiagramAdapter.diagrams(adapted.cache) {
+		href = DiagramAdapter.href(diagram)
+		picture = DiagramAdapter.picture(diagram)
+		if $assets.any(|a| a.href == href) {
+			return Err(InvalidAssetPath(href))
+		}
+		svg = DiagramSvg.document(picture)
+		$total = $total + svg.len()
+		if $total > 134217728 {
+			return Err(AssetsTooLarge)
+		}
+		$assets = $assets.append({ href, name: href, data: Vector({ picture, svg }) })
+	}
+	prepared_source = if (adapted.ordinal == 0) source else MarkdownExport.serialize(adapted.blocks).map_err(|e| DiagramRejected(e))?
+	rendered = Renderer.render(prepared_source, options.metadata, $assets, options.mode)?
 	Path.create_all!(stage)?
 	result = write!(stage, options, rendered, $assets)
 	match result {
@@ -132,7 +154,11 @@ write! = |stage, options, rendered, assets| {
 	for asset in assets {
 		destination = Path.join(stage, asset.name)
 		Path.create_all!(Path.join(stage, Str.join_with(asset.name.split_on("/").drop_last(1), "/")))?
-		Path.write_bytes!(destination, asset.png)?
+		bytes = match asset.data {
+			Raster(r) => r.png
+			Vector(v) => v.svg
+		}
+		Path.write_bytes!(destination, bytes)?
 	}
 	Ok({})
 }

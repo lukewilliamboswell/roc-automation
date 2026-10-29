@@ -301,9 +301,7 @@ class Converter:
                     self.code.append({'source': item.source, 'line': item.number, 'sha256': sha(content.encode()), 'language': source[1]})
                 else:
                     digest = sha(content.encode())
-                    if digest not in self.diagrams:
-                        raise ValueError(f'Unprepared/stale Mermaid diagram {item.source}:{item.number}, source SHA256 {digest}')
-                    href = self.diagrams[digest]['href']
+                    href = f'images/diagram-{digest}.svg'
                     self.images.append({'href': href, 'diagram_sha256': digest})
                     out.extend(['', f'![Diagram from {item.source}]({href})', ''])
                 continue
@@ -442,16 +440,9 @@ def prepare_docs(workspace, docs_directory='docs', entrypoint='index.adoc', outp
         raise ValueError('Preparation output must be a new directory')
     if not re.fullmatch(r'[\w.-]+\.pdf', pdf_filename):
         raise ValueError('PDF filename must be a simple .pdf filename')
-    registry_path = HERE / 'prepared-diagrams' / 'manifest.json'
-    registry = json.loads(registry_path.read_text()) if registry_path.exists() else {'diagrams': []}
-    diagrams = {d['source_sha256']: {**d, '_root': HERE / 'prepared-diagrams'} for d in registry['diagrams']}
-    local_registry = docs / 'prepared-diagrams.json'
-    if local_registry.exists():
-        local = json.loads(read(safe(docs, 'prepared-diagrams.json')))
-        if local.get('schema_version') != 1:
-            raise ValueError('Unsupported prepared diagram registry schema')
-        for d in local['diagrams']:
-            diagrams[d['source_sha256']] = {**d, '_root': docs}
+    if (docs/'prepared-diagrams.json').exists():
+        raise ValueError('prepared-diagrams.json is obsolete; remove registrations and keep Mermaid source')
+    diagrams = {}
     converter = Converter(docs, 'pdf', pdf_filename, docs_version, diagrams, workspace)
     markdown_mode = Path(entrypoint).suffix == '.md'
     if markdown_mode:
@@ -508,13 +499,10 @@ def prepare_docs(workspace, docs_directory='docs', entrypoint='index.adoc', outp
         raise ValueError('Too many image assets')
     for href in sorted({i['href'] for i in converter.images}):
         safe(docs, href)
-        diagram = next((d for d in diagrams.values() if d['href'] == href), None)
-        if diagram:
-            png = read(safe(diagram['_root'], diagram['png']))
-            if sha(png) != diagram['png_sha256']:
-                raise ValueError(f'Prepared diagram hash mismatch: {href}')
-        else:
-            png = read(safe(docs, href))
+        if href.endswith('.svg') and '/diagram-' in href:
+            assets.append({'href':href,'kind':'vector'})
+            continue
+        png = read(safe(docs, href))
         width, height, rgb = decode_png(png)
         total_asset_bytes += len(png) + len(rgb)
         if total_asset_bytes > 128 * 1024 * 1024:

@@ -51,6 +51,21 @@ class RendererTests(unittest.TestCase):
                                 env={**os.environ, 'PATH': '/nonexistent'}, timeout=45)
         self.assertEqual(result.returncode, expect, result.stdout + result.stderr)
         return output, result
+    def test_standalone_mermaid_uses_shared_adapter_and_embedded_fonts(self):
+        bodies = ['flowchart LR\n A --> B\n','sequenceDiagram\n A->>B: Request\n','erDiagram\n A ||--o{ B : owns\n','classDiagram\n A <|-- B\n A : +run()*\n A : +count$\n','stateDiagram-v2\n [*] --> Idle\n Idle --> [*]\n']
+        source = '# Diagrams\n\n' + ''.join('```mermaid\n'+body+'```\n\n' for body in bodies)
+        one,_ = self.run_doc(source,name='one')
+        two,_ = self.run_doc(source,name='two')
+        for body in bodies:
+            name = 'images/diagram-'+hashlib.sha256(body.encode()).hexdigest()+'.svg'
+            data = (one/name).read_bytes()
+            root = ET.fromstring(data)
+            self.assertEqual(hashlib.sha256(root.find('{http://www.w3.org/2000/svg}metadata').text.encode()).hexdigest(), '262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a')
+            self.assertIn(b'data:font/ttf;base64,',data)
+            self.assertEqual(data,(two/name).read_bytes())
+            self.assertIn(name,(one/'index.html').read_text())
+        self.assertEqual((one/'manual.pdf').read_bytes(),(two/'manual.pdf').read_bytes())
+
     def test_metadata_code_links_and_determinism(self):
         code = 'app [main!] {}\n\n# café\nmain! = |_args| {\n\techo!("hello <&>")\n}\n'
         source = '# Example {#home}\n\n[Local](#home) [Other](https://example.com/chapter.html#details)\n\n```roc\n' + code + '```\n'
@@ -148,7 +163,7 @@ class RendererTests(unittest.TestCase):
         self.assertFalse(output.exists())
     def test_bundled_font_licenses_are_available_without_files(self):
         result = subprocess.run([BINARY, '--licenses'], capture_output=True, text=True, env={**os.environ, 'PATH': '/nonexistent'}, check=True)
-        self.assertIn('SIL OPEN FONT LICENSE', result.stdout.upper()); self.assertIn('Noto', result.stdout); self.assertIn('Adobe', result.stdout)
+        self.assertIn('SIL OPEN FONT LICENSE', result.stdout.upper()); self.assertIn('Inter', result.stdout); self.assertIn('Merriweather', result.stdout); self.assertIn('Adobe', result.stdout)
     def test_unsupported_content_rejects_without_output(self):
         for name, source in [('raw', '# Header\n\n<script>alert(1)</script>\n'), ('image', '# Header\n\n![missing](no.png)\n'), ('link', '# Header\n\n[bad](javascript:alert)\n')]:
             with self.subTest(name=name):

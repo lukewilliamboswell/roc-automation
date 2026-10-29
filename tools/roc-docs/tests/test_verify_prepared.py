@@ -10,6 +10,12 @@ spec.loader.exec_module(verify)
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_literal_anchor_example_survives_code_span_padding(self):
+        expected = verify.prose_words('Use `{#stable-id}`.\n')
+        self.assertEqual(expected, verify.prose_words('Use ` {#stable-id} `.\n'))
+        self.assertNotEqual(expected, verify.prose_words('Use.\n'))
+        self.assertEqual(verify.prose_words('# Title {#title}\n'), verify.prose_words('# Title\n'))
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -32,6 +38,31 @@ class AcceptanceTests(unittest.TestCase):
         metadata={'title':'Manual','author':'Contributors','version':'3'}
         text='Manual   3\nvalue = 1\nContributors  1 / 2\fManual  3\nnext = 2\nContributors  2 / 2\f'
         self.assertEqual(verify.compact_pdf_text(text, metadata), 'value=1next=2')
+
+    def test_schema_three_vector_identity_is_required(self):
+        manifest_path = self.prepared/'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        manifest['schema_version'] = 3
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><style>data:font/ttf;base64,AAAA</style></svg>'
+        (self.site/'diagram.svg').write_bytes(svg)
+        manifest['assets'] = [{'kind':'vector','href':'diagram.svg','svg_sha256':verify.digest(svg)}]
+        manifest_path.write_text(json.dumps(manifest))
+        verify.check(self.prepared,self.site)
+        (self.site/'diagram.svg').write_bytes(svg.replace(b'AAAA',b'BBBB'))
+        with self.assertRaisesRegex(ValueError,'SVG bytes changed'):
+            verify.check(self.prepared,self.site)
+        del manifest['assets'][0]['svg_sha256']
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaises(KeyError):
+            verify.check(self.prepared,self.site)
+
+    def test_reference_schema_still_requires_original_coverage(self):
+        manifest_path = self.prepared/'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        del manifest['coverage']
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaises(KeyError):
+            verify.check(self.prepared,self.site)
 
     def test_actual_inventory_passes(self):
         self.assertEqual(verify.check(self.prepared,self.site)['code_blocks'],1)

@@ -3,13 +3,15 @@ import parser.Xml
 import parser.Markdown
 import Html
 import Sha256
+import DiagramAdapter
+import MarkdownExport
 
 ## Pure preparation using roc-parser's actual AsciiDoc AST and inline renderer.
-## Files and prepared diagrams are supplied as inert data by the caller.
+## Files are inert data; diagram parsing and layout are pure and bounded.
 Preparation :: [].{
 	File : { path : Str, source : Str }
-	Options : { entrypoint : Str, version : Str, pdf_filename : Str, diagrams : List({ source_sha256 : Str, href : Str }), site_url : Str }
-	Result : { pages : List({ route : Str, source : Str, html : [MarkdownSource, Prepared({ body : Str, numbered : Bool, toc_depth : U64, remark : Str })] }), manual : Str, metadata : { title : Str, author : Str, version : Str, language : Str }, images : List(Str) }
+	Options : { entrypoint : Str, version : Str, pdf_filename : Str, site_url : Str }
+	Result : { pages : List({ route : Str, source : Str, html : [MarkdownSource, Prepared({ body : Str, numbered : Bool, toc_depth : U64, remark : Str })] }), manual : Str, metadata : { title : Str, author : Str, version : Str, language : Str }, images : List(Str), diagrams : List(DiagramAdapter.Diagram) }
 	prepare : List(File), Options -> Try(Result, Str)
 	prepare = |files, options| {
 		if files.len() > 1024 or files.any(|f| !safe_path(f.path) or (if (f.path.ends_with(".adoc")) f.source.to_utf8().len() > 262144 else f.source.to_utf8().len() > 16777216)) or files.fold(0.U64, |n, f| n + f.source.to_utf8().len()) > 33554432 {
@@ -23,7 +25,7 @@ Preparation :: [].{
 		}
 		entry = files.find_first(|f| f.path == options.entrypoint).map_err(|_| "missing documentation entrypoint")?
 		if entry.path.ends_with(".md") {
-			return markdown(files, entry, options)
+			return bounded(markdown(files, entry, options)?, 67108864)
 		}
 		if !entry.path.ends_with(".adoc") {
 			return Err("entrypoint must be .adoc or .md")
@@ -47,10 +49,12 @@ Preparation :: [].{
 		manual_state = initial(options, raw, refs, $routes, entry.path, "pdf", files)
 		rendered_manual = blocks(manual_normalized.blocks, manual_state, 0)?
 		var $images = rendered_manual.state.images
+		var $diagrams = rendered_manual.state.diagrams
 		for doc in $documents {
-			state = initial(options, raw, doc.identified.refs.concat(refs), $routes, doc.file.path, "html5", files)
+			state = { ..initial(options, raw, doc.identified.refs.concat(refs), $routes, doc.file.path, "html5", files), diagrams: $diagrams }
 			result = blocks(doc.identified.blocks, state, 0)?
-			html_result = html_blocks(doc.identified.blocks, state, 0)?
+			html_result = html_blocks(doc.identified.blocks, { ..state, diagrams: result.state.diagrams }, 0)?
+			$diagrams = result.state.diagrams
 			page_attrs = attributes(files, doc.file, options)?
 			numbered = page_attrs.any(|a| a.name == "sectnums")
 			toc_depth = if (lookup(page_attrs, "toclevels") == "") 3 else U64.from_str(lookup(page_attrs, "toclevels")).map_err(|_| "toclevels must be an integer from 1 to 6")?
@@ -60,21 +64,30 @@ Preparation :: [].{
 			$pages = $pages.append({ route: doc.route, source: result.text, html: Prepared({ body: html_result.text, numbered, toc_depth, remark: lookup(page_attrs, "revremark") }) })
 			$images = $images.concat(result.state.images)
 		}
-		if $pages.fold(
+
+		attrs = attributes(files, entry, options)?
+		title = manual_doc.title
+		bounded({ pages: $pages, manual: rendered_manual.text, metadata: { title, author: lookup(attrs, "author"), version: options.version, language: if (lookup(attrs, "lang") == "") "en" else lookup(attrs, "lang") }, images: unique($images), diagrams: DiagramAdapter.diagrams($diagrams) }, 67108864)
+	}
+
+	## Aggregate prepared text includes every page, its HTML when present, and
+	## the combined manual. Count UTF-8 bytes after diagram adaptation in both formats.
+	bounded : Result, U64 -> Try(Result, Str)
+	bounded = |prepared, limit| {
+		bytes = prepared.pages.fold(
 			0.U64,
-			|n, p| n + p.source.to_utf8().len() + (
-				match p.html {
-					Prepared(h) => h.body.to_utf8().len()
+			|n, page| n + page.source.to_utf8().len() + (
+				match page.html {
+					Prepared(html) => html.body.to_utf8().len()
 					MarkdownSource => 0
 				}
 			),
-		) + rendered_manual.text.to_utf8().len() > 67108864 {
-			return Err("prepared documentation exceeds output limit")
-		}
-		attrs = attributes(files, entry, options)?
-		title = manual_doc.title
-		Ok({ pages: $pages, manual: rendered_manual.text, metadata: { title, author: lookup(attrs, "author"), version: options.version, language: if (lookup(attrs, "lang") == "") "en" else lookup(attrs, "lang") }, images: unique($images) })
+		) + prepared.manual.to_utf8().len()
+		if bytes > limit {
+			Err("prepared documentation exceeds output limit")
+		} else Ok(prepared)
 	}
+
 }
 
 safe_path = |s| !s.is_empty() and !s.starts_with("/") and !s.contains("\\") and s.split_on("/").all(|p| p != "" and p != "." and p != "..") and s.to_utf8().all(|b| b >= 32 and b != 127)
@@ -237,9 +250,9 @@ code_sources = |files| {
 	Ok($found)
 }
 
-State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64, sources : List(Preparation.File) }
+State : { options : Preparation.Options, raw : List(RawCode), refs : List(Ref), routes : List(Route), path : Str, page : Str, backend : Str, images : List(Str), figure : U64, table_count : U64, sources : List(Preparation.File), diagrams : DiagramAdapter.Cache, ordinal : U64 }
 
-initial = |options, raw, refs, routes, path, backend, sources| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0, sources }
+initial = |options, raw, refs, routes, path, backend, sources| { options, raw, refs, routes, path, page: path, backend, images: [], figure: 0, table_count: 0, sources, diagrams: DiagramAdapter.empty_cache, ordinal: 0 }
 
 blocks : List(AsciiDoc.Block), State, U64 -> Try({ text : Str, state : State }, Str)
 blocks = |input, state, depth| {
@@ -253,7 +266,7 @@ blocks = |input, state, depth| {
 		if n.context == "section" and n.level == 1 {
 			match $state.refs.find_first(|r| r.id == n.id) {
 				Ok(ref) => {
-					$state = { ..$state, path: ref.path }
+					$state = { ..$state, path: ref.path, ordinal: if ($state.path == ref.path) $state.ordinal else 0 }
 				}
 				_ => {}
 			}
@@ -280,10 +293,11 @@ blocks = |input, state, depth| {
 			"listing" | "literal" => {
 				if n.style == "mermaid" or lookup(attrs, "1") == "mermaid" {
 					body = "${n.source}\n"
-					digest = Sha256.hex(body.to_utf8())
-					diagram = $state.options.diagrams.find_first(|d| d.source_sha256 == digest).map_err(|_| "unprepared/stale Mermaid diagram ${digest}")?
-					$state = { ..$state, images: $state.images.append(diagram.href) }
-					$text = "${$text}![${escape_text(if (n.title == "") "Diagram" else n.title).replace_each("&", "\\&")}](${diagram.href})\n\n"
+					rendered = DiagramAdapter.admit({ source: body, path: $state.path, ordinal: $state.ordinal + 1, cache: $state.diagrams }).map_err(DiagramAdapter.message)?
+					diagram = rendered.diagram
+					$state = { ..$state, diagrams: rendered.cache, ordinal: $state.ordinal + 1 }
+					$state = { ..$state, images: $state.images.append(DiagramAdapter.href(diagram)) }
+					$text = "${$text}![${escape_text(if (n.title == "") "Diagram" else n.title).replace_each("&", "\\&")}](${DiagramAdapter.href(diagram)})\n\n"
 				} else {
 					candidates = $state.raw.keep_if(|r| r.normalized == normalize_code(n.source))
 					values = unique(candidates.map(|r| r.source))
@@ -602,12 +616,20 @@ resolve = |href, state| {
 markdown = |files, entry, options| {
 	var $images = []
 	var $pages = []
+	var $diagrams = DiagramAdapter.empty_cache
+	var $manual = entry.source
 	for file in files.keep_if(|f| f.path.ends_with(".md") and !f.path.contains("/")) {
-		$images = $images.concat(markdown_images(Markdown.parse_str(file.source)))
-		$pages = $pages.append({ route: file.path.drop_suffix(".md").concat(".html"), source: file.source, html: MarkdownSource })
+		adapted = DiagramAdapter.markdown({ blocks: Markdown.parse_str(file.source), path: file.path, ordinal: 0, cache: $diagrams, depth: 0 }).map_err(DiagramAdapter.message)?
+		$diagrams = adapted.cache
+		prepared_source = if (adapted.ordinal == 0) file.source else MarkdownExport.serialize(adapted.blocks)?
+		if file.path == entry.path {
+			$manual = prepared_source
+		}
+		$images = $images.concat(markdown_images(adapted.blocks))
+		$pages = $pages.append({ route: file.path.drop_suffix(".md").concat(".html"), source: prepared_source, html: MarkdownSource })
 	}
 	title = entry.source.split_on("\n").find_first(|line| line.starts_with("# ")).map_ok(|line| line.drop_prefix("# ").split_on(" {#").first() ?? "Manual") ?? "Manual"
-	Ok({ pages: $pages, manual: entry.source, metadata: { title, author: "", version: options.version, language: "en" }, images: $images })
+	Ok({ pages: $pages, manual: $manual, metadata: { title, author: "", version: options.version, language: "en" }, images: unique($images), diagrams: DiagramAdapter.diagrams($diagrams) })
 }
 
 markdown_images : List(Markdown) -> List(Str)
@@ -667,7 +689,7 @@ html_blocks = |input, state, depth| {
 		if n.context == "section" and n.level == 1 {
 			match $state.refs.find_first(|r| r.id == n.id) {
 				Ok(ref) => {
-					$state = { ..$state, path: ref.path }
+					$state = { ..$state, path: ref.path, ordinal: if ($state.path == ref.path) $state.ordinal else 0 }
 				}
 				_ => {}
 			}
@@ -702,10 +724,10 @@ html_blocks = |input, state, depth| {
 				$state = prepared.state
 				if n.style == "mermaid" or lookup(attrs, "1") == "mermaid" {
 					digest = Sha256.hex("${n.source}\n".to_utf8())
-					diagram = $state.options.diagrams.find_first(|d| d.source_sha256 == digest).map_err(|_| "missing prepared diagram")?
+					diagram = DiagramAdapter.find_digest($state.diagrams, digest).map_err(|_| "missing admitted diagram")?
 					$state = { ..$state, figure: $state.figure + (if (title == "") 0 else 1) }
 					caption = if (title == "") "" else "<figcaption>Figure ${$state.figure.to_str()}. ${title}</figcaption>"
-					$text = "<figure class=\"diagram\"><img src=\"${Html.escape(diagram.href)}\" alt=\"${Html.escape(if (n.title == "") "Diagram" else n.title)}\">${caption}</figure>"
+					$text = "<figure class=\"diagram\"><img src=\"${Html.escape(DiagramAdapter.href(diagram))}\" alt=\"${Html.escape(if (n.title == "") "Diagram" else n.title)}\">${caption}</figure>"
 				} else {
 					code = Markdown.parse_str(prepared.text).keep_oks(
 						|b| match b {

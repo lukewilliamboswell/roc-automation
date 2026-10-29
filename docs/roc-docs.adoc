@@ -1,0 +1,196 @@
+= Build documentation with roc-docs
+
+This reference is for maintainers building a project's website, static Markdown
+and searchable PDF from AsciiDoc or Markdown. Supply a released `roc-docs`
+executable and the source tree; ordinary builds need no compiler, external
+renderer, host fonts or network. Optional Roc API generation requires a
+caller-supplied compiler.
+
+Use xref:documentation.adoc#write-for-the-shared-renderer[the authoring guide]
+to structure a manual. The commands and source profile below describe the
+utility interface. Renderer contributors should use
+xref:maintain-roc-docs.adoc#maintain-the-documentation-renderer[Maintain the documentation renderer].
+
+== Build a manual
+
+[source,sh]
+----
+roc-docs build --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-out --pdf-filename project.pdf --docs-version 1.2
+----
+
+The website is `.docs-out/site/`; the PDF is available both there and at
+`.docs-out/project.pdf`. `--title`, `--author` and `--language` override document
+metadata. `--pdf-image-dpi` accepts 72 through 300, default 144. The shared action
+invokes this native command directly and preserves its site/PDF outputs.
+The build publishes one static `.md` file per rendered
+manual or chapter HTML page, including `index.md`, plus a versioned `llms.txt`
+chapter index. Each rendered manual or chapter HTML page links visibly to its Markdown equivalent and declares `rel="alternate"`
+(`text/markdown`) and `rel="describedby"` (`llms.txt`). These are ordinary static
+files, suitable for GitHub Pages without content negotiation.
+Markdown publication defaults to true in the CLI and shared action. Use
+`--markdown false` or `markdown: "false"` to omit Markdown and its index. `--site-url` makes index and HTML-source links absolute under the
+publication directory; chapter and asset links remain relative.
+`--api-entrypoint` and `--roc-command` add API documentation as a separate,
+explicitly requested compiler invocation.
+
+For authoring conventions, use
+xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
+For release verification and the build/deploy boundary, use
+xref:documentation.adoc#experimental-native-docs-contract[the native documentation contract].
+The xref:actions.adoc#build-docs[build-docs action reference] describes the wrapper's inputs.
+
+Repository input/output paths stay within `--workspace`. Source trees reject
+symlinks and special files. Sources, includes, decompression and assets have
+resource limits. A complete build is staged before replacing previous output;
+a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
+`.roc-docs-backup` directories require inspection before retrying.
+
+== Source formats and links
+
+AsciiDoc supports local chapter includes with level offsets, HTML/PDF backend
+conditionals, attributes, headings and explicit IDs, ordinary and description
+lists, sidebars, admonitions, captions, links, cross-references, source blocks,
+header PSV tables, local PNGs and native Mermaid. Use simple PSV tables with
+explicit columns; continued cells may contain subsequent separators. Spans,
+cell styles and nested cell blocks reject. Unsupported block contexts,
+passthrough and custom source substitution or indent modes reject.
+
+Every top-level source file in the entrypoint's format retains its `.html` route. An AsciiDoc entrypoint's
+include tree supplies the combined PDF; cross-references are rewritten for the
+site pages and PDF destinations. Native Markdown makes every top-level `.md`
+file a website page, but the PDF uses only the selected entrypoint. Markdown
+includes and automatic cross-file PDF link rewriting are not implemented. Use
+absolute URLs or destinations present in that PDF entrypoint.
+
+Markdown publication uses the HTML-backend prepared pages, retaining website-only
+content and rewriting chapter links to `.md`. It emits explicit canonical heading
+anchors and preserves code, tables, image descriptions and other supported content;
+unsupported export nodes fail the build. The export keeps table content but
+does not reproduce column weights, HTML styling or PDF pagination.
+`llms.txt` is a discovery convention, not a guarantee that any
+specific agent automatically fetches or follows it.
+
+Supported rendering blocks include headings, paragraphs, fenced source,
+ordinary lists, tables, quotes and thematic breaks. Raw HTML and unsupported
+rendering nodes reject explicitly. PDF quotes, sidebars and admonitions use
+splittable callouts; rich lists retain attached source, figures and tables.
+The PDF uses exact destination page references and chapter-aware running headers.
+PDF table column weights remain unimplemented. Existing Asciidoctor YAML themes are
+incompatible and reject on the native backend; the initial native theme is
+built in. These are explicit experimental authoring/presentation boundaries,
+not a claim of complete Asciidoctor compatibility.
+
+The printed PDF contents has linked entries with bold chapter titles and three
+levels of heading ancestry. Page numbers share the content area's right edge;
+subsections use dotted leaders. A leading heading matching the book title is
+omitted. Wrapped titles retain their indentation, with the number beside the
+final title line. Printed numbers resolve to final physical destination pages;
+leaders are decoration and do not enter extracted text.
+
+Use `--site-url https://example.com/project/` (or the action's `site-url` input)
+for PDF links to website-only chapters, API routes and downloads. The utility
+keeps manual chapter references internal and preserves other download filenames.
+Local listing includes can select `tag=name` and `indent=0` from checked files
+inside the workspace; consumers still compile/test their examples separately.
+The broader roc-parser 3.0.0 include-selector API does not expand this renderer
+contract. Chapter includes are bounded local `.adoc` or `.md` files; listing
+includes may read checked source and `.expected` files within the workspace.
+Missing tags, escaping paths, output overlap and ambiguous chapter provenance reject.
+
+HTML and PDF share the same language-aware source highlighter and original
+UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
+tokenizers, and shell, JSON and diff
+through small lexical adapters. Unknown languages retain preformatted text. The highlighter accepts incomplete snippets and does
+not require type checking. AsciiDoc LF source blocks retain their original
+bytes. Native Markdown follows the upstream CommonMark line-ending
+normalization before code highlighting;
+PDF source layout owns wrapping, tabs and page continuation.
+
+The bundled fonts have finite glyph coverage; unsupported glyphs reject.
+Legacy underscore anchors require explicit migration review.
+
+Headings may use an explicit trailing Markdown `{#stable-id}`. Duplicate explicit
+IDs fail; repeated implicit labels acquire numeric suffixes. HTML links allow
+HTTP(S), mailto, local fragments and safe relative paths. PDF links require
+absolute URLs or internal destinations. Executable URL schemes and controls
+reject. Neither renderer fetches linked content.
+
+== Website presentation
+
+HTML ships the existing Space Grotesk and Plus Jakarta Sans reading fonts as
+local assets, with their SIL OFL notices, and supports light/dark colour schemes.
+HTML uses a nested persistent desktop contents sidebar and a collapsible,
+single-column mobile contents list. It honors AsciiDoc `sectnums` and
+`toclevels` (1–6), adds heading permalinks and preserves legacy duplicate-heading
+anchors. Without JavaScript the contents remain expanded and usable.
+
+== Images and diagrams
+
+Prepare JPEG, GIF, WebP and general SVG assets as supported PNGs before building.
+Animations need a static print image and a link to the separate animation.
+The utility does not fetch remote images or invoke converters.
+
+The native PNG reader supports non-interlaced eight-bit RGB/RGBA, checks chunk
+CRCs, zlib framing, Adler32 and exact decompressed length, and bounds DEFLATE
+output before appending it. Alpha is composited onto white for PDF. Indexed,
+interlaced, other bit-depth PNGs and unsupported critical chunks reject.
+
+HTML retains original PNG bytes; native diagrams reference standalone SVGs
+directly. PDF fits figures to the A4 body and applies
+bounded, deterministic box averaging at `--pdf-image-dpi`, never upscaling small
+originals. The initial roc-pdf facade has a fixed resource budget: a large
+manual at higher resolution can reject before publication. Reduce PDF
+resolution or source image dimensions rather than dropping figures.
+
+Mermaid renders in process from AsciiDoc `[mermaid]` blocks and Markdown
+`mermaid` fences, including blocks inside lists and quotes. The pinned
+roc-graph-layout 0.3.0-rc3 package supports its flowchart, sequence, entity
+relationship, class and state subsets. Unsupported features fail with the source
+path, diagram ordinal and upstream diagnostic; they are never silently omitted.
+AsciiDoc figure captions and nearby explanations are preserved.
+
+Each exact body is rendered once per build. Standalone SVGs appear at
+`images/diagram-<source-sha256>.svg` in HTML and exported Markdown; PDF uses
+ordered vector paths and searchable labels. SVGs embed the necessary full static
+Inter faces and complete OFL notice, so reading them requires no installed fonts. The source hash covers
+the parsed body, including its final LF. AsciiDoc's parser may normalize source
+whitespace; Markdown follows CommonMark normalization.
+
+Limits are 64 KiB per source, 256 graph elements, 1,024 relationships/events/member
+rows, nesting 32 and 256 unique diagrams per build, checked before layout.
+Empty, nonfinite and oversized drawings reject. The aggregate asset budget is
+128 MiB. The library supports a subset of Mermaid, and Inter's glyph coverage
+bounds portable labels; use supported text and inspect styled members in both
+outputs. Authored SVG validation remains separate from generated SVG serialization.
+
+`prepared-diagrams.json` is obsolete and rejects with a migration message.
+Remove registrations, downstream diagram rendering scripts and unused generated
+PNG/SVG assets; retain Mermaid source and use the ordinary documentation build.
+
+== Inspect preparation or render Markdown
+
+`prepare` exposes intermediate Markdown, assets and an experimental schema-3
+inventory for inspection. It has the same repository/metadata options as
+`build`, requires a new output directory, and does not require a Python adapter:
+
+[source,sh]
+----
+roc-docs prepare --workspace . --docs-directory docs --entrypoint index.adoc \
+  --output-directory .docs-prepared --docs-version 1.2
+----
+
+The standalone renderer remains useful for individual Markdown documents:
+
+[source,sh]
+----
+roc-docs render manual.md new-output --title 'Project manual' \
+  --author 'Contributors' --version 1.2 --language en-AU \
+  --pdf-filename project.pdf --image images/example.png example.png
+----
+
+`--image HREF PNG_PATH` decodes PNG directly. The older
+`--asset HREF PNG_PATH RGB_PATH WIDTH HEIGHT` prepared-RGB interface remains
+available. `--html-only` and `--pdf-only` select an output format. This command
+requires a new output directory, prepares both requested formats first and
+publishes through a sibling staging directory.

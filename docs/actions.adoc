@@ -426,8 +426,8 @@ Roc compiler. The same binary can build a repository locally with
 `roc-docs build --workspace .`.
 
 The renderer supports the manual's documented source subset. Unsupported
-constructs fail rather than silently disappearing. Mermaid diagrams need prepared
-PNG assets whose hashes match their source; see
+constructs fail rather than silently disappearing. Mermaid diagrams render in process from native source blocks into standalone SVG
+and PDF vector figures; see
 xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
 The PDF theme has outlines, hierarchical linked contents with printed page
 numbers, chapter opening pages and chapter-aware continuation headers. PDF raster images default to a

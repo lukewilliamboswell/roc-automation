@@ -1,0 +1,143 @@
+= Maintain the documentation renderer
+
+This chapter is for contributors changing `tools/roc-docs/`, its dependencies,
+fonts or output adapters. It assumes the
+xref:roc-docs.adoc#build-documentation-with-roc-docs[utility reference] and
+xref:documentation.adoc#experimental-native-docs-contract[the publication contract].
+Build and inspect the whole manual when changing rendering: small fixtures alone
+cannot establish that an authored book still reads correctly.
+
+== Build and test the executable
+
+Use compiler `nightly-2026-10-28-bad769b` and its normal cache. Immutable package
+URLs pin basic-cli, roc-parser, roc-pdf, roc-font, roc-graph-layout and roc-deflate. The one-shot build driver runs with `--opt=interpreter`. It builds release
+executables using the validated `--opt=speed` configuration; compilation has substantial RAM cost,
+separate from native rendering. Keep Roc commands sharing a cache sequential to avoid scratch cleanup races.
+
+[source,sh]
+----
+ROC=/absolute/path/to/roc roc --opt=interpreter tools/roc-docs/build.roc -- aarch64-darwin
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  python3 tools/roc-docs/tests/test_cli.py
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  python3 tools/roc-docs/tests/test_build.py
+python3 tools/roc-docs/tests/run_roc_tests.py
+----
+
+The suite runner requires a passing test summary. On the pinned compiler it
+accepts warning status 2 only for unreachable-code warnings in the explicitly
+listed pinned dependencies; warnings in local code, other diagnostics and failed tests reject.
+
+Python is used by the upstream build/test harness and independent reference
+adapter under `tools/roc-docs/tests/`. The build wrapper applies the same pinned-dependency
+warning allowance and requires a zero-error successful-build summary. Renderer subprocesses run with `PATH=/nonexistent`; native build tests
+exercise the actual compiled pipeline. Optional Poppler tools on the test host
+check PDF tags, destinations, text and actual token colours. This is not an
+independent PDF/A or PDF/UA compliance claim.
+
+For a real-browser acceptance audit of the built roc-automation manual, use Node
+22.4+ and an installed Chrome on the test host:
+
+[source,sh]
+----
+ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
+  node tools/roc-docs/tests/check_html_browser.mjs .docs-out/site /tmp/roc-docs-screenshots
+----
+
+The audit checks every page's links, loaded images and highlighting, then desktop
+navigation, mobile overflow/contents controls, column ratios and vector selection.
+It builds dedicated AsciiDoc and Markdown fixtures with the supplied renderer,
+checking source whitespace, transparent token backgrounds and actual palette
+colours in light/dark modes at desktop/mobile widths. Duplicate-heading aliases
+are checked against deliberate repeated sections rather than manual chapter names.
+Set `CHROME` when its executable is not in the default location. These are test
+host dependencies, not dependencies of the released utility. The upstream
+documentation workflow runs this audit and uploads desktop, mobile, dark-mode
+code and rasterized PDF contents screenshots as the `docs-browser-review` artifact.
+
+== Update fonts and rendering modules
+
+`SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
+platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source
+highlighters, and `Renderer.roc` owns PDF adaptation/theme/fonts. `Png.roc`,
+`Svg.roc` and `ImageAssets.roc` own bounded image handling. PDF body text and diagram labels use Inter Regular, with full Bold/Italic faces
+for inline and diagram styles; headings use Roc Docs Serif Bold, a renamed
+Merriweather instance at wght=700, wdth=100, opsz=18. Code retains Source Code Pro.
+`tools/roc-docs/fonts/prepare_fonts.py INPUTS OUTPUT` prepares these assets at authoring time
+using fontTools 4.61.1 and checked source digests. `INPUTS` contains the pinned
+Inter release ZIP and the extracted roc-font rc3 package under `font/`;
+`tools/roc-docs/fonts/provenance.json` records their URLs and hashes. Run the recipe twice
+and compare every output digest before committing a font update. Runtime builds never invoke font tools.
+Source adapted from roc-ansi commit
+`75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
+retain SIL OFL notices and pinned hashes in `tools/roc-docs/fonts/provenance.json` and
+`tools/roc-docs/fonts/web/provenance.json`. The bounded
+DEFLATE adaptation retains its Apache-2.0 license, modification notice and source
+identity under `tools/roc-docs/vendor/`. `roc-docs --licenses` prints bundled notices without
+requiring adjacent files.
+
+== Follow the preparation pipeline
+
+`RepositoryBuild.roc` supplies files as inert data. `Preparation.roc` is a pure
+adapter over roc-parser 3.0.0's public AsciiDoc syntax tree, virtual-file
+preprocessing and inline rendering APIs. HTML renders the AsciiDoc tree directly
+to retain block semantics; PDF uses roc-pdf 0.2.0 through prepared Markdown.
+Native Markdown shares the HTML layout and highlighters. No source is executed
+and includes cannot fetch network content.
+
+The supported source and presentation profile belongs in
+xref:roc-docs.adoc#source-formats-and-links[the utility reference]. The wider
+parser API does not expand that contract. In particular, listing includes accept
+single positive `tag` selections and `indent=0`; multiple or negative tags and
+line-range selection remain unsupported. Missing or unbalanced tags, nested
+include directives and delimiter injection reject. Source bodies are recovered
+from original files where the parser normalizes trailing whitespace; ambiguous
+bodies reject rather than guessing. Keep whitespace, tab, inline-code,
+highlighting and link checks across every output when upgrading the parser.
+
+HTML preserves description lists, boxed sidebars and admonitions, numbered
+figure captions and table weights. PDF uses bold description labels, splittable
+callouts and captions as ordinary content. Page references reserve their width
+before pagination and must fit their final values. Nested lists retain attached source,
+figures and tables. Unicode destination IDs are encoded for the PDF engine's
+printable-ASCII name contract; website anchors retain authored IDs.
+
+`prepare` writes intermediate Markdown, assets and an experimental schema-3
+inventory into a new directory for inspection independently of PDF layout.
+The combined `manual.md` is a PDF intermediate, not a published Markdown download.
+The inventory records metadata, page inputs and routes, manual input and output,
+image identities and dimensions, and source hashes. Listing include records carry
+the document line, workspace path, selection options, original digest and
+selected-text digest. The shared action calls `build` directly and does not
+consume this manifest or a Python adapter.
+
+Schema 3 distinguishes `kind: "raster"` entries with PNG/RGB hashes from
+`kind: "vector"` entries with SVG hashes. Inapplicable fields are empty strings
+or zero. Vector geometry is regenerated from source; the inventory is an
+experimental inspection interface, not an SVG-to-PDF loader.
+
+`DiagramAdapter.roc` parses and bounds Mermaid before layout; `DiagramSvg.roc`
+serializes renderer-owned geometry, escaped text and embedded font bytes.
+`VectorDrawing.roc` adapts ordered paths and styled labels into PDF figures.
+Keep this generated serialization separate from `Svg.roc`'s authored-SVG
+validation. Diagram families, limits and migration steps are specified in
+xref:roc-docs.adoc#images-and-diagrams[Images and diagrams].
+
+== Verify independently of the renderer
+
+The Python adapter under `tools/roc-docs/tests/` supplies an independent source
+inventory and reference preparation. Reference inventories compare emitted HTML
+code bytes, table and image counts, anchors and cross-page links. Independent
+PDF readers check code characters, destinations, token colours and figure
+geometry. Test all five diagram families through both source formats, including
+captions, nested blocks, repeated sources and styled members. Check SVG font
+loading, exported Markdown links and PDF clipping independently of the converter.
+
+Exercise malformed syntax, hostile labels, resource limits, obsolete registries
+and output collisions; a failure must preserve the previous publication. Run
+native CLI and action acceptance with external rendering tools unavailable on
+`PATH`. The tools release workflow builds and tests Linux x86-64, Linux ARM64 and
+Apple Silicon executables. Compare diagram asset digests across repeated builds
+on each target, and review the full manual's website and PDF after font or
+layout changes. Record that evidence with the release rather than inferring
+compatibility from compilation alone.

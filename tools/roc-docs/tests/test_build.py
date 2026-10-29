@@ -18,10 +18,10 @@ import zlib
 BINARY = str(Path(os.environ['ROC_DOCS_BINARY']).resolve())
 
 
-def png_bytes():
+def png_bytes(width=1, height=1):
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
-    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\0\x12\x34\x56')) + chunk(b'IEND', b'')
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress((b'\0' + b'\x12\x34\x56' * width) * height)) + chunk(b'IEND', b'')
 
 
 class Html(HTMLParser):
@@ -334,27 +334,166 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('1.1. ',html); self.assertIn('2.1. ',html)
         self.assertRegex(html,r'<li><a href="#first">1\. First</a><ul>')
         self.assertEqual(len(page.ids),len(set(page.ids)))
-    def test_prepared_vectors_use_picture_and_png_fallback_and_reject_active_svg(self):
-        body='flowchart LR\n  First --> Last\n'
-        self.source('index.adoc','= Diagrams\n\n.A useful diagram\n[mermaid]\n....\n'+body+'....\n')
-        (self.docs/'diagram.png').write_bytes(png_bytes())
-        svg=b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>'
-        (self.docs/'diagram.svg').write_bytes(svg)
-        entry={'source_sha256':hashlib.sha256(body.encode()).hexdigest(),'href':'images/diagram.png','png':'diagram.png','png_sha256':hashlib.sha256(png_bytes()).hexdigest(),'svg':'diagram.svg','svg_sha256':hashlib.sha256(svg).hexdigest()}
-        registry={'schema_version':2,'diagrams':[entry]}
-        (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
-        self.run_build("--markdown", "true"); site=self.root/'.docs-out/site'; html=(site/'index.html').read_text()
-        self.assertIn('<picture><source type="image/svg+xml" srcset="images/diagram.svg">',html)
-        self.assertEqual((site/'images/diagram.svg').read_bytes(),svg)
-        self.assertEqual((site/'images/diagram.png').read_bytes(),png_bytes())
-        self.assertIn('<figcaption>Figure 1. A useful diagram</figcaption>',html)
-        self.assertIn('![A useful diagram](images/diagram.png)', (site/'index.md').read_text())
-        for attack in [b'<svg onload="alert(1)"/>',b'<svg><script>alert(1)</script></svg>',b'<svg><style>p{background:image-set("remote.png")}</style></svg>']:
-            attack = attack.replace(b'<svg', b'<svg xmlns="http://www.w3.org/2000/svg"', 1)
-            (self.docs/'diagram.svg').write_bytes(attack); entry['svg_sha256']=hashlib.sha256(attack).hexdigest()
-            (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
-            self.run_build(success=False)
-            self.assertEqual((site/'images/diagram.svg').read_bytes(),svg)
+    def test_native_diagram_families_captions_nested_repeats_and_determinism(self):
+        import base64
+        import re
+        import xml.etree.ElementTree as ET
+        bodies = [
+            'flowchart LR\n A[Start] --> B[Done]\n',
+            'sequenceDiagram\n Alice->>Bob: Request\n Bob-->>Alice: Reply\n',
+            'erDiagram\n CUSTOMER ||--o{ ORDER : places\n',
+            'classDiagram\n class Worker {\n +run()*\n +count$\n }\n Worker <|-- Task\n',
+            'stateDiagram-v2\n [*] --> Idle\n Idle --> Working : start\n Working --> [*]\n',
+        ]
+        previous = None
+        for format in ['adoc', 'md']:
+            with self.subTest(format=format):
+                for path in self.docs.glob('*'): path.unlink()
+                if format == 'adoc':
+                    content = '= Diagrams\n\n' + ''.join('.A useful diagram\n[mermaid]\n....\n' + b + '....\n\nExplanation.\n\n' for b in bodies)
+                    content += '[quote]\n____\n[mermaid]\n....\n' + bodies[0] + '....\n____\n'
+                else:
+                    content = '# Diagrams\n\n' + ''.join('```mermaid\n' + b + '```\n\nExplanation.\n\n' for b in bodies)
+                    content += '> ```mermaid\n' + ''.join('> ' + line + '\n' for line in bodies[0].splitlines()) + '> ```\n'
+                self.source('index.'+format, content)
+                self.run_build('--entrypoint','index.'+format)
+                site = self.root/'.docs-out/site'
+                vectors = {f.name:f.read_bytes() for f in (site/'images').glob('*.svg')}
+                self.assertEqual(len(vectors), 5)
+                for body in bodies:
+                    name = 'diagram-'+hashlib.sha256(body.encode()).hexdigest()+'.svg'
+                    data = vectors[name]
+                    root = ET.fromstring(data)
+                    self.assertEqual(root.tag, '{http://www.w3.org/2000/svg}svg')
+                    self.assertIn(b'data:font/ttf;base64,', data)
+                    encoded = data.split(b'data:font/ttf;base64,',1)[1].split(b')',1)[0]
+                    self.assertEqual(hashlib.sha256(base64.b64decode(encoded)).hexdigest(), '40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82')
+                    known_fonts = {'40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82','288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f','bbc051dd204b5019a1aa0bc0ae2aa8a05ab13e7a3f979fa357631dc7feb6833a','948405a16cdc62701da5f4005ed068ca5f4d27061d98f7974ccfc37831d9581d'}
+                    for embedded in re.findall(rb'data:font/ttf;base64,([A-Za-z0-9+/=]+)', data):
+                        self.assertIn(hashlib.sha256(base64.b64decode(embedded)).hexdigest(),known_fonts)
+
+                    notice = root.find('{http://www.w3.org/2000/svg}metadata').text
+                    self.assertEqual(hashlib.sha256(notice.encode()).hexdigest(), '262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a')
+                    self.assertIn('images/'+name, (site/'index.md').read_text())
+                if previous is not None: self.assertEqual(vectors, previous)
+                previous = vectors
+                html = (site/'index.html').read_text()
+                self.assertNotIn('<picture>', html)
+                if format == 'adoc': self.assertIn('<figcaption>Figure 1. A useful diagram</figcaption>', html)
+                self.assertIn('Explanation.', html)
+                self.run_build('--entrypoint','index.'+format)
+                self.assertEqual(vectors, {f.name:f.read_bytes() for f in (site/'images').glob('*.svg')})
+                self.run_build('--entrypoint','index.'+format, command='prepare')
+                manifest = json.loads((self.root/'.docs-prepared/manifest.json').read_text())
+                self.assertEqual(manifest['schema_version'],3)
+                self.assertEqual([a['kind'] for a in manifest['assets']], ['vector']*5)
+                for asset in manifest['assets']:
+                    self.assertEqual(hashlib.sha256((self.root/'.docs-prepared'/asset['svg']).read_bytes()).hexdigest(),asset['svg_sha256'])
+                shutil.rmtree(self.root/'.docs-prepared')
+                if shutil.which('pdftotext'):
+                    text = subprocess.check_output(['pdftotext', str(site/'manual.pdf'), '-'], text=True)
+                    for label in ['Start','Done','Request','Reply','CUSTOMER','ORDER','Worker','Task','Idle','Working']:
+                        self.assertIn(label,text)
+                    fonts = subprocess.check_output(['pdffonts',str(site/'manual.pdf')],text=True)
+                    self.assertIn('Inter',fonts); self.assertIn('RocDocsSerif',fonts)
+                    images = subprocess.check_output(['pdfimages','-list',str(site/'manual.pdf')],text=True)
+                    self.assertEqual(len(images.splitlines()),2,images)
+                    bounds = ET.fromstring(subprocess.check_output(['pdftotext','-bbox',str(site/'manual.pdf'),'-']))
+                    ns = {'x':'http://www.w3.org/1999/xhtml'}
+                    for page in bounds.findall('.//x:page',ns):
+                        for word in page.findall('.//x:word',ns):
+                            self.assertGreaterEqual(float(word.attrib['xMin']),0)
+                            self.assertGreaterEqual(float(word.attrib['yMin']),0)
+                            self.assertLessEqual(float(word.attrib['xMax']),float(page.attrib['width']))
+                            self.assertLessEqual(float(word.attrib['yMax']),float(page.attrib['height']))
+
+    def test_mixed_assets_keep_original_raster_evidence_when_pdf_resamples(self):
+        self.source('index.md', '# Mixed assets\n\n![Raster](wide.png)\n\n```mermaid\nflowchart LR\n A --> B\n```\n')
+        png = png_bytes(width=1000, height=10)
+        rgb = b'\x12\x34\x56' * 1000 * 10
+        (self.docs/'wide.png').write_bytes(png)
+        options = ('--entrypoint', 'index.md', '--pdf-image-dpi', '72')
+        self.run_build(*options, command='prepare')
+        prepared = self.root/'.docs-prepared'
+        manifest = json.loads((prepared/'manifest.json').read_text())
+        assets = {asset['kind']: asset for asset in manifest['assets']}
+        self.assertEqual(set(assets), {'raster', 'vector'})
+        raster = assets['raster']
+        self.assertEqual((raster['width'], raster['height']), (1000, 10))
+        self.assertEqual((prepared/raster['png']).read_bytes(), png)
+        self.assertEqual((prepared/raster['rgb']).read_bytes(), rgb)
+        self.assertEqual(raster['png_sha256'], hashlib.sha256(png).hexdigest())
+        self.assertEqual(raster['rgb_sha256'], hashlib.sha256(rgb).hexdigest())
+        self.assertEqual((raster['svg'], raster['svg_sha256']), ('', ''))
+        vector = assets['vector']
+        svg = (prepared/vector['svg']).read_bytes()
+        self.assertEqual(vector['svg_sha256'], hashlib.sha256(svg).hexdigest())
+        self.assertEqual((vector['png'], vector['rgb'], vector['width'], vector['height']), ('', '', 0, 0))
+        self.run_build(*options)
+        site = self.root/'.docs-out/site'
+        self.assertEqual((site/'wide.png').read_bytes(), png)
+        self.assertEqual((site/vector['href']).read_bytes(), svg)
+        self.assertIn(f"![Diagram]({vector['href']})", (site/'index.md').read_text())
+        if shutil.which('pdfimages'):
+            images = subprocess.check_output(['pdfimages', '-list', str(site/'manual.pdf')], text=True)
+            dimensions = [(int(fields[3]), int(fields[4])) for line in images.splitlines()
+                          if len(fields := line.split()) > 4 and fields[0].isdigit() and fields[2] == 'image']
+            self.assertEqual(dimensions, [(471, 4)])
+
+    def test_diagram_rejections_preserve_previous_publication(self):
+        output = self.prior()
+        cases = [
+            ('malformed','flowchart LR\n A[unfinished\n'),
+            ('unsupported','pie\n title Unsupported\n'),
+            ('hostile','flowchart LR\n A["<script>alert(1)</script>"]\n'),
+            ('empty','flowchart LR\n'),
+            ('bytes','flowchart LR\n%%' + 'x'*65536+'\n'),
+            ('elements','flowchart LR\n'+''.join(f'N{i}\n' for i in range(257))),
+            ('events','sequenceDiagram\n'+ 'A->>B: Hi\n'*1025),
+            ('members','classDiagram\n class Worker {\n'+' +field\n'*1025+' }\n'),
+            ('attributes','erDiagram\n CUSTOMER {\n'+' string name\n'*1025+' }\n'),
+            ('flow nesting','flowchart LR\n'+''.join(f'subgraph G{i}\n' for i in range(33))+'A\n'+'end\n'*33),
+            ('state nesting','stateDiagram-v2\n'+''.join(f'state G{i} {{\n' for i in range(33))+'A\n'+'}\n'*33),
+            ('nesting','sequenceDiagram\n'+ 'loop Again\n'*33+'A->>B: Hi\n'+'end\n'*33),
+            ('huge','flowchart LR\n A[Hello]\nstyle A stroke-width:100000\n'),
+        ]
+        for name, body in cases:
+            with self.subTest(name=name):
+                self.source('index.md','# Reject\n\n```mermaid\n'+body+'```\n')
+                result = self.run_build('--entrypoint','index.md', success=False)
+                self.assertIn('index.md: diagram 1',result.stderr)
+                if name in ('elements','events','members','attributes'):
+                    self.assertIn('256 elements or 1024 relationships/events/member rows',result.stderr)
+                elif 'nesting' in name:
+                    self.assertIn('nesting exceeds 32',result.stderr)
+                elif name == 'bytes':
+                    self.assertIn('exceeds 64 KiB',result.stderr)
+                elif name in ('empty','huge'):
+                    self.assertIn('empty, nonfinite or oversized',result.stderr)
+                self.unchanged(output)
+                self.assertFalse((self.root/'.docs-out.roc-docs-stage').exists())
+
+    def test_unique_diagram_limit_and_generated_asset_collision(self):
+        output = self.prior()
+        source = '# Many\n\n'+''.join(f'```mermaid\nflowchart LR\n N{i}\n```\n\n' for i in range(257))
+        self.source('index.md',source)
+        result = self.run_build('--entrypoint','index.md',success=False)
+        self.assertIn('256 unique diagrams',result.stderr); self.unchanged(output)
+        body = 'flowchart LR\n A --> B\n'
+        self.source('index.md','# Collision\n\n```mermaid\n'+body+'```\n')
+        self.source('images/diagram-'+hashlib.sha256(body.encode()).hexdigest()+'.svg','authored collision')
+        self.run_build('--entrypoint','index.md',success=False); self.unchanged(output)
+
+    def test_hostile_plain_label_is_escaped(self):
+        import xml.etree.ElementTree as ET
+        body = 'flowchart LR\n A["A #amp; B #lt; C #quot;quoted#quot;"] --> B[Done]\n'
+        self.source('index.md','# Escaping\n\n```mermaid\n'+body+'```\n')
+        self.run_build('--entrypoint','index.md')
+        svg = next((self.root/'.docs-out/site/images').glob('*.svg')).read_bytes()
+        root = ET.fromstring(svg)
+        self.assertIn('A & B < C "quoted"', ' '.join(''.join(t.itertext()) for t in root.findall('{http://www.w3.org/2000/svg}text')))
+        self.assertIn(b'&lt;',svg); self.assertNotIn(b'<script',svg)
+
     def test_markdown_images_static_files_and_successful_replacement(self):
         self.source('index.md', '# Home\n\n![Pixel](images/pixel.png)\n')
         image = self.docs/'images/pixel.png'; image.parent.mkdir(); image.write_bytes(png_bytes())
@@ -381,24 +520,21 @@ class RepositoryTests(unittest.TestCase):
         self.source('index.md','# Home\n')
         self.run_build('--entrypoint','index.md',command='prepare')
         prepared = self.root/'.docs-prepared'; manifest = json.loads((prepared/'manifest.json').read_text())
-        self.assertEqual(manifest['schema_version'],2)
+        self.assertEqual(manifest['schema_version'],3)
         self.assertEqual((prepared/manifest['manual']['input']).read_text(),'# Home\n')
         self.assertFalse((prepared/'manual.pdf').exists())
         before = (prepared/'manifest.json').read_bytes()
         self.run_build('--entrypoint','index.md',command='prepare',success=False)
         self.assertEqual((prepared/'manifest.json').read_bytes(),before)
-    def test_local_prepared_diagram_uses_pinned_original_png(self):
-        body = 'flowchart LR\n  First --> Last\n'
-        self.source('index.adoc','= Home\n\n[mermaid]\n....\n'+body+'....\n')
-        (self.docs/'diagram.png').write_bytes(png_bytes())
-        registry = {'schema_version':1,'diagrams':[{'source_sha256':hashlib.sha256(body.encode()).hexdigest(),'href':'images/diagram.png','png':'diagram.png','png_sha256':hashlib.sha256(png_bytes()).hexdigest()}]}
-        (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
-        self.run_build()
-        self.assertEqual((self.root/'.docs-out/site/images/diagram.png').read_bytes(),png_bytes())
-        registry['diagrams'][0]['png_sha256'] = '0'*64
-        (self.docs/'prepared-diagrams.json').write_text(json.dumps(registry))
-        before = (self.root/'.docs-out/manual.pdf').read_bytes(); self.run_build(success=False)
-        self.assertEqual((self.root/'.docs-out/manual.pdf').read_bytes(),before)
+    def test_obsolete_registry_rejects_with_migration_message(self):
+        output = self.prior()
+        self.source('index.adoc','= Home\n')
+        for contents in ['{}','{"schema_version":1}','{"schema_version":2}','invalid']:
+            self.source('prepared-diagrams.json',contents)
+            result = self.run_build(success=False)
+            self.assertIn('prepared-diagrams.json is obsolete',result.stderr)
+            self.unchanged(output)
+
     def test_missing_include_cycle_raw_html_and_unknown_diagrams_preserve_output(self):
         output = self.prior()
         cases = ['= Home\n\ninclude::missing.adoc[]\n', '= Home\n\ninclude::index.adoc[]\n', '= Home\n\ninclude::../outside.adoc[]\n', '= Home\n\n[mermaid]\n....\nunknown source\n....\n']

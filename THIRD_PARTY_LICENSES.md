@@ -4,9 +4,11 @@ The native `roc-docs` renderer embeds Space Grotesk and Plus Jakarta Sans
 for its website theme. Their font files, complete SIL Open Font License 1.1
 notices and pinned provenance are in `tools/roc-docs/fonts/web/`.
 
-The native `roc-docs` renderer embeds Noto Sans and Source Code Pro under the
+The native `roc-docs` renderer embeds Inter, Roc Docs Serif (a renamed Merriweather instance) and Source Code Pro under the
 SIL Open Font License 1.1. The font files, complete notices and pinned provenance
-are in `tools/roc-docs/fonts/`. Notices are also embedded in `roc-docs --licenses`
+are in `tools/roc-docs/fonts/`, alongside the deterministic fontTools 4.61.1
+preparation recipe. Inter also supplies the embedded fonts in generated diagram
+SVGs, with the complete Inter notice retained in SVG metadata; the full Regular face matches roc-graph-layout's measurement data. Notices are also embedded in `roc-docs --licenses`
 and included in the tools release. Its renderer was adapted from the UPL-1.0
 roc-ansi documentation spike; attribution is retained beside the source.
 

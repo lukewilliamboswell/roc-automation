@@ -176,8 +176,8 @@ jobs:
           cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
           cp -R tools/roc-docs/tests/fixtures docs-tests/
           cat LICENSE \
-            tools/roc-docs/fonts/NotoSans-OFL.txt \
-            tools/roc-docs/fonts/NotoSans-Italic-OFL.txt \
+            tools/roc-docs/fonts/Inter-OFL.txt \
+            tools/roc-docs/fonts/Merriweather-OFL.txt \
             tools/roc-docs/fonts/SourceCodePro-OFL.md \
             tools/roc-docs/fonts/web/SPACE-GROTESK-OFL.txt \
             tools/roc-docs/fonts/web/PLUS-JAKARTA-SANS-OFL.txt \
@@ -222,7 +222,7 @@ jobs:
             printf '\n## Compilers\n\n```\n'
             blueprint run compiler-version
             printf '```\n'
-            printf '\nPolicy utility compiler: nightly-2026-10-15-38e6c42\nDocumentation utility compiler: nightly-2026-10-21-5349569\n'
+            printf '\nPolicy utility compiler: nightly-2026-10-15-38e6c42\nDocumentation utility compiler: nightly-2026-10-28-bad769b\n'
           } > release-notes.md
       - name: List the digests
         working-directory: dist
