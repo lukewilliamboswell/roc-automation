@@ -1,5 +1,5 @@
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0-rc2/Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst",
 	roc: "nightly-2026-10-28-bad769b",
 }
 
@@ -45,7 +45,7 @@ main! = |args| {
 				"--target=${target.roc}",
 				"--output=${output}",
 			].map(OsStr.from_str),
-		).exec_cmd!()?
+		).exec!()?
 	}
 	Ok({})
 }
