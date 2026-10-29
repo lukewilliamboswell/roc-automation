@@ -25,12 +25,11 @@ consumer configuration retain their own verification and trust requirements.
 == `actions/setup-blueprint`
 
 Installs the verified `blueprint` binary that `Blueprint.roc` names, on x86-64
-and arm64 Linux, Apple Silicon macOS, and, from roc-blueprint 0.9.0, x86-64
-Windows and, from 0.10.0, Intel macOS. Nix is installed only with
-`install-nix: 'true'`, which Windows refuses. On Windows and Intel macOS
-Blueprint runs without a provider, from fetched programs and the tools the
-runner already has; a project that tests on Windows lists `"x86_64-windows"`
-in its `Systems`. For a complete recipe, lock, cache
+and arm64 Linux, Apple Silicon and Intel macOS, and x86-64 Windows. Nix is
+installed only with `install-nix: 'true'`, which Windows refuses. On Windows
+and Intel macOS Blueprint runs without a provider, from fetched programs and
+the tools the runner already has; a project that tests on Windows lists
+`"x86_64-windows"` in its `Systems`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the Roc package adoption guide].
 The setup action builds nothing.
 
@@ -216,11 +215,15 @@ run the same bytes:
 
 [source,roc]
 ----
-Environment("release", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.7.0/release-package-{system}"))]), Expect(["roc", "git", "gh", "tar", "unzip", "zip", "chmod", "touch", "env"])]),
-Environment("release-test", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.7.0/release-package-{system}"))]), Expect(["roc"])]),
+Environment("release", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/REVIEWED_TOOLS_RELEASE/release-package-{system}"))]), Expect(["roc", "git", "gh", "tar", "unzip", "zip", "chmod", "touch", "env"])]),
+Environment("release-test", [Programs([Fetch("release-package", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/REVIEWED_TOOLS_RELEASE/release-package-{system}"))]), Expect(["roc"])]),
 Task("release-package", [Use("release"), Run(["release-package"])]),
 Task("release-test", [Use("release-test"), Run(["release-package"])]),
 ----
+
+`REVIEWED_TOOLS_RELEASE` is the `tools-<version>` tag the repository reviewed,
+as `REVIEWED_FULL_SHA` is the commit of an action; `blueprint update` locks its
+digests.
 
 [source,sh]
 ----
@@ -258,7 +261,7 @@ command, and `build` takes the directory it wrote:
 ----
 blueprint run release-test -- test-examples               # the examples against platform/, host outputs included
 blueprint run bundle -- --output-dir build/platform       # the repository's own bundle command
-blueprint run release-package -- build 0.3.0 --platform-bundle build/platform
+blueprint run release-package -- build "$VERSION" --platform-bundle build/platform
 blueprint run release-test -- test-archive                # on every system the platform supports
 ----
 
