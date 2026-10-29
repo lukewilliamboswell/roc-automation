@@ -1,5 +1,14 @@
 = roc-automation 3
 
+[#reviewed-blueprint-installers]
+== Reviewed Blueprint 0.11.0 installers
+
+The setup action admits Blueprint 0.11.0 on all five native systems using
+reviewed SHA-256 digests verified against the published checksums and release
+provenance. Regression coverage checks config-based selection and rejects
+bytes that differ from the reviewed registry. Native utility downloads remain
+on `tools-0.7.0`; this registry update requires no new tools release.
+
 == Correctness and memory testing with roc-fuzz
 
 The testing guidance recommends roc-fuzz alongside unit and integration

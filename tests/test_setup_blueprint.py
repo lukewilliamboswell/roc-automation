@@ -92,6 +92,32 @@ class SetupBlueprintTests(unittest.TestCase):
         self.assertEqual(set(releases["0.9.0"]), UNIX_SYSTEMS | {"x86_64-windows"})
         self.assertEqual(set(releases["0.10.0"]), set(setup.SYSTEMS.values()))
 
+    def test_0_11_0_selects_all_native_assets_and_enforces_reviewed_checksums(self):
+        runners = [("Linux", "X64"), ("Linux", "ARM64"),
+                   ("macOS", "ARM64"), ("macOS", "X64"), ("Windows", "X64")]
+        reviewed = setup.known_releases()["0.11.0"]
+        self.assertEqual(set(reviewed), set(setup.SYSTEMS.values()))
+        for runner_os, runner_arch in runners:
+            system = setup.system_for(runner_os, runner_arch)
+            with self.subTest(system=system), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "workspace").mkdir()
+                (root / "workspace" / "Blueprint.roc").write_text(config("0.11.0"))
+                inputs = {"RUNNER_OS": runner_os, "RUNNER_ARCH": runner_arch}
+                # This uses the real registry: fixture bytes must be refused,
+                # and neither an executable nor GITHUB_PATH may be published.
+                with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                    self.run_main(root, inputs, known=setup.known_releases())
+                self.assertFalse((root / "path").exists())
+                installed = root / "temp" / "roc-automation-blueprint"
+                self.assertFalse((installed / "blueprint").exists())
+                self.assertFalse((installed / "blueprint.exe").exists())
+                # Admit matching fixture bytes to verify config-based version
+                # selection and the precise native URL for every runner.
+                seen = self.run_main(root, inputs, known={"0.11.0": {system: DIGEST}})
+                self.assertEqual(seen, [setup.asset_url("0.11.0", system)])
+                self.assertIn("version=0.11.0\n", (root / "output").read_text())
+
     def test_version_is_read_from_the_platform_url(self):
         self.assertEqual(setup.version_in(config("0.4.0")), "0.4.0")
         self.assertEqual(setup.version_in(config("0.5.0-rc1")), "0.5.0-rc1")
