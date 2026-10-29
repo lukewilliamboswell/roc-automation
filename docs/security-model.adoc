@@ -175,7 +175,7 @@ is fetched and checked by Roc itself. Sandboxed builds cannot download: their
 package cache.
 
 The
-https://github.com/lukewilliamboswell/roc-blueprint/blob/0.8.0/docs/configuration.adoc#roc-packages[Blueprint 0.8 Roc package contract]
+https://lukewilliamboswell.github.io/roc-blueprint/configuration.html#roc-packages[Blueprint's Roc package contract]
 distinguishes Roc's extracted package cache from Blueprint's verified artifact
 store. Blueprint reuses a package directory that already has
 `main.roc` without rehashing that directory. Reuse therefore assumes its contents
@@ -223,7 +223,7 @@ written to a private temporary file and becomes executable and visible on `PATH`
 only after its hash matches. A mismatch, a release with no reviewed hash for the
 runner, or a system with no released binary fails the step and installs nothing.
 
-Blueprint 0.8 evaluates `Blueprint.roc` with its own fixed compiler, embedded in
+Blueprint evaluates `Blueprint.roc` with its own fixed compiler, embedded in
 the admitted executable and verified against its recorded SHA-256 before
 extraction into the store, or an exactly matching host compiler. No GitHub
 compiler download is needed for this bootstrap. The executable digest therefore
