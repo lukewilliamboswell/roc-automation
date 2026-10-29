@@ -1,5 +1,6 @@
 import mermaid.Svg
 import mermaid.Drawing
+import "fonts/Inter-OFL.txt" as inter_notice : Str
 import "fonts/Inter-Regular.ttf" as regular : List(U8)
 import "fonts/Inter-Bold.ttf" as bold : List(U8)
 import "fonts/Inter-Italic.ttf" as italic : List(U8)
@@ -23,6 +24,7 @@ DiagramSvg :: [].{
 		Str.from_utf8_lossy($out)
 	}
 	face = |bytes, weight, style| "@font-face{font-family:RocDocsDiagram;src:url(data:font/ttf;base64,${base64(bytes)}) format('truetype');font-weight:${weight};font-style:${style};}"
+	notice = inter_notice.replace_each("&", "&amp;").replace_each("<", "&lt;").replace_each(">", "&gt;")
 	regular_css = face(regular, "400", "normal")
 	bold_css = face(bold, "700", "normal")
 	italic_css = face(italic, "400", "italic")
@@ -55,6 +57,6 @@ DiagramSvg :: [].{
 		# Insert fixed reviewed CSS before generated items; never rewrite label bytes.
 		svg = Svg.document(picture, "RocDocsDiagram")
 		lines = svg.split_on("\n")
-		"${lines.first() ?? ""}\n<defs><style>${$css}</style></defs>\n${Str.join_with(lines.drop_first(1), "\n")}".to_utf8()
+		"${lines.first() ?? ""}\n<metadata id=\"roc-docs-font-license\">${notice}</metadata>\n<defs><style>${$css}</style></defs>\n${Str.join_with(lines.drop_first(1), "\n")}".to_utf8()
 	}
 }

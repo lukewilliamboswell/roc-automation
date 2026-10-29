@@ -59,7 +59,8 @@ class RendererTests(unittest.TestCase):
         for body in bodies:
             name = 'images/diagram-'+hashlib.sha256(body.encode()).hexdigest()+'.svg'
             data = (one/name).read_bytes()
-            ET.fromstring(data)
+            root = ET.fromstring(data)
+            self.assertEqual(hashlib.sha256(root.find('{http://www.w3.org/2000/svg}metadata').text.encode()).hexdigest(), '262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a')
             self.assertIn(b'data:font/ttf;base64,',data)
             self.assertEqual(data,(two/name).read_bytes())
             self.assertIn(name,(one/'index.html').read_text())

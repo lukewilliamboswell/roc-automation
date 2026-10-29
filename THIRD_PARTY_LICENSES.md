@@ -8,7 +8,7 @@ The native `roc-docs` renderer embeds Inter, Roc Docs Serif (a renamed Merriweat
 SIL Open Font License 1.1. The font files, complete notices and pinned provenance
 are in `tools/roc-docs/fonts/`, alongside the deterministic fontTools 4.61.1
 preparation recipe. Inter also supplies the embedded fonts in generated diagram
-SVGs; the full Regular face matches roc-graph-layout's measurement data. Notices are also embedded in `roc-docs --licenses`
+SVGs, with the complete Inter notice retained in SVG metadata; the full Regular face matches roc-graph-layout's measurement data. Notices are also embedded in `roc-docs --licenses`
 and included in the tools release. Its renderer was adapted from the UPL-1.0
 roc-ansi documentation spike; attribution is retained beside the source.
 

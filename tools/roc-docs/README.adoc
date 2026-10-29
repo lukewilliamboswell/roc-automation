@@ -119,8 +119,8 @@ CRCs, zlib framing, Adler32 and exact decompressed length, and bounds DEFLATE
 output before appending it. Alpha is composited onto white for PDF. Indexed,
 interlaced, other bit-depth PNGs and unsupported critical chunks reject.
 
-HTML retains original PNG bytes and can prefer a validated SVG companion through
-`picture`, with PNG fallback. PDF fits figures to the A4 body and applies
+HTML retains original PNG bytes; native diagrams reference standalone SVGs
+directly. PDF fits figures to the A4 body and applies
 bounded, deterministic box averaging at `--pdf-image-dpi`, never upscaling small
 originals. The initial roc-pdf facade has a fixed resource budget: a large
 manual at higher resolution can reject before publication. Reduce PDF
@@ -136,7 +136,7 @@ AsciiDoc figure captions and nearby explanations are preserved.
 Each exact body is rendered once per build. Standalone SVGs appear at
 `images/diagram-<source-sha256>.svg` in HTML and exported Markdown; PDF uses
 ordered vector paths and searchable labels. SVGs embed the necessary full static
-Inter faces, so reading them requires no installed fonts. The source hash covers
+Inter faces and complete OFL notice, so reading them requires no installed fonts. The source hash covers
 the parsed body, including its final LF. AsciiDoc's parser may normalize source
 whitespace; Markdown follows CommonMark normalization.
 

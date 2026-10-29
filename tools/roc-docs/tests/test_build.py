@@ -336,6 +336,7 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(len(page.ids),len(set(page.ids)))
     def test_native_diagram_families_captions_nested_repeats_and_determinism(self):
         import base64
+        import re
         import xml.etree.ElementTree as ET
         bodies = [
             'flowchart LR\n A[Start] --> B[Done]\n',
@@ -366,7 +367,13 @@ class RepositoryTests(unittest.TestCase):
                     self.assertEqual(root.tag, '{http://www.w3.org/2000/svg}svg')
                     self.assertIn(b'data:font/ttf;base64,', data)
                     encoded = data.split(b'data:font/ttf;base64,',1)[1].split(b')',1)[0]
-                    self.assertEqual(base64.b64decode(encoded)[:4], b'\0\1\0\0')
+                    self.assertEqual(hashlib.sha256(base64.b64decode(encoded)).hexdigest(), '40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82')
+                    known_fonts = {'40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82','288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f','bbc051dd204b5019a1aa0bc0ae2aa8a05ab13e7a3f979fa357631dc7feb6833a','948405a16cdc62701da5f4005ed068ca5f4d27061d98f7974ccfc37831d9581d'}
+                    for embedded in re.findall(rb'data:font/ttf;base64,([A-Za-z0-9+/=]+)', data):
+                        self.assertIn(hashlib.sha256(base64.b64decode(embedded)).hexdigest(),known_fonts)
+
+                    notice = root.find('{http://www.w3.org/2000/svg}metadata').text
+                    self.assertEqual(hashlib.sha256(notice.encode()).hexdigest(), '262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a')
                     self.assertIn('images/'+name, (site/'index.md').read_text())
                 if previous is not None: self.assertEqual(vectors, previous)
                 previous = vectors
