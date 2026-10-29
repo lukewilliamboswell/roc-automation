@@ -47,7 +47,7 @@ a failed render leaves the previous site intact. Stale `.roc-docs-stage` or
 The parser package pins roc-parser 3.0.0. `Preparation.roc` adapts its real
 AsciiDoc syntax tree and virtual-file preprocessor. HTML preserves description
 lists, sidebars, captions and table column weights directly from that tree;
-PDF uses roc-pdf 0.2.0-rc1 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
+PDF uses roc-pdf 0.2.0 through the prepared Markdown rendering path. It does not invoke Asciidoctor or parse AsciiDoc as Markdown.
 Includes, backend conditionals, attributes and cross-references are resolved
 against the supplied source tree; there is no remote include loader or source
 execution. See link:PREPARATION.adoc[the preparation contract] for the supported
@@ -126,40 +126,34 @@ originals. The initial roc-pdf facade has a fixed resource budget: a large
 manual at higher resolution can reject before publication. Reduce PDF
 resolution or source image dimensions rather than dropping figures.
 
-Mermaid is an authoring-time asset preparation step. The executable embeds the
-repository's seven source-linked diagrams; ordinary builds need no Mermaid
-runtime. Downstream registrations go in `docs/prepared-diagrams.json`:
+Mermaid renders in process from AsciiDoc `[mermaid]` blocks and Markdown
+`mermaid` fences, including blocks inside lists and quotes. The pinned
+roc-graph-layout 0.3.0-rc3 package supports its flowchart, sequence, entity
+relationship, class and state subsets. Unsupported features fail with the source
+path, diagram ordinal and upstream diagnostic; they are never silently omitted.
+AsciiDoc figure captions and nearby explanations are preserved.
 
-[source,json]
-----
-{
-  "schema_version": 2,
-  "diagrams": [{
-    "source_sha256": "<SHA-256 of exact Mermaid body>",
-    "href": "images/build-flow.png",
-    "png": "images/build-flow.png",
-    "png_sha256": "<SHA-256 of prepared PNG bytes>",
-    "svg": "images/build-flow.svg",
-    "svg_sha256": "<SHA-256 of prepared SVG bytes>"
-  }]
-}
-----
+Each exact body is rendered once per build. Standalone SVGs appear at
+`images/diagram-<source-sha256>.svg` in HTML and exported Markdown; PDF uses
+ordered vector paths and searchable labels. SVGs embed the necessary full static
+Inter faces, so reading them requires no installed fonts. The source hash covers
+the parsed body, including its final LF. AsciiDoc's parser may normalize source
+whitespace; Markdown follows CommonMark normalization.
 
-The source hash covers body lines joined by LF, including the final LF, excluding
-AsciiDoc block markers. `png` is relative to the documentation directory; `href`
-is the safe published image path. An edited diagram rejects until its prepared
-PNG and source hash are deliberately updated. Local registrations take
-precedence over bundled entries. Schema 1 remains supported for PNG-only
-registrations. Schema 2 adds `svg` and `svg_sha256`; use empty strings for both
-when a registration has no vector companion. SVG uses a bounded static profile:
-geometry, text, local paint references and simple XHTML label containers; scripts,
-event attributes, external resources and unsupported CSS reject. Prepared SVGs
-are separate image files, never inline authored page markup. Hash checking establishes exact bytes, not an
-independent claim that a diagram correctly represents its source.
+Limits are 64 KiB per source, 256 graph elements, 1,024 relationships/events/member
+rows, nesting 32 and 256 unique diagrams per build, checked before layout.
+Empty, nonfinite and oversized drawings reject. The aggregate asset budget is
+128 MiB. The library supports a subset of Mermaid, and Inter's glyph coverage
+bounds portable labels; use supported text and inspect styled members in both
+outputs. Authored SVG validation remains separate from generated SVG serialization.
+
+`prepared-diagrams.json` is obsolete and rejects with a migration message.
+Remove registrations, downstream diagram rendering scripts and unused generated
+PNG/SVG assets; retain Mermaid source and use the ordinary documentation build.
 
 == Lower-level commands
 
-`prepare` exposes intermediate Markdown, assets and an experimental schema-2
+`prepare` exposes intermediate Markdown, assets and an experimental schema-3
 inventory for inspection. It has the same repository/metadata options as
 `build`, requires a new output directory, and does not require a Python adapter:
 
@@ -186,13 +180,10 @@ publishes through a sibling staging directory.
 
 == Build and verify
 
-Use compiler `nightly-2026-10-21-5349569` and its normal cache. Immutable package
-URLs pin basic-cli, roc-parser, roc-pdf and roc-deflate. Release builds use the
+Use compiler `nightly-2026-10-28-bad769b` and its normal cache. Immutable package
+URLs pin basic-cli, roc-parser, roc-pdf, roc-font, roc-graph-layout and roc-deflate. Release builds use the
 validated `--opt=speed` configuration; compilation has substantial RAM cost,
-separate from native rendering. Keep Roc commands sharing a cache sequential on
-this pin: its
-https://github.com/roc-lang/roc/blob/534956997e8e5c62888bc14cbc763f60109d0b72/src/compile/cache_cleanup.zig#L127-L161[scratch cleanup]
-can remove another build's active scratch directory once it is five minutes old.
+separate from native rendering. Keep Roc commands sharing a cache sequential to avoid scratch cleanup races.
 
 [source,sh]
 ----
@@ -245,7 +236,15 @@ code and rasterized PDF contents screenshots as the `docs-browser-review` artifa
 `SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
 platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source
 highlighters, and `Renderer.roc` owns PDF adaptation/theme/fonts. `Png.roc`,
-`Svg.roc` and `ImageAssets.roc` own bounded image handling. Source adapted from roc-ansi commit
+`Svg.roc` and `ImageAssets.roc` own bounded image handling. PDF body text and diagram labels use Inter Regular, with full Bold/Italic faces
+for inline and diagram styles; headings use Roc Docs Serif Bold, a renamed
+Merriweather instance at wght=700, wdth=100, opsz=18. Code retains Source Code Pro.
+`fonts/prepare_fonts.py INPUTS OUTPUT` prepares these assets at authoring time
+using fontTools 4.61.1 and checked source digests. `INPUTS` contains the pinned
+Inter release ZIP and the extracted roc-font rc3 package under `font/`;
+`fonts/provenance.json` records their URLs and hashes. Run the recipe twice
+and compare every output digest before committing a font update. Runtime builds never invoke font tools.
+Source adapted from roc-ansi commit
 `75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
 retain SIL OFL notices and pinned hashes in `fonts/provenance.json` and
 `fonts/web/provenance.json`. The bounded

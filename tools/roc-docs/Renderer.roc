@@ -11,16 +11,20 @@ import pdf.Image
 import pdf.Layout
 import pdf.Pdf
 import pdf.Scene
-import "fonts/NotoSans-Regular.ttf" as regular_bytes : List(U8)
-import "fonts/NotoSans-Italic.ttf" as italic_bytes : List(U8)
-import "fonts/NotoSans-Bold.ttf" as bold_bytes : List(U8)
+import mermaid.Drawing
+import VectorDrawing
+import "fonts/Inter-Regular.ttf" as regular_bytes : List(U8)
+import "fonts/Inter-Italic.ttf" as italic_bytes : List(U8)
+import "fonts/Inter-Bold.ttf" as bold_bytes : List(U8)
+import "fonts/RocDocsSerif-Bold.ttf" as heading_bytes : List(U8)
+import "fonts/Inter-BoldItalic.ttf" as bold_italic_bytes : List(U8)
 import "fonts/SourceCodePro-Regular.ttf" as mono_bytes : List(U8)
 
 ## Pure reusable Markdown-to-HTML/PDF rendering with embedded licensed fonts.
 Renderer :: [].{
 
 	Metadata : { title : Str, author : Str, version : Str, language : Str, pdf_filename : Str }
-	Asset : { href : Str, name : Str, dimensions : Image.Dimensions, pixels : List(U8), png : List(U8), size : Layout.Size }
+	Asset : { href : Str, name : Str, data : [Raster({ dimensions : Image.Dimensions, pixels : List(U8), png : List(U8), size : Layout.Size }), Vector({ picture : Drawing.Picture, svg : List(U8) })] }
 	safe_path = |path| safe_text(path) and !path.is_empty() and !path.starts_with("/") and !path.contains("\\") and path.split_on("/").all(|part| part != "" and part != "." and part != "..")
 	safe_text = |text| text.to_utf8().all(|byte| byte >= 32 and byte != 127)
 	safe_link = |href| safe_text(href) and (href.starts_with("https://") or href.starts_with("http://") or href.starts_with("mailto:") or href.starts_with("#") or (safe_path(href) and !href.contains(":")))
@@ -30,7 +34,7 @@ Renderer :: [].{
 	}
 
 	## Render both formats before the caller writes any output. Runtime assets are
-	## explicit prepared RGB8; no repository content is embedded in this module.
+	## explicit raster or admitted vector data.
 	render = |source, metadata, assets, mode| {
 		blocks = normalize(Markdown.parse_str(source))?
 		html = if (mode == PdfOnly) "" else html_document(blocks, metadata, assets)?
@@ -163,8 +167,10 @@ Renderer :: [].{
 		regular = add(Font.Registry.empty, regular_bytes)?
 		bold = add(regular.registry, bold_bytes)?
 		italic = add(bold.registry, italic_bytes)?
-		mono = add(italic.registry, mono_bytes)?
-		Ok({ regular: regular.face, bold: bold.face, italic: italic.face, mono: mono.face, registry: mono.registry })
+		bold_italic = add(italic.registry, bold_italic_bytes)?
+		heading_font = add(bold_italic.registry, heading_bytes)?
+		mono = add(heading_font.registry, mono_bytes)?
+		Ok({ regular: regular.face, bold: bold.face, italic: italic.face, heading: heading_font.face, bold_italic: bold_italic.face, mono: mono.face, registry: mono.registry })
 	}
 
 	rgb = |red, green, blue| Color.srgb8({ red, green, blue })
@@ -179,13 +185,13 @@ Renderer :: [].{
 				body: { color: rgb(43, 49, 61), size: 11, leading: 15 },
 				paragraph_spacing: 0,
 				page_margin: { top: 40, right: 62, bottom: 38, left: 62 },
-				title: { face: Face(fonts.bold), color: rgb(23, 53, 90), size: 34, leading: 42 },
+				title: { face: Face(fonts.heading), color: rgb(23, 53, 90), size: 34, leading: 42 },
 				headings: {
-					all: { face: Face(fonts.bold), color: rgb(23, 53, 90), size: 13, leading: 18 },
-					h1: Own({ face: Face(fonts.bold), color: rgb(23, 53, 90), size: 20, leading: 27 }),
-					h2: Own({ face: Face(fonts.bold), color: rgb(23, 53, 90), size: 14, leading: 21 }),
+					all: { face: Face(fonts.heading), color: rgb(23, 53, 90), size: 13, leading: 18 },
+					h1: Own({ face: Face(fonts.heading), color: rgb(23, 53, 90), size: 20, leading: 27 }),
+					h2: Own({ face: Face(fonts.heading), color: rgb(23, 53, 90), size: 14, leading: 21 }),
 				},
-				inline: { code: { font: Face(fonts.mono), scale: Percent(82), color: Themed(rgb(39, 62, 94)) }, strong: { font: Face(fonts.bold) }, emphasis: { font: Face(fonts.italic) } },
+				inline: { code: { font: Face(fonts.mono), scale: Percent(82), color: Themed(rgb(39, 62, 94)) }, strong: { font: Face(fonts.bold) }, emphasis: { font: Face(fonts.italic) }, quote: { font: Face(fonts.bold_italic) } },
 				link: { color: Themed(rgb(22, 91, 160)), underline: Underline({ offset: 1, thickness: 0.4 }) },
 				table: {
 					cell_padding: 7,
@@ -390,10 +396,15 @@ Renderer :: [].{
 				}
 				Paragraph([Image({ alt, target })]) => {
 					asset = image_asset(assets, target.href)?
-					image = Image.Source.rgb8({ dimensions: asset.dimensions, pixels: asset.pixels, row_stride: asset.dimensions.width.to_u64() * 3, alpha: NoAlpha })
-					drawing = Scene.Drawing.empty.image(image, { origin: { x: 0, y: 0 }, size: asset.size })
+					drawing = match asset.data {
+						Raster(raster) => {
+							image = Image.Source.rgb8({ dimensions: raster.dimensions, pixels: raster.pixels, row_stride: raster.dimensions.width.to_u64() * 3, alpha: NoAlpha })
+							Scene.Drawing.empty.image(image, { origin: { x: 0, y: 0 }, size: raster.size })
+						}
+						Vector(vector) => VectorDrawing.drawing(vector.picture)
+					}
 					caption = Pdf.no_caption
-					$result = $result.append(Pdf.figure({ drawing, alt: plain(alt), caption, fit: ScaleToFit({ minimum_percent: 25 }) }))
+					$result = $result.append(Pdf.figure({ drawing, alt: plain(alt), caption, fit: ScaleToFit({ minimum_percent: 1 }) }))
 					if !in_list {
 						$result = $result.append(Pdf.spacer(6))
 					}

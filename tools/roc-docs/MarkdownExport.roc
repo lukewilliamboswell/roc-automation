@@ -5,10 +5,11 @@ import Renderer
 ## Static reader-facing Markdown from the same admitted page tree as HTML.
 ## Rewrite actual link targets, never prose, examples or external URLs.
 MarkdownExport :: [].{
+	serialize = |tree| blocks(tree, [], True)
 	page : Str, List(Str), Str, Str -> Try(Str, Str)
 	page = |source, routes, version, canonical| {
 		normalized = Renderer.normalize(Markdown.parse_str(source)).map_err(|e| Str.inspect(e))?
-		body = blocks(normalized, routes)?
+		body = blocks(normalized, routes, False)?
 		Ok("> Documentation version: ${text(version)}. [HTML page](${destination(canonical)})\n\n${body}")
 	}
 	destination : Str -> Str
@@ -87,14 +88,18 @@ inlines = |input, routes| {
 	Ok($out)
 }
 
-blocks : List(Markdown), List(Str) -> Try(Str, Str)
-blocks = |input, routes| {
+blocks : List(Markdown), List(Str), Bool -> Try(Str, Str)
+blocks = |input, routes, source_mode| {
 	var $out = ""
 	for block in input {
 		part = match block {
 			Heading({ level, content }) => {
 				heading = Html.heading(content)
-				"<a id=\"${Html.escape(heading.id)}\"></a>\n\n${Str.join_with(List.repeat("#", Html.level_number(level).to_u64()), "")} ${inlines(Html.clean_heading(content), routes)?}\n\n"
+				if source_mode {
+					"${Str.join_with(List.repeat("#", Html.level_number(level).to_u64()), "")} ${inlines(content, routes)?}\n\n"
+				} else {
+					"<a id=\"${Html.escape(heading.id)}\"></a>\n\n${Str.join_with(List.repeat("#", Html.level_number(level).to_u64()), "")} ${inlines(Html.clean_heading(content), routes)?}\n\n"
+				}
 			}
 			Paragraph(content) => "${inlines(content, routes)?}\n\n"
 			Code({ info, pre }) => {
@@ -148,7 +153,7 @@ blocks = |input, routes| {
 						Ordered(_) => "${$number.to_str()}. "
 						_ => "- "
 					}
-					body = blocks(item.blocks, routes)?.trim()
+					body = blocks(item.blocks, routes, source_mode)?.trim()
 					padding = Str.join_with(List.repeat(" ", marker.to_utf8().len()), "")
 					lines = body.split_on("\n")
 					$list = "${$list}${marker}${lines.first() ?? ""}\n${Str.join_with(lines.drop_first(1).map(|line| if (line == "") "" else "${padding}${line}"), "\n")}\n\n"
@@ -156,7 +161,7 @@ blocks = |input, routes| {
 				}
 				$list
 			}
-			Blockquote(children) => Str.join_with(blocks(children, routes)?.trim().split_on("\n").map(|line| "> ${line}"), "\n").concat("\n\n")
+			Blockquote(children) => Str.join_with(blocks(children, routes, source_mode)?.trim().split_on("\n").map(|line| "> ${line}"), "\n").concat("\n\n")
 			ThematicBreak => "---\n\n"
 			_ => return Err("unsupported Markdown export block: ${Str.inspect(block)}")
 		}

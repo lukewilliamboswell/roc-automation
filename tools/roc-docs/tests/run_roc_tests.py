@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run renderer tests/builds, retaining a narrow upstream warning allowance.
 
-Roc 5349569 exits 2 after passing tests with compile warnings. These pinned
+Roc bad769b exits 2 after passing tests with compile warnings. These pinned
 packages predate its unreachable-code diagnostic. Never accept local warnings,
 a different diagnostic, a missing passing summary, or another nonzero status.
 """

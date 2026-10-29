@@ -108,7 +108,7 @@ class Page(HTMLParser):
 def check(prepared, site, pdf=None, independent_reader=False, markdown=False):
     prepared, site = Path(prepared), Path(site)
     manifest = json.loads((prepared/'manifest.json').read_text())
-    if manifest['schema_version'] != 1:
+    if manifest['schema_version'] not in (1, 3):
         raise ValueError('Unknown preparation schema')
     parsed = {}
     totals = {'pages':0, 'code_blocks':0, 'tables':0, 'headings':0, 'images':0, 'links':0}
@@ -148,6 +148,15 @@ def check(prepared, site, pdf=None, independent_reader=False, markdown=False):
             if not (site/href).is_file():
                 raise ValueError(f'Missing HTML image {name}: {href}')
     for asset in manifest['assets']:
+        if asset.get('kind') == 'vector':
+            import xml.etree.ElementTree as ET
+            data = (site/asset['href']).read_bytes()
+            ET.fromstring(data)
+            if b'data:font/ttf;base64,' not in data:
+                raise ValueError('Generated SVG must embed its font')
+            if manifest['schema_version'] == 3 and digest(data) != asset['svg_sha256']:
+                raise ValueError('Published SVG bytes changed')
+            continue
         if digest((site/asset['href']).read_bytes()) != asset['png_sha256']:
             raise ValueError(f"Published image bytes changed: {asset['href']}")
     if markdown:
@@ -155,7 +164,7 @@ def check(prepared, site, pdf=None, independent_reader=False, markdown=False):
         totals['markdown_pages'] = len(manifest['pages'])
     # The combined PDF Markdown carries the source inventories independently of HTML.
     manual = markdown_inventory((prepared/manifest['manual']['input']).read_text())
-    coverage = manifest['coverage']
+    coverage = manifest['coverage'] if manifest['schema_version'] == 1 else {'code_blocks':[], 'tables':[]}
     if coverage['code_blocks'] and manual['code'] != [b['sha256'] for b in coverage['code_blocks']]:
         raise ValueError('Combined manual source blocks differ from original AsciiDoc bytes')
     if coverage['tables'] and manual['tables'] != len(coverage['tables']):

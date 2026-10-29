@@ -2,8 +2,7 @@
 
 `roc-docs build` and `roc-docs prepare` run entirely in the released Roc binary.
 `Preparation.roc` is a pure adapter over roc-parser 3.0.0's public AsciiDoc
-syntax tree, virtual-file preprocessing and inline rendering APIs. Files and
-source-linked diagram registrations are supplied as inert data by
+syntax tree, virtual-file preprocessing and inline rendering APIs. Files are supplied as inert data by
 `RepositoryBuild.roc`. No author input is executed and includes cannot fetch
 network content.
 
@@ -18,7 +17,7 @@ roc-docs prepare --workspace . --docs-directory docs --entrypoint index.adoc \
 `build` renders AsciiDoc HTML directly from the syntax tree to preserve block
 semantics, while the combined PDF uses prepared Markdown. Native Markdown shares
 the same HTML page layout and source highlighters.
-`prepare` writes intermediate Markdown/assets and a schema-2 debugging inventory
+`prepare` writes intermediate Markdown/assets and a schema-3 debugging inventory
 into a new directory. It is useful for reviewing parser adaptation independently
 of PDF layout. Its metadata, page inputs/routes, manual input/output, image
 identities/dimensions and source hashes are experimental inspection data.
@@ -43,12 +42,12 @@ The AsciiDoc adapter supports virtual local includes with level offsets,
 backend HTML/PDF conditionals, attributes, document/section headings and explicit
 IDs, ordinary lists, description/sidebar content, LF source blocks, header PSV
 tables with continued cells, captions, links/cross-references, local PNG images
-and source-linked Mermaid assets. Top-level AsciiDoc pages retain their `.html`
+and native Mermaid diagrams. Top-level AsciiDoc pages retain their `.html`
 routes. The entrypoint include tree supplies the combined PDF; its cross-references
 resolve against indexed source paths/headings rather than accidental page order.
 
 The adapter rejects unsupported block contexts, raw HTML/passthrough, custom
-source substitution/indent modes, unsafe paths, unknown diagram bodies,
+source substitution/indent modes, unsafe paths, unsupported Mermaid syntax,
 unresolved references and unsupported table modes. The rendering subset does not
 claim general Asciidoctor compatibility. Source body bytes are recovered from
 original files when the upstream AST normalizes trailing whitespace; ambiguous
@@ -70,11 +69,11 @@ table content is preserved, but PDF column weights and advanced table spans/styl
 are not implemented.
 
 HTML and PDF retain nested list structure, including attached source blocks,
-figures, tables and callouts. PDF uses roc-pdf rc6 rich list items and splittable
+figures, tables and callouts. PDF uses roc-pdf 0.2.0 rich list items and splittable
 callouts instead of flattening their content into unrelated body blocks.
 
 The PDF contents retains heading hierarchy and prints linked physical destination
-page numbers. Chapters use rc6 page scopes, opening pages and chapter-labelled
+page numbers. Chapters use page scopes, opening pages and chapter-labelled
 continuation headers. Unicode destination IDs are encoded consistently for the
 PDF engine's printable-ASCII name contract; website anchors remain authored IDs.
 Custom Asciidoctor YAML themes remain unsupported.
@@ -98,13 +97,15 @@ Font/shape limits remain those of the pinned engine and embedded faces.
 
 == Images and diagrams
 
-The executable embeds seven source-linked prepared diagrams with source-body,
-PNG and SVG SHA-256 identities. HTML prefers validated SVG companions with PNG
-fallback; PDF continues to decode PNG. Local `prepared-diagrams.json` registrations can
-override them. See link:README.adoc[the utility README] for the registry schema
-and exact LF/final-newline source-hash convention. A changed Mermaid body or
-image hash fails until its prepared asset is deliberately updated. Creating a
-new Mermaid image remains an authoring-time choice, outside the build runtime.
+The shared pure diagram adapter parses Mermaid from the AsciiDoc and Markdown
+syntax trees, including nested blocks. Its bounded in-process renderer produces
+source-addressed standalone SVGs with embedded Inter fonts and PDF vector
+figures. See link:README.adoc[the utility README] for family subsets, resource
+limits and migration. `prepared-diagrams.json` rejects; no registry or diagrams
+are bundled in the executable. Schema 3 distinguishes `kind: "raster"` entries
+with PNG/RGB hashes from `kind: "vector"` entries with SVG hashes. Inapplicable
+fields are empty strings or zero. Vector geometry is regenerated from the source;
+the manifest is an experimental inspection interface, not an SVG-to-PDF loader.
 
 `Png.decode` validates chunk CRCs, zlib header/Adler32 and exact pixel lengths,
 with output/work bounds enforced during decompression. It supports non-interlaced

@@ -90,8 +90,8 @@ Prefer stable concepts over incidental implementation details so it remains
 useful as the code changes.
 
 In AsciiDoc sources built by `actions/build-docs`, keep the Mermaid source next
-to the explanation. The native backend uses a prepared PNG of that source in
-both the HTML site and PDF:
+to the explanation. The native backend renders standalone SVG for the website and vector figures
+for PDF during the ordinary build:
 
 [source,asciidoc]
 ----
@@ -107,13 +107,14 @@ flowchart LR
 
 Give every diagram a descriptive title or nearby textual explanation. Do not put
 information only in color, and make labels meaningful when printed in grayscale.
-Keep the Mermaid source readable because it is also the maintainable form of the
-diagram. Prepare the PNG when the diagram changes and record its source and
-image SHA-256 in `docs/prepared-diagrams.json`. The native preparation step
-checks both digests and fails on an unknown or changed source. The schema and
-bundled examples are in `tools/roc-docs/README.adoc` and
-`tools/roc-docs/prepared-diagrams/manifest.json`. Rendering a publication does
-not run Mermaid or download assets.
+Keep the Mermaid source readable because it is the maintainable form of the
+figure. Flowchart, sequence, entity relationship, class and state diagrams use
+the subsets supported by roc-graph-layout 0.3.0-rc3. Unsupported syntax rejects
+with the document path, diagram ordinal and library diagnostic. Markdown sources
+use `mermaid` fences. Captions and nearby explanations remain part of the document.
+Remove obsolete `prepared-diagrams.json` registrations, separate rendering
+scripts and unused generated diagram assets when adopting this version; the
+ordinary build now renders each distinct body once.
 
 Use syntax-highlighted source blocks for commands, configuration, source code,
 schemas, reports, and output. Name the language explicitly and keep examples
@@ -190,14 +191,25 @@ missing tags and output overlap reject. Keep the original examples in compile/te
 checks: rendering reads their bytes and does not execute or verify their behavior.
 Ambiguous chapter provenance still rejects.
 
-Use supported non-interlaced eight-bit RGB/RGBA PNGs and source-hashed prepared
-Mermaid registrations. An optional validated SVG companion improves the website;
-PDF uses PNG. Prepare unsupported JPEG, GIF, WebP and general SVG assets before
+Use supported non-interlaced eight-bit RGB/RGBA PNGs and native Mermaid blocks.
+Diagrams use deterministic `images/diagram-<source-sha256>.svg` links in HTML and
+exported Markdown, with embedded Inter fonts; PDF retains vector geometry and text. Prepare unsupported JPEG, GIF, WebP and general SVG assets before
 rendering. An animation needs a static print image and a link to the separate
 animation; an existing GIF file is not itself a supported native image input.
 Keep preparation repeatable and check the resulting assets into the repository
 or generate them in a read-only build job. The utility does not fetch remote
-images or run converters.
+images or run converters. Mermaid parsing and layout run in process in the
+read-only build job. A hostile source could consume resources or inject markup;
+the adapter bounds each source to 64 KiB, graph elements to 256, relationships,
+events and member rows to 1,024, nesting to 32 and unique bodies to 256. It rejects
+empty, nonfinite and oversized drawings and retains the aggregate output limits.
+Generated SVG contains only library geometry, escaped text and reviewed embedded
+font bytes; it does not pass through the authored SVG admission profile. Complete
+output is staged before publication, so parse, resource and collision failures
+preserve the previous publication. Native regression tests exercise these failures
+with external rendering tools unavailable. Supported syntax and embedded font
+coverage remain limits; maintainers review diagram meaning and page fitting in
+both website and PDF.
 
 Raw HTML, Asciidoctor extensions and custom YAML themes are unsupported. PDF
 links use destinations within the combined manual, absolute URLs, or the

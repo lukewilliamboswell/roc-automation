@@ -1,7 +1,0 @@
-flowchart LR
-    PR[Pull request] --> CI[ci.yml]
-    CI --> Q1[Does this change work with today's compiler?]
-    D[Maintainer dispatch] --> REL[release.yml]
-    REL --> Q2[Do these exact bytes work? Then publish them once.]
-    S[Daily schedule] --> N[nightly.yml]
-    N --> Q3[Does the latest release still work with today's compiler?]

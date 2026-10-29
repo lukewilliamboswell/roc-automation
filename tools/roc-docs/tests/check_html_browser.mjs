@@ -24,13 +24,14 @@ const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'roc-docs-browser-'));
 const fixtureRoot = path.join(profile, 'fixture');
 const fixtureSite = path.join(fixtureRoot, 'out/site');
 const markdownSite = path.join(profile, 'markdown');
+const diagramSite = path.join(profile, 'diagrams');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const mime = { '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png', '.pdf': 'application/pdf', '.ttf':'font/ttf' };
 const server = http.createServer(async (req, res) => {
   try {
     let pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     let root = site;
-    for (const [prefix, candidate] of [['/__visual/', fixtureSite], ['/__markdown/', markdownSite]]) {
+    for (const [prefix, candidate] of [['/__visual/', fixtureSite], ['/__markdown/', markdownSite], ['/__diagrams/', diagramSite]]) {
       if (pathname.startsWith(prefix)) { root = candidate; pathname = pathname.slice(prefix.length - 1); break; }
     }
     const file = path.resolve(root, '.' + pathname);
@@ -57,6 +58,16 @@ try {
   const markdownInput = path.join(profile, 'sources.md');
   await fs.writeFile(markdownInput, markdown.replaceAll('\n','\r\n'));
   await runRenderer(renderer, ['render',markdownInput,markdownSite,'--html-only'], renderOptions);
+  const diagramBodies = [
+    'flowchart LR\n A[Start] --> B[Done]\n',
+    'sequenceDiagram\n Alice->>Bob: Request\n Bob-->>Alice: Reply\n',
+    'erDiagram\n CUSTOMER ||--o{ ORDER : places\n',
+    'classDiagram\n class Worker {\n +run()*\n +count$\n }\n Worker <|-- Task\n',
+    'stateDiagram-v2\n [*] --> Idle\n Idle --> Working : start\n Working --> [*]\n'
+  ];
+  const diagramInput = path.join(profile, 'diagrams.md');
+  await fs.writeFile(diagramInput, '# Diagram acceptance\n\n'+diagramBodies.map(body=>'```mermaid\n'+body+'```\n').join('\n'));
+  await runRenderer(renderer, ['render',diagramInput,diagramSite], renderOptions);
   let port;
   for (let n = 0; n < 100; n++) {
     if (browserError) throw browserError;
@@ -98,6 +109,27 @@ try {
     assert.ok(ready, `${url}: page did not finish loading`);
     await evaluate('document.fonts.ready.then(() => true)');
   };
+  // This family is deliberately unique: a successful font check cannot use a host font.
+  const diagrams = (await fs.readdir(path.join(diagramSite,'images'))).filter(name=>name.endsWith('.svg'));
+  assert.equal(diagrams.length,5);
+  for (const name of diagrams) {
+    await navigate(base+'__diagrams/images/'+name);
+    const state = await evaluate(`(() => {
+      const view=document.documentElement.viewBox.baseVal;
+      const labels=[...document.querySelectorAll('text')];
+      return {statuses:[...document.fonts].map(face=>face.status),faces:document.fonts.size,loaded:document.fonts.check('16px RocDocsDiagram'),
+        overflow:labels.filter(text=>{const b=text.getBBox(); return b.x<view.x-.1 || b.y<view.y-.1 || b.x+b.width>view.x+view.width+.1 || b.y+b.height>view.y+view.height+.1}).map(text=>text.textContent)};
+    })()`);
+    assert.ok(state.faces>0 && state.loaded, name+': embedded font failed to load');
+    assert.ok(state.statuses.every(status=>status==='loaded'),name+': embedded style font failed to load');
+    assert.deepEqual(state.overflow,[],name+': label clipped at SVG view');
+  }
+  if (screenshots) {
+    await fs.mkdir(screenshots,{recursive:true});
+    await navigate(base+'__diagrams/index.html');
+    await fs.writeFile(path.join(screenshots,'diagram-families.png'),Buffer.from((await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
+    await promisify(execFile)('pdftoppm',['-f','2','-singlefile','-scale-to','1800','-png',path.join(diagramSite,'manual.pdf'),path.join(screenshots,'diagram-pdf')]);
+  }
   const palettes = {
     light:{comment:[82,101,115],name:[52,84,164],type:[0,90,133],keyword:[118,57,165],number:[156,61,16],string:[36,99,51],symbol:[70,83,105],invalid:[172,38,52]},
     dark:{comment:[165,180,196],name:[155,188,255],type:[134,213,235],keyword:[214,173,255],number:[255,192,138],string:[166,214,154],symbol:[196,204,214],invalid:[255,172,183]}

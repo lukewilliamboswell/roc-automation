@@ -109,11 +109,11 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual((asset['width'], asset['height']), (1,1))
         self.assertEqual((self.root/'prepared'/asset['rgb']).read_bytes(), b'\x12\x34\x56')
 
-    def test_unknown_mermaid_fails_without_outputs(self):
-        self.write('index.adoc', '= Manual\n\n[mermaid]\n....\nflowchart LR\n A --> B\n....\n')
-        with self.assertRaisesRegex(ValueError, 'Unprepared/stale'):
-            self.prepare()
-        self.assertFalse((self.root/'prepared').exists())
+    def test_mermaid_inventory_predicts_source_addressed_path(self):
+        body = 'flowchart LR\n A --> B\n'
+        self.write('index.adoc', '= Manual\n\n[mermaid]\n....\n' + body + '....\n')
+        manifest = self.prepare()
+        self.assertEqual(manifest['assets'], [{'kind':'vector','href':f'images/diagram-{prep.sha(body.encode())}.svg'}])
 
     def test_recursive_include_rejected(self):
         self.write('index.adoc', '= Manual\ninclude::index.adoc[]\n')
@@ -168,17 +168,11 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(manifest['metadata']['title'], 'Native manual')
         self.assertEqual((self.root/'prepared/manual.md').read_bytes(), (self.docs/'index.md').read_bytes())
 
-    def test_local_prepared_diagram_and_stale_source(self):
-        body = 'flowchart LR\n  Custom --> Diagram\n'
-        self.write('index.adoc', '= Manual\n\n[mermaid]\n....\n' + body + '....\n')
-        data = png()
-        (self.docs/'diagram.png').write_bytes(data)
-        self.write('prepared-diagrams.json', json.dumps({'schema_version':1,'diagrams':[{'source_sha256':prep.sha(body.encode()),'href':'images/custom.png','png':'diagram.png','png_sha256':prep.sha(data)}]}))
-        manifest = self.prepare()
-        self.assertEqual(manifest['assets'][0]['href'], 'images/custom.png')
-        self.write('index.adoc', '= Manual\n\n[mermaid]\n....\n' + body.replace('Custom', 'Changed') + '....\n')
-        with self.assertRaisesRegex(ValueError, 'Unprepared/stale'):
-            prep.prepare_docs(self.root, output_directory='other')
+    def test_obsolete_registry_rejects(self):
+        self.write('index.adoc', '= Manual\n')
+        self.write('prepared-diagrams.json', '{}')
+        with self.assertRaisesRegex(ValueError, 'obsolete'):
+            self.prepare()
 
     def test_nested_chapter_routes_resolve_to_existing_top_level_pages(self):
         self.write('index.adoc', '= Manual\n\ninclude::releases.adoc[leveloffset=+1]\n')
