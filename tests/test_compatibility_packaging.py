@@ -22,10 +22,12 @@ class CompatibilityPackagingTests(unittest.TestCase):
             staging = Path(temporary) / "staging"
             staging.mkdir()
             for relative in ("tests/test_release_compatibility.py", "tests/test_compatibility_archive.py",
+                             "tests/test_release_package_examples.py",
                              "tests/fixtures/compatibility_example.py", "tests/fixtures/compatibility_launcher.c"):
                 destination = staging / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(ROOT / relative, destination)
+            shutil.copytree(ROOT / "tests/fixtures/platform", staging / "tests/fixtures/platform")
             (staging / "dist").mkdir()
             shutil.copy(ROOT / "actions/release-compatibility/archive.py", staging / "dist/release-compatibility-archive.py")
             bash = shutil.which("bash")
@@ -53,11 +55,18 @@ class CompatibilityPackagingTests(unittest.TestCase):
                                   str(artifact / "compatibility-tests/tests"), "-v"],
                                  cwd=artifact, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-            self.assertIn("Ran 40 tests", ran.stderr)
+            # The release utility's suite ships beside the runner's and runs
+            # when its binary is given; without one its six tests are skipped.
+            self.assertIn("Ran 46 tests", ran.stderr)
+            release_package = bool(os.environ.get("ROC_RELEASE_PACKAGE_BINARY"))
+            # Building a release needs zip, which Windows runners lack.
+            skipped = (0 if shutil.which("zip") else 2) if release_package else 6
             if os.name == "nt":
-                self.assertIn("OK (skipped=2)", ran.stderr)
+                skipped += 2
                 self.assertIn("POSIX executable permission admission", ran.stderr)
                 self.assertIn("Windows reports process termination as an exit code", ran.stderr)
+            if skipped:
+                self.assertIn(f"OK (skipped={skipped})", ran.stderr)
             else:
                 self.assertNotRegex(ran.stderr, r"\.\.\. skipped|\(skipped=")
             self.assertFalse((artifact / "actions").exists())
