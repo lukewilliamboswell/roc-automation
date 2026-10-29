@@ -451,7 +451,7 @@ class RepositoryTests(unittest.TestCase):
         self.run_build('--entrypoint','index.md')
         svg = next((self.root/'.docs-out/site/images').glob('*.svg')).read_bytes()
         root = ET.fromstring(svg)
-        self.assertIn('A & B < C "quoted"', ''.join(root.itertext()))
+        self.assertIn('A & B < C "quoted"', ' '.join(''.join(t.itertext()) for t in root.findall('{http://www.w3.org/2000/svg}text')))
         self.assertIn(b'&lt;',svg); self.assertNotIn(b'<script',svg)
 
     def test_markdown_images_static_files_and_successful_replacement(self):

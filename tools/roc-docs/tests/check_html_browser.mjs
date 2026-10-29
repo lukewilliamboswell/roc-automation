@@ -128,7 +128,9 @@ try {
     await fs.mkdir(screenshots,{recursive:true});
     await navigate(base+'__diagrams/index.html');
     await fs.writeFile(path.join(screenshots,'diagram-families.png'),Buffer.from((await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
-    await promisify(execFile)('pdftoppm',['-f','2','-singlefile','-scale-to','1800','-png',path.join(diagramSite,'manual.pdf'),path.join(screenshots,'diagram-pdf')]);
+    for (const [page,name] of [['2','diagram-pdf'],['3','diagram-pdf-styles']]) {
+      await promisify(execFile)('pdftoppm',['-f',page,'-singlefile','-scale-to','1800','-png',path.join(diagramSite,'manual.pdf'),path.join(screenshots,name)]);
+    }
   }
   const palettes = {
     light:{comment:[82,101,115],name:[52,84,164],type:[0,90,133],keyword:[118,57,165],number:[156,61,16],string:[36,99,51],symbol:[70,83,105],invalid:[172,38,52]},
@@ -268,7 +270,7 @@ try {
       }
     }
   }
-  console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:6,darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed',sourceFixtures:2,displayCombinations:4}, null, 2));
+  console.log(JSON.stringify({pages:pages.length,desktop:'passed',mobile:'passed',vectorDiagrams:6,diagramFamilies:5,embeddedDiagramFonts:'passed',svgLabelBounds:'passed',darkMode:'passed',fonts:'passed',links:'passed',highlighting:'passed',sourceFixtures:2,displayCombinations:4}, null, 2));
 } finally {
   // Let Chrome flush its profile and stop renderers before removing it. A
   // parent-only SIGTERM can leave Linux helper processes briefly writing files.
