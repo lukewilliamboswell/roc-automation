@@ -41,7 +41,7 @@ runs:
         set -euo pipefail
         roc fmt --check tools/roc-docs
         python3 tools/roc-docs/tests/run_roc_tests.py
-        ROC="$(command -v roc)" roc tools/roc-docs/build.roc -- "$SYSTEM"
+        ROC="$(command -v roc)" roc --opt=interpreter tools/roc-docs/build.roc -- "$SYSTEM"
     - name: Test the exact renderer without a compiler on its PATH
       shell: bash
       env:

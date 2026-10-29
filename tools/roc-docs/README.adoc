@@ -181,13 +181,13 @@ publishes through a sibling staging directory.
 == Build and verify
 
 Use compiler `nightly-2026-10-28-bad769b` and its normal cache. Immutable package
-URLs pin basic-cli, roc-parser, roc-pdf, roc-font, roc-graph-layout and roc-deflate. Release builds use the
-validated `--opt=speed` configuration; compilation has substantial RAM cost,
+URLs pin basic-cli, roc-parser, roc-pdf, roc-font, roc-graph-layout and roc-deflate. The one-shot build driver runs with `--opt=interpreter`. It builds release
+executables using the validated `--opt=speed` configuration; compilation has substantial RAM cost,
 separate from native rendering. Keep Roc commands sharing a cache sequential to avoid scratch cleanup races.
 
 [source,sh]
 ----
-ROC=/absolute/path/to/roc roc tools/roc-docs/build.roc -- aarch64-darwin
+ROC=/absolute/path/to/roc roc --opt=interpreter tools/roc-docs/build.roc -- aarch64-darwin
 ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
   python3 tools/roc-docs/tests/test_cli.py
 ROC_DOCS_BINARY="$PWD/dist/roc-docs-aarch64-darwin" \
