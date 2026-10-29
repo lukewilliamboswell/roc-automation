@@ -124,7 +124,7 @@ A source entry point kept under `scripts/` is an executable Roc application:
 #!/usr/bin/env roc-stable
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/<version>/<hash>.tar.zst",
-	roc: "nightly-2026-10-09-258ab27",
+	roc: "nightly-<date>-<commit>",
 }
 ----
 

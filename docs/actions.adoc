@@ -691,13 +691,12 @@ one bounded download verified by its reviewed digest. Without one, the first
 `roc run` of the app bundle fills Roc's package cache from the immutable URL,
 whose content hash Roc verifies, and compiles the tool, which costs about a
 minute and a half on a fresh runner; after that the steps make no request.
-The Roc compiler is then a separate input: Blueprint 0.7.0's tool needs
-`nightly-2026-10-21-5349569`, which a `Fetch` recipe with
-`Recipes.roc_nightly` and
+The Roc compiler is then a separate input: the tool needs the nightly its
+Blueprint release names, which a `Fetch` recipe with `Recipes.roc_nightly` and
 xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`] can supply without
 putting it on `PATH` as `roc`, or `roc-lang/setup-roc` with `nightly-tag` in
-a job that does not also need the package nightly. Blueprint 0.7.0 ships no
-native tool binary and takes this path; 0.8.0 ships one per system.
+a job that does not also need the package nightly. A Blueprint release with no
+native tool binary for the runner takes this path.
 
 What the action establishes is bounded. The tool's `inspect` decides what the
 composition may claim, and the sidecars bind that claim to the final bytes.

@@ -29,7 +29,7 @@ file remains normal Roc configuration; add the binding beside its existing
 
 [source,roc]
 ----
-tooling = { compiler: "nightly-2026-10-09-258ab27" }
+tooling = { compiler: "nightly-<date>-<commit>" }
 
 repository_policy = {
     schema_version: 2,
@@ -318,8 +318,8 @@ receipts, code coverage or authenticated execution provenance. It does not prove
 that a different CI entrypoint selects these tests. It discovers and invokes
 each selected test-bearing file itself, so large import graphs can cause repeated
 compiler invocations; normal caching reduces that cost. The adapter is tested
-against `nightly-2026-10-15-38e6c42` and depends on its human-readable verbose
-output. An incompatible output format fails explicitly; structured compiler
+against the compiler its tools release records and depends on that compiler's
+human-readable verbose output. An incompatible output format fails explicitly; structured compiler
 reporting would provide a more stable future interface.
 
 The runner can execute project code and invoke the compiler's normal dependency

@@ -240,8 +240,8 @@ files, attests every asset with its sidecars and publishes the explicit
 asset list through `actions/publish-release`.
 
 The chain into a native consumer depends on Blueprint admitting a `source`
-supplier into a native inventory, which Blueprint 0.8.0 does and 0.7.0
-refused with `import target differs from subject`. The fetch action records
+supplier into a native inventory; a release that does not refuses it with
+`import target differs from subject`. The fetch action records
 the supplier's stated target, so the bound import is accepted, and the
 example's chain check requires the executable's SBOM to carry the supplier's
 graph on every system.

@@ -149,7 +149,7 @@ xref:workflows.adoc#a-platform-release-workflow[A platform's release workflow].
 
 The move from a copied release workflow is the same in every package so far.
 
-. Blueprint 0.8 with a `check` task that runs the package's own checks, and the
+. A `check` task in `Blueprint.roc` that runs the package's own checks, and the
   `release` and `release-test` environments and tasks from
   xref:actions.adoc#release-package[the utility's section], followed by
   `blueprint update` for the lock. A check that takes longer than a few
@@ -168,7 +168,7 @@ The move from a copied release workflow is the same in every package so far.
 . The thin `release.yml`, then delete the scripts and workflow jobs that
   bundled, archived, tested examples, rendered notes or published, and `ci.yml`
   when `check-task` runs the checks.
-. SBOM sidecars need Blueprint 0.8, `sbom/composition.json` and an author; a
+. SBOM sidecars need `sbom/composition.json` and an author; a
   manual PDF needs the roc-docs renderer behind a `docs-path` task. A
   repository without either leaves those inputs unset and keeps its own
   documentation workflow.
