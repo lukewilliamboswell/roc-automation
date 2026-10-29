@@ -27,7 +27,7 @@ inputs:
     description: Reviewed SHA-256 of the blueprint-aarch64-darwin binary, for a release this action does not record
     default: ''
   sha256-x86_64-darwin:
-    description: Reviewed SHA-256 of the blueprint-x86_64-darwin binary, for a release this action does not record
+    description: Reviewed SHA-256 of the blueprint-x86_64-darwin binary (published from roc-blueprint 0.10.0), for a release this action does not record
     default: ''
   sha256-x86_64-windows:
     description: Reviewed SHA-256 of the blueprint-x86_64-windows.exe binary, for a release this action does not record

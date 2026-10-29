@@ -84,12 +84,13 @@ class SetupBlueprintTests(unittest.TestCase):
         for version, checksums in releases.items():
             with self.subTest(version=version):
                 self.assertTrue(setup.VERSION.fullmatch(version))
-                # Windows binaries start with roc-blueprint 0.9.0; none records Intel macOS yet.
+                # Windows binaries start with roc-blueprint 0.9.0, Intel macOS with 0.10.0.
                 self.assertLessEqual(UNIX_SYSTEMS, set(checksums))
                 self.assertLessEqual(set(checksums), set(setup.SYSTEMS.values()))
                 for checksum in checksums.values():
                     self.assertTrue(setup.SHA256.fullmatch(checksum))
         self.assertEqual(set(releases["0.9.0"]), UNIX_SYSTEMS | {"x86_64-windows"})
+        self.assertEqual(set(releases["0.10.0"]), set(setup.SYSTEMS.values()))
 
     def test_version_is_read_from_the_platform_url(self):
         self.assertEqual(setup.version_in(config("0.4.0")), "0.4.0")
@@ -256,7 +257,15 @@ class SetupBlueprintTests(unittest.TestCase):
                               known={"0.9.0": {"x86_64-windows": DIGEST}})
             self.assertFalse((root / "path").exists())
 
-    def test_intel_macos_installs_only_with_a_supplied_digest(self):
+    def test_intel_macos_installs_a_recorded_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            seen = self.run_main(root, {"RUNNER_OS": "macOS", "INPUT_VERSION": "0.10.0"},
+                                 known={"0.10.0": {"x86_64-darwin": DIGEST}})
+            self.assertEqual(seen, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.10.0/blueprint-x86_64-darwin"])
+            self.assertIn("system=x86_64-darwin\n", (root / "output").read_text())
+
+    def test_intel_macos_needs_a_supplied_digest_before_0_10_0(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "on x86_64-darwin; set the sha256-x86_64-darwin input"):

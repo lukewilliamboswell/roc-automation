@@ -25,13 +25,12 @@ consumer configuration retain their own verification and trust requirements.
 == `actions/setup-blueprint`
 
 Installs the verified `blueprint` binary that `Blueprint.roc` names, on x86-64
-and arm64 Linux, Apple Silicon macOS and, from roc-blueprint 0.9.0, x86-64
-Windows. Intel macOS runners map to `x86_64-darwin`; until the action records
-a release with that binary, the caller supplies its reviewed digest as
-`sha256-x86_64-darwin`. Nix is installed only with `install-nix: 'true'`,
-which Windows refuses: there Blueprint runs without a provider, from fetched
-programs and the tools the runner already has, and a project lists
-`"x86_64-windows"` in its `Systems`. For a complete recipe, lock, cache
+and arm64 Linux, Apple Silicon macOS, and, from roc-blueprint 0.9.0, x86-64
+Windows and, from 0.10.0, Intel macOS. Nix is installed only with
+`install-nix: 'true'`, which Windows refuses. On Windows and Intel macOS
+Blueprint runs without a provider, from fetched programs and the tools the
+runner already has; a project that tests on Windows lists `"x86_64-windows"`
+in its `Systems`. For a complete recipe, lock, cache
 and utility handoff, follow xref:pure-package.adoc#adopt-a-pure-package-without-nix[the Roc package adoption guide].
 The setup action builds nothing.
 
@@ -77,7 +76,7 @@ workflow cannot disagree with it.
 | `sha256-x86_64-linux` | Reviewed SHA-256 of the binary for x86_64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-linux` | Reviewed SHA-256 of the binary for arm64 Linux runners. Overrides the recorded value.
 | `sha256-aarch64-darwin` | Reviewed SHA-256 of the binary for Apple Silicon macOS runners. Overrides the recorded value.
-| `sha256-x86_64-darwin` | Reviewed SHA-256 of the binary for Intel macOS runners. Required until a recorded release publishes one.
+| `sha256-x86_64-darwin` | Reviewed SHA-256 of the binary for Intel macOS runners. Overrides the recorded value.
 | `sha256-x86_64-windows` | Reviewed SHA-256 of `blueprint-x86_64-windows.exe` for x86-64 Windows runners. Overrides the recorded value.
 |===
 

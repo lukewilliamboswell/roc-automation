@@ -149,9 +149,11 @@ jobs:
           - { runner: ubuntu-24.04, nix: 'true', version: '' }
           - { runner: ubuntu-24.04-arm, nix: 'true', version: '' }
           - { runner: macos-15, nix: 'true', version: '' }
-          # Windows runs Blueprint without Nix, from the first release with a
-          # Windows binary; this repository's own Blueprint.roc names an older one.
-          - { runner: windows-2025, nix: 'false', version: 0.9.0 }
+          # Windows and Intel macOS run Blueprint without Nix, from the first
+          # release with both binaries; this repository's own Blueprint.roc
+          # names an older one.
+          - { runner: macos-15-intel, nix: 'false', version: 0.10.0 }
+          - { runner: windows-2025, nix: 'false', version: 0.10.0 }
     runs-on: ${{ matrix.runner }}
     defaults:
       run:

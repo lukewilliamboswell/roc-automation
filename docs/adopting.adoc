@@ -66,7 +66,8 @@ integration, not every feature of the product or every future utility version.
   Call `actions/setup-blueprint` with no inputs, after the checkout; it
   installs the release that `Blueprint.roc` names. A repository that tests on
   Windows lists `"x86_64-windows"` in its `Systems`, names roc-blueprint 0.9.0
-  or later, and leaves `install-nix` unset in its Windows jobs.
+  or later, and leaves `install-nix` unset in its Windows jobs; Intel macOS
+  needs roc-blueprint 0.10.0 or later, and no Nix either.
 . *Repository settings.* Apply
   xref:settings.adoc#repository-settings[Repository settings], update the
   required check names, and delete branches that earlier automation owned.

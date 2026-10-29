@@ -29,8 +29,9 @@ SYSTEMS = {
     ("Windows", "X64"): "x86_64-windows",
 }
 # Blueprint runs on Windows without a provider: fetched programs and expected
-# tools only, never Nix. Releases before 0.9.0 publish no Windows binary, and
-# none yet records an Intel macOS one: a caller supplies its reviewed digest.
+# tools only, never Nix, and so does Intel macOS, which nixpkgs dropped.
+# Releases before 0.9.0 publish no Windows binary, and before 0.10.0 none for
+# Intel macOS.
 MAX_BYTES = 256 * 1024 * 1024
 # The platform URL in a Blueprint.roc header names the release whose binary must evaluate it.
 PLATFORM_URL = re.compile(r"\bplatform\s+\"" + re.escape(RELEASES) + r"/([^/\s\"]+)/[0-9A-Za-z]+\.tar\.zst\"")
