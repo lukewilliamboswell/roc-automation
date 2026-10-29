@@ -25,7 +25,7 @@ Preparation :: [].{
 		}
 		entry = files.find_first(|f| f.path == options.entrypoint).map_err(|_| "missing documentation entrypoint")?
 		if entry.path.ends_with(".md") {
-			return markdown(files, entry, options)
+			return bounded(markdown(files, entry, options)?, 67108864)
 		}
 		if !entry.path.ends_with(".adoc") {
 			return Err("entrypoint must be .adoc or .md")
@@ -64,21 +64,30 @@ Preparation :: [].{
 			$pages = $pages.append({ route: doc.route, source: result.text, html: Prepared({ body: html_result.text, numbered, toc_depth, remark: lookup(page_attrs, "revremark") }) })
 			$images = $images.concat(result.state.images)
 		}
-		if $pages.fold(
+
+		attrs = attributes(files, entry, options)?
+		title = manual_doc.title
+		bounded({ pages: $pages, manual: rendered_manual.text, metadata: { title, author: lookup(attrs, "author"), version: options.version, language: if (lookup(attrs, "lang") == "") "en" else lookup(attrs, "lang") }, images: unique($images), diagrams: $diagrams }, 67108864)
+	}
+
+	## Aggregate prepared text includes every page, its HTML when present, and
+	## the combined manual. Count UTF-8 bytes after diagram adaptation in both formats.
+	bounded : Result, U64 -> Try(Result, Str)
+	bounded = |prepared, limit| {
+		bytes = prepared.pages.fold(
 			0.U64,
-			|n, p| n + p.source.to_utf8().len() + (
-				match p.html {
-					Prepared(h) => h.body.to_utf8().len()
+			|n, page| n + page.source.to_utf8().len() + (
+				match page.html {
+					Prepared(html) => html.body.to_utf8().len()
 					MarkdownSource => 0
 				}
 			),
-		) + rendered_manual.text.to_utf8().len() > 67108864 {
-			return Err("prepared documentation exceeds output limit")
-		}
-		attrs = attributes(files, entry, options)?
-		title = manual_doc.title
-		Ok({ pages: $pages, manual: rendered_manual.text, metadata: { title, author: lookup(attrs, "author"), version: options.version, language: if (lookup(attrs, "lang") == "") "en" else lookup(attrs, "lang") }, images: unique($images), diagrams: $diagrams })
+		) + prepared.manual.to_utf8().len()
+		if bytes > limit {
+			Err("prepared documentation exceeds output limit")
+		} else Ok(prepared)
 	}
+
 }
 
 safe_path = |s| !s.is_empty() and !s.starts_with("/") and !s.contains("\\") and s.split_on("/").all(|p| p != "" and p != "." and p != "..") and s.to_utf8().all(|b| b >= 32 and b != 127)

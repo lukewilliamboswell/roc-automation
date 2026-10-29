@@ -73,3 +73,16 @@ expect diagram_prepared.map_ok(|r| r.pages.any(|p| p.source.contains("![A \\[use
 expect DiagramAdapter.validate_picture({ view: { x: F64.nan, y: 0, width: 10, height: 10 }, items: [] }).is_err()
 expect DiagramAdapter.validate_picture({ view: { x: 0, y: 0, width: 10, height: 10 }, items: [Text({ text: "bad", origin: { x: 0, y: 0 }, size: F64.infinity, align: Start, color: { red: 0, green: 0, blue: 0 } })] }).is_err()
 expect DiagramAdapter.validate_picture({ view: { x: 0, y: 0, width: 32769, height: 10 }, items: [] }).is_err()
+
+# The same aggregate gate applies to native Markdown and counts UTF-8 bytes,
+# including the manual's copy of the selected website page.
+expect match Preparation.prepare([{ path: "index.md", source: "# é\n" }], { ..options, entrypoint: "index.md" }) {
+	Ok(prepared) => Preparation.bounded(prepared, 9).is_err() and Preparation.bounded(prepared, 10).is_ok()
+	Err(_) => False
+}
+
+# AsciiDoc also retains its separate HTML presentation within the same budget.
+expect match Preparation.prepare(source("= Manual\n"), options) {
+	Ok(prepared) => Preparation.bounded(prepared, prepared.manual.to_utf8().len() * 2).is_err()
+	Err(_) => False
+}
