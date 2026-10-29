@@ -17,3 +17,7 @@ Merriweather instance. Font preparation is reproducible with fontTools 4.61.1 an
 is performed before release. The compiler is `nightly-2026-10-28-bad769b` and
 roc-pdf is pinned to 0.2.0. Font sources, hashes and notices accompany the assets;
 `--licenses` includes their notices.
+
+The manual now contains the roc-docs command/source reference and renderer
+maintenance procedures. The utility README is a short entry point; the separate
+preparation document is retired in favor of the manual's architecture section.

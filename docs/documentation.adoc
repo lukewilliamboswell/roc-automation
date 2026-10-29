@@ -178,54 +178,36 @@ highlighting and validation policy. A repository supplies its content, metadata,
 entrypoint and prepared assets through the action inputs or CLI. Documentation
 configuration is not yet read from a separate `Blueprint.roc` record.
 
+Use xref:roc-docs.adoc#build-documentation-with-roc-docs[the utility reference]
+for commands, supported source formats, links, figures and presentation limits.
 Use the book and chapter structure above, unique chapter titles and stable ASCII
-anchors. Use simple PSV tables with header rows and explicit columns; keep cell
-separators in plain PSV cells. Wrapped cells may continue onto lines containing
-subsequent separators. Spans, cell styles and nested cell blocks remain unsupported. Preserve existing public
-URLs and anchors deliberately when replacing a site.
+anchors. Preserve existing public URLs and anchors deliberately when replacing
+a site. Keep source examples in compile/test checks: the renderer reads their
+bytes and does not execute or verify their behavior.
 
-Chapter includes are bounded local `.adoc` or `.md` sources. Listings may include
-checked source and `.expected` files anywhere inside the workspace. Single
-`tag=name` selections and `indent=0` are supported; escaping paths, symlinks,
-missing tags and output overlap reject. Keep the original examples in compile/test
-checks: rendering reads their bytes and does not execute or verify their behavior.
-Ambiguous chapter provenance still rejects.
-
-Use supported non-interlaced eight-bit RGB/RGBA PNGs and native Mermaid blocks.
-Diagrams use deterministic `images/diagram-<source-sha256>.svg` links in HTML and
-exported Markdown, with embedded Inter fonts; PDF retains vector geometry and text. Prepare unsupported JPEG, GIF, WebP and general SVG assets before
-rendering. An animation needs a static print image and a link to the separate
-animation; an existing GIF file is not itself a supported native image input.
-Keep preparation repeatable and check the resulting assets into the repository
-or generate them in a read-only build job. The utility does not fetch remote
-images or run converters. Mermaid parsing and layout run in process in the
-read-only build job. A hostile source could consume resources or inject markup;
-the adapter bounds each source to 64 KiB, graph elements to 256, relationships,
-events and member rows to 1,024, nesting to 32 and unique bodies to 256. It rejects
-empty, nonfinite and oversized drawings and retains the aggregate output limits.
+Prepare unsupported image formats before rendering. Keep that preparation
+repeatable and check assets into the repository or generate them in a read-only
+build job. The utility does not fetch remote images or run converters. Mermaid
+parsing and layout run in process in that job. A hostile source could consume
+resources or inject markup; the adapter bounds source size, graph complexity,
+nesting and unique diagrams before layout, and rejects invalid drawing geometry.
+The exact limits are in xref:roc-docs.adoc#images-and-diagrams[Images and diagrams].
 Generated SVG contains only library geometry, escaped text and reviewed embedded
-font bytes; it does not pass through the authored SVG admission profile. Complete
-output is staged before publication, so parse, resource and collision failures
-preserve the previous publication. Native regression tests exercise these failures
-with external rendering tools unavailable. Supported syntax and embedded font
-coverage remain limits; maintainers review diagram meaning and page fitting in
-both website and PDF.
+font bytes; it does not pass through the authored SVG admission profile.
+Complete output is staged before publication, so parse, resource and collision
+failures preserve the previous publication. Native regression tests exercise
+these failures with external rendering tools unavailable.
 
-Raw HTML, Asciidoctor extensions and custom YAML themes are unsupported. PDF
-links use destinations within the combined manual, absolute URLs, or the
-`site-url` publication directory for website-only chapters, API routes and
-downloads. Legacy underscore anchors require explicit migration review.
-Markdown remains available, but its PDF uses only the selected entrypoint and
-does not rewrite links between pages. The bundled fonts have finite coverage;
-unsupported glyphs reject. The PDF prints destination page numbers at a common
-right edge in its hierarchical contents, with decorative subsection leaders,
-and uses chapter-specific continuation headers. Page references reserve their
-width before pagination and must fit their resolved values. Independent-reader
-checks compare those numbers with final destinations and inspect their positions;
+Supported syntax and embedded font coverage remain limits; maintainers review
+diagram meaning and page fitting in both website and PDF. Raw HTML,
+Asciidoctor extensions and custom YAML themes are unsupported. Markdown's PDF
+uses only the selected entrypoint and does not rewrite links between pages.
+PDF table proportions remain unimplemented. Inputs and PDF preparation have
+resource limits; no PDF/UA compliance is claimed. Independent-reader checks
+compare contents numbers with final destinations and inspect their positions;
 browser checks verify code colours, transparent token backgrounds and source
 whitespace in light and dark modes. These checks complement visual review of
-the authored content. PDF table proportions remain unimplemented. Inputs and
-PDF preparation have resource limits; no PDF/UA compliance is claimed.
+the authored content.
 
 Keep release-snippet generation, compiler-generated API documentation, historical
 version assembly and interactive example builds as explicit stages. Only the

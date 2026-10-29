@@ -10,6 +10,12 @@ spec.loader.exec_module(verify)
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_literal_anchor_example_survives_code_span_padding(self):
+        expected = verify.prose_words('Use `{#stable-id}`.\n')
+        self.assertEqual(expected, verify.prose_words('Use ` {#stable-id} `.\n'))
+        self.assertNotEqual(expected, verify.prose_words('Use.\n'))
+        self.assertEqual(verify.prose_words('# Title {#title}\n'), verify.prose_words('# Title\n'))
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

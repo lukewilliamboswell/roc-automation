@@ -206,7 +206,7 @@ def heading_label(value):
 
 def prose_words(text):
     text = re.sub(r'(?m)^<a id="[^"]+"></a>\s*$', '', text)
-    text = re.sub(r' \{#[^}]+\}', '', text)
+    text = re.sub(r'(?m)^(#{1,6} [^\n]*?) \{#[^}\n]+\}[ \t]*$', r'\1', text)
     # The reference adapter supplies synthetic diagram labels. Check image
     # descriptions against admitted HTML separately instead of its labels.
     text = re.sub(r'!\[[^\n]*?\]\([^\n]*?\)', '', text)

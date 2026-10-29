@@ -26,8 +26,9 @@ Build the site, PDF and static Markdown locally with a precompiled renderer:
 The output is written to `.docs-out/`. The `Documentation` workflow runs the
 same build on every pull request and deploys from the default branch. Upstream
 CI builds and caches the renderer; downstream consumers supply the released
-binary. To develop the renderer itself, follow `tools/roc-docs/README.adoc`,
-which records its compiler, dependencies, source subset and build commands.
+binary. To develop the renderer itself, follow
+xref:maintain-roc-docs.adoc#maintain-the-documentation-renderer[Maintain the documentation renderer]
+for its compiler, dependencies, architecture and verification procedures.
 The action uses the shared renderer and built-in theme. Python is used by the
 independent test harness; rendering does not invoke it.
 
