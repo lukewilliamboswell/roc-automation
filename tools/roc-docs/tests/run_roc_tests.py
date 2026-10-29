@@ -15,7 +15,7 @@ PACKAGES = {
     'BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze',
     '4W8SHzvwet9hH9qZewJ1J1CVQoH7YKA6zyijWFTB3y1w',
 }
-SUITES = ['highlight', 'html', 'assets', 'png', 'preparation', 'source_includes', 'build_options']
+SUITES = ['highlight', 'html', 'assets', 'png', 'preparation', 'source_includes', 'build_options', 'diagrams']
 
 
 def passed_with_known_warnings(status, output):
@@ -49,7 +49,7 @@ def main():
     compiler = os.environ.get('ROC', 'roc')
     root = Path(__file__).resolve().parents[1]
     for suite in SUITES:
-        result = subprocess.run([compiler, 'test', str(root/f'test_{suite}.roc')], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, 'NO_COLOR':'1'})
+        result = subprocess.run([compiler, 'test', '--opt=dev', str(root/f'test_{suite}.roc')], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, 'NO_COLOR':'1'})
         print(result.stdout, end='', flush=True)
         if result.returncode and not passed_with_known_warnings(result.returncode, result.stdout):
             return result.returncode

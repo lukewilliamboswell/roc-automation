@@ -5,7 +5,6 @@ app [main!] {
 	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/3.0.0/6xsRdRqenJrAb4wG7HaST4Xh349vD5sHAJDsKTK6E3dr.tar.zst",
 	pdf: "https://github.com/lukewilliamboswell/roc-pdf/releases/download/0.2.0/2hTpvYoKFHy8C6VeEgiv4FgWkP4oNTVupc1XCN8UwdiZ.tar.zst",
 }
-import DiagramAdapter
 import Preparation
 import Sha256
 main! = |_| Ok({})
@@ -25,6 +24,8 @@ expect Preparation.prepare(source("= Manual\n\ninclude::missing.adoc[]\n"), opti
 expect Preparation.prepare(source("= Manual\n\ninclude::index.adoc[]\n"), options).is_err()
 expect Preparation.prepare([{ path: "../bad.adoc", source: "= Bad" }], options).is_err()
 expect manual("= Manual\n\n[#one]\n== First\n\n[#one]\n== Second\n").is_err()
+
+## Mermaid source is admitted during ordinary AsciiDoc preparation.
 expect manual("= Manual\n\n[mermaid]\n....\nflowchart LR\n A --> B\n....\n").is_ok()
 expect manual("= Manual\n\n[cols=\"1,2\",options=\"header\"]\n|===\n| A | B\n| x | y\n|===\n").map_ok(|s| s.contains("| A | B |\n| --- | --- |\n| x | y |")) == Ok(True)
 expect manual("= Manual\n\nTerm:: Definition\n").map_ok(|s| s.contains("- **Term**: Definition")) == Ok(True)
@@ -67,21 +68,20 @@ diagram_body = "flowchart LR\n  First --> Last\n"
 diagram_prepared = Preparation.prepare(source("= Manual\n\n.A [useful] diagram\n[mermaid]\n....\n${diagram_body}....\n"), options)
 
 diagram_text = diagram_prepared.map_ok(|r| r.manual)
+
+## Figure captions escape punctuation while retaining the source-addressed image.
 expect diagram_text.map_ok(|s| s.contains("![A \\[useful\\] diagram](images/diagram-${Sha256.hex(diagram_body.to_utf8())}.svg)")) == Ok(True)
+
+## Website preparation retains the same caption and diagram identity.
 expect diagram_prepared.map_ok(|r| r.pages.any(|p| p.source.contains("![A \\[useful\\] diagram](images/diagram-${Sha256.hex(diagram_body.to_utf8())}.svg)"))) == Ok(True)
 
-expect DiagramAdapter.validate_picture({ view: { x: F64.nan, y: 0, width: 10, height: 10 }, items: [] }).is_err()
-expect DiagramAdapter.validate_picture({ view: { x: 0, y: 0, width: 10, height: 10 }, items: [Text({ text: "bad", origin: { x: 0, y: 0 }, size: F64.infinity, align: Start, color: { red: 0, green: 0, blue: 0 } })] }).is_err()
-expect DiagramAdapter.validate_picture({ view: { x: 0, y: 0, width: 32769, height: 10 }, items: [] }).is_err()
-
-# The same aggregate gate applies to native Markdown and counts UTF-8 bytes,
-# including the manual's copy of the selected website page.
+## Markdown preparation counts UTF-8 bytes including the manual copy.
 expect match Preparation.prepare([{ path: "index.md", source: "# é\n" }], { ..options, entrypoint: "index.md" }) {
 	Ok(prepared) => Preparation.bounded(prepared, 9).is_err() and Preparation.bounded(prepared, 10).is_ok()
 	Err(_) => False
 }
 
-# AsciiDoc also retains its separate HTML presentation within the same budget.
+## AsciiDoc counts its separate HTML presentation within the same budget.
 expect match Preparation.prepare(source("= Manual\n"), options) {
 	Ok(prepared) => Preparation.bounded(prepared, prepared.manual.to_utf8().len() * 2).is_err()
 	Err(_) => False

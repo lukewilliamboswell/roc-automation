@@ -11,7 +11,7 @@ import pdf.Image
 import pdf.Layout
 import pdf.Pdf
 import pdf.Scene
-import mermaid.Drawing
+import DiagramAdapter
 import VectorDrawing
 import "fonts/Inter-Regular.ttf" as regular_bytes : List(U8)
 import "fonts/Inter-Italic.ttf" as italic_bytes : List(U8)
@@ -24,7 +24,7 @@ import "fonts/SourceCodePro-Regular.ttf" as mono_bytes : List(U8)
 Renderer :: [].{
 
 	Metadata : { title : Str, author : Str, version : Str, language : Str, pdf_filename : Str }
-	Asset : { href : Str, name : Str, data : [Raster({ dimensions : Image.Dimensions, pixels : List(U8), png : List(U8), size : Layout.Size }), Vector({ picture : Drawing.Picture, svg : List(U8) })] }
+	Asset : { href : Str, name : Str, data : [Raster({ dimensions : Image.Dimensions, pixels : List(U8), png : List(U8), size : Layout.Size }), Vector({ picture : DiagramAdapter.Picture, svg : List(U8) })] }
 	safe_path = |path| safe_text(path) and !path.is_empty() and !path.starts_with("/") and !path.contains("\\") and path.split_on("/").all(|part| part != "" and part != "." and part != "..")
 	safe_text = |text| text.to_utf8().all(|byte| byte >= 32 and byte != 127)
 	safe_link = |href| safe_text(href) and (href.starts_with("https://") or href.starts_with("http://") or href.starts_with("mailto:") or href.starts_with("#") or (safe_path(href) and !href.contains(":")))

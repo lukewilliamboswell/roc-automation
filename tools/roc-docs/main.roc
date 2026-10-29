@@ -28,6 +28,7 @@ import "fonts/Inter-OFL.txt" as inter_license : Str
 import "fonts/Merriweather-OFL.txt" as serif_license : Str
 import "fonts/SourceCodePro-OFL.md" as mono_license : Str
 
+main! : List(OsStr) => Try({}, _)
 main! = |arguments| {
 	args = arguments.map(OsStr.display)
 	match args.first() {
@@ -105,17 +106,19 @@ main! = |arguments| {
 		raster = ImageAssets.fit(pixels, original.width, original.height, if (rendered_width * options.pdf_image_dpi < 72000) 1 else rendered_width * options.pdf_image_dpi // 72000, if (rendered_height * options.pdf_image_dpi < 72000) 1 else rendered_height * options.pdf_image_dpi // 72000)?
 		$assets = $assets.append({ href: spec.href, name: spec.href, data: Raster({ dimensions: { width: raster.width.to_u32_wrap(), height: raster.height.to_u32_wrap() }, png, pixels: raster.pixels, size: { width: Layout.Unit.millipoints(rendered_width.to_i64_wrap()), height: Layout.Unit.millipoints(rendered_height.to_i64_wrap()) } }) })
 	}
-	adapted = DiagramAdapter.markdown(Markdown.parse_str(source), options.input, 0, [], 0).map_err(|e| DiagramRejected(e))?
-	for diagram in adapted.cache {
-		if $assets.any(|a| a.href == diagram.href) {
-			return Err(InvalidAssetPath(diagram.href))
+	adapted = DiagramAdapter.markdown({ blocks: Markdown.parse_str(source), path: options.input, ordinal: 0, cache: DiagramAdapter.empty_cache, depth: 0 }).map_err(|e| DiagramRejected(DiagramAdapter.message(e)))?
+	for diagram in DiagramAdapter.diagrams(adapted.cache) {
+		href = DiagramAdapter.href(diagram)
+		picture = DiagramAdapter.picture(diagram)
+		if $assets.any(|a| a.href == href) {
+			return Err(InvalidAssetPath(href))
 		}
-		svg = DiagramSvg.document(diagram.picture)
+		svg = DiagramSvg.document(picture)
 		$total = $total + svg.len()
 		if $total > 134217728 {
 			return Err(AssetsTooLarge)
 		}
-		$assets = $assets.append({ href: diagram.href, name: diagram.href, data: Vector({ picture: diagram.picture, svg }) })
+		$assets = $assets.append({ href, name: href, data: Vector({ picture, svg }) })
 	}
 	prepared_source = if (adapted.ordinal == 0) source else MarkdownExport.serialize(adapted.blocks).map_err(|e| DiagramRejected(e))?
 	rendered = Renderer.render(prepared_source, options.metadata, $assets, options.mode)?

@@ -120,15 +120,15 @@ load_assets! = |docs, hrefs, diagrams, dpi| {
 			if $assets.len() >= 256 or !BuildOptions.safe_path(href) {
 				return Err("invalid image path or too many images")
 			}
-			match diagrams.find_first(|d| d.href == href) {
+			match diagrams.find_first(|d| DiagramAdapter.href(d) == href) {
 				Ok(d) => {
-					svg = DiagramSvg.document(d.picture)
+					svg = DiagramSvg.document(DiagramAdapter.picture(d))
 					$total = $total + svg.len()
 					if $total > 134217728 {
 						return Err("prepared assets exceed aggregate byte limit")
 					}
 					rendered : Renderer.Asset
-					rendered = { href, name: href, data: Vector({ picture: d.picture, svg }) }
+					rendered = { href, name: href, data: Vector({ picture: DiagramAdapter.picture(d), svg }) }
 					$assets = $assets.append({ href, png: [], rgb: [], width: 0, height: 0, rendered, svg, svg_href: href })
 				}
 				Err(_) => {}
