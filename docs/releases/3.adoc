@@ -1,5 +1,6 @@
 = roc-automation 3
 
+[#reviewed-blueprint-installers]
 == Reviewed Blueprint 0.11.0 installers
 
 The setup action admits Blueprint 0.11.0 on all five native systems using
