@@ -83,6 +83,12 @@ cross-compiled only. Windows uses the same archive admission, compiler diagnosti
 case deadlines and aggregate evidence contract as Linux and macOS; the runner
 adds the native `.exe` suffix automatically.
 
+A source test can pass while a workflow still invokes an older pinned engine,
+which can reject a newly supported runner before any examples execute. The
+selection, execution and aggregation phases use one reviewed engine revision;
+repository tests compare its actual runner allowlist with the source-tested
+contract. A complete native runtime verdict is still required for compatibility.
+
 For native prerequisites, `setup-command` is a JSON argv array, for example
 `["blueprint", "run", "nightly-prerequisites"]`. It runs from the event commit's
 checkout in the read-only test job; it must provision dependencies, not rebuild

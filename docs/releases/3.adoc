@@ -1,5 +1,14 @@
 = roc-automation 3
 
+[#native-compatibility-runner-pins]
+== Native compatibility runner pins
+
+The shared nightly workflow now uses the reviewed Intel macOS-capable engine
+for selection, execution and aggregation. A regression compares the actual
+pinned engines with the runner contract tested from source, preventing an
+older helper from rejecting a supported target before examples execute.
+Published product assets and native utility release pins are unchanged.
+
 [#reviewed-blueprint-installers]
 == Reviewed Blueprint 0.11.0 installers
 

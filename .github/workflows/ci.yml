@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          # The wiring regression inspects the source at the workflow helper SHAs.
+          fetch-depth: 0
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
         with:
           version: nightly-new-compiler
@@ -108,6 +110,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Inspect the runner contract at the helper SHAs the workflow invokes.
+          fetch-depth: 0
       - run: python3 -m unittest discover -s tests -v
       - name: Test documentation preparation and acceptance verifier
         run: |

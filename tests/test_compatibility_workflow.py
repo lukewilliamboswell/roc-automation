@@ -10,6 +10,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless((ROOT / ".github/workflows/nightly-compatibility.yml").is_file(), "workflow source is not part of the standalone artifact")
 class CompatibilityWorkflowSecurityTests(unittest.TestCase):
+    def test_pinned_engines_support_the_source_tested_runner_contract(self):
+        import json
+        import re
+
+        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
+        pins = re.findall(r"uses: lukewilliamboswell/roc-automation/actions/release-compatibility@([0-9a-f]{40})", workflow)
+        self.assertEqual(len(pins), 3, "select, test and aggregate each need a pinned engine")
+        self.assertEqual(len(set(pins)), 1, "all phases must use the same evidence contract")
+
+        def runners(source):
+            match = re.search(r"(?m)^\s*runners = (\[[^\]]+\])", source)
+            self.assertIsNotNone(match, "runner contract must be inspectable in the actual engine source")
+            return set(json.loads(match.group(1)))
+
+        required = runners((ROOT / "scripts/src/Compatibility.roc").read_text())
+        for revision in set(pins):
+            # Check the code the workflow will execute, not just this checkout's
+            # unit-tested code. CI fetches history for this repository-only test.
+            source = subprocess.check_output(
+                ["git", "show", f"{revision}:scripts/src/Compatibility.roc"],
+                cwd=ROOT, text=True)
+            self.assertEqual(runners(source), required,
+                             f"pinned engine {revision} differs from the tested runner contract")
+
     def test_aggregate_finds_single_and_multiple_target_artifacts(self):
         import fnmatch
 
