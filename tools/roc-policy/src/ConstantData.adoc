@@ -3,7 +3,6 @@
 `ConstantData.evaluate(source, definition_name)` parses a complete Roc module and
 returns the selected constant's data or a structured error. It performs no I/O,
 imports, application execution, filesystem lookup, or policy-specific behavior.
-This module is kept independent for a possible roc-parser upstream proposal.
 
 == Contract
 
@@ -46,6 +45,7 @@ fallback exists. The parser has its own independent nesting/token bounds.
 == Validation
 
 Run `roc check tools/roc-policy/test_constants.roc` and
-`roc test tools/roc-policy/test_constants.roc` using the tooling compiler.
+`roc test tools/roc-policy/test_constants.roc` using the compiler recorded in
+`tools/roc-policy/README.adoc`.
 The test application lives beside `main.roc` because Roc application imports may
 not escape their source root into a parent directory.

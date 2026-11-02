@@ -31,8 +31,7 @@ explicit asset list to `actions/publish-release`.
 The native compositions are the package-to-platform chain: each executable
 imports the supplier's bundle SBOM bound to the locked bytes, with the
 bundle's own `source` target kept, so its SBOM carries the supplier's graph
-under the import prefix. Blueprint 0.8.0 admits that import; 0.7.0 refused
-it.
+under the import prefix.
 
 To adopt it, replace the package and application, review each composition
 against what your files actually contain, and commit `sbom/imports.json`

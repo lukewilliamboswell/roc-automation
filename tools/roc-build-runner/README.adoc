@@ -9,7 +9,7 @@ read-only input mounts.
 
 == Build and test
 
-The initial frozen toolchain is Roc `nightly-2026-10-18-1df370f`. Compile the
+The fixed toolchain is Roc `nightly-2026-10-18-1df370f`. Compile the
 single source file, keeping its exact bytes, compiler archive, platform and
 transitive package archives pinned in the caller's build recipe:
 

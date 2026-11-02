@@ -67,7 +67,7 @@ workflow cannot disagree with it.
 |===
 | Input | Meaning
 
-| `install-nix` | Defaults to `false`. Enable for Nix-sourced tools, sandboxed builds or an older Blueprint environment requiring Nix.
+| `install-nix` | Defaults to `false`. Enable for Nix-sourced tools and sandboxed builds.
 | `cache-binary` | Defaults to `true`. Reuse only executable bytes that match the selected release, system and reviewed digest.
 | `cache` | Defaults to `false`. Restore/save only Blueprint `v1/artifacts` bytes.
 | `cache-workload` | Required with caching: a logical tool-set name, distinct for jobs or matrix variants that provision different subsets.
@@ -437,9 +437,7 @@ resource budget and fail before publication.
 
 The action uses one shared renderer and built-in theme. It stages the full
 publication and preserves the previous output if conversion, rendering or API
-generation fails. Repositories pinned to older action SHAs keep the behavior
-of those revisions; adopting this action removes the Docker backend and the
-`backend` and `theme-directory` inputs.
+generation fails.
 
 [#publish-release]
 == `actions/publish-release`
@@ -627,79 +625,45 @@ that uses both actions for a bundle and a native executable per system, runs
 the exact files, attests every asset including the sidecars, and hands the
 explicit asset list to `actions/publish-release`.
 
-The action does the following, in this order, and stops at the first failure.
+Each subject must be a regular workspace file with a unique name and no
+existing sidecars. Versions use a three-part numeric core with optional
+dot-separated prerelease identifiers containing ASCII letters, digits and
+hyphens. Core numbers and numeric identifiers reject leading zeroes; build
+metadata is unsupported. The checkout's `HEAD` must equal the event commit.
+Creation time comes from that commit, and the namespace includes it.
 
-. *Check the inputs and files.* Every listed file must be a regular file under
-  the workspace with a unique name, because sidecars are named by the file
-  name. A sidecar that already exists beside a file is stale and fails the
-  step: generate into a fresh build, never over an earlier one.
-. *Select the tool.* The roc-blueprint release is read from the platform URL in
-  `Blueprint.roc`, as `actions/setup-blueprint` reads it. The action records,
-  in `actions/setup-blueprint/sbom-tools.json`, the immutable URL of that
-  release's `roc-blueprint-sbom-<hash>.tar.zst` app bundle, the Roc release
-  it was built for, and, for a release that ships `blueprint-sbom-<system>`
-  binaries, their reviewed SHA-256 per system, and the tool's features:
-  `members`, when the tool lists a produced archive, and `manifest`, when
-  `bind` writes an evidence manifest. A release without a record fails the
-  step. With a recorded binary for the runner, the action downloads
-  it into a private file, admits it only when its digest matches, and needs
-  no compiler. Otherwise `roc-binary` must report the recorded Roc release;
-  another compiler fails before anything runs.
-. *Bind to the tested commit.* The checkout's `HEAD` must equal the event
-  commit. The documents' creation time is that commit's time, not the wall
-  clock, and their namespace names the commit, so two runs of one commit
-  produce the same documents.
-. *Stage the inputs.* `blueprint spec` and a copy of `Blueprint.lock` go into
-  a fresh private directory under the runner's temporary directory, with the
-  composition. When `imports` is given, its `imported_documents` are appended
-  to the composition's; its `unavailable_sboms` stubs are never used, so a
-  generated stub cannot become an exemption.
-. *Inspect.* The tool's `inspect` checks the composition against the Spec
-  and Lock for `target` and writes the inventory. It runs nothing and
-  downloads nothing. A refusal names the rule; when a locked dependency has
-  neither a bound supplier SBOM nor a reviewed `unavailable_sboms` entry, the
-  error points at `actions/fetch-dependency-sboms`. With a tool that lists
-  archive members and a `source` target, each `.tar.zst` bundle is listed first with
-  `members`, and `inspect --members` runs once per file, so the archive
-  `roc bundle` produced, not the bundler's argument list, is the authority on
-  what it holds. By default a member no reviewed component states by SHA-256
-  and no `archive-member:<name>:<sha256>` disposition names becomes a
-  component with `sha256-<digest>` as its version, NOASSERTION for its
-  supplier, download and license, and a `contains` edge from the subject, as
-  Blueprint's own release lists its bundles; `archive-members: reviewed`
-  leaves every member to the composition and lets `inspect` refuse an
-  omission. Other files, including ZIP and PDF subjects, use composition-only
-  inventories without tar member enumeration.
-. *Bind.* For each file, a subject with an empty SHA-256, so the tool hashes
-  the final bytes itself, and a context name the file, version, target,
-  release URL, namespace, revision, creation time, author and generator.
-  `bind` writes `<file>.spdx.json` and `<file>.cdx.json` beside the file, and
-  `<file>.spdx-2.3.json` when asked. A tool that writes evidence manifests
-  also writes `<file>.sbom-manifest.json`: the subject's name, version,
-  target, SHA-256 and size, each sidecar's name, format, SHA-256 and size,
-  and the inventory's SHA-256. It refuses to overwrite anything.
-. *Check.* `check --inventory ... --artifacts <directory>` holds every sidecar
-  to its format's specification and the profile, confirms it describes the
-  file of that name byte for byte, that its evidence is the inventory's, and
-  that the renderings of one document state one graph. With a manifest,
-  `check --manifest` rehashes the subject, each listed sidecar and the
-  inventory first and refuses any difference; the SPDX 2.3 rendering, which
-  the manifest does not list, is named beside it.
-. *Report.* The job summary lists each sidecar with its SHA-256, each locked
-  dependency as bound or unavailable with the reviewed reason and contact, and
-  every `incomplete` coverage scope.
+The platform URL in `Blueprint.roc` selects a reviewed record in
+`actions/setup-blueprint/sbom-tools.json`. A recorded native tool is downloaded
+privately and admitted by SHA-256. Otherwise the app bundle runs with the exact
+compiler the record names; its content-addressed URL fixes the bundle bytes.
+The `members` and `manifest` features determine the checks available from that
+selected tool. Unrecorded tools and mismatched compilers fail before generation.
 
-The job needs `contents: read` and nothing else. A recorded native binary is
-one bounded download verified by its reviewed digest. Without one, the first
-`roc run` of the app bundle fills Roc's package cache from the immutable URL,
-whose content hash Roc verifies, and compiles the tool, which costs about a
-minute and a half on a fresh runner; after that the steps make no request.
-The Roc compiler is then a separate input: the tool needs the nightly its
-Blueprint release names, which a `Fetch` recipe with `Recipes.roc_nightly` and
-xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`] can supply without
-putting it on `PATH` as `roc`, or `roc-lang/setup-roc` with `nightly-tag` in
-a job that does not also need the package nightly. A Blueprint release with no
-native tool binary for the runner takes this path.
+The action stages Spec, Lock and composition in a private directory. Imported
+documents are appended; generated `unavailable_sboms` stubs cannot grant
+exemptions. `inspect` validates the composition offline against the selected
+target. A locked dependency needs a bound supplier document or a reviewed
+unavailability entry.
+
+For source `.tar.zst` subjects, tools with `members` enumerate the produced
+archive before inspection. In `generate` mode, unaccounted members become
+components identified by their SHA-256, with unknown supplier and license;
+`reviewed` mode requires the composition to account for every member. ZIPs,
+PDFs and other subjects use composition-only inventories.
+
+`bind` hashes each final subject and writes the requested sidecars without
+overwriting files. Tools with `manifest` also write the subject, sidecar and
+inventory bindings to `<file>.sbom-manifest.json`. `check` validates document
+profiles, exact subject bytes and agreement between formats; manifest checks
+also rehash its inventory and files. Optional SPDX 2.3 output is checked beside
+the manifest. The summary reports digests, dependency states and incomplete
+coverage scopes.
+
+The job requires only `contents: read`. A native tool needs no compiler; the
+app-bundle path needs its fixed compiler and can download dependencies on first
+use. Supply that compiler separately through a Fetch recipe and
+xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`], or through
+`roc-lang/setup-roc` in a job that does not also need the package nightly.
 
 What the action establishes is bounded. The tool's `inspect` decides what the
 composition may claim, and the sidecars bind that claim to the final bytes.

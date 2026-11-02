@@ -87,9 +87,6 @@ tooling compiler and which tools are needed, where a reviewer can read it.
 `Blueprint.lock` pins the overlay revision that supplies that release's download
 URL and hash, package sources, fetched programs and bundle sources used by
 sandboxed builds. Task-only bundle identities remain in their committed URLs.
-Blueprint reads Spec major 3 and writes Lock 2; an older lock format requires a
-full update as
-xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint] describes.
 
 Commit the generated lock after review. Derived files and generated Nix stay in
 `.blueprint/`, which the repository's `.gitignore` lists.
@@ -117,12 +114,7 @@ nix run github:lukewilliamboswell/roc-blueprint/<version> -- run check
 nix profile install github:lukewilliamboswell/roc-blueprint/<version>
 ----
 
-This is the simplest route for a contributor. Nix builds the command from the
-tagged source the first time, which takes longer than a download, and the flake
-provides it for x86_64 Linux, arm64 Linux and Apple Silicon macOS.
-
-The shared setup supports x86_64 Linux, arm64 Linux and Apple Silicon macOS.
-No Intel macOS Blueprint binary is admitted by this action.
+Nix builds the command from tagged source on first use.
 
 === As a release binary
 
@@ -156,10 +148,6 @@ This compiler is separate from `roc-stable` for a reason: Blueprint is written
 in Roc and must run before the environment it describes exists. See
 xref:overview.adoc#three-compilers-three-jobs[Three compilers, three jobs].
 
-A release's binary must be used with that release's platform URL in the
-`Blueprint.roc` header. The two move together; see
-xref:maintenance.adoc#upgrade-blueprint[Upgrade Blueprint].
-
 == Work locally
 
 A contributor needs `blueprint`, Nix when their selected tools/builds use it,
@@ -190,11 +178,11 @@ the latest nightly, then calls a task:
   action; see xref:actions.adoc#install-the-nightly-compiler[Install the nightly compiler].
 . Run `blueprint run <task>`.
 
-A matrix names only runners Blueprint supports: x86_64 and arm64 Linux, and
-Apple Silicon macOS. It cannot include an Intel macOS runner. A platform can
-still cross-compile a host for that target in
-xref:platforms.adoc#the-builder-job[the builder job], but no job runs the
-repository's scripts there.
+Choose runners for which the selected release has reviewed binaries in
+`actions/setup-blueprint/releases.json`, and verify that the declared tools also
+support those systems. Cross-compiling a host in
+xref:platforms.adoc#the-builder-job[the builder job] does not establish that it
+runs on the target.
 
 The job needs no cache account and no token for this. A Nix cache is an
 optimisation a repository may add; a cache that requires `id-token: write`

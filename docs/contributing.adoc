@@ -32,10 +32,10 @@ for its compiler, dependencies, architecture and verification procedures.
 The action uses the shared renderer and built-in theme. Python is used by the
 independent test harness; rendering does not invoke it.
 
-The manual describes the model as it should be practised. A repository or tool
-that does not yet follow it is recorded in a GitHub issue, not in the manual.
-Record a change in the release notes under `docs/releases/`, in the file for the
-version it will ship in. `docs/releases.adoc` includes each of those files.
+Each paragraph must help a reader use, maintain or assess the current tooling.
+Delete superseded guidance and duplicated explanations; keep implementation
+history, investigation notes and unresolved work in Git or issues. Release notes
+belong to the release they describe, not to the manual's reading path.
 
 == Explain the risk and control where they apply
 
@@ -182,30 +182,28 @@ by a run against GitHub.
 
 == Release the tools
 
-The scripts behind the shared actions are also built as static Linux
-executables, so that a calling job can run one without Nix or a compiler.
+The tools release includes the action programs, `roc-policy`, `roc-docs` and
+the published-release compatibility runner. `Release tools` defines each tool's
+build targets and native acceptance matrix. To build the Linux action programs
+locally:
 
 [source,sh]
 ----
 blueprint run build-tools
 ----
 
-It writes `dist/<tool>-<system>` for `x86_64-linux` and `aarch64-linux`. Both
-are built on one machine, and two builds of the same commit give the same
-bytes.
+This writes `dist/<tool>-<system>` for `x86_64-linux` and `aarch64-linux`.
+Other utilities use their own build entrypoints; see their maintenance references.
 
-The `Release tools` workflow publishes them under the tag `tools-<version>`. It
-follows xref:workflows.adoc#the-order-of-a-release[The order of a release]:
+The workflow publishes under `tools-<version>` after read-only build jobs and
+native tests of the exact artifacts. Tests run without a checkout, Nix or build
+compiler, using the complete distributed runtime and declared external helpers.
+The dispatch-only publisher receives those files as inert bytes through
+`actions/publish-release`.
 
-. The build job runs `blueprint run check`, builds the executables and lists
-  their SHA-256 digests in `sha256sums.txt`.
-. A test job on each runner architecture downloads those exact files and runs
-  them with no checkout, no Nix and no compiler.
-. The publish job, on dispatch only, hands the tested files to
-  `actions/publish-release`.
-
-A pull request runs the first two steps as a dry run. Before dispatching a
-release, commit its notes as `docs/releases/tools-<version>.md`.
+A pull request builds and tests as a dry run. Before dispatching a release,
+commit its notes as `docs/releases/tools-<version>.md`; remove the source notes
+when the published release owns them.
 
 == Release a shared action
 
