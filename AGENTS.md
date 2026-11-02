@@ -14,3 +14,12 @@ a second specification. Update the rationale when behavior or evidence changes.
 Use scoped agents for further investigations, with a concrete proposal and a
 GitHub issue as outputs. Review findings before changing the normative model;
 record implementation gaps in issues rather than adding gap inventories to the manual.
+
+# Documentation
+
+Follow docs/documentation.adoc. Every paragraph must help a current user or
+contributor complete a task, look up a contract, or understand a relevant design
+choice. Delete superseded details; Git history is sufficient. Keep investigation
+logs and pending work in issues, and release changes in the published release.
+Preserve needed public anchors without narrating their history. Review the
+surrounding chapter when editing; do not append status notes or duplicate guidance.

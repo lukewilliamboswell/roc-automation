@@ -143,9 +143,22 @@ contributing and maintenance. Introduce each audience's starting point in the
 entrypoint. Keep setup, architecture and maintainer procedures in their own
 chapters, with links where another reader needs them.
 
-Keep the manual current. Release-specific changes belong with the published
-release; design discussions and investigations belong in issues. Do not retain
-superseded instructions or repeat an interface description in several chapters.
+[#keep-documentation-current]
+== Keep documentation current
+
+Every paragraph must help a current user or contributor complete a task, look up
+a contract or understand a relevant design choice. Remove a paragraph if deleting
+it would leave those readers equally able to use and maintain the project.
+
+Delete superseded instructions and implementation chronology; Git history keeps
+them available. Put investigation notes and pending work in issues, and
+release-specific changes in the published release. Keep compatibility guidance
+only while a supported reader needs it. Preserve public anchors without adding
+prose about their age or retention.
+
+Revise the owning section when behavior changes instead of appending a status
+note. Link to one authoritative explanation rather than repeating it across
+chapters. Apply the same review to READMEs and contributor guides.
 
 [#keep-the-readme-short]
 == Keep the README short
