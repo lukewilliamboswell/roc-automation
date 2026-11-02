@@ -32,10 +32,9 @@ for its compiler, dependencies, architecture and verification procedures.
 The action uses the shared renderer and built-in theme. Python is used by the
 independent test harness; rendering does not invoke it.
 
-Each paragraph must help a reader use, maintain or assess the current tooling.
-Delete superseded guidance and duplicated explanations; keep implementation
-history, investigation notes and unresolved work in Git or issues. Release notes
-belong to the release they describe, not to the manual's reading path.
+Apply xref:documentation.adoc#keep-documentation-current[the editorial review]
+to the affected chapter, README and contributor guide. Delete material without
+a current reader purpose instead of moving it to an archive chapter.
 
 == Explain the risk and control where they apply
 
