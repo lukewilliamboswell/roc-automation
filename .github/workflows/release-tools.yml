@@ -174,15 +174,13 @@ jobs:
           mkdir -p docs-tests
           cp tools/roc-docs/tests/test_cli.py docs-tests/test_cli.py
           cp tools/roc-docs/tests/test_build.py docs-tests/test_build.py
+          cp tools/roc-docs/tests/reference_prepare_docs.py tools/roc-docs/tests/verify_prepared.py docs-tests/
           cp -R tools/roc-docs/tests/fixtures docs-tests/
-          cat LICENSE \
-            tools/roc-docs/fonts/Inter-OFL.txt \
-            tools/roc-docs/fonts/Merriweather-OFL.txt \
-            tools/roc-docs/fonts/SourceCodePro-OFL.md \
-            tools/roc-docs/fonts/web/SPACE-GROTESK-OFL.txt \
-            tools/roc-docs/fonts/web/PLUS-JAKARTA-SANS-OFL.txt \
-            tools/roc-docs/vendor/roc-deflate-LICENSE \
-            tools/roc-docs/vendor/NOTICE.adoc > dist/roc-docs-LICENSES.txt
+          chmod +x dist/roc-docs-x86_64-linux
+          {
+            cat LICENSE
+            dist/roc-docs-x86_64-linux --licenses
+          } > dist/roc-docs-LICENSES.txt
       - name: Include the compatibility utility standalone regression harness
         run: |
           mkdir -p compatibility-tests/tests/fixtures
@@ -208,7 +206,7 @@ jobs:
             version="$REQUESTED"
             notes="docs/releases/tools-$version.md"
           else
-            version=0.0.1-dry-run
+            version=0.0.1-dryrun
             notes="$(printf '%s\n' docs/releases/tools-*.md | sort -V | tail -n 1)"
           fi
           test -s "$notes"

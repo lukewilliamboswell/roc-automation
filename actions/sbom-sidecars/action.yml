@@ -33,7 +33,7 @@ inputs:
     description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
     default: 'false'
   archive-members:
-    description: For a source target with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself
+    description: For source .tar.zst bundles with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself
     default: generate
   roc-binary:
     description: Roc compiler that runs the tool app bundle, needed only when the Blueprint release records no native tool binary for the runner; it must be the release the record names
@@ -43,6 +43,9 @@ inputs:
     default: blueprint
 
 outputs:
+  run-attempt:
+    description: The producing job attempt, retained for publication-only retries
+    value: ${{ steps.sidecars.outputs.run-attempt }}
   assets:
     description: Every listed file and its sidecars, one relative path per line, for the test jobs and the publisher
     value: ${{ steps.sidecars.outputs.assets }}

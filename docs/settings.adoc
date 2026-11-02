@@ -75,8 +75,6 @@ any other dependency update, and never replace a full SHA with a branch or tag.
 == Reporting
 
 Enable private vulnerability reporting and keep `SECURITY.md` accurate.
-xref:project-practices.adoc#project-practice-evidence[Project-practice evidence]
-lists what else a public project should be able to show.
 
 == Confirm the settings
 

@@ -14,7 +14,7 @@ const screenshots = process.argv[3];
 assert.ok(process.env.ROC_DOCS_BINARY, 'Set ROC_DOCS_BINARY to the native renderer under review');
 const renderer = path.resolve(process.env.ROC_DOCS_BINARY);
 const fixtures = fileURLToPath(new URL('./fixtures/visual/docs/', import.meta.url));
-const sourceCases = {roc:'sample.roc.txt',yaml:'sample.yaml',yml:'sample.yaml',sh:'sample.sh',bash:'sample.sh',shell:'sample.sh',zsh:'sample.sh',json:'sample.json',diff:'sample.diff',patch:'sample.diff','unknown-language':'sample.txt'};
+const sourceCases = {text:'sample-shortcut.txt',roc:'sample.roc.txt',yaml:'sample.yaml',yml:'sample.yaml',sh:'sample.sh',bash:'sample.sh',shell:'sample.sh',zsh:'sample.sh',json:'sample.json',diff:'sample.diff',patch:'sample.diff','unknown-language':'sample.txt'};
 const sourceText = Object.fromEntries(await Promise.all(Object.entries(sourceCases).map(async ([language, file]) => [language, await fs.readFile(path.join(fixtures, file), 'utf8')])));
 const corpus = Object.values(sourceText).join('');
 assert.ok(corpus.includes('\t') && / {2}\n/.test(corpus) && corpus.includes('\n\n') && corpus.includes('café') && corpus.includes('<&>'), 'Visual fixture lost its whitespace, Unicode or escaping coverage');
@@ -54,7 +54,7 @@ try {
   await runRenderer(renderer, ['build','--workspace',fixtureRoot,'--output-directory','out'], renderOptions);
   // Both adapters must preserve the code they hand to the highlighter.
   // CommonMark normalizes CRLF, while the AsciiDoc fixture retains LF bytes.
-  const markdown = '# Markdown sources\n\n' + Object.entries(sourceText).map(([language, text]) => '```' + language + '\n' + text + '```\n').join('\n');
+  const markdown = '# Markdown sources\n\nRegular, **bold**, *italic*, ***bold italic***, and *`upright code`*.\n\n' + Object.entries(sourceText).map(([language, text]) => '```' + language + '\n' + text + '```\n').join('\n');
   const markdownInput = path.join(profile, 'sources.md');
   await fs.writeFile(markdownInput, markdown.replaceAll('\n','\r\n'));
   await runRenderer(renderer, ['render',markdownInput,markdownSite,'--html-only'], renderOptions);
@@ -126,6 +126,10 @@ try {
   }
   if (screenshots) {
     await fs.mkdir(screenshots,{recursive:true});
+    // Retain the exact PDF containing body/inline/listing keyboard labels and
+    // genuine prose styles, alongside readable images of every fixture page.
+    await fs.copyFile(path.join(fixtureSite,'manual.pdf'),path.join(screenshots,'typography-fixture.pdf'));
+    await promisify(execFile)('pdftoppm',['-scale-to','1600','-png',path.join(fixtureSite,'manual.pdf'),path.join(screenshots,'typography-fixture')]);
     await navigate(base+'__diagrams/index.html');
     await fs.writeFile(path.join(screenshots,'diagram-families.png'),Buffer.from((await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
     for (const [page,name] of [['2','diagram-pdf'],['3','diagram-pdf-styles']]) {
@@ -139,6 +143,11 @@ try {
   const checkSources = async (scheme, label, expected) => {
     const state = await evaluate(`({
       overflow:document.documentElement.scrollWidth > innerWidth,
+      codeStyles:[...document.querySelectorAll('code')].map(code => ({family:getComputedStyle(code).fontFamily,style:getComputedStyle(code).fontStyle})),
+      proseStyles:['main strong','main em','main strong em, main em strong'].map(selector => {
+        const node=document.querySelector(selector); if(!node)return null;
+        const style=getComputedStyle(node); return {family:style.fontFamily,weight:style.fontWeight,style:style.fontStyle};
+      }),
       snippets:[...document.querySelectorAll('pre code[data-lang]')].map(code => ({
         language:code.dataset.lang,text:code.textContent,
         background:getComputedStyle(code).backgroundColor,
@@ -148,6 +157,7 @@ try {
       }))
     })`);
     assert.ok(!state.overflow, `${label}: page overflow in ${scheme} mode`);
+    assert.ok(state.codeStyles.every(style => style.family.startsWith('"Fira Code"') && style.style === 'normal'), `${label}: code must keep upright Fira Code in ${scheme} mode`);
     const panel = scheme === 'dark' ? 'rgb(32, 37, 42)' : 'rgb(245, 245, 242)';
     for (const snippet of state.snippets) {
       assert.equal(snippet.panel, panel, `${label}: code panel has the wrong ${scheme} background`);
@@ -160,11 +170,15 @@ try {
       }
       if (expected) {
         assert.equal(snippet.text, expected[snippet.language], `${label}: ${snippet.language} source whitespace changed`);
-        if (snippet.language === 'unknown-language') assert.equal(snippet.tokens.length, 0, 'Unknown languages must retain plain text');
+        if (['text','unknown-language'].includes(snippet.language)) assert.equal(snippet.tokens.length, 0, 'Plain languages must retain plain text');
         else assert.ok(snippet.tokens.length > 0, `${label}: missing ${snippet.language} highlighting`);
       }
     }
     if (expected) {
+      const [bold, italic, both] = state.proseStyles;
+      assert.ok(bold?.family.startsWith('Inter') && bold.weight === '700', `${label}: bold prose must select Inter Bold`);
+      assert.ok(italic?.family.startsWith('Inter') && italic.style === 'italic', `${label}: italic prose must select Inter Italic`);
+      assert.ok(both?.family.startsWith('Inter') && both.weight === '700' && both.style === 'italic', `${label}: combined prose must select Inter Bold Italic`);
       assert.deepEqual(state.snippets.map(s=>s.language).sort(), Object.keys(expected).sort(), `${label}: source inventory changed`);
       assert.ok(state.snippets.some(s=>s.scrolls), `${label}: long source should scroll inside its block`);
     }
@@ -212,7 +226,51 @@ try {
   const index = inventory['index.html'];
   assert.ok(index.nested > 0, 'Manual TOC has no hierarchy');
   assert.equal(index.images.filter(image => image.src.endsWith('.svg')).length, 6, 'Manual must use six vector diagrams');
-  assert.equal(await evaluate(`['Space Grotesk','Plus Jakarta Sans'].every(name => [...document.fonts].some(face => face.family.includes(name) && face.status === 'loaded'))`), true, 'Vendored reading fonts not loaded');
+  // Load every bundled style explicitly, then inspect Chrome's selected files.
+  // Checking CSS family names alone could accidentally accept host fallback fonts.
+  await cdp('DOM.enable');
+  await cdp('CSS.enable');
+  const fontCases = [
+    ['body', 'Inter', '400', 'normal', 'Inter-Regular'],
+    ['strong', 'Inter', '700', 'normal', 'Inter-Bold'],
+    ['em', 'Inter', '400', 'italic', 'Inter-Italic'],
+    ['strong-em', 'Inter', '700', 'italic', 'Inter-BoldItalic'],
+    ['serif', 'Merriweather', '400', 'normal', 'Merriweather-Regular'],
+    ['heading', 'Merriweather', '700', 'normal', 'Merriweather-Bold'],
+    ['serif-em', 'Merriweather', '400', 'italic', 'Merriweather-Italic'],
+    ['heading-em', 'Merriweather', '700', 'italic', 'Merriweather-BoldItalic'],
+    ['code', 'Fira Code', '400', 'normal', 'FiraCode-Regular'],
+    ['code-strong', 'Fira Code', '700', 'normal', 'FiraCode-Bold'],
+  ];
+  await evaluate(`Promise.all(${JSON.stringify(fontCases)}.map(([,family,weight,style]) => document.fonts.load(style+' '+weight+' 16px "'+family+'"')))`);
+  assert.equal(await evaluate(`document.fonts.size`), 10, 'All ten static font styles must be declared');
+  assert.equal(await evaluate(`[...document.fonts].every(face => face.status === 'loaded')`), true, 'Bundled style failed to load');
+  await evaluate(`(() => {
+    const root = document.createElement('div'); root.id = '__font-probes';
+    root.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483647;background:white';
+    for (const [id,family,weight,style] of ${JSON.stringify(fontCases)}) {
+      const node = document.createElement('span'); node.id = '__font-'+id;
+      node.style.cssText = 'display:block;font-family:"'+family+'";font-weight:'+weight+';font-style:'+style;
+      node.textContent = 'Bundled styles'; root.append(node);
+    }
+    document.body.append(root);
+  })()`);
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const {root: fontRoot} = await cdp('DOM.getDocument');
+  for (const [id, , , , postscript] of fontCases) {
+    const {nodeId} = await cdp('DOM.querySelector', {nodeId:fontRoot.nodeId,selector:'#__font-'+id});
+    const {fonts} = await cdp('CSS.getPlatformFontsForNode', {nodeId});
+    assert.ok(fonts.length > 0 && fonts.every(font => font.isCustomFont && font.postScriptName === postscript), `${id}: wrong actual font ${JSON.stringify(fonts)}`);
+  }
+  await evaluate(`document.getElementById('__font-probes').remove()`);
+  const actualStyles = await evaluate(`(() => {
+    const style = selector => {const s=getComputedStyle(document.querySelector(selector));return [s.fontFamily,s.fontWeight,s.fontStyle]};
+    return {body:style('body'), heading:style('h1'), navigation:style('.toc a'), code:style('code')};
+  })()`);
+  assert.ok(actualStyles.body[0].startsWith('Inter'), 'Body must use Inter');
+  assert.ok(actualStyles.navigation[0].startsWith('Inter'), 'Navigation must use Inter');
+  assert.ok(actualStyles.heading[0].startsWith('Merriweather') && actualStyles.heading[1] === '700', 'Headings must use genuine Merriweather Bold');
+  assert.ok(actualStyles.code[0].startsWith('"Fira Code"') && actualStyles.code[2] === 'normal', 'Code must use upright Fira Code');
   assert.ok(index.sidebars > 0, 'Introduction lost its sidebar/description list');
   assert.ok(index.captions[0].startsWith('Figure 1.'), 'Figure caption numbering missing');
   assert.equal(await evaluate(`document.querySelector('main h2 .section-number')?.innerText.trim()`), '1.', 'Body heading numbering missing');

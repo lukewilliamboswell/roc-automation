@@ -20,14 +20,6 @@ publication credentials. Clearing child token variables reduces exposure but
 does not isolate same-job processes from one another. Reviewed inputs, exact
 source/artifact binding and consumer-facing tests remain separate controls.
 
-Documentation source conversion, renderer builds and renderer execution also
-belong in jobs with read-only tokens. The documentation and tools workflows
-build the native renderer from pinned compiler and package versions. Their cache
-key includes the target, compiler identity, renderer source and embedded fonts;
-restored binaries still run the renderer acceptance tests. The deploy job only
-receives the resulting Pages artifact. It does not compile the renderer, execute
-documentation sources or restore a candidate-produced executable cache.
-
 [#risk-execution-authority]
 == Risks and controls for execution authority
 
@@ -36,9 +28,7 @@ and generated output can try to cross into a job that can publish or edit
 issues. Separate execution from authority. Use read-only disposable test jobs,
 reviewed pinned controllers in write jobs, inert data handoffs and validation
 of source/run/artifact identities before writes. Security regressions exercise
-wrong identities and rejected transitions. This reduces the authority available
-to executed code; it does not isolate same-job processes or prove a trusted
-upstream compiler produced a harmless artifact.
+wrong identities and rejected transitions.
 
 == The three workflows
 
@@ -267,52 +257,37 @@ xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Roc package
 
 == SBOM sidecars and supplier documents
 
-`actions/sbom-sidecars` and `actions/fetch-dependency-sboms` belong in jobs
-with `contents: read` and nothing else. Both run repository configuration:
-the first evaluates `Blueprint.roc` through `blueprint spec` and runs the
-Blueprint SBOM tool over the reviewed composition and the final files; the
-second reads `blueprint lock show --json`. Neither holds a token that can
-write a release, an attestation or an issue, and the publisher receives their
-outputs as inert files, verified by name, size and digest like any other
-asset.
+`actions/sbom-sidecars` and `actions/fetch-dependency-sboms` evaluate repository
+configuration and run only in jobs with `contents: read`. The action revision
+fixes reviewed SBOM tool records; native binaries are admitted by SHA-256 and
+app bundles by their content hash and required compiler.
 
-The sidecar action selects the tool bundle by the Blueprint release that
-`Blueprint.roc` names, from a reviewed record in
-`actions/setup-blueprint/sbom-tools.json` fixed by the action's full SHA.
-A release that ships native tool binaries has their SHA-256 reviewed in the
-same record, and the binary is admitted by that digest, as `blueprint` is.
-Otherwise Roc verifies the app bundle's content hash from its URL before
-running it, and the action requires the Roc release the record names. The tool makes no
-request while reporting. The fetch action is the one step that reaches the
-network: HTTPS only, bounded to Blueprint's 1 MiB limit, with a document's
-SHA-256 recorded for review and reproduced on every later run. A changed or
-vanished supplier document fails the step; nothing is adopted silently. The
-regression tests exercise wrong compilers, stale sidecars, a checkout that is
-not the event commit, documents about other bytes, stale opt-outs and changed
-records, and CI runs both actions against a consumer fixture that pins a
-roc-blueprint release file by its published SHA-256: once for its source
-bundle, where the supplier's SBOM is bound in, and once for a native
-executable on the runner's target, whose fetched compiler has no published
-SBOM and so appears as a reviewed gap and whose SBOM carries the supplier's
-bundle graph bound by digest, on x86_64 Linux, arm64 Linux and Apple
-Silicon. The evidence envelope the sidecar action returns names what
-the publisher should receive; it authorizes nothing, and the privileged job
-rechecks every file it names.
+Supplier fetching uses HTTPS with a 1 MiB document bound. A recorded document
+must retain its digest and describe the locked artifact. Changed or missing
+bytes fail, and stale opt-outs require review. A document digest establishes
+which bytes were reviewed, not who authored them.
 
-The digest of a fetched document establishes which bytes were reviewed, not
-who produced them, and `inspect` establishes that the composition is
-consistent with the Lock and the imports, not that it is complete. An
-attestation check of a supplier's sidecar belongs at admission, as
-xref:artifact-verification.adoc#separate-admission-from-routine-use[Verify released artifacts]
-describes, and the publisher-side validator remains separate work.
+The shared package publish job rechecks the transferred envelope, Blueprint
+manifests and sidecar subject identities before attestation. Expected source,
+run and producing attempt come from workflow context and build outputs;
+publication retries retain the producer identity. The controller reads bounded
+regular files and executes no candidate code or Blueprint tool.
+
+Tests transfer generated source/native records and reject wrong identities,
+changed bytes and unsafe paths. This establishes final-byte consistency, not
+composition completeness or provenance of producer claims. The
+xref:software-bill-of-materials.adoc#publish-and-consume-software-bills-of-materials[SBOM chapter]
+owns generation, coverage and supplier-admission guidance.
 
 == Documentation deployment
 
-The build job of `docs.yml` runs repository sources through
-`actions/build-docs` with `contents: read`. The deploy job holds `pages: write`
-and `id-token: write`, runs only for the default branch, checks out nothing, and
-deploys the artifact the build job uploaded. A pull request can build the site
-and cannot deploy it.
+Renderer compilation, source conversion and execution run with `contents: read`.
+The executable cache is keyed by target, compiler, source and dependency/font
+pins; restored binaries still undergo native acceptance tests. The deploy job
+holds `pages: write` and `id-token: write`, runs only on the default branch, and
+deploys the uploaded Pages artifact. It checks out no source, executes no
+renderer and restores no candidate executable cache. A pull request can build
+the site and cannot deploy it.
 
 == Downstream status inventory
 
@@ -325,46 +300,36 @@ deployment job and permissions as other documentation builds. Publication does
 not commit to this repository or update a consumer. Unknown API evidence and
 incomplete trees never establish that a consumer is current.
 
-Compatibility evidence comes only from the latest scheduled caller of the
-pinned shared nightly workflow. The dashboard verifies that caller at the run's
-immutable SHA, the fixed aggregate gate, complete job inventory and a 48-hour
-pass freshness limit. Pin-updater success is not a compatibility verdict.
+Compatibility evidence requires an eligible latest-pair run of the pinned
+shared nightly workflow. The dashboard verifies its immutable caller revision,
+aggregate-job origin, complete current-attempt inventory and pass freshness.
+The xref:nightly-compatibility.adoc#read-the-downstream-dashboard[dashboard contract]
+defines eligible scheduled/manual runs and stale results.
 
 == Shared release-compatibility runner
 
-Selection, per-target tests and aggregation have only `contents: read`.
-Selection resolves a release and compiler once; every target receives those
-identities and verifies the selected ZIP's asset ID, length and SHA-256. The
-archive is inspected for regular file types, canonical paths, duplicates,
-collisions and extraction limits before it is unpacked. The reviewed Python
-standard-library helper enforces the same checks on every OS, including Windows
-device names, trailing-dot aliases and case-insensitive implicit-directory
-collisions. It never imports archive code. Child deadlines manage Windows Job
-Objects or Unix process groups, and public environment overrides cannot replace
-reserved variables under any spelling of their case. Archived code and native
-prerequisite code run only in the read-only test job, with checkout credentials
-disabled and compiler/example child tokens cleared. That job independently
-requires schedule/manual dispatch on the actual default branch and verifies
-the checkout HEAD equals the event SHA before running consumer prerequisites.
-Successful diagnostics are
-preserved; console workflow-command markers are escaped rather than interpreted.
-The suite can request the single allowlisted `--fuzz` build switch, with the
-runner selecting its required LLVM backend. It cannot provide arbitrary compiler
-options or change the runner's output path. A case may explicitly ignore unstable
-stderr statistics; those bytes remain in the diagnostic artifacts, while stdout,
-normal exit status and interruption checks still determine its result. Native
-regressions and real Linux/Apple Silicon fuzz targets exercise these controls.
+Selection, testing and aggregation have only `contents: read`. Selection fixes
+one release/compiler pair; each target verifies the selected archive's identity,
+size and SHA-256, then rejects unsafe paths, aliases, special files and resource
+limit violations before extraction. Archived examples and native prerequisites
+run only in the read-only test job. Prerequisites require schedule/manual
+execution on the actual default branch and a checkout matching the event SHA.
+Checkout credentials are disabled and child token variables are cleared.
 
-Aggregation checks every declared target's identity, counts and run attempt as
-inert JSON. No single matrix output can stand in for all targets. A cancelled or
-failed test job cannot produce a passing issue report even when old files exist.
-Reporting holds only `issues: write`, checks out nothing, and invokes the pinned
-`actions/nightly-report` using only a constrained outcome and selected tags.
-It receives no archive-generated diagnostic text. A complete pass can close the
-issue; known test failure can open/update it; unknown, missing, skipped or
-interrupted work cannot close it. Historical override runs never modify the
-latest-pair tracking issue. This runner has no pin-update, pull-request, merge,
-dispatch, release or deployment permission.
+The runner bounds child execution and output, cleans up descendants, preserves
+successful and failed diagnostics, and escapes workflow commands in console
+output. Tests cover archive admission, interruptions and actual native targets.
+Allowed compiler switches and suite fields are defined in the
+xref:nightly-compatibility.adoc#publish-the-suite-contract[suite contract].
+
+Aggregation checks every declared target's source/compiler identity, counts and
+run attempt as inert JSON. A single matrix output cannot establish a complete
+pass. Reporting holds only `issues: write`, checks out nothing and receives a
+constrained outcome and selected tags, never archive-generated diagnostic text.
+Complete passes can close the issue; known failures can open/update it. Unknown,
+missing, skipped or interrupted work cannot close it, and override probes do not
+modify the latest-pair tracking issue. The runner has no pin-update, PR, merge,
+dispatch, release or deployment authority.
 
 == Linker-input release publisher
 

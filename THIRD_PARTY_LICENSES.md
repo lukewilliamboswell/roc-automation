@@ -1,16 +1,16 @@
 # Third-party documentation assets
 
-The native `roc-docs` renderer embeds Space Grotesk and Plus Jakarta Sans
-for its website theme. Their font files, complete SIL Open Font License 1.1
-notices and pinned provenance are in `tools/roc-docs/fonts/web/`.
-
-The native `roc-docs` renderer embeds Inter, Roc Docs Serif (a renamed Merriweather instance) and Source Code Pro under the
-SIL Open Font License 1.1. The font files, complete notices and pinned provenance
-are in `tools/roc-docs/fonts/`, alongside the deterministic fontTools 4.61.1
-preparation recipe. Inter also supplies the embedded fonts in generated diagram
-SVGs, with the complete Inter notice retained in SVG metadata; the full Regular face matches roc-graph-layout's measurement data. Notices are also embedded in `roc-docs --licenses`
-and included in the tools release. Its renderer was adapted from the UPL-1.0
-roc-ansi documentation spike; attribution is retained beside the source.
+The native `roc-docs` renderer embeds Inter, Merriweather and Fira Code from
+its content-addressed roc-font 0.1.0-rc4 package under the SIL Open Font License
+1.1. The package retains unchanged upstream static faces and reviewed provenance;
+roc-docs uses its public named face, byte and family license accessors. The
+website distributes all ten static faces with the three complete family notices.
+Generated diagram SVGs embed the same Inter bytes used for measurements and
+retain the complete Inter notice in metadata. Notices are also embedded in
+`roc-docs --licenses`; the tools release obtains its license artifact from that
+executable. No font preparation or duplicate font assets are maintained here.
+The renderer was adapted from the UPL-1.0 roc-ansi documentation spike;
+attribution is retained beside the source.
 
 `roc-policy` embeds the MIT-licensed typos correction dictionary. Its exact
 source version, license, provenance and offline digest verifier are in

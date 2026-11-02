@@ -1,11 +1,7 @@
 import mermaid.Svg
 import mermaid.Drawing
 import DiagramAdapter
-import "fonts/Inter-OFL.txt" as inter_notice : Str
-import "fonts/Inter-Regular.ttf" as regular : List(U8)
-import "fonts/Inter-Bold.ttf" as bold : List(U8)
-import "fonts/Inter-Italic.ttf" as italic : List(U8)
-import "fonts/Inter-BoldItalic.ttf" as bold_italic : List(U8)
+import font.Font
 
 ## Only generated geometry and escaped upstream text enter this serializer.
 ## Authored SVG validation deliberately does not admit CSS or embedded resources.
@@ -104,19 +100,19 @@ face = |{ bytes, weight, style }| {
 }
 
 notice : Str
-notice = inter_notice.replace_each("&", "&amp;").replace_each("<", "&lt;").replace_each(">", "&gt;")
+notice = Font.sans_licence.replace_each("&", "&amp;").replace_each("<", "&lt;").replace_each(">", "&gt;")
 
 regular_css : Str
-regular_css = face({ bytes: regular, weight: RegularWeight, style: Upright })
+regular_css = face({ bytes: Font.sans_bytes, weight: RegularWeight, style: Upright })
 
 bold_css : Str
-bold_css = face({ bytes: bold, weight: BoldWeight, style: Upright })
+bold_css = face({ bytes: Font.sans_bold_bytes, weight: BoldWeight, style: Upright })
 
 italic_css : Str
-italic_css = face({ bytes: italic, weight: RegularWeight, style: Slanted })
+italic_css = face({ bytes: Font.sans_italic_bytes, weight: RegularWeight, style: Slanted })
 
 bold_italic_css : Str
-bold_italic_css = face({ bytes: bold_italic, weight: BoldWeight, style: Slanted })
+bold_italic_css = face({ bytes: Font.sans_bold_italic_bytes, weight: BoldWeight, style: Slanted })
 
 ## Base64 keeps complete triples intact and pads only the missing final bytes.
 expect ["", "f", "fo", "foo", "foob", "fooba", "foobar"].map(|text| base64(text.to_utf8())) == ["", "Zg==", "Zm8=", "Zm9v", "Zm9vYg==", "Zm9vYmE=", "Zm9vYmFy"]

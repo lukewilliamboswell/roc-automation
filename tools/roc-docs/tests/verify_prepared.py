@@ -120,8 +120,16 @@ def check(prepared, site, pdf=None, independent_reader=False, markdown=False):
             raise ValueError(f"Source bytes changed in {entry['output']}")
         if len(inventory['headings']) != page.headings or len(page.ids) != len(set(page.ids)):
             raise ValueError(f"Heading inventory changed/duplicate in {entry['output']}")
-        if None in page.heading_ids or not set(inventory['ids']).issubset(page.heading_ids):
-            raise ValueError(f"Explicit anchors changed in {entry['output']}")
+        missing = set(inventory['ids']) - set(page.heading_ids)
+        unexpected = set(page.heading_ids) - set(inventory['ids']) if len(inventory['ids']) == len(inventory['headings']) else set()
+        if None in page.heading_ids or missing or unexpected:
+            origins = entry.get('heading_origins', {})
+            details = [f"missing {kind}: {sorted(anchor for anchor in missing if origins.get(anchor, 'heading') == kind)}"
+                       for kind in ('generated', 'authored', 'heading')
+                       if any(origins.get(anchor, 'heading') == kind for anchor in missing)]
+            if unexpected or None in page.heading_ids:
+                details.append(f"unexpected: {sorted(str(anchor) for anchor in unexpected | ({None} if None in page.heading_ids else set()))}")
+            raise ValueError(f"Heading IDs changed in {entry['output']}: " + '; '.join(details))
         if inventory['tables'] != page.tables or inventory['images'] != len(page.images):
             raise ValueError(f"Table/image inventory changed in {entry['output']}")
         parsed[entry['output']] = page

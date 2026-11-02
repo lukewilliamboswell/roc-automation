@@ -270,21 +270,10 @@ invalidated.
 
 === Watch what CI costs
 
-Plan the pipeline, then keep watching it, because it drifts as changes are
-made.
-
-* Know roughly how long a routine pull request takes, and what takes the time.
-  The harness and each workflow report durations for this reason.
-* A routine change, one that touches no native code, should be fast. If
-  pull-request CI takes a long time for routine changes, something is wrong and
-  should be investigated: a fingerprint that includes too much, a cache key
-  that changes on every commit, a job that rebuilds what an earlier job already
-  built, a matrix that grew.
-* Treat a slow pipeline as a defect with a cause, not as the price of the
-  project. Slow CI is paid for on every pull request by every contributor.
-* Spend resources where they prove something. Run the expensive matrix when
-  native inputs change and before a release; run the cheap path the rest of the
-  time.
+Record stage durations and investigate slow routine pull requests. Check for
+fingerprints that include unrelated files, changing cache keys, duplicated
+builds and unnecessary matrix jobs. Run the expensive native matrix when its
+inputs change and before a release; use the cached path for other changes.
 
 `libhost.a` and `host.lib` are host outputs, not linker-input release assets.
 Operating-system import libraries, runtime libraries, interface stubs and
@@ -343,27 +332,16 @@ than host compilation. A producer that itself links executables or shared librar
 may also consume linker interfaces. Record its actual SDK, headers, interfaces and
 native build tools in its identity; do not assume the host build and the linker inputs have no dependencies.
 
-For a platform with a separate host step and an independent linker-input
-release, the flow is:
-
 [mermaid]
 ....
 flowchart TD
-    H[Host or engine build inputs change] --> HP[Build and validate affected project outputs]
-    HP --> HR[Host outputs, cached by fingerprint]
-
-    M[Review macOS interface catalog] --> E
-    X[External upstream inputs or generation recipe change] --> E
-    E[External linker-input cycle: generate and validate inputs, including macOS TBDs] --> ER[Immutable external linker-input dependency release]
-
-    HR --> B
-    ER --> V[Download or reuse cached archives; verify locked content hashes]
-    P[Current platform API source] --> B[Make platform bundles with roc bundle]
+    H[Host inputs change] --> HB[Build and validate host outputs]
+    E[External inputs or interface catalog change] --> ER[Build, validate and release linker inputs]
+    ER --> V[Verify locked archive hashes]
+    HB --> B[roc bundle: current source and selected inputs]
     V --> B
-    B --> T[Serve exact bundles on localhost; Roc links apps and runs smoke tests]
-    T --> D{Missing macOS interfaces?}
-    D -->|Yes: diagnose required symbols| M
-    D -->|No, and all release checks pass| R[Publish the exact tested bundles and example headers]
+    B --> T[Link and run apps from exact bundles]
+    T --> R[Publish tested bundles and example headers]
 ....
 
 An unresolved symbol during the application link is evidence to investigate.
@@ -398,106 +376,52 @@ https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/sr
 and https://github.com/roc-lang/roc/blob/8d6e3a360087038712d72bc090eaccf586cd83f7/src/bundle/download.zig#L42-L63[download contract].
 Application users consuming that bundle need no separate native-input fetcher.
 
-Consumers should resolve the locked artifact from a local cache, a mirror or the
-recorded release URL, check size and digest before extraction, and reject a
-mismatch, including on cache hits. Extract into fresh staging with bounded member
-counts and expanded sizes. Accept only declared regular files and directories with
-unique, portable paths; reject escapes, path collisions, links and special files.
-Validate the complete inventory before making the staged result available, and do
-not trust an old extracted tree solely because its cached archive verified.
-Keep licenses and required runtime files in the declared inventory.
-Fail clearly when a required artifact is unavailable
-or stale; an ordinary consumer must not silently rebuild it or pick a newer
-release.
+Resolve locked artifacts from cache, mirror or release URL and verify size and
+digest before extraction. Stage the complete declared inventory with bounded
+sizes and portable regular-file paths; reject aliases, special files and missing
+runtime or license files. Do not trust an extracted tree merely because its
+archive verified. Required unavailable or stale inputs fail rather than silently
+rebuilding or selecting another release.
 
-The reviewed lock is the trust anchor. A checksum downloaded beside an archive
-from the same mutable location does not independently authorize its contents.
-A matching digest establishes equality with reviewed bytes, not their safety,
-source origin or correctness. Review the initial artifact selection and subsequent
-lock changes as dependency changes.
-
-Hash verification is local and should work without a GitHub API call, token,
-attestation service or network connection when the selected bytes are already
-available. Downloading a missing artifact still requires a source of those bytes.
-This reduces service dependencies; it does not make uncached downloads offline.
-Apply the same principle to other downloaded inputs, including build tools where
-practical, while keeping the required trust policy explicit.
+The reviewed lock authorizes bytes; a checksum from the same mutable download
+location does not. Follow
+xref:artifact-verification.adoc#separate-admission-from-routine-use[artifact admission]
+when selecting new inputs. Routine hash checks are local, including cache hits,
+and need no attestation service. An uncached download still needs a source of bytes.
 
 == Publish provenance without confusing it with integrity
 
-An attestation can bind an artifact digest to claims about its producer, workflow,
-source revision and build. Publish it for users who want to verify that provenance.
-Such verification must check the expected signer/workflow identity, source and
-subject digest under a stated policy, not merely that some signature exists.
-Keep ordinary locked consumption independent of that service check unless the
-consumer explicitly adopts a stricter provenance policy. Verification required by
-an adopted policy must fail visibly rather than silently downgrade to hashes.
-Provenance does not inherently require an online check on every run: GitHub supports
-https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/verify-attestations-offline[offline verification]
-using previously obtained attestation bundles and trusted roots. Define how that
-verification material is obtained and updated when adopting such a policy.
+Publish provenance binding the artifact digest to its producer, workflow and
+source revision. Verify those expected identities when adopting an input;
+follow xref:artifact-verification.adoc#appropriate-attestation-use[the attestation policy]
+for audit and offline verification. A packaging workflow attests to assembly,
+not to how a downloaded dependency was compiled. Preserve original producer
+evidence; neither provenance nor hashes prove reproducible builds or correctness.
 
-Describe only the evidence that was actually produced. A packaging workflow that
-downloads and bundles an archive can attest to that assembly; its attestation
-does not establish how the downloaded archive was compiled. Preserve the original
-producer evidence and identify the selected dependencies in the package manifest.
-A source revision in a lock is a recorded claim until supported by the producer's
-evidence. Attestations do not by themselves prove reproducible builds, complete
-test coverage, or absence of defects.
-
-Publish each dependency release under a unique, immutable identity with the
-exact validated archives, lock data, licenses and available provenance. Do not
-replace assets or move tags. Where the hosting service supports enforced release
-immutability, enable it and verify the resulting state; a naming convention alone
-does not enforce immutability. Hash checks remain necessary even with immutable
-hosting. On GitHub, https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases[stage an immutable release as a draft],
-attach all assets, verify the complete inventory and tag commit, then publish.
-An interrupted draft may resume after existing assets match the recorded candidate.
-A complete published release needs only verification and any remaining follow-up;
-an incomplete published immutable release cannot accept missing assets and needs a
-new release identity. Changed candidate bytes also need a new identity. Preserve
-the original evidence and revalidate starters whenever their final URLs change.
+Publish dependency releases with unique immutable identities, validated archives,
+lock data, licenses and available provenance. Enable and verify hosting-service
+immutability. Stage all assets in a draft, read back the complete inventory and
+verify the tag before publication. An interrupted draft can resume with identical
+bytes; changed candidates or incomplete published immutable releases require a
+new identity. Revalidate starters when their final URLs change.
 
 === Publish a pull-request candidate without granting it release authority
 
-A repository may need a linker-input release before the source change that
-requires it can merge. An unprivileged workflow on the same-repository pull-request
-branch builds, tests, and attests the exact candidate. A trusted workflow dispatched
-from the default branch then verifies the producer run, source SHA and ref, workflow
-identity, attestations, manifest, and content hashes before publishing those bytes.
-It never executes scripts supplied by the candidate artifact.
+When a linker-input release must precede merge, an unprivileged same-repository
+PR workflow builds, tests and attests it. A reviewed default-branch publisher
+verifies the producer run, source, manifest, attestations and final bytes without
+executing candidate code. It can add only the generated lock in a lease-guarded,
+GitHub-signed commit. Merging that reviewed lock adopts the branch-built release;
+do not rebuild or relabel it after merge.
 
-The trusted workflow may add the generated content lock to the producer branch as
-one lease-guarded, GitHub-signed commit. That commit changes only the configured
-lock path and remains subject to ordinary review and checks. After merge, the lock
-permanently selects the branch-built release; do not rebuild or relabel it on the
-default branch. A content-derived tag permits recovery only when the complete
-candidate is byte-identical.
-
-`actions/publish-build-inputs` implements this boundary for producers that emit
-`build-input-release.json` and its declared target archives. The consumer wrapper
-exposes only a pull-request number and pins the controller action to a reviewed
-full SHA. Fork changes must first move to a same-repository branch because the
-controller never writes to forks.
-
-Manifest format 2 also carries `component_builds`: producer evidence that binds
-each selected component's provider-qualified build identity and input snapshot
-to its original archive digest. The publisher validates the record structure
-and preserves it in the generated lock. It does not run the provider, evaluate
-the snapshot or establish build equivalence itself. The read-only producer or
-admission job owns that comparison. Consumers verify the reviewed snapshot
-binding and the pinned delivered bytes; a build identity is not an output hash.
-
-A forged component claim must not bypass the existing source, workflow,
-attestation or final-asset checks. The complete manifest, including these
-records, is bound by its release digest and attestation. Publisher regression
-tests reject malformed records and prove that source or final-byte mismatches
-still fail. The remaining assumption is the reviewed producer's correctness;
-the privileged controller treats all component evidence as inert data.
-
-The complete producer, publisher, generated-lock, recovery, review, and merge
-contract is in
-xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[Publish linker inputs from a pull request].
+`actions/publish-build-inputs` implements this boundary. Its wrapper exposes only
+a PR number and pins the controller to a full SHA. Component build identities and
+input snapshots are inert producer claims preserved in the lock; the publisher
+validates their structure, while read-only producer/admission jobs own build
+equivalence checks. Source and final-byte admission still apply to the complete
+manifest. See
+xref:linker-input-releases.adoc#publish-linker-inputs-from-a-pull-request[the producer and publisher contract]
+for schema, recovery, review and merge requirements.
 
 == Choose the correct maintainer path
 

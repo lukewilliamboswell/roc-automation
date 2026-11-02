@@ -387,7 +387,8 @@ checked_inputs = |inputs| {
 
 # Whether `version` has a prerelease suffix. A version is `x.y.z` or
 # `x.y.z-suffix`: three numbers without leading zeros, and a suffix of letters
-# and digits in parts joined by single dots.
+# and digits or hyphens in nonempty parts joined by single dots. Numeric
+# identifiers have no leading zero. Build metadata is unsupported in release URLs.
 is_prerelease_version : Str -> Try(Bool, Str)
 is_prerelease_version = |version| {
 	(core, suffix) = match Str.split_first(version, "-") {
@@ -395,7 +396,7 @@ is_prerelease_version = |version| {
 		Err(_) => (version, [])
 	}
 	numbers = Str.split_on(core, ".")
-	well_formed = numbers.len() == 3 and numbers.all(|number| GitHub.is_digits(number) and (number == "0" or !number.starts_with("0"))) and suffix.all(|text| Str.split_on(text, ".").all(|part| GitHub.is_plain(part, "")))
+	well_formed = numbers.len() == 3 and numbers.all(|number| GitHub.is_digits(number) and (number == "0" or !number.starts_with("0"))) and suffix.all(|text| Str.split_on(text, ".").all(|part| GitHub.is_plain(part, "-") and (!GitHub.is_digits(part) or part == "0" or !part.starts_with("0"))))
 	if well_formed Ok(!suffix.is_empty()) else Err("version must be a release version such as 0.12.0 or 0.12.0-rc1")
 }
 
@@ -784,7 +785,8 @@ expect final
 	}
 
 # Malformed versions are rejected.
-expect ["", "latest", "v0.12.0", "0.12", "0.12.0.1", "0.012.0", "0.12.0 ", " 0.12.0", "0.12.0\n0.13.0", "0.12.0-", "0.12.0-rc_1", "0.12.0+build", "0.12.0/x", "main", "0.12.0-rc-1", "0.12.0-rc..1"].all(|version| rejection({ ..given, version }, candidate) == "version must be a release version such as 0.12.0 or 0.12.0-rc1")
+expect ["", "latest", "v0.12.0", "0.12", "0.12.0.1", "0.012.0", "0.12.0 ", " 0.12.0", "0.12.0\n0.13.0", "0.12.0-", "0.12.0-rc_1", "0.12.0+build", "0.12.0/x", "main", "0.12.0-01", "0.12.0-rc.01", "0.12.0-rc..1", "0.12.0-rc+build"].all(|version| rejection({ ..given, version }, candidate) == "version must be a release version such as 0.12.0 or 0.12.0-rc1")
+expect ["0.0.1-dry-run", "0.12.0-rc-1", "0.12.0-0", "0.12.0-0a.1-x"].all(|version| is_prerelease_version(version) == Ok(Bool.True))
 expect is_prerelease_version("0.12.0") == Ok(Bool.False) and is_prerelease_version("10.0.3") == Ok(Bool.False) and is_prerelease_version("0.12.0-rc1") == Ok(Bool.True) and is_prerelease_version("0.12.0-rc.2") == Ok(Bool.True)
 
 # `prerelease` is exactly true or false.

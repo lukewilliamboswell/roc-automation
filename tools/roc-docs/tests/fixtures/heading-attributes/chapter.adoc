@@ -1,0 +1,12 @@
+= Included chapter
+:idprefix: _
+:idseparator: _
+
+== Hello world
+
+<<_hello_world,Local>>.
+
+:idprefix:
+:idseparator:
+
+== Tight word

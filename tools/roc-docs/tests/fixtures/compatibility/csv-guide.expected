@@ -1,0 +1,4 @@
+bolt: 250 at 0.15
+nut: 40 at 0.05
+no column named quantity
+line 3, column 1: the record has 2 fields, fewer than the 3 columns

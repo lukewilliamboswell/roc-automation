@@ -88,8 +88,19 @@ class AcceptanceTests(unittest.TestCase):
 
     def test_heading_anchor_cannot_move_to_chrome(self):
         (self.site/'index.html').write_text(self.html.replace('<h1 id="title">','<h1 id="other">')+'<main id="title"></main>')
-        with self.assertRaisesRegex(ValueError,'Explicit anchors'):
+        with self.assertRaisesRegex(ValueError,'Heading IDs changed'):
             verify.check(self.prepared,self.site)
+
+    def test_heading_id_diagnostics_distinguish_generated_and_authored(self):
+        for kind in ('generated', 'authored'):
+            with self.subTest(kind=kind):
+                manifest_path = self.prepared/'manifest.json'
+                manifest = json.loads(manifest_path.read_text())
+                manifest['pages'][0]['heading_origins'] = {'title': kind}
+                manifest_path.write_text(json.dumps(manifest))
+                (self.site/'index.html').write_text(self.html.replace('<h1 id="title">', '<h1 id="wrong">'))
+                with self.assertRaisesRegex(ValueError, f"missing {kind}: .*title.*unexpected: .*wrong"):
+                    verify.check(self.prepared, self.site)
 
     def test_missing_published_asset_rejects(self):
         (self.site/'index.html').write_text(self.html+'<img src="missing.png">')

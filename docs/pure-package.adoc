@@ -144,7 +144,7 @@ In a read-only build job, call the shared setup action after checkout:
 The setup action installs a verified Blueprint binary without Nix by default.
 Set `install-nix: 'true'` when a selected environment takes tools from a Nix
 source or a sandboxed native build needs it. Existing configurations must follow
-xref:maintenance.adoc#upgrade-blueprint[the Blueprint migration steps], including
+xref:maintenance.adoc#upgrade-blueprint[the Blueprint upgrade procedure], including
 a full lock update when moving to Lock 2. Retain Nix while selected tools or
 sandboxed builds depend on it. The privileged report/publisher actions retain their own reviewed tooling
 and do not run this candidate repository configuration.
@@ -210,8 +210,6 @@ returns a temporary link removed when the Blueprint step ends. Resolve it with
 `realpath` inside the task, as the example does. The resolved store path and the
 optional wrapper remain usable within that job. A new job restores artifact
 bytes and runs the task again; it does not restore or reuse the old task link.
-Blueprint has no stable tool-path output API in this release; this shared
-action implements the handoff around the explicit repository task.
 
 The handoff reports the actual executable's SHA-256, length and provisioning
 time. Blueprint's successful `Fetch` task supplies lock verification; the

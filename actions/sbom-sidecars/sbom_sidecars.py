@@ -32,12 +32,16 @@ SBOM_TOOLS = Path(__file__).resolve().parents[1] / "setup-blueprint" / "sbom-too
 SIDECAR_SUFFIXES = (".spdx.json", ".cdx.json", ".spdx-2.3.json")
 MANIFEST_SUFFIX = ".sbom-manifest.json"
 TOOL_FEATURES = ("members", "manifest")
+DOCUMENT_PROFILES = ("blueprint-spdx-3.0-v1", "blueprint-spdx-3.0-v2")
 MEMBER_ID = re.compile(r"[^A-Za-z0-9.-]+")
 MAX_JSON_BYTES = 1024 * 1024
 MAX_FILES = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
 SYSTEM = re.compile(r"[a-z0-9_]+-[a-z0-9]+")
-VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?")
+# Build metadata is deliberately unsupported in release URLs. Numeric prerelease
+# identifiers have no leading zeros; alphanumeric identifiers may contain hyphens.
+PRERELEASE_IDENTIFIER = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-" + PRERELEASE_IDENTIFIER + r"(?:\." + PRERELEASE_IDENTIFIER + r")*)?")
 AGENT = re.compile(r"(Organization|Person): \S.*")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 IMPORT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
@@ -120,7 +124,10 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
     features = entry.get("features", [])
     if not isinstance(features, list) or any(feature not in TOOL_FEATURES for feature in features) or len(set(features)) != len(features):
         raise Refusal(f"the recorded SBOM tool features for roc-blueprint {version} must be a subset of {', '.join(TOOL_FEATURES)}")
-    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features)}
+    profile = entry.get("profile", DOCUMENT_PROFILES[0])
+    if profile not in DOCUMENT_PROFILES:
+        raise Refusal(f"the recorded SBOM document profile for roc-blueprint {version} is unsupported")
+    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features), "profile": profile}
 
 
 def binary_url(version: str, system: str) -> str:
@@ -140,7 +147,7 @@ def install_binary(version: str, system: str, expected: str, directory: Path, do
         if not hmac.compare_digest(actual, expected):
             raise Refusal(f"SHA-256 mismatch for {url}: expected {expected}, got {actual}")
         candidate.chmod(0o755)
-        installed = directory / f"blueprint-sbom-{system}"
+        installed = directory / f"blueprint-sbom-{system}{'.exe' if setup_blueprint.windows(system) else ''}"
         candidate.replace(installed)
         return installed
     finally:
@@ -462,7 +469,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         raise Refusal("Blueprint.lock must be a regular checked-in file")
     shutil.copyfile(lock, staging / "Lock")
     features = set(tool["features"])
-    with_members = "members" in features and target == "source"
+    member_files = {file for file in files if "members" in features and target == "source" and file.name.endswith(".tar.zst")}
     with_manifest = "manifest" in features
 
     def inspect(composition_path: Path, inventory_path: Path, listing: Path | None) -> dict:
@@ -482,16 +489,17 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
 
     inventories: dict[Path, Path] = {}
     inventory_path = staging / "inventory.json"
-    if not with_members:
-        # One inventory for every listed file of this target.
+    if len(member_files) != len(files):
+        # Composition-only inventories apply to binaries, ZIPs and PDFs. Only
+        # source .tar.zst bundles enter the archive member listing path.
         write_json(staging / "composition.json", composition)
         inventory = inspect(staging / "composition.json", inventory_path, None)
-        inventories = {file: inventory_path for file in files}
+        inventories = {file: inventory_path for file in files if file not in member_files}
     written: dict[Path, list[tuple[Path, str]]] = {}
     manifests: dict[Path, tuple[Path, str]] = {}
     for index, file in enumerate(files):
         directory = private_directory(staging / f"subject-{index}")
-        if with_members:
+        if file in member_files:
             # The archive is the authority on a source bundle's contents: list
             # it, account for every member, and inspect this file's inventory.
             listing_path = directory / "members.json"
@@ -519,6 +527,8 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
             manifest = file.with_name(file.name + MANIFEST_SUFFIX)
             if manifest.is_symlink() or not manifest.is_file():
                 raise Refusal(f"bind did not write {manifest}")
+            if read_bounded_json(manifest, "manifest").get("profile") != tool["profile"]:
+                raise Refusal(f"bind wrote an unexpected document profile; expected {tool['profile']}")
             manifests[file] = (manifest, sha256_of(manifest))
 
     for file in files:
@@ -549,7 +559,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")
         output.write(f"sidecars<<{delimiter}\n" + "\n".join(sidecars_only) + f"\n{delimiter}\n")
-        output.write(f"inventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool_identity['url']}\ntool-sha256={tool_identity['sha256']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
+        output.write(f"run-attempt={env.get('GITHUB_RUN_ATTEMPT', '')}\ninventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool_identity['url']}\ntool-sha256={tool_identity['sha256']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
     for file in files:
         for sidecar, digest in written[file]:
             print(f"{sidecar.relative_to(workspace)}: SHA-256 {digest}")

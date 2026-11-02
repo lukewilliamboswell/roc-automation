@@ -19,6 +19,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 SIDECARS = ROOT / "actions/sbom-sidecars/sbom_sidecars.py"
 FETCH = ROOT / "actions/fetch-dependency-sboms/fetch_dependency_sboms.py"
+VERIFY = ROOT / "actions/sbom-sidecars/verify_transferred.py"
+WORKSPACE = Path(os.environ.get("SBOM_CHAIN_WORKSPACE", str(ROOT))).resolve()
 CORE_SBOM = "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/roc-blueprint-core-9Z7WuswxTGgKd4i3cM5JDf5Kq9JqBpWoMxtWHALnjMcC.tar.zst.spdx.json"
 
 
@@ -48,17 +50,49 @@ def bundle(directory):
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir()
-    subprocess.run(["roc", "bundle", "package/main.roc", "--output-dir", str(directory)], cwd=ROOT, check=True, capture_output=True, text=True)
+    subprocess.run(["roc", "bundle", "package/main.roc", "--output-dir", str(directory)], cwd=WORKSPACE, check=True, capture_output=True, text=True)
     archives = sorted(directory.glob("*.tar.zst"))
     assert len(archives) == 1, "roc bundle writes one archive"
-    return archives[0].relative_to(ROOT)
+    return archives[0].relative_to(WORKSPACE)
+
+
+def check_transfer(workspace, values, subjects, common, version):
+    # Use the shared workflow's actual handoff: complete assets, the existing
+    # envelope under its fixed transfer-only name, and the build job attempt.
+    with tempfile.TemporaryDirectory(prefix="sbom-transferred-", dir=os.environ["RUNNER_TEMP"]) as temporary:
+        transferred = Path(temporary)
+        for name in values["assets"].splitlines():
+            target = transferred / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(workspace / name, target)
+        evidence = transferred / "dist/sbom-evidence.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(values["evidence"], evidence)
+        env = {**os.environ, **common, "PATH": "/nonexistent", "PYTHONPATH": "", "GITHUB_WORKSPACE": str(transferred),
+               "GITHUB_RUN_ATTEMPT": str(int(values["run-attempt"]) + 1),
+               "INPUT_PRODUCING_ATTEMPT": values["run-attempt"], "INPUT_VERSION": version,
+               "INPUT_SUBJECTS": "\n".join(subjects), "INPUT_ASSETS": values["assets"]}
+        def verify(expect=0):
+            result = subprocess.run([sys.executable, str(VERIFY)], cwd=transferred, env=env, capture_output=True, text=True)
+            assert result.returncode == expect, result.stdout + result.stderr
+            return result
+        verify()
+        # Every transferred subject and rendering must still be those bytes;
+        # attestation would be the next workflow step only after this succeeds.
+        for name in values["assets"].splitlines():
+            path = transferred / name
+            original = path.read_bytes()
+            path.write_bytes(original + b" ")
+            assert "bytes differ" in verify(1).stderr
+            path.write_bytes(original)
+        print("Transferred source and sidecar bindings passed without candidate programs")
 
 
 def main():
-    workspace = ROOT
+    workspace = WORKSPACE
     assert (workspace / "sbom/composition.json").is_file() and (workspace / "package/main.roc").is_file(), "copy examples/sbom-chain to the workspace root first"
     composition = json.loads((workspace / "sbom/composition.json").read_text())
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True).strip()
     common = {"GITHUB_WORKSPACE": str(workspace), "GITHUB_SHA": commit, "GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": os.environ.get("GITHUB_REPOSITORY", "lukewilliamboswell/roc-automation")}
     fetch_env = {**common, "INPUT_TARGET": "source", "INPUT_OUTPUT": "sbom/chain-imports.json"}
 
@@ -97,7 +131,10 @@ def main():
     _, values = run(SIDECARS, sidecar_env)
     expected = [str(archive)] + [f"{archive}{suffix}" for suffix in (".cdx.json", ".sbom-manifest.json", ".spdx-2.3.json", ".spdx.json")]
     assert values["assets"].splitlines() == expected, values["assets"]
-    assert values["compiler"] == "nightly-2026-10-21-5349569" and values["commit"] == commit
+    blueprint_version = "0.11.0" if "/0.11.0/" in (workspace / "Blueprint.roc").read_text() else "0.8.0"
+    expected_profile = "blueprint-spdx-3.0-v2" if blueprint_version == "0.11.0" else "blueprint-spdx-3.0-v1"
+    expected_compiler = "nightly-2026-10-28-bad769b" if blueprint_version == "0.11.0" else "nightly-2026-10-21-5349569"
+    assert values["compiler"] == expected_compiler and values["commit"] == commit
     digest = hashlib.sha256((workspace / archive).read_bytes()).hexdigest()
     spdx = json.loads((workspace / f"{archive}.spdx.json").read_text())
     subjects = [element for element in spdx["@graph"] if element.get("type") == "software_Package" and element["spdxId"].endswith("#Subject")]
@@ -111,6 +148,7 @@ def main():
     listing = Path(values["digests"]).read_text().splitlines()
     assert len(listing) == 4 and all(line.split("  ", 1)[1] in expected[1:] for line in listing)
     manifest = json.loads((workspace / f"{archive}.sbom-manifest.json").read_text())
+    assert manifest["profile"] == expected_profile
     assert manifest["subject"]["sha256"] == digest and manifest["subject"]["target"] == "source"
     assert {entry["filename"] for entry in manifest["sidecars"]} == {f"{archive.name}.spdx.json", f"{archive.name}.cdx.json"}
     # The archive, not the argument list, is the authority: its one member is a component.
@@ -118,6 +156,20 @@ def main():
     for line in listing:
         recorded, name = line.split("  ", 1)
         assert hashlib.sha256((workspace / name).read_bytes()).hexdigest() == recorded
+
+    # Mixed deliverables use reviewed composition without attempting to list a
+    # ZIP or PDF as tar. The archive alone adds measured archive members.
+    mixed = bundle(workspace / "dist-chain-mixed")
+    for name, content in (("examples.zip", b"PK fixture examples"), ("docs.zip", b"PK fixture docs"), ("manual.pdf", b"%PDF fixture manual")):
+        (workspace / mixed.parent / name).write_bytes(content)
+    files = [str(mixed), *(str(mixed.parent / name) for name in ("examples.zip", "docs.zip", "manual.pdf"))]
+    _, mixed_values = run(SIDECARS, {**sidecar_env, "INPUT_FILES": "\n".join(files), "INPUT_VERSION": "0.0.1-dry-run"})
+    mixed_evidence = json.loads(Path(mixed_values["evidence"]).read_text())
+    assert len(mixed_evidence["subjects"]) == 4 and len(mixed_values["assets"].splitlines()) == 20
+    assert len({entry["sha256"] for entry in mixed_evidence["subjects"]}) == 4
+    assert mixed_evidence["subjects"][0]["inventory_sha256"] != mixed_evidence["subjects"][1]["inventory_sha256"]
+    assert len({entry["inventory_sha256"] for entry in mixed_evidence["subjects"][1:]}) == 1
+    check_transfer(workspace, mixed_values, files, common, "0.0.1-dry-run")
 
     # A sidecar left behind is stale: the second run refuses before the tool starts.
     result, _ = run(SIDECARS, sidecar_env, expect=1)
@@ -146,12 +198,12 @@ def main():
     assert values["fetched"] == "1" and values["missing"] == "0"
     recorded = json.loads((workspace / f"sbom/chain-imports-{system}.json").read_text())["imported_documents"][0]
     assert recorded["target"] == "source" and recorded["subject"]["component"] == "blueprint-core", recorded["target"]
-    native = Path("dist-chain-native")
+    native = workspace / "dist-chain-native"
     if native.exists():
         shutil.rmtree(native)
     native.mkdir()
-    subprocess.run(["roc", "build", "app/main.roc", f"--output={native}/hello"], cwd=ROOT, check=True, capture_output=True, text=True)
-    _, values = run(SIDECARS, {**common, "INPUT_FILES": f"{native}/hello", "INPUT_VERSION": "0.1.0", "INPUT_TARGET": system, "INPUT_AUTHOR": "Organization: roc-automation contributors", "INPUT_COMPOSITION": native_composition, "INPUT_IMPORTS": f"sbom/chain-imports-{system}.json"})
+    subprocess.run(["roc", "build", "app/main.roc", f"--output={native}/hello"], cwd=WORKSPACE, check=True, capture_output=True, text=True)
+    _, values = run(SIDECARS, {**common, "INPUT_FILES": f"{native.relative_to(workspace)}/hello", "INPUT_VERSION": "0.1.0", "INPUT_TARGET": system, "INPUT_AUTHOR": "Organization: roc-automation contributors", "INPUT_COMPOSITION": native_composition, "INPUT_IMPORTS": f"sbom/chain-imports-{system}.json"})
     spdx = json.loads((workspace / native / "hello.spdx.json").read_text())
     packages = [element for element in spdx["@graph"] if element.get("type") == "software_Package"]
     assert any(element["spdxId"].endswith("#blueprint-core-sbom-Subject") for element in packages), "supplier graph missing from the native SBOM"

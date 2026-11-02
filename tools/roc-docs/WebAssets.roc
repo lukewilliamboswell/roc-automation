@@ -1,14 +1,21 @@
-import "fonts/web/PLUS-JAKARTA-SANS-OFL.txt" as file_0 : List(U8)
-import "fonts/web/PlusJakartaSans-Bold.ttf" as file_1 : List(U8)
-import "fonts/web/PlusJakartaSans-BoldItalic.ttf" as file_2 : List(U8)
-import "fonts/web/PlusJakartaSans-Italic.ttf" as file_3 : List(U8)
-import "fonts/web/PlusJakartaSans-Regular.ttf" as file_4 : List(U8)
-import "fonts/web/SPACE-GROTESK-OFL.txt" as file_5 : List(U8)
-import "fonts/web/SpaceGrotesk-Bold.ttf" as file_6 : List(U8)
-import "fonts/web/SpaceGrotesk-Regular.ttf" as file_7 : List(U8)
+import font.Font
 
-## Licensed reading fonts, embedded once in the binary and shared by site pages.
+## Public roc-font defaults, shared by the renderer and standalone website assets.
 WebAssets :: [].{
 	list : List({ path : Str, bytes : List(U8) })
-	list = [{ path: "_roc-docs/fonts/PLUS-JAKARTA-SANS-OFL.txt", bytes: file_0 }, { path: "_roc-docs/fonts/PlusJakartaSans-Bold.ttf", bytes: file_1 }, { path: "_roc-docs/fonts/PlusJakartaSans-BoldItalic.ttf", bytes: file_2 }, { path: "_roc-docs/fonts/PlusJakartaSans-Italic.ttf", bytes: file_3 }, { path: "_roc-docs/fonts/PlusJakartaSans-Regular.ttf", bytes: file_4 }, { path: "_roc-docs/fonts/SPACE-GROTESK-OFL.txt", bytes: file_5 }, { path: "_roc-docs/fonts/SpaceGrotesk-Bold.ttf", bytes: file_6 }, { path: "_roc-docs/fonts/SpaceGrotesk-Regular.ttf", bytes: file_7 }]
+	list = [
+		{ path: "_roc-docs/fonts/Inter-Regular.ttf", bytes: Font.sans_bytes },
+		{ path: "_roc-docs/fonts/Inter-Bold.ttf", bytes: Font.sans_bold_bytes },
+		{ path: "_roc-docs/fonts/Inter-Italic.ttf", bytes: Font.sans_italic_bytes },
+		{ path: "_roc-docs/fonts/Inter-BoldItalic.ttf", bytes: Font.sans_bold_italic_bytes },
+		{ path: "_roc-docs/fonts/Merriweather-Regular.ttf", bytes: Font.serif_bytes },
+		{ path: "_roc-docs/fonts/Merriweather-Bold.ttf", bytes: Font.serif_bold_bytes },
+		{ path: "_roc-docs/fonts/Merriweather-Italic.ttf", bytes: Font.serif_italic_bytes },
+		{ path: "_roc-docs/fonts/Merriweather-BoldItalic.ttf", bytes: Font.serif_bold_italic_bytes },
+		{ path: "_roc-docs/fonts/FiraCode-Regular.ttf", bytes: Font.mono_bytes },
+		{ path: "_roc-docs/fonts/FiraCode-Bold.ttf", bytes: Font.mono_bold_bytes },
+		{ path: "_roc-docs/fonts/Inter-OFL.txt", bytes: Font.sans_licence.to_utf8() },
+		{ path: "_roc-docs/fonts/Merriweather-OFL.txt", bytes: Font.serif_licence.to_utf8() },
+		{ path: "_roc-docs/fonts/FiraCode-OFL.txt", bytes: Font.mono_licence.to_utf8() },
+	]
 }

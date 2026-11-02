@@ -1,406 +1,196 @@
 = Publish and consume software bills of materials
 
-An SBOM gives a downstream user a machine-processable inventory of the
-components in a specific release, their identities and their relationships.
-Generate it from the resolved build and the delivered files, and distribute it
-with the release. Include first-party, open-source and proprietary components;
-a private component is still a component.
-
-The read-only build task discovers components, generates the SBOM and validates
-its schema and coverage. The shared publisher transfers and verifies the
-supplied files as inert bytes.
-A checksum file, Blueprint lock or GitHub dependency submission alone does not
-meet this contract.
+An SBOM describes the components and relationships in a specific release.
+Generate it from resolved inputs and final deliverables, then distribute it
+with those files. Include shipped first-party, open-source, vendored and
+proprietary components. A lockfile or checksum list alone does not describe
+release composition.
 
 [#risk-component-evidence]
 == Risks and controls for component evidence
 
-An inventory can omit transitive/native components or describe a different
-binary while still passing schema validation. Bind composition claims to exact
-subjects and preserve explicit uncertainty. Generate from resolved inputs and
-reviewed composition metadata; independently validate graph references, subject
-hashes, targets and declared coverage before publication. Test with query fixtures
-that locate known transitive components and distinguish build-only from shipped
-code. Agreement between producer records detects inconsistency;
-it cannot prove that undiscovered components are absent or that a matched
-advisory is exploitable. A supplier's document fetched beside a locked file
-is bound by the file's SHA-256 and the document's own digest, and a stale
-opt-out is reported rather than kept; those checks show the chain is intact,
-not that the supplier's inventory is complete or authentic.
+An inventory can omit components or describe another binary while passing
+schema validation. Bind claims to exact subjects and preserve uncertainty.
+Review resolved inputs and composition metadata, validate subject hashes and
+graph references, and test queries for known transitive and build-only
+components. Supplier imports must match the locked artifact and reviewed
+document digest. These checks detect inconsistent records; they do not prove
+that discovery is complete, a supplier authored the document, or a vulnerability
+match is exploitable.
 
 == Share generation, validation and publication responsibilities
 
-Blueprint owns the reusable generation capability. It exposes resolved component
-identities, build relationships and final artifact identities, and combines them
-with reviewed repository metadata to produce the standard document. A repository
-declares its deliverables and supplements missing licenses, vendored components,
-native libraries and composition information. Selecting a tool in an environment
-does not establish that the tool or its dependencies ship in the output.
-Separate inventory inspection from final artifact binding: inspect the committed
-resolved specification and lock without provisioning inputs, then hash and bind
-the delivered files in the release task after the build. Missing metadata is an
-explicit gap rather than a reason for an inspector to fetch, build or scan an
-unrelated store tree.
+The read-only build task owns generation and checking. Blueprint supplies
+resolved identities and its SBOM tool; the repository supplies deliverables and
+reviewed metadata for licenses, native libraries, vendored code and composition.
+A tool selected in an environment is not necessarily contained in its output.
 
-roc-automation owns independent local validation and integration with its existing
-publication actions. Keep the validator separate from the generator so the same
-policy checks an SBOM supplied by Blueprint or another producer. The validator
-reads data; it never evaluates a Blueprint file, imports candidate modules,
-executes an artifact or regenerates an SBOM to make invalid input pass.
+Inspect the resolved specification and lock without provisioning inputs, then
+bind the inventory to final artifact bytes after the build. Missing information
+is a declared gap. Do not fetch, rebuild or scan unrelated store trees merely
+to make an inventory appear complete.
 
-Use one generation task and one shared validation policy across release dry runs,
-publication and downstream admission. Signing and publishing retain separate
-authority from both. Vulnerability correlation is another consumer of the
-inventory and belongs in scheduled or manually requested analysis.
+The publisher receives inert files and rechecks their transfer bindings. It
+never evaluates candidate Blueprint configuration or regenerates an SBOM.
+Provenance admission and vulnerability analysis have separate purposes; see
+xref:artifact-verification.adoc#separate-admission-from-routine-use[artifact admission].
 
 == Declare what the inventory covers
 
-Give each deliverable an explicit subject: release URL, filename, version,
-target where applicable, and SHA-256 of its final bytes. Generate a separate
-SBOM for each distinct target artifact, or describe every subject and its own
-component graph in one document. A release-wide list with no mapping to the
-individual files cannot answer which binary contains a component.
+Give each deliverable a subject with its release URL, filename, version, target
+and final SHA-256. Each subject needs its own component graph, whether documents
+are separate or combined.
 
 [cols="2,3",options="header"]
 |===
-| Inventory | Required scope
-
-| Roc source bundle
-| Source actually shipped, vendored code, and direct and transitive package or platform dependencies required by that source. Distinguish included code from dependencies fetched later by the compiler.
-
-| Native executable or linker-input archive
-| First-party code, included libraries and runtime code, including static linker inputs and generated or embedded code. Record externally provided runtime dependencies separately from the components contained in the file.
-
-| Examples or documentation archive
-| Code, scripts, fonts and other third-party material distributed in that archive. Record example dependencies without claiming they are part of a sibling binary.
-
-| Build inputs and tooling
-| Compiler, platform used by tooling, build tools and test dependencies with their versions and identities. Describe their build/test relationships in a separate inventory or explicit relationships; their use during a build does not establish that they ship inside its output.
+| Deliverable | Scope
+| Roc source bundle | Shipped source, vendored code and transitive package/platform dependencies. Distinguish contained code from dependencies fetched later.
+| Native executable or linker-input archive | Included libraries, static inputs and generated or embedded code. Record externally provided runtime dependencies separately.
+| Examples or documentation archive | Distributed code, scripts, fonts and third-party material, with example dependencies distinguished from sibling binaries.
+| Build and test inputs | Compiler and tooling identities with build/test relationships. Using a tool does not establish that it ships in the output.
 |===
 
-For example, a statically linked tool can contain code from its Roc platform and
-native libraries even when a binary scanner cannot identify them. Use the
-resolved build inputs to account for those components. Conversely, the compiler
-used to build that tool is a build input unless compiler code is actually
-included. Source inventories cannot by themselves establish the composition of
-an optimized executable. The
-https://www.cyclonedx.org/guides/OWASP_CycloneDX-Authoritative-Guide-to-SBOM-en.pdf[CycloneDX SBOM guide]
-discusses generation at different stages of the build lifecycle.
-
-State the generation context, targets, inspected inputs, exclusions and known
-gaps inside the machine-processable record using the chosen format's fields,
-annotations or properties. Include transitive components or link to their
-accessible, immutable SBOMs with verified identities. Do not silently stop at
-the first dependency layer. Unknown or withheld information is explicit, with
-a contact for resolving gaps. An empty dependency list means verified absence,
-not an unsuccessful scan.
+Record generation context, inspected inputs, exclusions and gaps in the
+machine-processable document. Include transitive components or immutable,
+hash-bound supplier documents. Unknown information needs a reason and contact;
+an empty inventory must not stand for failed discovery. A source inventory alone
+does not establish the composition of an optimized executable.
 
 == Choose an interoperable format
 
-Publish JSON in SPDX or CycloneDX, using a maintained schema version supported
-by the producer and intended consumers. Record the format and version in the
-document and pin the generator and validator through the reviewed tooling
-environment. One supported format is sufficient for an initial shared
-implementation. Use a versioned format adapter so support for the other standard
-can be added without inventing a repository-specific component inventory.
-If generating both, derive them from the same inventory and check that subject
-identities, component coverage and relationships agree.
+Use the SPDX or CycloneDX formats supported by the reviewed producer and
+consumers. The shared sidecar action produces SPDX JSON-LD and CycloneDX JSON,
+with optional SPDX 2.3 output from the same inventory. Give each document a
+unique identity, revision, creation time, author and generator identity,
+separately from its subject's software version.
 
-Use a unique document identity, revision, creation/update timestamp, authoring
-organization and generator name/version. These identify the SBOM separately
-from the software version. Record the component producer separately from the
-SBOM author when they differ. Keep the metadata and relationships in the
-standard document rather than in a README table that tools cannot ingest.
-The https://spdx.github.io/spdx-spec/v2.3.1/document-creation-information/[SPDX document specification]
-defines its document metadata.
+Component records need a producer, canonical name, exact version or revision,
+stable identifier, immutable source/download identity, available artifact hash,
+license information and explicit relationships. Preserve upstream identities
+and local patch revisions; do not invent ecosystem identifiers to obtain a
+vulnerability match. Distinguish containment, runtime dependencies and build/test
+use. Record incomplete coverage explicitly.
 
-Each component record must let a recipient distinguish it from similarly named
-projects and different builds of the same project:
-
-* producer, canonical name and exact version or source revision;
-* a stable machine identifier, using an ecosystem Package URL where applicable;
-otherwise a documented source/revision identity or organization-owned identifier;
-* immutable source/download location, and artifact SHA-256 when those bytes are
-available, distinguishing source archive hashes from binary hashes;
-* declared license expression or identified proprietary terms and their location;
-mark unavailable license information explicitly; and
-* explicit relationships to the subject and other components, including direct
-and transitive dependencies, containment and build/test use where represented.
-
-Use actual upstream identifiers; do not invent CPE names or ecosystem package
-identifiers to obtain a vulnerability match. A patched or vendored component
-retains its upstream identity and records its own revision, modifications and
-content identity. Preserve separate instances when targets or patches differ.
-The https://spdx.github.io/spdx-spec/v2.3.1/package-information/[SPDX package specification]
-defines package versions, checksums, licenses and external identifiers.
-
-In SPDX, connect the document to its subject with `DESCRIBES` and use the
-appropriate `CONTAINS`, `DEPENDS_ON`, build or test relationships between
-identified elements. In CycloneDX, give each component a unique `bom-ref` and
-connect it in the dependency graph; use compositions to express incomplete
-coverage. A flat component array with no subject relationships is insufficient.
-See the
-https://spdx.github.io/spdx-spec/v2.3/relationships-between-SPDX-elements/[SPDX relationships],
-https://cyclonedx.org/use-cases/software-dependencies/[CycloneDX dependency graph]
-and https://www.cyclonedx.org/use-cases/compositions-dependencies/[CycloneDX coverage guidance].
+The
+https://spdx.github.io/spdx-spec/v2.3.1/package-information/[SPDX package specification]
+and https://cyclonedx.org/use-cases/software-dependencies/[CycloneDX dependency graph]
+describe the corresponding records and relationships.
 
 == Generate and validate during the release build
 
-The repository's read-only build task owns generation. It combines resolved
-package metadata and the final artifact inventory with reviewed supplemental
-metadata for components the generator cannot discover. Supplementary metadata
-belongs with the build recipe and changes through review, rather than an
-untracked manual edit to a generated SBOM.
+Use the same generation task and validation policy for a pull-request dry run
+and the release:
 
-Implement the following sequence in the release task and its pull-request dry
-run:
+. Build and test the deliverables, then calculate their final hashes.
+. Generate sidecars for those exact files from resolved inputs and reviewed
+  supplementary metadata. Keep sidecars outside the hashed subject archive.
+. Check the declared schema and semantics: subjects, targets, hashes, unique
+  identifiers, graph references and coverage against known resolved inputs.
+. Query a known transitive component and distinguish a build-only tool from
+  shipped code. A syntactically valid document is insufficient evidence.
+. Transfer the tested files and checked sidecars from the same run. Recheck
+  downloaded bindings before attestation and uploaded bytes before publication.
 
-. Build and test the exact deliverables, then calculate their final hashes.
-. Generate the SBOMs for those files, including the subject hashes. Keep them
-as sidecar assets to avoid a self-referential archive checksum.
-. Validate JSON against the pinned standard schema locally. Reject duplicate
-identifiers, unresolved relationship references, missing subjects, mismatched
-target identities or subject hashes, and unexplained omissions from the known
-resolved component inventory. Schema validity alone does not prove completeness.
-. Test useful queries: locate a known transitive dependency and its source,
-trace it to each affected subject, and distinguish a build-only tool from a
-shipped library. Include proprietary/vendored fixtures where applicable.
-. Upload the tested artifacts and their validated SBOMs from this same run.
-The publisher transfers them as inert bytes, verifies their names, sizes and
-hashes after upload, and publishes them together without rebuilding.
-
-The repository chooses a generator with demonstrated support for its actual
-inputs. A tool that recognizes other package ecosystems is not evidence that
-it discovers Roc imports, bundled platform/native code or vendored inputs.
-Pin and cache generators like other tools. Routine validation uses local
-schemas and metadata; remote vulnerability queries and full advisory rescans
-belong in a separate scheduled/manual analysis job so they do not delay PR CI.
+Pin and cache generators like other tools. Routine checks use local schemas and
+metadata; advisory queries belong in separate scheduled or manual analysis.
+Review supplementary metadata with the build recipe instead of editing generated
+SBOMs by hand.
 
 [#generate-sidecars-with-the-shared-actions]
 === Generate sidecars and chain suppliers' SBOMs with the shared actions
 
-Blueprint ships the generation capability above as a standalone tool with
-`inspect`, `bind` and `check`: a Roc app bundle,
-`roc-blueprint-sbom-<hash>.tar.zst`, since 0.7.0, and a native
-`blueprint-sbom-<system>` binary per system since 0.8.0, which also lists a
-produced archive member by member and writes an evidence manifest beside the
-sidecars. Its own releases publish `.spdx.json`, `.cdx.json`,
-`.spdx-2.3.json` and the manifest beside every asset. Two shared actions wire that tool into a
-repository's release build so each project does not repeat the steps:
+Keep `sbom/composition.json` under review, with a composition per target when
+needed. The complete `examples/sbom-chain/` release demonstrates source bundles,
+native executables and supplier imports.
 
-* xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] runs in the
-  read-only build job after the final files exist. It exports the evaluated
-  Spec and the Lock, inspects the reviewed composition for one target, binds
-  the sidecars to each listed file's final bytes with a creation time and
-  namespace taken from the tested commit, checks them offline, and returns the
-  complete asset set for the test jobs, the attestation step and
-  `actions/publish-release`. The tool bundle and the Roc release it needs are
-  recorded per Blueprint release in `actions/setup-blueprint/sbom-tools.json`,
-  so `Blueprint.roc` remains the one place a repository names its release.
 * xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
-  is the one step that uses the network. For every component the composition
-  takes from a locked `SourceFile` or fetched program, it looks for the
-  supplier's sidecar beside the locked URL by the naming convention, records
-  the document with its SHA-256 and identity bound to the Lock's digest, and
-  writes `sbom/imports.json`. `inspect` then verifies the binding and folds the
-  supplier's graph into the inventory under the import's prefix, so the chain
-  is transitive: package, platform, application.
+  reads the lock's public report, fetches supplier sidecars and records their
+  identities and digests in `sbom/imports.json`.
+* xref:actions.adoc#sbom-sidecars[`actions/sbom-sidecars`] runs Blueprint's
+  admitted `inspect`, `bind` and `check` tool after final files exist. It combines
+  the specification, lock, composition and imports, then returns the subject,
+  sidecar and manifest paths for testing, attestation and publication.
 
-The repository keeps `sbom/composition.json` under review, one per release
-target where targets differ, and decides where the imports live. Committing
-`sbom/imports.json` keeps the release build offline and stable and makes a
-supplier's changed document a reviewed change, which is the recommended
-default; a scheduled job can run the fetch action and propose the update.
-Fetching in the release build itself is also supported, at the cost of a
-network dependency on release day. Either way the fetch action refuses to
-adopt bytes that differ from a recorded digest.
+The action revision fixes reviewed tool records in
+`actions/setup-blueprint/sbom-tools.json`. `Blueprint.roc` selects a recorded
+release. Native tools are admitted by SHA-256; app bundles use a verified content
+hash and the recorded compiler. Output manifests must match that tool's recorded
+profile. Run these repository-evaluating actions only in read-only jobs.
 
-The release fails, in the pull-request dry run as well as on release day, when
-a locked dependency has neither a bound supplier SBOM nor a reviewed
-`unavailable_sboms` entry. The fetch action reports a stub for the maintainer
-to complete with a real reason and contact; it never invents the opt-out, and
-an opt-out whose supplier now publishes a sidecar is reported as stale so it
-gets removed. A dependency pinned by a tree or NAR digest cannot be bound,
-because that digest is not the file's SHA-256; pin the file by its published
-hash to chain it, or record why it is not. Every gap appears as an
-`incomplete` coverage scope in the documents and in the job summary.
+Only source `.tar.zst` bundles enter archive member enumeration. Each member must
+be accounted for by the reviewed composition or generated member records.
+Other subjects, including ZIP and PDF files, require a reviewed composition and
+receive their own final-byte hashes and sidecars.
 
-The sidecar action also returns a `roc-automation-sbom-evidence-v1`
-envelope, the producer's input to the independent validator and privileged
-publisher handoff: each file and sidecar by name, size, SHA-256, format,
-target and version, bound to the source commit and the producing run, with
-the digest of the inventory each subject was bound from. A Blueprint release
-whose `bind` writes an evidence manifest beside the sidecars has it checked,
-listed in the asset set and recorded in the envelope, and one whose tool
-lists a produced archive member by member has every member of a source
-bundle accounted for before the inventory is bound. The
-complete release in `examples/sbom-chain/` builds a bundle and a native
-executable for each supported system in read-only jobs, tests the exact
-files, attests every asset with its sidecars and publishes the explicit
-asset list through `actions/publish-release`.
+Commit the imports record so changed supplier documents require review and the
+release build can reuse known bytes. A scheduled fetch can propose updates.
+Fetching during a release is supported but adds a network dependency; changed
+or missing recorded bytes fail rather than being adopted silently.
 
-The chain into a native consumer depends on Blueprint admitting a `source`
-supplier into a native inventory; a release that does not refuses it with
-`import target differs from subject`. The fetch action records
-the supplier's stated target, so the bound import is accepted, and the
-example's chain check requires the executable's SBOM to carry the supplier's
-graph on every system.
-
-The shared actions cover bundles and binaries first; an examples or
-documentation archive is listed in `files` only when the repository has a
-reviewed composition for it. A fetched supplier document's digest proves that
-the bytes did not change after review, not that the supplier wrote them.
-Attesting a supplier's sidecar at admission, and the independent validator and
-evidence envelope the publisher hands off, remain separate work that these
-actions neither replace nor weaken.
+A locked dependency requires a bound supplier document or a reviewed
+`unavailable_sboms` reason and contact. The fetch action emits incomplete stubs
+for maintainers to resolve, reports opt-outs whose suppliers provide sidecars,
+and rejects document identities that do not match the locked file. Tree/NAR
+digests do not substitute for a file SHA-256. Gaps remain visible in document
+coverage and the job summary.
 
 === Validate a declared release inventory
 
-Give the shared validator three explicit inputs: the final release files, their
-declared SBOM-to-subject mapping, and the resolved component/coverage inventory
-from the build. Each mapping identifies the SBOM filename, format/version and
-SHA-256, plus each subject's filename, size, SHA-256 and target. Also bind the
-inputs to the source repository, commit and producing workflow run/attempt.
-Use a deliberate target-independent identity for source-only subjects rather
-than silently substituting the validator host's target.
+The sidecar action returns a `roc-automation-sbom-evidence-v1` envelope with
+subject and sidecar names, sizes, hashes, formats and targets, bound to the source
+commit, producing run/attempt and per-subject inventory digest. Component graphs
+stay in the standard SBOM documents; the envelope is a transfer record.
 
-This mapping is a release envelope, not a second SBOM format. Component records,
-dependency relationships and coverage statements remain in the standard
-document. The resolved inventory is evidence to compare, not authority to invent
-missing component identities or declare that environment tools are contained.
-Checking one producer's records against each other detects inconsistency; it
-cannot establish that the producer discovered every component.
+The shared package workflow transfers this record as `dist/sbom-evidence.json`
+and excludes it from published assets. Before attestation, its reviewed controller
+checks the build job's expected subject/format set, source and producer identity,
+and exact downloaded bytes against the envelope and Blueprint manifests. It also
+checks optional SPDX 2.3 sidecars. Publication retries use the attempt that
+produced the candidate, not the retrying job's attempt.
 
-The validator applies the following checks locally:
-
-* Read a bounded set of regular files within the selected artifact directory;
-reject symlinks, duplicate JSON keys, duplicate names and undeclared files.
-* Validate against the reviewed schema and semantic rules for the declared
-format/version. Bundle schemas and their references with the pinned validator;
-do not fetch schemas, component URLs or external references while validating.
-* Recompute every declared file hash and size, and require each SBOM subject
-and target mapping to agree with the exact delivered bytes. An SBOM hash does
-not substitute for its subject's hash.
-* Reject duplicate element identifiers, conflicting identities and unresolved
-relationship references. External document references must resolve to supplied,
-hash-verified records or be recorded as an explicit coverage gap. Respect the
-standard's relationship direction and distinguish containment, runtime
-dependencies, build dependencies and test dependencies.
-* Compare the component graph with the resolved inventory and reviewed metadata.
-Reject missing required subjects, unexplained component omissions and coverage
-claims stronger than the supporting evidence. Preserve legitimate distinct
-instances of a component when their target, revision or patch differs.
-* Report known gaps separately from successful checks. Explicit unknown metadata
-is useful information; it is not evidence of complete coverage. Required scope
-with unresolved gaps blocks release admission until policy accepts a reviewed,
-bounded exception or the inventory is corrected.
-
-Emit a deterministic machine-readable validation report with the validator and
-policy version, schema identity, input digests, subject mappings, stable
-diagnostic codes and coverage findings. A nonzero exit status prevents release
-admission. Keep the report's input order and diagnostics stable, and exclude
-host paths and current-time values from its identity. A report supplied by the
-candidate is diagnostic evidence: the trusted admission job independently
-rechecks its bindings and required local validation with pinned reviewed code.
-
-Test malformed documents and query behavior as well as valid examples. Include
-wrong-target and swapped-subject hashes, duplicate and dangling references,
-unreachable transitive components, conflicting component instances, an empty
-scan presented as complete, and a build-only compiler incorrectly claimed as
-shipped. Verify that disconnected build-only records do not make an affected
-binary appear to contain that tool, and that declared incomplete coverage never
-turns an absent query result into proof of absence.
+The controller reads bounded regular files and rejects duplicate JSON,
+noncanonical paths, symlinks, hard-link aliases and inconsistent bindings.
+Transfer/tampering tests exercise generated records and retries without a
+Blueprint tool or compiler on `PATH`. This establishes final-byte consistency,
+not composition completeness or provenance of producer declarations.
 
 === Reuse the existing publication paths
 
-For ordinary product and tool releases, use `actions/publish-release` to transfer
-the complete declared asset set, including the validated SBOM sidecars and
-retained evidence. Its name, size and download/hash verification preserves the
-exact tested bytes; that transfer check is separate from SBOM validation.
-Choose the asset set explicitly so a missing required sidecar cannot be hidden
-by a successful wildcard match for unrelated release files.
+Pass an explicit asset list to `actions/publish-release`, including required
+sidecars and manifests. Its draft recovery and download/hash checks preserve
+the tested bytes. For linker-input releases, follow the versioned
+xref:linker-input-releases.adoc#trusted-publisher-contract[publisher contract].
 
-For linker-input releases, use `actions/publish-build-inputs` and its versioned
-release manifest. Declare every SBOM sidecar and evidence file with its size,
-digest and subject/target mapping. Extend the manifest schema deliberately when
-adding these records; never admit arbitrary extra files or treat them as target
-archives. Attestation checks, upload, download verification, draft recovery and
-immutable-release verification cover the complete declared file set. The lock
-retains the selected manifest identity so the mapping remains bound to the same
-source and artifact identities. See
-xref:linker-input-releases.adoc#trusted-publisher-contract[the linker-input publisher contract].
-
-The attestation job checks the selected run, source and complete mapping before
-signing. A build-provenance statement about an SBOM file and an SBOM statement
-about a software artifact have different subjects and predicates; preserve both
-identities where both are produced. Do not attribute a candidate build to the
-publisher's own source revision. Publish retained bundles alongside the
-inventory, and verify them during adoption rather than ordinary cache reuse.
-These responsibilities extend the existing publisher and admission boundaries;
-they do not require another independent SBOM publisher.
-
-Provenance and an SBOM provide different evidence: provenance describes the
-producer and build context, while an SBOM describes composition. A signed SBOM
-attestation can bind the document to the exact artifact digest. Sign or attest
-the SBOM using reviewed signing infrastructure, retain the signature or bundle,
-and document the expected signer/workflow and verification command. A signature
-establishes an authenticated statement, not the accuracy of its inventory.
-
-Keep write authority out of generation. GitHub attestations require dedicated
-attestation/OIDC permissions; if used, a separate job runs pinned reviewed code
-without checking out or executing candidate sources. It signs only inert bytes
-from the selected build run, bound to that run's exact source and subjects.
-Do not grant these permissions to a job running PR code. See
-https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations[GitHub's SBOM attestation guidance]
-and xref:artifact-verification.adoc#separate-admission-from-routine-use[artifact admission].
+Keep signing authority separate from generation. An attestation job runs pinned
+reviewed code on inert files from the selected build run, bound to that run's
+source and subjects. It never executes candidate sources. Provenance about an
+SBOM file and an SBOM statement about software have different subjects; neither
+establishes the accuracy of the composition claims.
 
 == Distribute and retain the evidence
 
-Publish sidecars such as `<asset-name>.spdx.json` or `<asset-name>.cdx.json`
-alongside the corresponding immutable release assets. Release notes identify
-the mapping, format, scope and documented gaps and link to the SBOM and its
-signature/attestation evidence. Workflow artifacts with short retention are
-not the downstream distribution channel.
+Publish `<asset-name>.spdx.json` or `<asset-name>.cdx.json` alongside immutable
+release assets. Release notes link the subject mapping, formats, scope, gaps
+and signature/attestation evidence. Short-lived workflow artifacts are not the
+downstream distribution channel.
 
-Retain the documents and all referenced component SBOMs for supported releases.
-For restricted components, provide authorized recipients access to sufficient
-identity and relationship data and a documented contact; do not silently omit
-them. Public metadata must exclude secrets, internal credentials and absolute
-developer paths.
+Retain documents and referenced supplier SBOMs for supported releases. Give
+authorized recipients sufficient identity and relationship data for restricted
+components. Public records must exclude credentials and developer paths.
 
-An SBOM correction increments its document revision and retains the original.
-Publish corrections at a new immutable location, still bound to the unchanged
-subject digest, and cross-link the revision history from the advisory or
-documentation. Never replace a published asset or mutate an immutable release
-to correct its inventory. Changed software bytes require a new software release.
+Correct an SBOM at a new immutable document revision bound to the unchanged
+subject digest. Retain the original and link the correction; do not replace a
+published asset. Changed software bytes require a new software release.
 
 == Consume and act on the inventory
 
-At release adoption, download the SBOM for the exact selected artifact, validate
-its format and subject SHA-256, verify the expected signature/attestation, and
-retain the admitted record with the artifact identity. Preserve upstream
-identities and relationships when incorporating components into your own SBOM;
-make referenced documents available to your recipients too.
+At adoption, validate the selected artifact's SBOM format and subject hash,
+verify expected provenance, and retain the admitted records with that artifact's
+identity. Preserve supplier identities and relationships when incorporating
+components into your own SBOM.
 
-Index component identifiers, versions, revisions and hashes for supported
-releases. Scheduled analysis or a new advisory can then query that inventory,
-produce the affected release/target list and trace the relationship to the
-component. A maintainer reviews candidate matches, local patches and actual
-usage, records the decision and any fix/advisory, and publishes an updated
-release when needed. An SBOM is not a vulnerability verdict: a database match
-may need investigation, and no matches do not establish absence of risk.
-Absence from an incomplete inventory is not evidence that a component is absent.
-
-GitHub can
-https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/export-dependencies-as-sbom[export its repository dependency graph as SPDX].
-That is useful input, but it reflects the graph GitHub knows. Establish the
-exact release subject, target-specific composition and unsupported dependencies
-before using it as a delivered-artifact SBOM. Dependency submission, lockfiles,
-provenance attestations and hash inventories retain their separate purposes.
-
-The
-https://www.cyber.gov.au/publication/2026-minimum-elements-for-a-software-bill-of-materials-sbom[2026 joint SBOM minimum-elements guidance]
-covers machine-processable formats, metadata, component identity, sharing and
-updates. This chapter applies those concerns to our release process; checking
-in configuration or producing a syntactically valid document does not establish
-compliance with that guidance.
+Query component identifiers, revisions and hashes for supported release targets
+when investigating an advisory. Maintainers assess matches, patches and actual
+usage. An absent query result in an incomplete inventory establishes neither
+component absence nor freedom from vulnerabilities. Product-specific response
+decisions remain with maintainers.

@@ -105,18 +105,6 @@ in one place while migrating configuration and locked inputs together:
 . Remove generated `.blueprint/` state when the release requires it.
 . Run the affected named tasks and merge after `ci.yml` passes.
 
-Blueprint uses Spec major 3, Lock 2 and lock report format 2. Earlier locks
-are refused by commands other than the full `blueprint update`; a named update
-requires a current lock. Keep the previous lock in history for comparison.
-Replace `Overlay(name, ref)` declarations with `Input(name, ref)`; the
-environment's `Overlays` setting still selects which inputs act as overlays.
-Declare package sources explicitly and use source-qualified tool names.
-For sandboxed `Build` declarations, name an executor with
-`Executor("native", Nix("pkgs"))` and select it with `Execute("native")`;
-`pkgs` must name the intended declared Nix package source.
-Remove generated `.blueprint/` state after migration so later builds establish
-a new local explanation baseline.
-
 External tools should read `blueprint lock show --json`, validate its public
 report format and use `content_identity` and namespaced provider metadata.
 Do not parse the internal representation of `Blueprint.lock`. Consumers of
@@ -124,10 +112,6 @@ build reports use `build_identity`; report and package versions are separate
 compatibility contracts. Run cold and warm provisioning checks and exercise
 corrupt-cache recovery: a successful lock conversion alone does not demonstrate
 that the selected programs execute correctly.
-
-No workflow file names the Blueprint version or a checksum.
-
-Contributors then download the binary from the same release.
 
 == Update script dependencies
 

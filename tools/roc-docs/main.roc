@@ -1,7 +1,7 @@
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0-rc2/Gj3zVDr3qrQa6aTh7Z1zgUfe9NeBE6R76T5ho3xrc8af.tar.zst",
 	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.4.0-rc2/BE186Swhzh5dYZjaECgLSQFb17wiLtq4UkxTmiFAPWze.tar.zst",
-	font: "https://github.com/lukewilliamboswell/roc-font/releases/download/0.1.0-rc2/A14BmicBaf6dm4K9kdYH9j8Y6BoAZrpUmxWh9sojsFy5.tar.zst",
+	font: "https://github.com/lukewilliamboswell/roc-font/releases/download/0.1.0-rc4/3Es9Gca6KTySYDqcDPHwVqpAqJk6KwT9G4xkcLoYaSsx.tar.zst",
 	mermaid: "https://github.com/lukewilliamboswell/roc-graph-layout/releases/download/0.3.0-rc3/mermaid-A9th2FTnD4nQrV1nkr9mMZFp6JkK4aNzt7Gi6HAGHWrr.tar.zst",
 	parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/3.0.0/6xsRdRqenJrAb4wG7HaST4Xh349vD5sHAJDsKTK6E3dr.tar.zst",
 	pdf: "https://github.com/lukewilliamboswell/roc-pdf/releases/download/0.2.0/2hTpvYoKFHy8C6VeEgiv4FgWkP4oNTVupc1XCN8UwdiZ.tar.zst",
@@ -24,9 +24,7 @@ import parser.Markdown
 import pdf.Layout
 import "vendor/roc-deflate-LICENSE" as deflate_license : Str
 import "vendor/NOTICE.adoc" as deflate_notice : Str
-import "fonts/Inter-OFL.txt" as inter_license : Str
-import "fonts/Merriweather-OFL.txt" as serif_license : Str
-import "fonts/SourceCodePro-OFL.md" as mono_license : Str
+import font.Font
 
 main! : List(OsStr) => Try({}, _)
 main! = |arguments| {
@@ -37,12 +35,9 @@ main! = |arguments| {
 	}
 	if args == ["--licenses"] {
 		Stdout.line!("Renderer adapted from roc-ansi. Copyright © 2023 Luke Boswell and subsequent authors. Licensed under the Universal Permissive License (UPL), Version 1.0.")?
-		Stdout.line!(inter_license)?
-		Stdout.line!(serif_license)?
-		Stdout.line!(mono_license)?
-		for file in WebAssets.list.keep_if(|f| f.path.ends_with(".txt")) {
-			Stdout.line!(Str.from_utf8_lossy(file.bytes))?
-		}
+		Stdout.line!(Font.sans_licence)?
+		Stdout.line!(Font.serif_licence)?
+		Stdout.line!(Font.mono_licence)?
 		Stdout.line!(deflate_notice)?
 		return Stdout.line!(deflate_license)
 	}

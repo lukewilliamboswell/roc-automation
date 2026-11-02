@@ -101,12 +101,8 @@ include::documentation.adoc[leveloffset=+1]
 
 include::roc-docs.adoc[leveloffset=+1]
 
-include::project-practices.adoc[leveloffset=+1]
-
 include::contributing.adoc[leveloffset=+1]
 
 include::maintain-roc-docs.adoc[leveloffset=+1]
-
-include::releases.adoc[leveloffset=+1]
 
 include::risks-and-controls.adoc[leveloffset=+1]

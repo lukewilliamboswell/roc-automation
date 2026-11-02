@@ -273,9 +273,9 @@ Each release has its notes in `docs/releases/<version>.adoc`, for example
 `docs/releases/0.12.0.adoc`. They are committed in a pull request before the
 release is dispatched, and the workflow refuses to release a version whose
 notes file is missing.
-A top-level `docs/releases.adoc` chapter includes each file, so the notes of
-every release are part of the manual; see
-xref:documentation.adoc#write-for-the-shared-renderer[Write for the shared renderer].
+The workflow publishes the notes with the release. Keep the manual focused on
+the current interface and procedures; link readers to the published releases
+for version-specific changes.
 
 The notes are an authored narrative, written for a user deciding whether and
 how to upgrade. They are not a list of commits or merged pull requests.
@@ -379,7 +379,10 @@ them with the pinned Blueprint tool, and
 xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
 chains the suppliers' documents in. The shared publication action does not
 implement those steps; it uploads the supplied SBOM files as inert assets and
-verifies their transferred bytes. Pass the asset list the sidecar action
+verifies their transferred bytes. Before attestation, the shared package
+workflow also rechecks SBOM subject/sidecar bindings against the transferred
+envelope and supported Blueprint manifests, using reviewed controller code and
+the build job's producing attempt. Pass the asset list the sidecar action
 returns to the upload, the attestation and the publisher, so a missing sidecar
 cannot hide behind a wildcard. Remote advisory rescans run separately from routine PR checks.
 

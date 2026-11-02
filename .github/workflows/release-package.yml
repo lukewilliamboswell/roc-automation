@@ -80,6 +80,8 @@ jobs:
       prerelease: ${{ steps.request.outputs.prerelease }}
       nightly: ${{ steps.nightly.outputs.tag }}
       assets: ${{ steps.assets.outputs.list }}
+      sbom-subjects: ${{ steps.build.outputs.bundles }}
+      sbom-attempt: ${{ steps.sbom.outputs.run-attempt }}
     steps:
       - id: request
         name: Validate the request
@@ -224,6 +226,15 @@ jobs:
           spdx-2-3: 'true'
           url-base: https://github.com/${{ github.repository }}/releases/download/${{ steps.request.outputs.version }}
           namespace-base: https://github.com/${{ github.repository }}/sbom/${{ steps.request.outputs.version }}
+
+      # Transfer the existing envelope as evidence, separate from the explicit
+      # published asset list. Later generators can change dist; publication
+      # rechecks these bindings after downloading the candidate.
+      - name: Retain the SBOM transfer evidence
+        if: inputs.sbom-author != ''
+        env:
+          EVIDENCE: ${{ steps.sbom.outputs.evidence }}
+        run: cp -- "$EVIDENCE" dist/sbom-evidence.json
 
       - name: Write the generated manual sources
         if: inputs.manual && inputs.docs-task != ''
@@ -387,6 +398,15 @@ jobs:
         with:
           name: release-candidate
           path: dist
+
+      - name: Verify transferred SBOM subject and sidecar bindings
+        if: inputs.sbom-author != ''
+        env:
+          INPUT_SUBJECTS: ${{ needs.build.outputs.sbom-subjects }}
+          INPUT_ASSETS: ${{ needs.build.outputs.assets }}
+          INPUT_VERSION: ${{ needs.build.outputs.version }}
+          INPUT_PRODUCING_ATTEMPT: ${{ needs.build.outputs.sbom-attempt }}
+        run: python3 .roc-automation/actions/sbom-sidecars/verify_transferred.py
 
       - name: Attest the tested release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

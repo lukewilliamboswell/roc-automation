@@ -56,9 +56,9 @@ repository_policy = {
         },
         {
             rule: "prose/worth_noting",
-            include: ["docs/history/**"],
+            include: ["docs/quotations/**"],
             require_match: False,
-            reason: "Historical quotations are reviewed separately",
+            reason: "Quoted source retains its original wording",
             changes: { level: Warning },
         },
     ],
@@ -224,20 +224,6 @@ Diagnostic JSON uses schema 2 and includes `rule_id`, `level`, `origin` and `tra
 alongside the category `rule`. Text locations use one-based Unicode scalar
 columns; JSON retains half-open UTF-8 byte spans.
 
-== Migrating schema 1
-
-Schema 1 remains supported with its original explicit rule list, literal `scope`
-and additive behavior. It has no profile or override composition. Diagnostic IDs
-are generated as `legacy/1`, `legacy/2`, etc.; new configurations should use stable
-schema 2 IDs.
-
-For schema 2, give each rule an ID, translate a directory `scope` to
-`include: ["directory/**"]` and an exact file to `include: ["file.roc"]`.
-Rename `words` to `corrections`; separate the old `allow` entries into
-`accepted_words` and `accepted_identifiers`. A word may belong in both lists
-when preserving the old combined behavior. Schema 2 does not reinterpret old
-lists as overrides: collection operations are explicit only inside `changes`.
-
 == Rules
 
 `CompilerPin`, `NoCompilerPin` and `Dependency` inspect app/package/platform
@@ -245,8 +231,8 @@ headers, not lookalike fields in bodies, comments or strings. A required
 compiler/dependency rule aimed at an exact entrypoint reports a missing header.
 Directory-wide required rules apply only to header-bearing entrypoints, allowing
 ordinary helper modules. They fail configuration if no entrypoint is applicable.
-A dependency value is an exact decoded string in this version; resolving multiple
-relative spellings to one package identity is a future extension.
+A dependency value is an exact decoded string; alternate relative spellings
+are distinct values.
 
 `ForbiddenImport` matches the written path or its dot/slash descendants, ignoring
 trivia and preserving aliases' original paths. It does not resolve bindings,
@@ -319,8 +305,7 @@ that a different CI entrypoint selects these tests. It discovers and invokes
 each selected test-bearing file itself, so large import graphs can cause repeated
 compiler invocations; normal caching reduces that cost. The adapter is tested
 against the compiler its tools release records and depends on that compiler's
-human-readable verbose output. An incompatible output format fails explicitly; structured compiler
-reporting would provide a more stable future interface.
+human-readable verbose output. An incompatible output format fails explicitly.
 
 The runner can execute project code and invoke the compiler's normal dependency
 behavior. Use it in unprivileged jobs. `check` and `manifest` require no compiler,
@@ -328,9 +313,8 @@ execute no project code, and invoke no external helpers.
 
 == Distribution boundary
 
-Use a reviewed tools release and locally verified content digest to install a
-binary before invoking it. On newer Blueprint versions, `Programs`/`Fetch` can
-manage released binaries and `Blueprint.lock` pins their bytes. Blueprint still
-needs its own compiler to evaluate configuration before those programs are made
-available. A dedicated compiler-free bootstrap installer is not part of this
-change. Content hashes establish expected bytes, not build provenance.
+Install a reviewed tools release and verify its content digest before invoking
+it. Blueprint can manage the binary through `Programs` and `Fetch`, with its
+bytes pinned by `Blueprint.lock`; see
+xref:pure-package.adoc#adopt-a-pure-package-without-nix[utility provisioning].
+Content hashes establish expected bytes, not build provenance.

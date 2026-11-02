@@ -13,12 +13,7 @@ import pdf.Pdf
 import pdf.Scene
 import DiagramAdapter
 import VectorDrawing
-import "fonts/Inter-Regular.ttf" as regular_bytes : List(U8)
-import "fonts/Inter-Italic.ttf" as italic_bytes : List(U8)
-import "fonts/Inter-Bold.ttf" as bold_bytes : List(U8)
-import "fonts/RocDocsSerif-Bold.ttf" as heading_bytes : List(U8)
-import "fonts/Inter-BoldItalic.ttf" as bold_italic_bytes : List(U8)
-import "fonts/SourceCodePro-Regular.ttf" as mono_bytes : List(U8)
+import font.Font as BundledFont
 
 ## Pure reusable Markdown-to-HTML/PDF rendering with embedded licensed fonts.
 Renderer :: [].{
@@ -164,12 +159,12 @@ Renderer :: [].{
 		latin : List(Font.Script)
 		latin = ["Latn"]
 		add = |registry, bytes| registry.register(bytes, { provision: BuiltIn, scripts: latin }, Font.ValidationLimits.default).map_err(|error| FontRejected(error))
-		regular = add(Font.Registry.empty, regular_bytes)?
-		bold = add(regular.registry, bold_bytes)?
-		italic = add(bold.registry, italic_bytes)?
-		bold_italic = add(italic.registry, bold_italic_bytes)?
-		heading_font = add(bold_italic.registry, heading_bytes)?
-		mono = add(heading_font.registry, mono_bytes)?
+		regular = add(Font.Registry.empty, BundledFont.sans_bytes)?
+		bold = add(regular.registry, BundledFont.sans_bold_bytes)?
+		italic = add(bold.registry, BundledFont.sans_italic_bytes)?
+		bold_italic = add(italic.registry, BundledFont.sans_bold_italic_bytes)?
+		heading_font = add(bold_italic.registry, BundledFont.serif_bold_bytes)?
+		mono = add(heading_font.registry, BundledFont.mono_bytes)?
 		Ok({ regular: regular.face, bold: bold.face, italic: italic.face, heading: heading_font.face, bold_italic: bold_italic.face, mono: mono.face, registry: mono.registry })
 	}
 
