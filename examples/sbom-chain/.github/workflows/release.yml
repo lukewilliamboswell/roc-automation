@@ -49,7 +49,7 @@ jobs:
           fi
       - id: request
         env:
-          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.0.1-dry-run' }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.0.1-dryrun' }}
         run: |
           case "$VERSION" in
             *-*) prerelease=true ;;

@@ -109,6 +109,14 @@ def composition(**overrides):
 
 
 class PureTests(unittest.TestCase):
+    def test_shipped_workflows_choose_the_supported_nonpublishing_version(self):
+        for path in (".github/workflows/release-tools.yml", "examples/sbom-chain/.github/workflows/release.yml"):
+            with self.subTest(path=path):
+                source = (ROOT / path).read_text()
+                self.assertIn("0.0.1-dryrun", source)
+                self.assertNotIn("0.0.1-dry-run", source)
+                self.assertIsNotNone(sidecars.VERSION.fullmatch("0.0.1-dryrun"))
+
     def test_recorded_tools_are_well_formed_and_cover_the_releases_that_ship_a_tool(self):
         tools = json.loads(sidecars.SBOM_TOOLS.read_text())
         self.assertIn("0.7.0", tools)

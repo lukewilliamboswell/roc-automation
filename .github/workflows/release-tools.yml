@@ -208,7 +208,7 @@ jobs:
             version="$REQUESTED"
             notes="docs/releases/tools-$version.md"
           else
-            version=0.0.1-dry-run
+            version=0.0.1-dryrun
             notes="$(printf '%s\n' docs/releases/tools-*.md | sort -V | tail -n 1)"
           fi
           test -s "$notes"
