@@ -141,3 +141,11 @@ Apple Silicon executables. Compare diagram asset digests across repeated builds
 on each target, and review the full manual's website and PDF after font or
 layout changes. Record that evidence with the release rather than inferring
 compatibility from compilation alone.
+
+Generated heading IDs retain published native punctuation rules: periods, spaces
+and hyphens separate words. Native preparation and the independent reference
+check the same authored fixtures against fixed expected IDs, including chapter
+qualification and duplicate labels. Inventory failures distinguish missing
+generated IDs from authored IDs and report unexpected heading IDs; strict
+duplicate-anchor and unresolved-link checks still apply. This catches URL drift
+without treating generated names as authored declarations.

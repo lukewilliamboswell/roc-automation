@@ -187,9 +187,20 @@ class PrepareTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'LF source'):
             self.prepare()
 
-    def test_generated_ids_preserve_existing_asciidoctor_urls(self):
+    def test_generated_ids_preserve_published_native_urls(self):
         self.assertEqual(prep.slug("Start from the reader's knowledge"), 'start-from-the-readers-knowledge')
         self.assertEqual(prep.slug('Build with `--opt=dev`'), 'build-with-optdev')
+
+    def test_heading_ids_match_independent_expected_fixture(self):
+        fixture = MODULE.parent/'fixtures/heading-ids'
+        for name in ('index.adoc', 'chapter.adoc'):
+            self.write(name, (fixture/name).read_text())
+        manifest = self.prepare()
+        self.assertEqual([h['id'] for h in manifest['coverage']['headings']],
+                         (fixture/'expected.ids').read_text().splitlines())
+        self.assertEqual(manifest['pages'][1]['heading_origins']['Exact-ID'], 'authored')
+        self.assertIn('[Version](#reviewed-blueprint-0-11-0-installers)',
+                      (self.root/'prepared/manual.md').read_text())
 
     def test_conditional_source_block_is_retained_only_in_selected_backend(self):
         self.write('index.adoc', '= Manual\n\nifdef::backend-html5[]\n[source,roc]\n----\nsecret = 1\n----\nendif::[]\n')

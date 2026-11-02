@@ -1,0 +1,5 @@
+= Included chapter
+
+== A.B
+
+<<a-b,Local>>.

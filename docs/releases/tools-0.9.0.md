@@ -23,3 +23,6 @@ controller runs no candidate code or Blueprint tool, supports publication-only
 retries, and rejects missing/changed files, duplicate JSON and unsafe aliases.
 This verifies final-byte consistency, not inventory completeness or supplier
 provenance (#62).
+- Fix #109: preserve published native dotted heading IDs in the independent
+  reference oracle, check shared expected-ID fixtures, and distinguish generated
+  and authored heading failures in inventory diagnostics.

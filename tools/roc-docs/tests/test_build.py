@@ -14,6 +14,8 @@ import sys
 import tempfile
 import unittest
 import zlib
+import reference_prepare_docs as reference
+import verify_prepared as verify
 
 BINARY = str(Path(os.environ['ROC_DOCS_BINARY']).resolve())
 
@@ -74,6 +76,19 @@ class RepositoryTests(unittest.TestCase):
                 provenance = json.loads((self.root/prepared/'manifest.json').read_text())['includes']
                 self.assertEqual(provenance[0]['source_sha256'], hashlib.sha256(original.encode()).hexdigest())
                 self.assertEqual(provenance[0]['selected_sha256'], hashlib.sha256(expected.encode()).hexdigest())
+
+    def test_heading_ids_match_shared_expected_fixture_across_publications(self):
+        fixture = Path(__file__).parent/'fixtures/heading-ids'
+        for name in ('index.adoc', 'chapter.adoc'):
+            self.source(name, (fixture/name).read_text())
+        self.run_build('--markdown', 'true')
+        site = self.root/'.docs-out/site'
+        page = verify.Page()
+        page.feed((site/'index.html').read_text())
+        self.assertEqual(page.heading_ids, (fixture/'expected.ids').read_text().splitlines())
+        reference.prepare_docs(self.root, output_directory='.reference')
+        verify.check(self.root/'.reference', site, self.root/'.docs-out/manual.pdf',
+                     independent_reader=bool(shutil.which('pdftotext')), markdown=True)
 
     def test_literal_attribute_code_is_preserved_in_html_pdf_preparation_and_markdown(self):
         self.source('index.adoc', '= Guide\n\nLiteral `+{docs-version}+`; expanded `{docs-version}`.\n')

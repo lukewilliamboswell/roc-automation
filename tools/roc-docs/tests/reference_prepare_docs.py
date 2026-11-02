@@ -45,8 +45,8 @@ def read(path):
 
 def slug(text):
     text = re.sub(r'[`*]', '', text).lower()
-    text = re.sub(r'[^\w\s-]', '', text, flags=re.UNICODE)
-    return re.sub(r'[-\s]+', '-', text).strip('-') or 'section'
+    text = re.sub(r'[^\w .-]', '', text, flags=re.UNICODE)
+    return re.sub(r'[- .]+', '-', text).strip('-') or 'section'
 
 
 @dataclass(frozen=True)
@@ -204,7 +204,7 @@ class Converter:
                 self.targets[(item.source, original)] = anchor
                 self.anchor_by_line[(item.source, item.number)] = anchor
                 self.labels[(item.source, original)] = match[2]
-                self.headings.append({'source': item.source, 'line': item.number, 'id': anchor, 'title': match[2], 'level': len(match[1]) + item.offset})
+                self.headings.append({'source': item.source, 'line': item.number, 'id': anchor, 'title': match[2], 'level': len(match[1]) + item.offset, 'kind': 'authored' if pending else 'generated'})
                 pending = None
         if pending:
             raise ValueError(f'Anchor without heading: {pending}')
@@ -486,7 +486,7 @@ def prepare_docs(workspace, docs_directory='docs', entrypoint='index.adoc', outp
             rendered = page.convert(lines, source.name)
         name = 'pages/' + source.with_suffix('.md').name
         outputs[name] = rendered
-        pages.append({'input': name, 'output': source.with_suffix('.html').name})
+        pages.append({'input': name, 'output': source.with_suffix('.html').name, 'heading_origins': {h['id']: h['kind'] for h in page.headings}})
         converter.images.extend(page.images)
         converter.sources.update(page.sources)
     if sum(len(content.encode('utf-8')) for content in outputs.values()) > 64 * 1024 * 1024:

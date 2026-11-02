@@ -1,0 +1,18 @@
+= Heading IDs
+
+== Reviewed Blueprint 0.11.0 installers
+
+== A.B
+
+== A.- .B
+
+== Repeat
+
+== Repeat
+
+[#Exact-ID]
+== Authored
+
+<<reviewed-blueprint-0-11-0-installers,Version>> and <<Exact-ID,Exact>>.
+
+include::chapter.adoc[leveloffset=+1]
