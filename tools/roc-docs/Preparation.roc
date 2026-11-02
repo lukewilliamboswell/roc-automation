@@ -238,7 +238,7 @@ trim_source_end = |line| {
 	Str.from_utf8_lossy(bytes.take_first($n))
 }
 
-normalize_code = |source| Str.join_with(source.split_on("\n").map(trim_source_end), "\n").drop_suffix("\n")
+normalize_code = |source| trim_source_lines(Str.join_with(source.split_on("\n").map(trim_source_end), "\n"))
 
 code_sources = |files| {
 	var $found = []
@@ -686,11 +686,7 @@ route_for = |ref, state| {
 # Inline conversion still passes through the same validated link/escape path.
 html_inline = |value, scope, state| {
 	prepared = inline(value, scope, state)?
-	match Markdown.parse_str(prepared) {
-		[Paragraph(content)] => Html.inlines(content, []).map_err(|e| Str.inspect(e))
-		[] => Ok("")
-		_ => Err("unexpected block in inline AsciiDoc content")
-	}
+	Html.inlines(Markdown.parse_inlines(prepared), []).map_err(|e| Str.inspect(e))
 }
 
 html_blocks : List(AsciiDoc.Block), State, U64 -> Try({ text : Str, state : State }, Str)
@@ -838,4 +834,13 @@ html_reference = |ref, state| {
 			Ok({ href: "${route.route}#${route.id}", title: ref.title })
 		}
 	}
+}
+
+trim_source_lines = |source| {
+	bytes = source.to_utf8()
+	var $n = bytes.len()
+	while $n > 0 and bytes.get($n - 1) == Ok(10) {
+		$n = $n - 1
+	}
+	Str.from_utf8_lossy(bytes.take_first($n))
 }

@@ -100,3 +100,29 @@ expect Preparation.prepare([{ path: "index.adoc", source: heading_source }, { pa
 expect Preparation.prepare([{ path: "index.adoc", source: attribute_source }, { path: "chapter.adoc", source: attribute_chapter }], options).map_ok(|r| Str.join_with(r.manual.split_on("\n").keep_if(|line| line.starts_with("#")).map(|line| (line.split_on("{#").get(1) ?? "").drop_suffix("}")), "\n").concat("\n")) == Ok(attribute_expected)
 expect manual("= Title only\n:idprefix: x\n:idseparator: __\n").map_ok(|s| s.contains("{#xtitle__only}")) == Ok(True)
 expect Preparation.prepare([{ path: "index.adoc", source: "= Parent title\n:idprefix: _\n:idseparator: _\n\ninclude::child.adoc[leveloffset=+1]\n" }, { path: "child.adoc", source: "= Child title\n:idprefix: c\n:idseparator: __\n\n== Hello world\n" }], options).map_ok(|r| r.manual.contains("# Parent title {#_parent_title}") and r.manual.contains("## Child title {#_child_title}") and r.manual.contains("### Hello world {#chello__world}")) == Ok(True)
+
+## Match the parser's terminal-line normalization without changing raw bytes.
+expect manual("= Manual\n\n[source,roc]\n----\nx = 1\n\n----\n").map_ok(|s| s.contains("```roc\nx = 1\n\n```")) == Ok(True)
+expect manual("= Manual\n\n[source,roc]\n----\nx = 1\n \t\n----\n").map_ok(|s| s.contains("```roc\nx = 1\n \t\n```")) == Ok(True)
+expect manual("= Manual\n\n[source,roc]\n----\nx = 1\n----\n\n[source,roc]\n----\nx = 1\n\n----\n").is_err()
+expect manual("= Manual\n\n[source,roc]\n----\nx = 1\n\n----\n\n[source,roc]\n----\nx = 1\n\n----\n").is_ok()
+expect manual("= Manual\n\n[source,roc]\n----\nx = 1\n\ny = 2\n\n----\n").map_ok(|s| s.contains("x = 1\n\ny = 2\n\n")) == Ok(True)
+
+## Heading text is an inline context even when it resembles a Markdown list.
+expect Preparation.prepare(source("= Manual\n\n== 1. Decide what you support\n\nText.\n"), options).map_ok(
+	|r| r.pages.any(
+		|page| match page.html {
+			Prepared(html) => html.body.contains("1. Decide what you support") and !html.body.contains("<ol>")
+			MarkdownSource => False
+		},
+	),
+) == Ok(True)
+
+expect Preparation.prepare(source("= Manual\n\n[source,roc]\n----\nx = 1\n\n----\n"), options).map_ok(
+	|r| r.pages.any(
+		|page| match page.html {
+			Prepared(html) => html.body.contains("\n\n</code>")
+			MarkdownSource => False
+		},
+	),
+) == Ok(True)
