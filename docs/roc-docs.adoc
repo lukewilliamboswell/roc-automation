@@ -123,8 +123,13 @@ reject. Neither renderer fetches linked content.
 
 == Website presentation
 
-HTML ships the existing Space Grotesk and Plus Jakarta Sans reading fonts as
-local assets, with their SIL OFL notices, and supports light/dark colour schemes.
+HTML uses the pinned roc-font defaults: Inter for body text and navigation,
+Merriweather Bold for headings, and upright Fira Code for inline code and
+listings. The site supplies all ten bundled static faces and the three family
+SIL OFL notices as local assets. Prose uses genuine bold and italic styles;
+code remains upright. PDF uses the corresponding bundled faces. Both preserve
+the Command-key label `⌘K` in code; other unsupported glyphs still reject.
+HTML supports light/dark colour schemes.
 HTML uses a nested persistent desktop contents sidebar and a collapsible,
 single-column mobile contents list. It honors AsciiDoc `sectnums` and
 `toclevels` (1–6), adds heading permalinks and preserves legacy duplicate-heading

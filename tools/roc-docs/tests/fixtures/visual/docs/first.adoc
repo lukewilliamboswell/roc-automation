@@ -4,6 +4,10 @@
 
 Inline `code` and a link:https://example.com/[link].
 
+Regular prose, *bold prose*, _italic prose_, and *_nested emphasis_* exercise
+style selection. The body label ⌘K and inline `⌘K` share the baseline.
+Code stays upright inside _`emphasized code`_ and *`bold code`*.
+
 [source,roc]
 ----
 include::sample.roc.txt[]
@@ -57,4 +61,9 @@ include::sample.diff[]
 [source,unknown-language]
 ----
 include::sample.txt[]
+----
+
+[source,text]
+----
+include::sample-shortcut.txt[]
 ----

@@ -473,7 +473,7 @@ class RepositoryTests(unittest.TestCase):
                     for label in ['Start','Done','Request','Reply','CUSTOMER','ORDER','Worker','Task','Idle','Working']:
                         self.assertIn(label,text)
                     fonts = subprocess.check_output(['pdffonts',str(site/'manual.pdf')],text=True)
-                    self.assertIn('Inter',fonts); self.assertIn('RocDocsSerif',fonts)
+                    self.assertIn('Inter',fonts); self.assertIn('Merriweather',fonts)
                     images = subprocess.check_output(['pdfimages','-list',str(site/'manual.pdf')],text=True)
                     self.assertEqual(len(images.splitlines()),2,images)
                     bounds = ET.fromstring(subprocess.check_output(['pdftotext','-bbox',str(site/'manual.pdf'),'-']))

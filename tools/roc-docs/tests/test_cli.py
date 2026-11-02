@@ -100,12 +100,60 @@ class RendererTests(unittest.TestCase):
     def test_reading_fonts_and_notices_ship_with_standalone_html(self):
         output, _ = self.run_doc('# Reading fonts\n\nA **bold** and *italic* paragraph.\n', '--html-only')
         fonts = output/'_roc-docs/fonts'
-        for name in ['SpaceGrotesk-Regular.ttf','SpaceGrotesk-Bold.ttf','PlusJakartaSans-Regular.ttf','PlusJakartaSans-Bold.ttf','PlusJakartaSans-Italic.ttf','PlusJakartaSans-BoldItalic.ttf']:
-            font = (fonts/name).read_bytes()
-            self.assertEqual(font[:4], b'\x00\x01\x00\x00'); self.assertGreater(len(font), 32000)
-        for name in ['SPACE-GROTESK-OFL.txt','PLUS-JAKARTA-SANS-OFL.txt']:
-            self.assertIn('SIL OPEN FONT LICENSE', (fonts/name).read_text())
-        self.assertIn('prefers-color-scheme:dark', (output/'index.html').read_text())
+        # Independent upstream static-file identities from roc-font rc4's reviewed release.
+        expected = {
+            'Inter-Regular.ttf': '40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82',
+            'Inter-Bold.ttf': '288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f',
+            'Inter-Italic.ttf': 'bbc051dd204b5019a1aa0bc0ae2aa8a05ab13e7a3f979fa357631dc7feb6833a',
+            'Inter-BoldItalic.ttf': '948405a16cdc62701da5f4005ed068ca5f4d27061d98f7974ccfc37831d9581d',
+            'Merriweather-Regular.ttf': '0b59b4e18ba0b6b59aaf40753e2c839a9fcda43261006e3f08eef1ec03d99b39',
+            'Merriweather-Bold.ttf': '0fc19159c0884ae7798e829db374c3c3e6089088add6d4dcf7b1cd3f2be025b0',
+            'Merriweather-Italic.ttf': '5aeeb670ae1a9a700c07facb560255762575c7d53bb298e39e4269a369fdd69f',
+            'Merriweather-BoldItalic.ttf': '6f1afa9f6ed1e72f5cf68caeb12b020cff33b9d90a187107d43d2f833e8bcbdd',
+            'FiraCode-Regular.ttf': '5992ab9640e2df491b2f609467b1de60e8bc39b2c28db184342a0592d98f6117',
+            'FiraCode-Bold.ttf': '41f6554e845e2f5b70adad3950122334b866aac436793b7742ade600067701be',
+            'Inter-OFL.txt': '262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a',
+            'Merriweather-OFL.txt': '715bd349bfa6116f99e351e1548321dcfa25b91df65502d22ca8d624557697d2',
+            'FiraCode-OFL.txt': '1d41e10031ab125302780a05ec4c91d218e47db0c7e37cf315cce5e608cdc25c',
+        }
+        self.assertEqual({file.name for file in fonts.iterdir()}, set(expected))
+        for name, digest in expected.items():
+            self.assertEqual(hashlib.sha256((fonts/name).read_bytes()).hexdigest(), digest, name)
+        html = (output/'index.html').read_text()
+        self.assertEqual(html.count('@font-face{'), 10)
+        self.assertIn('font-family:"Inter"', html)
+        self.assertIn('font-family:"Merriweather"', html)
+        self.assertIn('font-family:"Fira Code"', html)
+        self.assertIn('font-synthesis:none', html)
+        self.assertNotIn('font-weight:650', html)
+        self.assertIn('prefers-color-scheme:dark', html)
+    @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdffonts'), 'Poppler independent reader')
+    def test_command_symbol_survives_prose_inline_code_and_listing(self):
+        output, _ = self.run_doc('# Keyboard labels\n\nBody: ⌘K. Inline: `⌘K`.\n\n```text\n⌘K\n```\n')
+        text = subprocess.check_output(['pdftotext', str(output/'manual.pdf'), '-'], text=True)
+        self.assertEqual(text.count('⌘K'), 3, text)
+        fonts = subprocess.check_output(['pdffonts', str(output/'manual.pdf')], text=True)
+        self.assertIn('FiraCode-Regular', fonts)
+        self.assertIn('Inter-Regular', fonts)
+        self.assertIn('Merriweather-Bold', fonts)
+    @unittest.skipUnless(shutil.which('pdftotext') and shutil.which('pdffonts'), 'Poppler independent reader')
+    def test_pdf_uses_genuine_bold_and_italic_faces(self):
+        output, _ = self.run_doc('# Prose styles\n\nRegularLabel **BoldLabel** *ItalicLabel* and *`UprightCodeLabel`*.\n')
+        text = subprocess.check_output(['pdftotext', str(output/'manual.pdf'), '-'], text=True)
+        for label in ['RegularLabel', 'BoldLabel', 'ItalicLabel', 'UprightCodeLabel']:
+            self.assertIn(label, text)
+        fonts = subprocess.check_output(['pdffonts', str(output/'manual.pdf')], text=True)
+        for face in ['Inter-Regular', 'Inter-Bold', 'Inter-Italic', 'FiraCode-Regular']:
+            self.assertIn(face, fonts)
+        self.assertNotIn('FiraCode-Italic', fonts)
+    def test_unsupported_glyph_still_rejects_before_publication(self):
+        for name, source in [('prose', '# Missing glyph\n\n🦄\n'),
+                             ('inline', '# Missing glyph\n\n`🦄`\n'),
+                             ('listing', '# Missing glyph\n\n```text\n🦄\n```\n')]:
+            with self.subTest(name=name):
+                output, result = self.run_doc(source, name=name, expect=1)
+                self.assertFalse(output.exists())
+                self.assertIn('text.coverage_missing', result.stderr)
     def test_unicode_and_duplicate_implicit_anchors(self):
         output, _ = self.run_doc('# Éléphant\n\n## Repeat\n\n## Repeat\n', '--html-only')
         self.assertEqual(Page((output / 'index.html').read_text()).heading_ids, ['Éléphant', 'repeat', 'repeat-2'])
@@ -163,7 +211,7 @@ class RendererTests(unittest.TestCase):
         self.assertFalse(output.exists())
     def test_bundled_font_licenses_are_available_without_files(self):
         result = subprocess.run([BINARY, '--licenses'], capture_output=True, text=True, env={**os.environ, 'PATH': '/nonexistent'}, check=True)
-        self.assertIn('SIL OPEN FONT LICENSE', result.stdout.upper()); self.assertIn('Inter', result.stdout); self.assertIn('Merriweather', result.stdout); self.assertIn('Adobe', result.stdout)
+        self.assertIn('SIL OPEN FONT LICENSE', result.stdout.upper()); self.assertIn('Inter', result.stdout); self.assertIn('Merriweather', result.stdout); self.assertIn('Fira Code Project Authors', result.stdout)
     def test_unsupported_content_rejects_without_output(self):
         for name, source in [('raw', '# Header\n\n<script>alert(1)</script>\n'), ('image', '# Header\n\n![missing](no.png)\n'), ('link', '# Header\n\n[bad](javascript:alert)\n')]:
             with self.subTest(name=name):

@@ -23,6 +23,7 @@ controller runs no candidate code or Blueprint tool, supports publication-only
 retries, and rejects missing/changed files, duplicate JSON and unsafe aliases.
 This verifies final-byte consistency, not inventory completeness or supplier
 provenance (#62).
+
 - Fix #109: preserve published native dotted heading IDs in the independent
   reference oracle, check shared expected-ID fixtures, and distinguish generated
   and authored heading failures in inventory diagnostics.
@@ -32,3 +33,9 @@ provenance (#62).
 - Fix #70: support checked listing single-line and closed inclusive range
   selections through the pinned parser, with optional dedenting, exact-byte
   provenance and strict selector/path/delimiter rejection before publication.
+- Fix #98: documentation now uses roc-font 0.1.0-rc4's bundled static defaults
+  across HTML, PDF and diagrams: Inter body text, Merriweather Bold headings and
+  upright Fira Code. Inline code and listings preserve the exact `⌘K` label;
+  unsupported glyphs still stop publication. HTML includes all ten faces and
+  their three family notices. Local font copies, derivatives and preparation
+  scripts are removed, and the released executable supplies its license text.

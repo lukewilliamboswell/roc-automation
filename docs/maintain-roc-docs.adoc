@@ -53,27 +53,39 @@ are checked against deliberate repeated sections rather than manual chapter name
 Set `CHROME` when its executable is not in the default location. These are test
 host dependencies, not dependencies of the released utility. The upstream
 documentation workflow runs this audit and uploads desktop, mobile, dark-mode
-code and rasterized PDF contents screenshots as the `docs-browser-review` artifact.
+code, the complete manual and typography fixture PDFs, and rasterized images
+of every PDF page as the
+`docs-browser-review` artifact.
 
 == Update fonts and rendering modules
 
 `SyntaxHighlight.roc` remains pure and independent of HTML, PDF, fonts and the
 platform. `Html.roc` owns the shared HTML layout, `CodeHighlight.roc` selects source
 highlighters, and `Renderer.roc` owns PDF adaptation/theme/fonts. `Png.roc`,
-`Svg.roc` and `ImageAssets.roc` own bounded image handling. PDF body text and diagram labels use Inter Regular, with full Bold/Italic faces
-for inline and diagram styles; headings use Roc Docs Serif Bold, a renamed
-Merriweather instance at wght=700, wdth=100, opsz=18. Code retains Source Code Pro.
-`tools/roc-docs/fonts/prepare_fonts.py INPUTS OUTPUT` prepares these assets at authoring time
-using fontTools 4.61.1 and checked source digests. `INPUTS` contains the pinned
-Inter release ZIP and the extracted roc-font rc3 package under `font/`;
-`tools/roc-docs/fonts/provenance.json` records their URLs and hashes. Run the recipe twice
-and compare every output digest before committing a font update. Runtime builds never invoke font tools.
+`Svg.roc` and `ImageAssets.roc` own bounded image handling.
+HTML and PDF use roc-font 0.1.0-rc4's unchanged static defaults: Inter for
+body text and navigation, Merriweather Bold for headings, and upright Fira Code
+for code. Prose uses genuine Inter Bold and Italic faces; diagrams also use
+Inter Bold Italic, and HTML supplies all four Inter prose styles. The website supplies all ten bundled static faces and their
+three family licenses under `_roc-docs/fonts/`; 700 weights select genuine Bold
+faces, and font synthesis is disabled. The package's public named face, byte
+and license accessors keep measurements, embedding and attribution tied to the
+same reviewed package pin. There are no locally prepared or copied font files.
+When updating that pin, compare the public byte accessors against the upstream
+release's font identity evidence and check the complete manual visually. The
+four Inter files used by diagrams match their earlier admitted digests.
+`tools/roc-docs/tests/check_html_browser.mjs` checks loaded families and styles;
+independent PDF extraction checks the exact Command-key label `⌘K` in prose,
+inline code and listings. Missing glyphs still reject before publication: a
+released font bundle has finite coverage, and the renderer does not silently
+substitute host fonts. Font changes require full-book HTML and PDF review for
+wrapping, alignment, pagination and clipping, alongside these targeted checks.
 Source adapted from roc-ansi commit
-`75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font files
-retain SIL OFL notices and pinned hashes in `tools/roc-docs/fonts/provenance.json` and
-`tools/roc-docs/fonts/web/provenance.json`. The bounded
-DEFLATE adaptation retains its Apache-2.0 license, modification notice and source
-identity under `tools/roc-docs/vendor/`. `roc-docs --licenses` prints bundled notices without
+`75df8efb085fb5f5fd90f5909a49dd7f5e364dcc` retains its UPL attribution. Font
+attribution comes from roc-font's family license accessors, accompanies generated
+website assets and SVG metadata, and is embedded in `roc-docs --licenses`.
+The bounded DEFLATE adaptation retains its Apache-2.0 license, modification
+notice and source identity under `tools/roc-docs/vendor/`. `roc-docs --licenses` prints bundled notices without
 requiring adjacent files.
 
 == Follow the preparation pipeline

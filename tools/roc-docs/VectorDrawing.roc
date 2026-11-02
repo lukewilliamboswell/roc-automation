@@ -4,10 +4,6 @@ import pdf.Scene
 import pdf.Layout
 import pdf.Color
 import font.Font
-import "fonts/Inter-Regular.ttf" as regular_bytes : List(U8)
-import "fonts/Inter-Bold.ttf" as bold_bytes : List(U8)
-import "fonts/Inter-Italic.ttf" as italic_bytes : List(U8)
-import "fonts/Inter-BoldItalic.ttf" as bold_italic_bytes : List(U8)
 
 ## Convert the admitted ordered picture, including baseline alignment, to PDF y-up geometry.
 VectorDrawing :: [].{
@@ -63,12 +59,12 @@ add_label = |{ base, label, style, view }| {
 	} else base.text(pdf_label)
 	if style.underline {
 		face = if style.bold and style.italic {
-			bold_italic
+			Font.sans_bold_italic
 		} else if style.bold {
-			bold
+			Font.sans_bold
 		} else if style.italic {
-			italic
-		} else regular
+			Font.sans_italic
+		} else Font.sans
 		width = Font.width(face, label.text).to_f64() * label.size / Font.units_per_em(face).to_f64()
 		left = label.origin.x - (
 			match label.align {
@@ -99,24 +95,6 @@ color = |value| Color.srgb8(value)
 
 point : { point : Drawing.Point, view : Drawing.Rect } -> Layout.Point
 point = |args| { x: unit(args.point.x - args.view.x), y: unit(args.view.y + args.view.height - args.point.y) }
-
-font : List(U8) -> Font
-font = |bytes| match Font.from_bytes(bytes, Font.ReadOptions.{}) {
-	Ok(face) => face
-	Err(_) => crash "reviewed diagram font is invalid"
-}
-
-regular : Font
-regular = font(regular_bytes)
-
-bold : Font
-bold = font(bold_bytes)
-
-italic : Font
-italic = font(italic_bytes)
-
-bold_italic : Font
-bold_italic = font(bold_italic_bytes)
 
 ## Path conversion preserves painting order and all cubic controls while translating and reversing y.
 expect {
