@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      - uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4
         with:
           version: nightly-new-compiler
           nightly-tag: nightly-2026-10-15-38e6c42
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      - uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4
         with:
           version: nightly-new-compiler
           nightly-tag: nightly-2026-10-09-258ab27
@@ -448,7 +448,7 @@ jobs:
       # The action at an earlier commit of this repository, which runs its
       # script from source. It publishes the executables that later revisions
       # of the action download.
-      - uses: lukewilliamboswell/roc-automation/actions/publish-release@f21044c2035a71b6fcd2a02cdb333fb11dc797e8
+      - uses: lukewilliamboswell/roc-automation/actions/publish-release@8454f8ed9acc026c85e31e87b132dfeeaf9f1b81
         with:
           version: ${{ needs.build.outputs.version }}
           prerelease: ${{ needs.build.outputs.prerelease }}
