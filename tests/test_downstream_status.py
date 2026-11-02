@@ -9,6 +9,8 @@ import unittest
 
 
 BINARY = os.environ.get("ROC_DOWNSTREAM_STATUS_BINARY")
+FIXTURE_REPOSITORY = "lukewilliamboswell/plume"
+FIXTURE_PROJECT = FIXTURE_REPOSITORY.rsplit("/", 1)[1]
 
 
 @unittest.skipUnless(BINARY and os.name != "nt", "set ROC_DOWNSTREAM_STATUS_BINARY to test the native inventory")
@@ -28,6 +30,7 @@ head='b'*40
 target='lukewilliamboswell/roc-automation/.github/workflows/nightly-compatibility.yml'
 file='.github/workflows/nightly.yml'
 scenario=os.environ['FAKE_SCENARIO']
+repository=os.environ['FAKE_REPOSITORY']
 source='name: Nightly\non:\n  schedule:\n    - cron: "0 0 * * *"\npermissions: {}\njobs:\n  compatibility:\n    permissions:\n      contents: read\n      issues: write\n    uses: '+target+'@'+revision+' # reviewed pin\n    with:\n      runners: \'["ubuntu-24.04"]\'\n'
 if scenario == 'local_spoof':
     source+='  local:\n    name: compatibility / Compatibility verdict\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n'
@@ -44,7 +47,7 @@ if request.endswith('/commits/main'):
 elif '/commits?per_page=1' in request:
     print(head)
 elif '/git/trees/' in request:
-    paths=[dict(path=file,type='blob',mode='100644')] if '/aoc/' in request else []
+    paths=[dict(path=file,type='blob',mode='100644')] if request.startswith('repos/'+repository+'/') else []
     print(json.dumps(dict(truncated=False,tree=paths)))
 elif '/contents/' in request:
     print(source)
@@ -67,7 +70,7 @@ elif '/actions/workflows/' in request:
     print(json.dumps(runs))
 elif '/actions/runs/' in request:
     import re
-    matched=re.fullmatch(r'repos/lukewilliamboswell/aoc/actions/runs/([0-9]+)/attempts/2/jobs\?per_page=100',request)
+    matched=re.fullmatch(re.escape('repos/'+repository)+r'/actions/runs/([0-9]+)/attempts/2/jobs\?per_page=100',request)
     assert matched,request
     number=int(matched.group(1))
     attempt=1 if scenario in ['old_attempt','manual_old_attempt'] else 2
@@ -85,17 +88,18 @@ elif '/actions/runs/' in request:
     if scenario == 'manual_bad_json': print('{'); sys.exit(0)
     print(json.dumps(dict(total_count=len(jobs)+(1 if scenario == 'manual_incomplete_inventory' else 0),jobs=jobs)))
 else:
-    assert request == 'repos/lukewilliamboswell/aoc',request
+    assert request == 'repos/'+repository,request
     print('main')
 ''')
             program.chmod(0o755)
             requests = root / "requests.txt"
             result = subprocess.run([BINARY, str(root / "site")], text=True, capture_output=True,
                 env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
-                     "FAKE_SCENARIO": scenario, "FAKE_REQUESTS": str(requests)}, timeout=30)
+                     "FAKE_SCENARIO": scenario, "FAKE_REQUESTS": str(requests),
+                     "FAKE_REPOSITORY": FIXTURE_REPOSITORY}, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.last_requests = requests.read_text()
-            return json.loads((root / "site/downstream-status/aoc-compatibility.json").read_text())
+            return json.loads((root / f"site/downstream-status/{FIXTURE_PROJECT}-compatibility.json").read_text())
 
     def test_canonical_shared_invocation_passes(self):
         badge = self.run_inventory("canonical")
