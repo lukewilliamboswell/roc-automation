@@ -29,3 +29,6 @@ provenance (#62).
 - Fix #97: honor scoped AsciiDoc heading prefix/separator attributes, including
   empty and multi-character separators, document titles and included chapters;
   keep duplicate generated IDs deterministic and explicit IDs exact.
+- Fix #70: support checked listing single-line and closed inclusive range
+  selections through the pinned parser, with optional dedenting, exact-byte
+  provenance and strict selector/path/delimiter rejection before publication.

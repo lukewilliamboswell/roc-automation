@@ -88,8 +88,15 @@ and includes cannot fetch network content.
 The supported source and presentation profile belongs in
 xref:roc-docs.adoc#source-formats-and-links[the utility reference]. The wider
 parser API does not expand that contract. In particular, listing includes accept
-single positive `tag` selections and `indent=0`; multiple or negative tags and
-line-range selection remain unsupported. Missing or unbalanced tags, nested
+single positive `tag` selections, a positive `lines=N` or closed inclusive
+`lines=N..M` range, and optional `indent=0`. Strict validation runs before the
+pinned parser's public selector for line selections and unselected imports:
+conflicting selectors, malformed or out-of-bounds ranges and every reported
+selection problem reject. Tagged imports retain the existing single-region
+extraction and dedent behavior because the broader public tag selector removes
+unrelated marker lines that were previously preserved source bytes. Regressions
+keep those markers and whitespace-only lines exact. Multiple or negative tags
+remain unsupported. Missing or unbalanced tags, nested
 include directives and delimiter injection reject. Source bodies are recovered
 from original files where the parser normalizes trailing whitespace; ambiguous
 bodies reject rather than guessing. Keep whitespace, tab, inline-code,

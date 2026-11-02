@@ -13,3 +13,7 @@ The first cell wraps onto a line containing the next cell separators.
 
 Copyright © 2024 Luke Boswell and subsequent authors. These roc-ray excerpts
 are licensed under the Universal Permissive License (UPL), Version 1.0.
+
+`csv-guide.expected` retains the first four output lines from roc-parser
+commit `bafa803a6201fd5b2c01144261cfb8b92a5ee0df`,
+`docs/examples/csv-guide.expected`, for checked listing line selections.

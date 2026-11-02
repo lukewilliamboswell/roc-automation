@@ -2,6 +2,7 @@ import cli.Path
 import BuildFiles
 import BuildOptions
 import Sha256
+import parser.AsciiDoc
 
 ## Expand checked local listings before parsing, keeping their original bytes
 ## available to Preparation's source-fidelity oracle. Never execute examples.
@@ -82,63 +83,91 @@ SourceIncludes :: [].{
 		Ok({ files: $out, origins: $origins })
 	}
 
-	## Single positive tag selection and optional common-indent removal. Missing,
-	## overlapping and unbalanced markers reject; no guessed partial examples.
+	## Validate the renderer's narrower selector profile before using the pinned
+	## parser's public selector. Its compatibility fallbacks must never turn an
+	## invalid or conflicting selection into an apparently complete example.
 	select : Str, Str -> Try(Str, Str)
 	select = |source, settings| {
 		if source.contains("\r") {
 			return Err("listing include requires LF bytes")
 		}
 		var $tag = ""
+		var $lines = ""
 		var $dedent = False
+		var $line_count = 0.U64
 		for entry in settings.split_on(",") {
 			option = entry.trim()
-			if option.starts_with("tag=") and $tag == "" {
+			if option.starts_with("tag=") and $tag == "" and $lines == "" {
 				$tag = option.drop_prefix("tag=")
 				if $tag == "" or !$tag.to_utf8().all(|b| (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or b == '-' or b == '_') {
 					return Err("invalid include tag")
 				}
+			} else if option.starts_with("lines=") and $lines == "" and $tag == "" {
+				$lines = option.drop_prefix("lines=")
+				parts = $lines.split_on("..")
+				if parts.len() > 2 or !parts.all(|part| part != "" and part.to_utf8().all(|b| b >= '0' and b <= '9')) {
+					return Err("include lines must be one positive line or a closed inclusive range")
+				}
+				first = U64.from_str(parts.first() ?? "").map_err(|_| "include line number exceeds limit")?
+				last = U64.from_str(parts.last() ?? "").map_err(|_| "include line number exceeds limit")?
+				if first == 0 or last < first {
+					return Err("include lines require 1 <= first <= last")
+				}
+				$line_count = last - first + 1
 			} else if option == "indent=0" and !$dedent {
 				$dedent = True
-			}
-			else if option != "" {
-				return Err("unsupported or duplicate listing include option: ${option}")
+			} else if option != "" or settings != "" {
+				return Err("unsupported, conflicting or duplicate listing include option: ${option}")
 			}
 		}
-		var $active = $tag == ""
-		var $seen = False
-		var $out = []
-		for line in source.drop_suffix("\n").split_on("\n") {
-			if $tag != "" and line.trim().ends_with("tag::${$tag}[]") {
-				if $active or $seen {
-					return Err("duplicate or nested selected tag")
+		# Retain the stricter single-region tag contract: the parser also
+		# accepts repeated regions, which can hide omitted surrounding source.
+		if $tag != "" {
+			var $active = False
+			var $seen = False
+			var $tagged = []
+			for line in source.drop_suffix("\n").split_on("\n") {
+				if line.trim().ends_with("tag::${$tag}[]") {
+					if $active or $seen {
+						return Err("duplicate or nested selected tag")
+					}
+					$active = True
+					$seen = True
+				} else if line.trim().ends_with("end::${$tag}[]") {
+					if !$active {
+						return Err("unmatched selected tag end")
+					}
+					$active = False
+				} else if $active {
+					$tagged = $tagged.append(line)
 				}
-				$active = True
-				$seen = True
-			} else if $tag != "" and line.trim().ends_with("end::${$tag}[]") {
-				if !$active {
-					return Err("unmatched selected tag end")
+			}
+			if !$seen or $active {
+				return Err("missing or unclosed selected tag")
+			}
+			# Public tag selection removes unrelated marker lines. Keep accepted
+			# tagged listings byte-compatible, including their legacy dedent.
+			if $dedent {
+				width = $tagged.keep_if(|line| line.trim() != "").fold(
+					1048576.U64,
+					|n, line| {
+						spaces = line.to_utf8().find_first_index(|b| b != ' ' and b != '\t') ?? line.to_utf8().len()
+						if (spaces < n) spaces else n
+					},
+				)
+				if width != 1048576 {
+					$tagged = $tagged.map(|line| if (line.trim() == "") "" else Str.from_utf8_lossy(line.to_utf8().drop_first(width)))
 				}
-				$active = False
-			} else if $active {
-				$out = $out.append(line)
 			}
+			return Ok(Str.join_with($tagged, "\n").concat("\n"))
 		}
-		if $tag != "" and (!$seen or $active) {
-			return Err("missing or unclosed selected tag")
+		selection = AsciiDoc.select_include(source, settings)
+		if !selection.problems.is_empty() {
+			return Err("invalid listing include selection: ${Str.inspect(selection.problems)}")
 		}
-		if $dedent {
-			width = $out.keep_if(|l| l.trim() != "").fold(
-				1048576.U64,
-				|n, line| {
-					spaces = line.to_utf8().find_first_index(|b| b != ' ' and b != '\t') ?? line.to_utf8().len()
-					if (spaces < n) spaces else n
-				},
-			)
-			if width != 1048576 {
-				$out = $out.map(|line| if (line.trim() == "") "" else Str.from_utf8_lossy(line.to_utf8().drop_first(width)))
-			}
+		if $lines != "" and selection.lines.len() != $line_count {
+			return Err("include line selection extends beyond source")
 		}
-		Ok(Str.join_with($out, "\n").concat("\n"))
+		Ok(selection.text.concat("\n"))
 	}
 }

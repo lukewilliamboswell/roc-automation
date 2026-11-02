@@ -91,8 +91,10 @@ leaders are decoration and do not enter extracted text.
 Use `--site-url https://example.com/project/` (or the action's `site-url` input)
 for PDF links to website-only chapters, API routes and downloads. The utility
 keeps manual chapter references internal and preserves other download filenames.
-Local listing includes can select `tag=name` and `indent=0` from checked files
-inside the workspace; consumers still compile/test their examples separately.
+Local listing includes can select `tag=name`, a positive single `lines=N`, or a
+closed inclusive `lines=N..M` range, optionally with `indent=0`, from checked files
+inside the workspace. A tag and line selector cannot be combined; malformed,
+empty or out-of-bounds selections reject. Consumers still compile/test their examples separately.
 The broader roc-parser 3.0.0 include-selector API does not expand this renderer
 contract. Chapter includes are bounded local `.adoc` or `.md` files; listing
 includes may read checked source and `.expected` files within the workspace.

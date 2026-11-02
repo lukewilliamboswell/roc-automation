@@ -8,7 +8,6 @@ import hashlib
 import json
 import re
 import os
-import textwrap
 import struct
 import zlib
 from dataclasses import dataclass
@@ -78,7 +77,7 @@ class Converter:
         self.routes = {}
         self.expanded_input_bytes = 0
 
-    def listing_include(self, directive, document, number, offset):
+    def listing_include(self, directive, document, number, offset, delimiter):
         match = re.fullmatch(r'include::([^\[]+)\[([^\]]*)\]', directive)
         if not match or ':' in match[1] or '{' in match[1] or Path(match[1]).is_absolute():
             raise ValueError(f'Invalid local listing include {document}:{number}')
@@ -93,20 +92,58 @@ class Converter:
             raise ValueError('Listing include exceeds byte/line-ending limits')
         body = data.decode('utf-8')
         settings = {}
-        for part in filter(None, map(str.strip, match[2].split(','))):
-            key, separator, value = part.partition('=')
-            if not separator or key in settings or key not in ('tag','indent'):
-                raise ValueError('Unsupported listing include option')
+        for part in match[2].split(',') if match[2] else []:
+            key, separator, value = part.strip().partition('=')
+            if not separator or key in settings or key not in ('tag', 'lines', 'indent'):
+                raise ValueError('Unsupported or duplicate listing include option')
             settings[key] = value
+        if 'tag' in settings and 'lines' in settings:
+            raise ValueError('Conflicting listing selectors')
+        selected = body.removeprefix('\ufeff').removesuffix('\n').split('\n') if body else []
         if 'tag' in settings:
-            tag = re.escape(settings['tag'])
-            regions = re.findall(r'(?ms)^[^\n]*tag::'+tag+r'\[\]\n(.*?)^[^\n]*end::'+tag+r'\[\](?:\n|$)', body)
-            if len(regions) != 1:
-                raise ValueError('Missing or ambiguous listing tag')
-            body = regions[0]
+            tag = settings['tag']
+            if not re.fullmatch(r'[a-zA-Z0-9_-]+', tag):
+                raise ValueError('Invalid listing tag')
+            active = seen = False
+            tagged = []
+            for line in selected:
+                if line.strip().endswith('tag::'+tag+'[]'):
+                    if active or seen:
+                        raise ValueError('Duplicate or nested listing tag')
+                    active = seen = True
+                elif line.strip().endswith('end::'+tag+'[]'):
+                    if not active:
+                        raise ValueError('Unmatched listing tag end')
+                    active = False
+                elif active:
+                    tagged.append(line)
+            if not seen or active:
+                raise ValueError('Missing or unclosed listing tag')
+            selected = tagged
+        if 'lines' in settings:
+            if not re.fullmatch(r'[0-9]+(?:\.\.[0-9]+)?', settings['lines']):
+                raise ValueError('Listing lines require a positive line or closed range')
+            bounds = list(map(int, settings['lines'].split('..')))
+            start, end = bounds[0], bounds[-1]
+            if start < 1 or start > end or end > len(selected):
+                raise ValueError('Invalid or out-of-bounds listing lines')
+            selected = selected[start-1:end]
+        if not selected and 'tag' not in settings:
+            raise ValueError('Empty listing selection')
         if 'indent' in settings:
-            if settings['indent'] != '0': raise ValueError('Only indent=0 is supported')
-            body = textwrap.dedent(body)
+            if settings['indent'] != '0':
+                raise ValueError('Only indent=0 is supported')
+            if 'tag' in settings:
+                nonblank = [line for line in selected if line.strip()]
+                if nonblank:
+                    width = min(len(line) - len(line.lstrip(' \t')) for line in nonblank)
+                    selected = [line[width:] if line.strip() else '' for line in selected]
+            else:
+                width = min((len(line) - len(line.lstrip(' \t')) for line in selected if line), default=0)
+                selected = [line[width:] for line in selected]
+        if any(line == delimiter or line.startswith('include::') for line in selected):
+            raise ValueError('Listing contains closing delimiter or nested include')
+        body = '\n'.join(selected) + '\n'
         self.sources['workspace:'+relative.as_posix()] = sha(data)
         return [Line(line, document, number, offset) for line in body.removesuffix('\n').split('\n')]
 
@@ -128,7 +165,7 @@ class Converter:
             if delimiter:
                 if all(conditional):
                     if line.startswith('include::'):
-                        lines.extend(self.listing_include(line, name, n, offset))
+                        lines.extend(self.listing_include(line, name, n, offset, delimiter))
                     else:
                         lines.append(Line(line, name, n, offset))
                 if line == delimiter:

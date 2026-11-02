@@ -103,6 +103,56 @@ class RepositoryTests(unittest.TestCase):
         verify.check(self.root/'.reference', site, self.root/'.docs-out/manual.pdf',
                      independent_reader=bool(shutil.which('pdftotext')), markdown=True)
 
+    def test_legacy_tagged_selection_keeps_unrelated_markers_and_blank_line_dedent(self):
+        original = '# tag::body[]\n  keep\n  # tag::other[]\n  inner\n \n  # end::other[]\n  end\n# end::body[]\n'
+        expected = 'keep\n# tag::other[]\ninner\n\n# end::other[]\nend\n'
+        self.source('sample.expected', original)
+        self.source('index.adoc', '= Tags\n\n[source,text]\n----\ninclude::sample.expected[tag=body,indent=0]\n----\n')
+        self.run_build('--markdown', 'true')
+        site = self.root/'.docs-out/site'
+        self.assertEqual(Html((site/'index.html').read_text()).code, [expected])
+        self.assertIn(expected, (site/'index.md').read_text())
+        self.run_build(command='prepare')
+        origin = json.loads((self.root/'.docs-prepared/manifest.json').read_text())['includes'][0]
+        self.assertEqual(origin['selected_sha256'], hashlib.sha256(expected.encode()).hexdigest())
+        reference.prepare_docs(self.root, output_directory='.reference')
+        verify.check(self.root/'.reference', site, self.root/'.docs-out/manual.pdf',
+                     independent_reader=bool(shutil.which('pdftotext')), markdown=True)
+
+    def test_checked_csv_output_line_selections_keep_provenance_and_publications(self):
+        fixture = Path(__file__).parent/'fixtures/compatibility/csv-guide.expected'
+        original = fixture.read_text()
+        self.source('csv-guide.expected', original)
+        for i, (settings, expected) in enumerate((('lines=2', original.splitlines(True)[1]),
+                                                ('lines=1..4,indent=0', original))):
+            with self.subTest(settings=settings):
+                self.source('index.adoc', '= CSV\n\n[source,text]\n----\ninclude::csv-guide.expected['+settings+']\n----\n')
+                self.run_build('--markdown', 'true')
+                site = self.root/'.docs-out/site'
+                self.assertEqual(Html((site/'index.html').read_text()).code, [expected])
+                self.assertIn(expected, (site/'index.md').read_text())
+                self.run_build('--output-directory', f'.prepared-{i}', command='prepare')
+                origin = json.loads((self.root/f'.prepared-{i}/manifest.json').read_text())['includes'][0]
+                self.assertEqual(origin, {'document': 'index.adoc', 'line': 5, 'path': 'docs/csv-guide.expected',
+                                         'options': settings, 'source_sha256': hashlib.sha256(original.encode()).hexdigest(),
+                                         'selected_sha256': hashlib.sha256(expected.encode()).hexdigest()})
+                reference.prepare_docs(self.root, output_directory=f'.reference-{i}')
+                verify.check(self.root/f'.reference-{i}', site, self.root/'.docs-out/manual.pdf',
+                             independent_reader=bool(shutil.which('pdftotext')), markdown=True)
+
+    def test_invalid_line_selection_preserves_previous_publication(self):
+        self.source('sample.expected', 'first\nsecond\n')
+        output = self.prior()
+        for settings in ('lines=0', 'lines=-1', 'lines=+1', 'lines=', 'lines=1..', 'lines=..2',
+                         'lines=1..-1', 'lines=2..1', 'lines=1;2', 'lines=1,2', 'lines=1abc',
+                         'lines=1...2', 'lines=3', 'lines=1..3', 'lines=18446744073709551616',
+                         'lines=1,lines=2', 'tag=body,lines=1', 'lines=1,tag=body',
+                         'lines=1,indent=1', 'lines=1,indent=0,indent=0'):
+            with self.subTest(settings=settings):
+                self.source('index.adoc', '= CSV\n\n[source,text]\n----\ninclude::sample.expected['+settings+']\n----\n')
+                self.run_build(success=False)
+                self.unchanged(output)
+
     def test_literal_attribute_code_is_preserved_in_html_pdf_preparation_and_markdown(self):
         self.source('index.adoc', '= Guide\n\nLiteral `+{docs-version}+`; expanded `{docs-version}`.\n')
         self.run_build('--markdown', 'true', '--docs-version', '7')

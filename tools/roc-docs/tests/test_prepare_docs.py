@@ -46,6 +46,36 @@ class PrepareTests(unittest.TestCase):
         self.assertIn('```roc\nmessage = "hello"  \n```', (self.root/'prepared/manual.md').read_text())
         self.assertIn('workspace:example.roc', manifest['coverage']['sources'])
 
+    def test_legacy_tagged_selection_keeps_unrelated_markers_and_blank_line_dedent(self):
+        self.write('sample.expected', '# tag::body[]\n  keep\n  # tag::other[]\n  inner\n \n  # end::other[]\n  end\n# end::body[]\n')
+        self.write('index.adoc', '= Tags\n\n[source,text]\n----\ninclude::sample.expected[tag=body,indent=0]\n----\n')
+        self.prepare()
+        self.assertIn('```text\nkeep\n# tag::other[]\ninner\n\n# end::other[]\nend\n```',
+                      (self.root/'prepared/manual.md').read_text())
+
+    def test_checked_csv_output_line_selections(self):
+        fixture = MODULE.parent/'fixtures/compatibility/csv-guide.expected'
+        original = fixture.read_text()
+        self.write('csv-guide.expected', original)
+        for i, (settings, expected) in enumerate((('lines=2', original.splitlines(True)[1]),
+                                                ('lines=1..4,indent=0', original))):
+            with self.subTest(settings=settings):
+                self.write('index.adoc', '= CSV\n\n[source,text]\n----\ninclude::csv-guide.expected['+settings+']\n----\n')
+                prep.prepare_docs(self.root, output_directory=f'prepared-{i}')
+                self.assertIn('```text\n'+expected+'```', (self.root/f'prepared-{i}/manual.md').read_text())
+
+    def test_invalid_listing_line_selectors_reject(self):
+        self.write('sample.expected', 'one\ntwo\n')
+        for i, settings in enumerate(('lines=0', 'lines=-1', 'lines=+1', 'lines=', 'lines=1..',
+                                     'lines=2..1', 'lines=1..3', 'lines=3', 'lines=1;2',
+                                     'lines=1,2', 'lines=1abc', 'lines=1,lines=2',
+                                     'tag=body,lines=1', 'lines=1,tag=body', 'lines=1,indent=1')):
+            with self.subTest(settings=settings):
+                self.write('index.adoc', '= CSV\n\n[source,text]\n----\ninclude::sample.expected['+settings+']\n----\n')
+                with self.assertRaises(ValueError):
+                    prep.prepare_docs(self.root, output_directory=f'rejected-{i}')
+                self.assertFalse((self.root/f'rejected-{i}').exists())
+
     def test_native_markdown_sibling_symlink_rejected(self):
         self.write('index.md', '# Manual\n')
         outside = self.root / 'outside.md'; outside.write_text('# Outside\n')
