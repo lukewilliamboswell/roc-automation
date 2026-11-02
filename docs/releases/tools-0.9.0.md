@@ -26,3 +26,6 @@ provenance (#62).
 - Fix #109: preserve published native dotted heading IDs in the independent
   reference oracle, check shared expected-ID fixtures, and distinguish generated
   and authored heading failures in inventory diagnostics.
+- Fix #97: honor scoped AsciiDoc heading prefix/separator attributes, including
+  empty and multi-character separators, document titles and included chapters;
+  keep duplicate generated IDs deterministic and explicit IDs exact.

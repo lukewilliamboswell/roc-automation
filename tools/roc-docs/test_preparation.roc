@@ -10,6 +10,9 @@ import Sha256
 import "tests/fixtures/heading-ids/index.adoc" as heading_source : Str
 import "tests/fixtures/heading-ids/chapter.adoc" as heading_chapter : Str
 import "tests/fixtures/heading-ids/expected.ids" as heading_expected : Str
+import "tests/fixtures/heading-attributes/index.adoc" as attribute_source : Str
+import "tests/fixtures/heading-attributes/chapter.adoc" as attribute_chapter : Str
+import "tests/fixtures/heading-attributes/expected.ids" as attribute_expected : Str
 main! = |_| Ok({})
 
 options = { entrypoint: "index.adoc", version: "3", pdf_filename: "manual.pdf", site_url: "" }
@@ -92,3 +95,8 @@ expect match Preparation.prepare(source("= Manual\n"), options) {
 
 ## Independent expected IDs preserve published native punctuation and chapter routes.
 expect Preparation.prepare([{ path: "index.adoc", source: heading_source }, { path: "chapter.adoc", source: heading_chapter }], options).map_ok(|r| Str.join_with(r.manual.split_on("\n").keep_if(|line| line.starts_with("#")).map(|line| (line.split_on("{#").get(1) ?? "").drop_suffix("}")), "\n").concat("\n")) == Ok(heading_expected)
+
+## Authored bindings use full-string separators, including empty values.
+expect Preparation.prepare([{ path: "index.adoc", source: attribute_source }, { path: "chapter.adoc", source: attribute_chapter }], options).map_ok(|r| Str.join_with(r.manual.split_on("\n").keep_if(|line| line.starts_with("#")).map(|line| (line.split_on("{#").get(1) ?? "").drop_suffix("}")), "\n").concat("\n")) == Ok(attribute_expected)
+expect manual("= Title only\n:idprefix: x\n:idseparator: __\n").map_ok(|s| s.contains("{#xtitle__only}")) == Ok(True)
+expect Preparation.prepare([{ path: "index.adoc", source: "= Parent title\n:idprefix: _\n:idseparator: _\n\ninclude::child.adoc[leveloffset=+1]\n" }, { path: "child.adoc", source: "= Child title\n:idprefix: c\n:idseparator: __\n\n== Hello world\n" }], options).map_ok(|r| r.manual.contains("# Parent title {#_parent_title}") and r.manual.contains("## Child title {#_child_title}") and r.manual.contains("### Hello world {#chello__world}")) == Ok(True)

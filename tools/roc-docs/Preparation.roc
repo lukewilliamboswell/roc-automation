@@ -96,13 +96,15 @@ unique = |values| values.fold([], |out, item| if (out.contains(item)) out else o
 
 lookup = |attrs, name| attrs.find_first(|a| a.name == name).map_ok(|a| a.value) ?? ""
 
-slug = |text| {
+slug = |text| slug_with(text, "-")
+
+slug_with = |text, separator| {
 	var $out = []
 	var $dash = True
 	for b in text.to_utf8() {
 		if b == ' ' or b == '-' or b == '.' {
 			if !$dash {
-				$out = $out.append('-')
+				$out = $out.concat(separator.to_utf8())
 				$dash = True
 			}
 		}
@@ -111,7 +113,7 @@ slug = |text| {
 			$dash = False
 		}
 	}
-	value = Str.from_utf8_lossy($out).drop_suffix("-")
+	value = if ($dash and separator != "") Str.from_utf8_lossy($out).drop_suffix(separator) else Str.from_utf8_lossy($out)
 	if (value == "") "section" else value
 }
 
@@ -122,7 +124,7 @@ parse = |files, file, options, backend| {
 	document = AsciiDoc.parse_with(source, { includes: files, attributes: base_attributes(options, backend), max_depth: 32, expand_includes: True }).map_err(|e| "${file.path}: ${Str.inspect(e)}")?
 	# The document title is separately represented in roc-parser's AST.
 	title = inline_plain(document.title)?
-	attrs = AsciiDoc.attributes(base_attributes(options, backend))
+	attrs = AsciiDoc.attributes(header_attributes(files, file, options, backend)?)
 	document_id = match document.blocks.first() {
 		Ok(AsciiDoc.Block.Rich(first)) => lookup(AsciiDoc.materialize_attributes(first.attrs), "__document-id")
 		_ => ""
@@ -131,24 +133,29 @@ parse = |files, file, options, backend| {
 	Ok({ title, blocks: [root] })
 }
 
-attributes = |files, file, options| {
-	# Read document metadata from the actual first block's scoped bindings.
-	document = AsciiDoc.parse_with(file.source, { includes: files, attributes: base_attributes(options, "pdf"), max_depth: 32, expand_includes: True }).map_err(|e| Str.inspect(e))?
+## Parse a bounded header probe through the public parser. A first body block
+## may belong to an included chapter whose later bindings differ from the title.
+header_attributes = |files, file, options, backend| {
+	var $header = []
+	var $title_seen = False
+	for line in file.source.split_on("\n") {
+		if $title_seen and line == "" {
+			break
+		}
+		$header = $header.append(line)
+		if line.starts_with("= ") {
+			$title_seen = True
+		}
+	}
+	probe = "${Str.join_with($header, "\n")}\n\nroc-docs header attributes\n"
+	document = AsciiDoc.parse_with(probe, { includes: files, attributes: base_attributes(options, backend), max_depth: 32, expand_includes: True }).map_err(|e| Str.inspect(e))?
 	match document.blocks.first() {
-		Ok(AsciiDoc.Block.Rich(node)) => Ok(AsciiDoc.materialize_attributes(node.attrs))
-		_ => Ok(
-			file.source.split_on("\n").keep_oks(
-				|line| {
-					if !line.starts_with(":") or !line.drop_prefix(":").contains(":") {
-						return Err(Missing)
-					}
-					parts = line.drop_prefix(":").split_on(":")
-					Ok({ name: parts.first() ?? "", value: Str.join_with(parts.drop_first(1), ":").trim() })
-				},
-			),
-		)
+		Ok(AsciiDoc.Block.Rich(n)) => Ok(AsciiDoc.materialize_attributes(n.attrs))
+		_ => Ok(base_attributes(options, backend))
 	}
 }
+
+attributes = |files, file, options| header_attributes(files, file, options, "pdf")
 
 Node : { context : Str, source : Str, title : Str, style : Str, id : Str, attrs : AsciiDoc.Attributes, blocks : List(AsciiDoc.Block), level : U64 }
 
@@ -183,16 +190,25 @@ identify = |input, files, path, used, refs| {
 					$path = (candidates.first() ?? { path, source: "" }).path
 				}
 			}
-			base = if (n.id == "") slug(n.title) else n.id
-			local_count = $refs.keep_if(|r| r.path == $path and r.local_id == base).len()
-			if n.id != "" and local_count > 0 {
+			attrs = AsciiDoc.materialize_attributes(n.attrs)
+			prefix = lookup(attrs, "idprefix")
+			separator = attrs.find_first(|a| a.name == "idseparator").map_ok(|a| a.value) ?? "-"
+			base = if (n.id == "") prefix.concat(slug_with(n.title, separator)) else n.id
+			local = $refs.keep_if(|r| r.path == $path)
+			if n.id != "" and local.any(|r| r.local_id == base) {
 				return Err("duplicate explicit heading ID ${base} in ${$path}")
 			}
-			local_id = if (local_count == 0) base else "${base}-${(local_count + 1).to_str()}"
+			var $local_id = base
+			var $local_suffix = 2.U64
+			while local.any(|r| r.local_id == $local_id) {
+				$local_id = "${base}${separator}${$local_suffix.to_str()}"
+				$local_suffix = $local_suffix + 1
+			}
+			local_id = $local_id
 			var $id = local_id
 			var $suffix = 2.U64
 			while $used.contains($id) {
-				$id = if ($suffix == 2) "${slug($path.drop_suffix(".adoc"))}-${local_id}" else "${slug($path.drop_suffix(".adoc"))}-${local_id}-${($suffix - 1).to_str()}"
+				$id = if ($suffix == 2) "${slug($path.drop_suffix(".adoc"))}-${local_id}" else "${slug($path.drop_suffix(".adoc"))}-${local_id}${separator}${($suffix - 1).to_str()}"
 				$suffix = $suffix + 1
 			}
 			$used = $used.append($id)

@@ -202,6 +202,16 @@ class PrepareTests(unittest.TestCase):
         self.assertIn('[Version](#reviewed-blueprint-0-11-0-installers)',
                       (self.root/'prepared/manual.md').read_text())
 
+    def test_authored_heading_attributes_match_expected_fixture(self):
+        fixture = MODULE.parent/'fixtures/heading-attributes'
+        for name in ('index.adoc', 'chapter.adoc'):
+            self.write(name, (fixture/name).read_text())
+        manifest = self.prepare()
+        self.assertEqual([h['id'] for h in manifest['coverage']['headings']],
+                         (fixture/'expected.ids').read_text().splitlines())
+        self.assertIn('[Chapter](#chapter-_hello_world_2)', (self.root/'prepared/manual.md').read_text())
+        self.assertIn('# Included chapter {#_included_chapter}', (self.root/'prepared/pages/chapter.md').read_text())
+
     def test_conditional_source_block_is_retained_only_in_selected_backend(self):
         self.write('index.adoc', '= Manual\n\nifdef::backend-html5[]\n[source,roc]\n----\nsecret = 1\n----\nendif::[]\n')
         self.prepare()

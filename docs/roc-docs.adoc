@@ -108,7 +108,10 @@ normalization before code highlighting;
 PDF source layout owns wrapping, tabs and page continuation.
 
 The bundled fonts have finite glyph coverage; unsupported glyphs reject.
-Legacy underscore anchors require explicit migration review.
+AsciiDoc generated IDs honor effective `idprefix` and `idseparator` attributes,
+including empty or multi-character separators and deterministic duplicate suffixes.
+Defaults remain an empty prefix and a hyphen separator; explicit IDs remain exact
+within their chapter. Included chapters retain their source-qualified link targets.
 
 Headings may use an explicit trailing Markdown `{#stable-id}`. Duplicate explicit
 IDs fail; repeated implicit labels acquire numeric suffixes. HTML links allow

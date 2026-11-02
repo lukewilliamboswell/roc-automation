@@ -1,0 +1,41 @@
+= Attribute guide
+:idprefix: _
+:idseparator: _
+
+== Hello world
+
+== Same
+
+== Same
+
+== Same
+
+[#Exact-ID]
+== Authored
+
+:idprefix: p-
+:idseparator: __
+
+== Hello world
+
+== Hello world
+
+:idprefix:
+:idseparator:
+
+== Tight .- . word
+
+== Tight .- . word
+
+:idprefix: _
+:idseparator: _
+
+[#chapter-_hello_world]
+== Reserved chapter word
+
+[#chapter-tightword]
+== Reserved empty word
+
+include::chapter.adoc[leveloffset=+1]
+
+<<_hello_world,Hello>> and xref:chapter.adoc#_hello_world[Chapter].

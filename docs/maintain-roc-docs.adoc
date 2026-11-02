@@ -149,3 +149,11 @@ qualification and duplicate labels. Inventory failures distinguish missing
 generated IDs from authored IDs and report unexpected heading IDs; strict
 duplicate-anchor and unresolved-link checks still apply. This catches URL drift
 without treating generated names as authored declarations.
+
+Heading generation reads each parsed block's scoped attributes. A separate
+public-parser header probe supplies the document title's bindings even when its
+first body block comes from an included chapter with different settings. Full
+separator strings also form duplicate suffixes; fixtures exercise inherited,
+changed, empty and multi-character bindings, explicit IDs and chapter links.
+This preserves authored URL conventions without inferring attributes from a
+later chapter.

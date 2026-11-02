@@ -90,6 +90,19 @@ class RepositoryTests(unittest.TestCase):
         verify.check(self.root/'.reference', site, self.root/'.docs-out/manual.pdf',
                      independent_reader=bool(shutil.which('pdftotext')), markdown=True)
 
+    def test_authored_heading_attributes_match_expected_fixture_across_publications(self):
+        fixture = Path(__file__).parent/'fixtures/heading-attributes'
+        for name in ('index.adoc', 'chapter.adoc'):
+            self.source(name, (fixture/name).read_text())
+        self.run_build('--markdown', 'true')
+        site = self.root/'.docs-out/site'
+        page = verify.Page()
+        page.feed((site/'index.html').read_text())
+        self.assertEqual(page.heading_ids, (fixture/'expected.ids').read_text().splitlines())
+        reference.prepare_docs(self.root, output_directory='.reference')
+        verify.check(self.root/'.reference', site, self.root/'.docs-out/manual.pdf',
+                     independent_reader=bool(shutil.which('pdftotext')), markdown=True)
+
     def test_literal_attribute_code_is_preserved_in_html_pdf_preparation_and_markdown(self):
         self.source('index.adoc', '= Guide\n\nLiteral `+{docs-version}+`; expanded `{docs-version}`.\n')
         self.run_build('--markdown', 'true', '--docs-version', '7')

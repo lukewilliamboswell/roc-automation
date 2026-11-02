@@ -43,10 +43,10 @@ def read(path):
     return path.read_bytes()
 
 
-def slug(text):
+def slug(text, separator="-"):
     text = re.sub(r'[`*]', '', text).lower()
     text = re.sub(r'[^\w .-]', '', text, flags=re.UNICODE)
-    return re.sub(r'[- .]+', '-', text).strip('-') or 'section'
+    return re.sub(r'[- .]+', lambda match: separator, text.strip(' -.')) or 'section'
 
 
 @dataclass(frozen=True)
@@ -170,6 +170,15 @@ class Converter:
         block = None
         used = set()
         local_used = {}
+        bindings = {'idprefix': '', 'idseparator': '-', 'docs-version': self.version}
+        header = dict(bindings)
+        title_seen = False
+        for item in lines:
+            if title_seen and not item.text:
+                break
+            title_seen = title_seen or item.text.startswith('= ')
+            self.index_attribute(item.text, header)
+        root_title = True
         for item in lines:
             line = item.text
             if block:
@@ -179,6 +188,7 @@ class Converter:
             if re.fullmatch(r'-{4,}|\.{4}', line):
                 block = line
                 continue
+            self.index_attribute(line, bindings)
             explicit = re.fullmatch(r'\[#([\w-]+)\]|\[\[([\w-]+)\]\]', line)
             if explicit:
                 pending = explicit[1] or explicit[2]
@@ -187,19 +197,25 @@ class Converter:
             if pending and line and not match:
                 raise ValueError(f'Only heading anchors are supported: {item.source}:{item.number}')
             if match:
-                base = pending or slug(match[2])
+                settings = header if root_title and len(match[1]) == 1 and item.offset == 0 else bindings
+                root_title = False
+                separator = settings.get('idseparator', '-')
+                base = pending or settings.get('idprefix', '') + slug(match[2], separator)
                 anchor = base
                 i = 2
                 local = local_used.setdefault(item.source, set())
                 while anchor in local:
                     if pending:
                         raise ValueError(f'Duplicate explicit anchor: {pending}')
-                    anchor = f'{base}-{i}'
+                    anchor = f'{base}{separator}{i}'
                     i += 1
                 local.add(anchor)
                 original = anchor
-                if anchor in used:
-                    anchor = slug(Path(item.source).stem) + '-' + anchor
+                qualification = slug(Path(item.source).with_suffix('').as_posix()) + '-' + original
+                suffix = 2
+                while anchor in used:
+                    anchor = qualification if suffix == 2 else f'{qualification}{separator}{suffix - 1}'
+                    suffix += 1
                 used.add(anchor)
                 self.targets[(item.source, original)] = anchor
                 self.anchor_by_line[(item.source, item.number)] = anchor
@@ -208,6 +224,16 @@ class Converter:
                 pending = None
         if pending:
             raise ValueError(f'Anchor without heading: {pending}')
+
+    @staticmethod
+    def index_attribute(line, bindings):
+        match = re.fullmatch(r':([^:]+):(?:[ \t](.*))?', line)
+        if match:
+            name, value = match[1], match[2] or ''
+            if name.startswith('!') or name.endswith('!'):
+                bindings.pop(name.strip('!'), None)
+            else:
+                bindings[name] = re.sub(r'\{([^}]+)\}', lambda item: bindings.get(item[1], item[0]), value)
 
     def inline(self, text, item):
         protected = []
