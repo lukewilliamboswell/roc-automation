@@ -361,6 +361,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(values["sidecars"].splitlines(), ["dist/app.cdx.json", "dist/app.spdx.json", "dist/bundle.tar.zst.cdx.json", "dist/bundle.tar.zst.spdx.json"])
         self.assertEqual(values["tool-url"], TOOL)
         self.assertEqual(values["compiler"], COMPILER)
+        self.assertEqual(values["run-attempt"], "2")
         self.assertEqual(values["commit"], self.commit)
         self.assertEqual(values["created"], "2026-10-21T01:02:03Z")
         document = json.loads((self.workspace / "dist/app.spdx.json").read_text())

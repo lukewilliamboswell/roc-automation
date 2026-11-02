@@ -19,6 +19,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 SIDECARS = ROOT / "actions/sbom-sidecars/sbom_sidecars.py"
 FETCH = ROOT / "actions/fetch-dependency-sboms/fetch_dependency_sboms.py"
+VERIFY = ROOT / "actions/sbom-sidecars/verify_transferred.py"
 WORKSPACE = Path(os.environ.get("SBOM_CHAIN_WORKSPACE", str(ROOT))).resolve()
 CORE_SBOM = "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/roc-blueprint-core-9Z7WuswxTGgKd4i3cM5JDf5Kq9JqBpWoMxtWHALnjMcC.tar.zst.spdx.json"
 
@@ -53,6 +54,38 @@ def bundle(directory):
     archives = sorted(directory.glob("*.tar.zst"))
     assert len(archives) == 1, "roc bundle writes one archive"
     return archives[0].relative_to(WORKSPACE)
+
+
+def check_transfer(workspace, values, subjects, common, version):
+    # Use the shared workflow's actual handoff: complete assets, the existing
+    # envelope under its fixed transfer-only name, and the build job attempt.
+    with tempfile.TemporaryDirectory(prefix="sbom-transferred-", dir=os.environ["RUNNER_TEMP"]) as temporary:
+        transferred = Path(temporary)
+        for name in values["assets"].splitlines():
+            target = transferred / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(workspace / name, target)
+        evidence = transferred / "dist/sbom-evidence.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(values["evidence"], evidence)
+        env = {**os.environ, **common, "PATH": "/nonexistent", "PYTHONPATH": "", "GITHUB_WORKSPACE": str(transferred),
+               "GITHUB_RUN_ATTEMPT": str(int(values["run-attempt"]) + 1),
+               "INPUT_PRODUCING_ATTEMPT": values["run-attempt"], "INPUT_VERSION": version,
+               "INPUT_SUBJECTS": "\n".join(subjects), "INPUT_ASSETS": values["assets"]}
+        def verify(expect=0):
+            result = subprocess.run([sys.executable, str(VERIFY)], cwd=transferred, env=env, capture_output=True, text=True)
+            assert result.returncode == expect, result.stdout + result.stderr
+            return result
+        verify()
+        # Every transferred subject and rendering must still be those bytes;
+        # attestation would be the next workflow step only after this succeeds.
+        for name in values["assets"].splitlines():
+            path = transferred / name
+            original = path.read_bytes()
+            path.write_bytes(original + b" ")
+            assert "bytes differ" in verify(1).stderr
+            path.write_bytes(original)
+        print("Transferred source and sidecar bindings passed without candidate programs")
 
 
 def main():
@@ -136,6 +169,7 @@ def main():
     assert len({entry["sha256"] for entry in mixed_evidence["subjects"]}) == 4
     assert mixed_evidence["subjects"][0]["inventory_sha256"] != mixed_evidence["subjects"][1]["inventory_sha256"]
     assert len({entry["inventory_sha256"] for entry in mixed_evidence["subjects"][1:]}) == 1
+    check_transfer(workspace, mixed_values, files, common, "0.0.1-dry-run")
 
     # A sidecar left behind is stale: the second run refuses before the tool starts.
     result, _ = run(SIDECARS, sidecar_env, expect=1)

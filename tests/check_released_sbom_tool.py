@@ -12,11 +12,15 @@ from pathlib import Path
 import subprocess
 import tempfile
 import zipfile
+import shutil
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("sbom_sidecars", ROOT / "actions/sbom-sidecars/sbom_sidecars.py")
 sidecars = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sidecars)
+sys.path.insert(0, str(ROOT / "actions/sbom-sidecars"))
+import verify_transferred
 VERSION = "0.11.0"
 FIXTURES_SHA256 = "ab138ce9fcc20736ca014d81e27d865cadb653d6dedfaff149cd23fb8d57a42a"
 
@@ -68,6 +72,36 @@ def main():
         assert {item["value"] for item in bom["metadata"]["properties"] if item["name"] == "blueprint:cyclonedx-profile"} == {"standard-containment-v1"}
         assert "native-closure" in json.dumps(bom)
         check(tool, fixtures, "check", fixtures / "legacy/blueprint-0.8.cdx.json")
+
+        # Generate another real record set with the action's source/run
+        # context, transfer it as inert bytes, and exercise the privileged
+        # recheck independently of any Roc compiler or package cache.
+        candidate = root / "candidate"
+        (candidate / "dist").mkdir(parents=True)
+        delivered = candidate / "dist/sample-artifact"
+        shutil.copyfile(artifact, delivered)
+        subject = json.loads((inputs / "subject.json").read_text())
+        source = {"server": "https://github.com", "repository": "owner/repo", "commit": "a" * 40}
+        producer = {"workflow": "owner/repo/.github/workflows/release.yml@refs/heads/main", "run_id": "77", "run_attempt": "2"}
+        subject["url"] = f"https://github.com/owner/repo/releases/download/{subject['version']}/{subject['filename']}"
+        (root / "subject.json").write_text(json.dumps(subject))
+        context = json.loads((inputs / "context.json").read_text())
+        context["namespace"] = f"https://github.com/owner/repo/sbom/{source['commit']}/{subject['filename']}/revision-1"
+        context["generator"] = recorded["generator"]
+        (root / "context.json").write_text(json.dumps(context))
+        check(tool, root, "bind", inventory, root / "subject.json", root / "context.json", delivered)
+        check(tool, root, "bind", inventory, root / "subject.json", root / "context.json", delivered, str(delivered) + ".spdx-2.3.json", "--spdx-2.3")
+        written = {delivered: [(Path(str(delivered) + suffix), sidecars.sha256_of(Path(str(delivered) + suffix))) for suffix in (*sidecars.SIDECAR_SUFFIXES, sidecars.MANIFEST_SUFFIX)]}
+        env = {"GITHUB_SERVER_URL": source["server"], "GITHUB_REPOSITORY": source["repository"], "GITHUB_WORKFLOW_REF": producer["workflow"], "GITHUB_RUN_ID": producer["run_id"], "GITHUB_RUN_ATTEMPT": producer["run_attempt"]}
+        envelope = sidecars.evidence_envelope(env, candidate, [delivered], written,
+            {**recorded, "url": sidecars.binary_url(VERSION, system), "sha256": recorded["binaries"][system]}, VERSION,
+            subject["target"], subject["version"], "https://github.com/owner/repo/releases/download/" + subject["version"], source["commit"], context["created"], [], {delivered: inventory})
+        (candidate / verify_transferred.EVIDENCE_PATH).write_text(json.dumps(envelope))
+        assets = "\n".join(str(file.relative_to(candidate)) for file in [delivered, *(path for path, _ in written[delivered])])
+        transferred = root / "transferred"
+        shutil.copytree(candidate, transferred)
+        if os.name != "nt":  # the privileged checker runs on Ubuntu, with O_NOFOLLOW
+            verify_transferred.verify(transferred, "dist/sample-artifact", assets, source, producer, subject["version"], target=subject["target"])
 
         # A real source supplier binds into a native target without relabeling
         # its source identity; each supplied mismatch must still be refused.

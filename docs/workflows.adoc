@@ -379,7 +379,10 @@ them with the pinned Blueprint tool, and
 xref:actions.adoc#fetch-dependency-sboms[`actions/fetch-dependency-sboms`]
 chains the suppliers' documents in. The shared publication action does not
 implement those steps; it uploads the supplied SBOM files as inert assets and
-verifies their transferred bytes. Pass the asset list the sidecar action
+verifies their transferred bytes. Before attestation, the shared package
+workflow also rechecks SBOM subject/sidecar bindings against the transferred
+envelope and supported Blueprint manifests, using reviewed controller code and
+the build job's producing attempt. Pass the asset list the sidecar action
 returns to the upload, the attestation and the publisher, so a missing sidecar
 cannot hide behind a wildcard. Remote advisory rescans run separately from routine PR checks.
 

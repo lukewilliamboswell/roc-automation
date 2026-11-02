@@ -559,7 +559,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")
         output.write(f"sidecars<<{delimiter}\n" + "\n".join(sidecars_only) + f"\n{delimiter}\n")
-        output.write(f"inventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool_identity['url']}\ntool-sha256={tool_identity['sha256']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
+        output.write(f"run-attempt={env.get('GITHUB_RUN_ATTEMPT', '')}\ninventory={inventory_path}\ndigests={digests}\nevidence={evidence}\ntool-url={tool_identity['url']}\ntool-sha256={tool_identity['sha256']}\ncompiler={tool['compiler']}\ncommit={commit}\ncreated={created}\n")
     for file in files:
         for sidecar, digest in written[file]:
             print(f"{sidecar.relative_to(workspace)}: SHA-256 {digest}")

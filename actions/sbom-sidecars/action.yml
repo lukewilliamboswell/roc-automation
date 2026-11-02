@@ -43,6 +43,9 @@ inputs:
     default: blueprint
 
 outputs:
+  run-attempt:
+    description: The producing job attempt, retained for publication-only retries
+    value: ${{ steps.sidecars.outputs.run-attempt }}
   assets:
     description: Every listed file and its sidecars, one relative path per line, for the test jobs and the publisher
     value: ${{ steps.sidecars.outputs.assets }}

@@ -610,6 +610,8 @@ per line, for the artifact upload, the test jobs, the attestation step's
 inventory the documents were rendered from; `evidence`, a
 `roc-automation-sbom-evidence-v1` envelope; and `tool-url`, `tool-sha256`,
 `compiler`, `commit` and `created`, which release notes can record.
+`run-attempt` identifies the producing attempt for a later publication-only
+retry; it is compared with the envelope rather than the retrying job attempt.
 
 The evidence envelope lists every file and sidecar by name, path, size,
 SHA-256, format, target and version, bound to the source repository and

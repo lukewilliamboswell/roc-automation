@@ -304,7 +304,15 @@ who produced them, and `inspect` establishes that the composition is
 consistent with the Lock and the imports, not that it is complete. An
 attestation check of a supplier's sidecar belongs at admission, as
 xref:artifact-verification.adoc#separate-admission-from-routine-use[Verify released artifacts]
-describes, and the publisher-side validator remains separate work.
+describes. The shared package publish job rechecks the transferred envelope,
+Blueprint manifest and sidecar subject identities with reviewed Python code
+before attestation. Its expected source/run and producing attempt come from
+workflow context and build outputs; publication-only retries preserve that
+producer identity. It executes no candidate code or Blueprint tool. Regression
+fixtures transfer real generated records and refuse changed or missing subjects,
+sidecars and manifests, duplicate JSON and unsafe paths. This establishes
+final-byte consistency; independent schema/graph admission and completeness
+assessment remain separate.
 
 == Documentation deployment
 

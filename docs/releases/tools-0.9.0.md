@@ -15,3 +15,11 @@ publisher. Mixed source releases enumerate only `.tar.zst` members; ZIP/PDF
 subjects keep composition-only inventories. Reviewed Blueprint 0.11.0 SBOM
 tools and the corrected v2 document profile are admitted on all five native
 systems, with real released-fixture and legacy supplier-chain acceptance (#66).
+
+The shared package workflow transfers the existing SBOM envelope outside the
+published asset set and rechecks source/run/build-attempt identity plus exact
+subject, manifest and sidecar bytes before attestation. The bounded Python
+controller runs no candidate code or Blueprint tool, supports publication-only
+retries, and rejects missing/changed files, duplicate JSON and unsafe aliases.
+This verifies final-byte consistency, not inventory completeness or supplier
+provenance (#62).

@@ -260,6 +260,28 @@ executable for each supported system in read-only jobs, tests the exact
 files, attests every asset with its sidecars and publishes the explicit
 asset list through `actions/publish-release`.
 
+A later manual-generation task can accidentally change a previously checked
+bundle or sidecar. The shared package workflow therefore transfers the existing
+envelope as `dist/sbom-evidence.json`, outside its published asset list, and
+rechecks the downloaded files before attestation. The reviewed Python controller
+requires the build job's explicit subjects and sidecar formats, source and run
+identity, producing attempt, and exact names, sizes and SHA-256 values. It
+compares supported v1/v2 Blueprint manifests with the envelope and standard
+sidecar subject identities; the separately requested SPDX 2.3 rendering is
+covered even when the default manifest lists only SPDX 3 and CycloneDX.
+Publication-only retries compare with the attempt that produced the candidate,
+so retrying a write step does not invalidate unchanged build evidence.
+
+The recheck reads bounded regular files and refuses duplicate JSON keys,
+noncanonical paths, symlinks, hard-link aliases and missing or changed bytes.
+It runs no candidate code, Blueprint tool or compiler and fetches no schema or
+document URL in the privileged job. The source/native supplier-chain fixture
+copies generated artifacts into a fresh directory, verifies them without tools
+on `PATH`, and requires every changed subject or rendering to fail. These
+checks establish final-byte consistency across transfer. They do not establish
+composition completeness, supplier authorship or provenance of arbitrary
+producer declarations; schema and graph policy admission remain distinct.
+
 The chain into a native consumer depends on Blueprint admitting a `source`
 supplier into a native inventory; a release that does not refuses it with
 `import target differs from subject`. The fetch action records
