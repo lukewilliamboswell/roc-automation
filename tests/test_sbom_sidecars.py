@@ -49,7 +49,7 @@ if command == "inspect":
     if os.environ.get("INSPECT_REFUSES"):
         sys.stderr.write("SBOM: Invalid(\"" + os.environ["INSPECT_REFUSES"] + "\")\n"); sys.exit(1)
     with open(output, "x") as out:
-        json.dump({"target": target, "components": [c["id"] for c in comp["components"]], "coverage": comp.get("coverage", []) + [{"scope": "sbom:" + e["component"], "status": "incomplete", "reason": "No supplier SBOM: " + e["reason"], "contact": e["contact"]} for e in comp.get("unavailable_sboms", [])], "imports": [e["id"] for e in comp.get("imported_documents", [])]}, out)
+        json.dump({"profile": os.environ.get("FAKE_PROFILE", "blueprint-spdx-3.0-v1"), "target": target, "components": [c["id"] for c in comp["components"]], "coverage": comp.get("coverage", []) + [{"scope": "sbom:" + e["component"], "status": "incomplete", "reason": "No supplier SBOM: " + e["reason"], "contact": e["contact"]} for e in comp.get("unavailable_sboms", [])], "imports": [e["id"] for e in comp.get("imported_documents", [])]}, out)
     print(output); sys.exit(0)
 if command == "bind":
     inventory, subject, context, artifact = rest[:4]
@@ -64,7 +64,7 @@ if command == "bind":
     if "manifest" in features and len(rest) == 4:
         listed = [{"filename": os.path.basename(p), "format": f.lower(), "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "size": os.path.getsize(p)} for p, f in outputs]
         with open(artifact + ".sbom-manifest.json", "x") as out:
-            json.dump({"profile": "blueprint-spdx-3.0-v1", "subject": {**subject, "sha256": digest, "size": os.path.getsize(artifact)}, "inventory_sha256": hashlib.sha256(open(inventory, "rb").read()).hexdigest(), "sidecars": listed}, out)
+            json.dump({"profile": os.environ.get("FAKE_PROFILE", "blueprint-spdx-3.0-v1"), "subject": {**subject, "sha256": digest, "size": os.path.getsize(artifact)}, "inventory_sha256": hashlib.sha256(open(inventory, "rb").read()).hexdigest(), "sidecars": listed}, out)
         print(artifact + ".sbom-manifest.json")
     sys.exit(0)
 if command == "check":
@@ -125,6 +125,22 @@ class PureTests(unittest.TestCase):
                 entry = sidecars.sbom_tool(version)
                 self.assertTrue(entry["url"].startswith("https://github.com/lukewilliamboswell/roc-blueprint/releases/download/" + version + "/roc-blueprint-sbom-"))
                 self.assertEqual(entry["generator"], f"Tool: blueprint-sbom-{version}")
+
+    def test_release_versions_match_semver_without_build_metadata(self):
+        for value in ("0.0.1-dry-run", "1.2.3-rc-1", "1.2.3-0", "1.2.3-0a.1-x", "1.2.3--", "1.2.3"):
+            with self.subTest(value=value):
+                self.assertIsNotNone(sidecars.VERSION.fullmatch(value))
+        for value in ("1.2.3-", "1.2.3-.x", "1.2.3-x.", "1.2.3-x..1", "1.2.3-01", "1.2.3-x.01", "01.2.3", "1.2.3+build", "1.2.3-rc+build", "1.2.3-rc_1", "1.2.3\n"):
+            with self.subTest(value=value):
+                self.assertIsNone(sidecars.VERSION.fullmatch(value))
+
+    def test_current_released_tool_has_every_native_system_and_corrected_profile(self):
+        current = sidecars.sbom_tool("0.11.0")
+        self.assertEqual(set(current["binaries"]), set(sidecars.setup_blueprint.SYSTEMS.values()))
+        self.assertEqual(current["compiler"], "nightly-2026-10-28-bad769b")
+        self.assertEqual(current["profile"], "blueprint-spdx-3.0-v2")
+        for version in ("0.7.0", "0.8.0"):
+            self.assertEqual(sidecars.sbom_tool(version)["profile"], "blueprint-spdx-3.0-v1")
 
     def test_recorded_binaries_map_released_systems_to_digests(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -517,6 +533,27 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.workspace / "dist").iterdir()), ["app", "bundle.tar.zst"])
         with self.assertRaisesRegex(ValueError, "archive-members must be"):
             self.run_action(INPUT_ARCHIVE_MEMBERS="maybe")
+
+    def test_mixed_source_deliverables_enumerate_only_tar_zst_bundles(self):
+        for name in ("examples.zip", "docs.zip", "manual.pdf"):
+            (self.workspace / "dist" / name).write_bytes(("final " + name).encode())
+        with self.with_features("members", "manifest"):
+            values = self.run_action(INPUT_TARGET="source", INPUT_FILES="dist/bundle.tar.zst\ndist/examples.zip\ndist/docs.zip\ndist/manual.pdf", FAKE_FEATURES="members,manifest")
+        calls = [call["args"] for call in self.calls() if call["args"][0] == "run"]
+        self.assertEqual([Path(call[4]).name for call in calls if call[3] == "members"], ["bundle.tar.zst"])
+        inspections = [call for call in calls if call[3] == "inspect"]
+        self.assertEqual(len(inspections), 2)
+        self.assertEqual(["--members" in call for call in inspections], [False, True])
+        subjects = json.loads(Path(values["evidence"]).read_text())["subjects"]
+        self.assertEqual(len({entry["sha256"] for entry in subjects}), 4)
+        self.assertNotEqual(subjects[0]["inventory_sha256"], subjects[1]["inventory_sha256"])
+        self.assertEqual(len({entry["inventory_sha256"] for entry in subjects[1:]}), 1)
+        self.assertEqual(len(values["assets"].splitlines()), 16)
+
+    def test_unexpected_output_profile_is_refused(self):
+        with self.with_features("manifest"), self.assertRaisesRegex(ValueError, "unexpected document profile"):
+            self.run_action(FAKE_FEATURES="manifest", FAKE_PROFILE="blueprint-unsupported")
+        self.assertFalse((self.root / "outputs").exists())
 
     def test_members_are_listed_only_for_source_targets(self):
         with self.with_features("members"):

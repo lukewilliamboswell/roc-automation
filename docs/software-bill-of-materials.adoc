@@ -206,6 +206,27 @@ repository's release build so each project does not repeat the steps:
   supplier's graph into the inventory under the import's prefix, so the chain
   is transitive: package, platform, application.
 
+Release versions use SemVer core and prerelease identifiers, including embedded
+hyphens such as `0.0.1-dry-run`. Numeric identifiers cannot have leading zeros;
+build metadata (`+...`) is unsupported in release URLs. The sidecar action and
+publisher apply the same rule. Only source `.tar.zst` bundles enter member
+enumeration; ZIP and PDF subjects use the repository's reviewed composition.
+Their own final-byte hashes and sidecars remain distinct.
+
+The registry retains Blueprint 0.7 and 0.8 and admits the immutable 0.11.0
+release by reviewed native-tool digests for Linux x86-64/ARM64, macOS
+x86-64/ARM64 and Windows x86-64 (`.exe`). Its pinned app bundle uses
+`nightly-2026-10-28-bad769b`. Blueprint 0.11 writes
+`blueprint-spdx-3.0-v2`, including standard CycloneDX containment and coverage;
+older tools write v1. The action requires the manifest profile recorded for
+that release rather than treating an old fixture as proof of new semantics.
+The released-tool acceptance test reproduces the published v2 fixtures,
+checks containment and build-only scope independently, imports a source
+supplier into a native inventory, and provokes mismatched imports. The
+supplier-chain tests exercise both admitted generations. These checks establish
+compatibility with the reviewed tool; component discovery and declarations
+still depend on the reviewed composition and supplier evidence.
+
 The repository keeps `sbom/composition.json` under review, one per release
 target where targets differ, and decides where the imports live. Committing
 `sbom/imports.json` keeps the release build offline and stable and makes a

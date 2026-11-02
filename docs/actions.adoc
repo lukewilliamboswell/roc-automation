@@ -598,7 +598,7 @@ the composition stays the repository's reviewed file.
 | `namespace-base` | the repository's `sbom` URL | The namespace is this base, the commit, the file name and `revision-<revision>`
 | `revision` | `1` | Document revision. A correction of a published SBOM increments it and is published at a new location.
 | `spdx-2-3` | `false` | Also write `<file>.spdx-2.3.json` for consumers that read only SPDX 2
-| `archive-members` | `generate` | For a `source` target with a tool that lists archive members: generate a component for each member the composition does not account for, or `reviewed` to require the composition to account for every member itself
+| `archive-members` | `generate` | For source `.tar.zst` bundles with a tool that lists archive members: generate a component for each member the composition does not account for, or `reviewed` to require the composition to account for every member itself
 | `roc-binary` | `roc` | The Roc compiler that runs the tool app bundle, used only when the release records no native tool binary for the runner
 | `blueprint-binary` | `blueprint` | The installed Blueprint executable
 |===
@@ -657,7 +657,7 @@ The action does the following, in this order, and stops at the first failure.
   downloads nothing. A refusal names the rule; when a locked dependency has
   neither a bound supplier SBOM nor a reviewed `unavailable_sboms` entry, the
   error points at `actions/fetch-dependency-sboms`. With a tool that lists
-  archive members and a `source` target, each file is listed first with
+  archive members and a `source` target, each `.tar.zst` bundle is listed first with
   `members`, and `inspect --members` runs once per file, so the archive
   `roc bundle` produced, not the bundler's argument list, is the authority on
   what it holds. By default a member no reviewed component states by SHA-256
@@ -666,7 +666,8 @@ The action does the following, in this order, and stops at the first failure.
   supplier, download and license, and a `contains` edge from the subject, as
   Blueprint's own release lists its bundles; `archive-members: reviewed`
   leaves every member to the composition and lets `inspect` refuse an
-  omission.
+  omission. Other files, including ZIP and PDF subjects, use composition-only
+  inventories without tar member enumeration.
 . *Bind.* For each file, a subject with an empty SHA-256, so the tool hashes
   the final bytes itself, and a context name the file, version, target,
   release URL, namespace, revision, creation time, author and generator.

@@ -241,15 +241,35 @@ jobs:
       - name: Check native refusals without a sandbox
         run: python3 tools/roc-build-runner/tests/test_cli.py -v
 
+  sbom-released-tool:
+    name: Released SBOM tool contract (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Exercise the admitted native tool and its reviewed release fixtures
+        shell: bash
+        run: '"${{ runner.os == ''Windows'' && ''python'' || ''python3'' }}" tests/check_released_sbom_tool.py'
+
   sbom-actions:
-    name: SBOM sidecars and supplier chain (${{ matrix.system }})
+    name: SBOM sidecars and supplier chain (${{ matrix.system }}, Blueprint ${{ matrix.blueprint }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-24.04, system: x86_64-linux }
-          - { runner: ubuntu-24.04-arm, system: aarch64-linux }
-          - { runner: macos-15, system: aarch64-darwin }
+          - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.8.0 }
+          - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.11.0 }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.8.0 }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.11.0 }
+          - { runner: macos-15, system: aarch64-darwin, blueprint: 0.8.0 }
+          - { runner: macos-15, system: aarch64-darwin, blueprint: 0.11.0 }
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -260,9 +280,18 @@ jobs:
       # A consumer that pins a supplier's release file by its published SHA-256;
       # the supplier, roc-blueprint 0.7.0, publishes sidecars beside that file.
       - name: Use the consumer fixture
+        env:
+          BLUEPRINT_VERSION: ${{ matrix.blueprint }}
         run: |
           cp examples/sbom-chain/Blueprint.roc examples/sbom-chain/Blueprint.lock .
           cp -R examples/sbom-chain/package examples/sbom-chain/app examples/sbom-chain/sbom .
+          if [ "$BLUEPRINT_VERSION" = 0.11.0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Blueprint.roc")
+          path.write_text(path.read_text().replace("0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu", "0.11.0/EuSPs8vc71qJNFg29YzegvVRL1bR9pKqUYDHFiSCPTQ1"))
+          PY
+          fi
       - uses: ./actions/setup-blueprint
       # The SBOM tool bundle runs on the exact Roc release its Blueprint release records.
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
