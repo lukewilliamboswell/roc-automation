@@ -1,0 +1,81 @@
+name: Published consumer action smoke
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  consumer:
+    name: Nested installer and published WASM-4 suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # A real immutable consumer, rather than roc-automation's own workspace.
+      # The self references below must still resolve to this workflow's revision.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: lukewilliamboswell/roc-wasm4
+          ref: f557282da5f741ba2ba0dc34579092d178d487d4
+          persist-credentials: false
+      - name: Prepare immutable release selection and conflicting workspace action
+        env:
+          SELECTION: ${{ runner.temp }}/consumer-selection.json
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path(os.environ['SELECTION']).write_text(json.dumps({
+              'schema_version': 1,
+              'repository': 'lukewilliamboswell/roc-wasm4',
+              'nightly': 'nightly-2026-11-03-34bd006',
+              'release': '0.8.0',
+              'release_id': 433299836,
+              'asset': {
+                  'id': 707370481,
+                  'name': 'roc-wasm4-examples-0.8.0.zip',
+                  'size': 334181,
+                  'digest': 'sha256:d0767d379b3744d3e133f1ac872676d1aee49e21a6fa52cce7ee6001cbb76454',
+              },
+              'runners': ['ubuntu-24.04'],
+          }))
+          for name in ('release-compatibility', 'setup-blueprint'):
+              action = Path('actions') / name / 'action.yml'
+              action.parent.mkdir(parents=True, exist_ok=True)
+              action.write_text('name: workspace decoy\ndescription: must never execute\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: exit 99\n')
+          PY
+      - id: suite
+        uses: $/actions/release-compatibility
+        with:
+          phase: test
+          nightly-tag: nightly-2026-11-03-34bd006
+          selection: ${{ runner.temp }}/consumer-selection.json
+          runner: ubuntu-24.04
+          install-blueprint: true
+          setup-command: '["blueprint","run","nightly-prerequisites"]'
+          case-timeout-ms: '20000'
+      - name: Require complete game evidence
+        env:
+          RESULT: ${{ steps.suite.outputs.directory }}/result.json
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          result = json.loads(Path(os.environ['RESULT']).read_text())
+          assert result['outcome'] == 'compatible', result
+          assert (result['tested'], result['failed'], result['skipped']) == (4, 0, 0), result
+          PY
+      - name: Retain consumer diagnostics
+        if: always() && steps.suite.outputs.directory != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: consumer-smoke-evidence
+          path: |
+            ${{ steps.suite.outputs.directory }}/result.json
+            ${{ steps.suite.outputs.directory }}/*-command.json
+            ${{ steps.suite.outputs.directory }}/*-stdout.log
+            ${{ steps.suite.outputs.directory }}/*-stderr.log
+            ${{ steps.suite.outputs.directory }}/*-listing.log
+          if-no-files-found: error

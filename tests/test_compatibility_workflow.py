@@ -10,43 +10,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless((ROOT / ".github/workflows/nightly-compatibility.yml").is_file(), "workflow source is not part of the standalone artifact")
 class CompatibilityWorkflowSecurityTests(unittest.TestCase):
-    def test_blueprint_installer_admits_reviewed_011_binaries(self):
-        import json
-        import re
-
-        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
-        revision = re.search(r"uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@([0-9a-f]{40})", action).group(1)
-        registry = json.loads(subprocess.check_output(
-            ["git", "show", f"{revision}:actions/setup-blueprint/releases.json"],
-            cwd=ROOT, text=True))
-        reviewed = json.loads((ROOT / "actions/setup-blueprint/releases.json").read_text())
-        for system in ("x86_64-linux", "aarch64-linux", "aarch64-darwin"):
-            self.assertEqual(registry.get("0.11.0", {}).get(system), reviewed["0.11.0"][system],
-                             f"pinned installer cannot admit reviewed Blueprint 0.11.0 on {system}")
-
-    def test_pinned_engines_support_the_source_tested_runner_contract(self):
-        import json
+    def test_internal_components_inherit_the_consumer_pinned_revision(self):
         import re
 
         workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
-        pins = re.findall(r"uses: lukewilliamboswell/roc-automation/actions/release-compatibility@([0-9a-f]{40})", workflow)
-        self.assertEqual(len(pins), 3, "select, test and aggregate each need a pinned engine")
-        self.assertEqual(len(set(pins)), 1, "all phases must use the same evidence contract")
-
-        def runners(source):
-            match = re.search(r"(?m)^\s*runners = (\[[^\]]+\])", source)
-            self.assertIsNotNone(match, "runner contract must be inspectable in the actual engine source")
-            return set(json.loads(match.group(1)))
-
-        required = runners((ROOT / "scripts/src/Compatibility.roc").read_text())
-        for revision in set(pins):
-            # Check the code the workflow will execute, not just this checkout's
-            # unit-tested code. CI fetches history for this repository-only test.
-            source = subprocess.check_output(
-                ["git", "show", f"{revision}:scripts/src/Compatibility.roc"],
-                cwd=ROOT, text=True)
-            self.assertEqual(runners(source), required,
-                             f"pinned engine {revision} differs from the tested runner contract")
+        references = re.findall(r"uses:\s+(\S+)", workflow)
+        self.assertEqual(references.count("$/actions/release-compatibility"), 3)
+        self.assertEqual(references.count("$/actions/nightly-report"), 1)
+        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
+        self.assertIn("uses: $/actions/setup-blueprint", action)
+        for source in (workflow, action):
+            self.assertNotIn("uses: lukewilliamboswell/roc-automation/", source,
+                             "an internal SHA can drift from the consumer's selected revision")
+            self.assertNotIn("uses: ./", source,
+                             "workspace actions can be shadowed by consumer source")
+            for relative in re.findall(r"uses:\s+\$/([^\s]+)", source):
+                self.assertNotIn("@", relative)
+                self.assertNotIn("..", Path(relative).parts)
+                self.assertTrue((ROOT / relative / "action.yml").is_file())
 
     def test_aggregate_finds_single_and_multiple_target_artifacts(self):
         import fnmatch
@@ -184,7 +165,8 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
         action = (ROOT / "actions/release-compatibility/action.yml").read_text()
         for source in (workflow, action):
             for reference in re.findall(r"uses:\s+(\S+)", source):
-                self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
+                if not reference.startswith("$/"):
+                    self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
         unprivileged = workflow.split("\n  report:\n", 1)[0]
         self.assertNotIn(": write", unprivileged)
         self.assertNotIn("pull-requests:", workflow)

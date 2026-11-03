@@ -104,7 +104,9 @@ python3 -m unittest discover -s tests -v
   input.
 * Keep each token permission on the job that needs it.
 * Never execute candidate code in a job that can write.
-* Pin remote actions and workflows to full commit SHAs.
+* Pin external actions and workflows to full commit SHAs. Use `$/actions/NAME`
+  for actions in this repository, inheriting the containing workflow or action's
+  immutable revision without resolving against the caller workspace.
 * Use the standard library unless an additional runtime dependency has an
   explicit justification.
 * Review dependency changes and address actionable static-analysis findings.
@@ -157,9 +159,9 @@ request to `gh`, or to the runner's disk, and brings the answer back.
 * A local check comes before the first request. In `PublishRelease` the local
   steps and the requests are different types, so a step that reads GitHub
   cannot be placed among the local checks.
-* The composite `action.yml` repeats the two steps of
-  `actions/setup-blueprint`, because an action cannot reference a sibling at
-  its own commit. Change the install action's SHA in all three files together.
+* The privileged actions invoke the sibling installer directly with their own
+  repository root as `GITHUB_WORKSPACE`. Preserve this isolation: the consumer's
+  Blueprint must never configure the privileged report or publication tools.
 
 To run a script by hand, give it the environment the action gives it: the
 inputs as `INPUT_*`, the token as `GH_TOKEN`, and the runner's `GITHUB_*`
@@ -209,10 +211,12 @@ when the published release owns them.
 Repositories reference an action by full commit SHA and adopt a new one through
 a Dependabot or maintainer pull request. Nothing updates them automatically.
 
-For a change to an action that a reusable workflow in this repository calls,
-commit the action and its tests first, then update the workflow to that exact
-commit. This gives the nested action an immutable revision without a
-self-referential commit hash.
+Shared workflows and composite actions reference sibling actions with GitHub's
+`$/` syntax. The consumer's full workflow SHA fixes the complete shared
+implementation, including the installer and its checksum registry. Change the
+action, workflow and tests together; there is no separate internal pin to bump.
+External dependencies still require reviewed full SHAs. This composition targets
+GitHub.com; `$/` is not supported on GitHub Enterprise Server.
 
 Use a unique version tag for a published release, record any assigned
 vulnerability identifiers for fixes, and never move an existing tag.

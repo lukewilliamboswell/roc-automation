@@ -28,8 +28,8 @@ outputs:
 
 # The action is a Roc script in this repository, run from the action's own
 # checkout: scripts/nightly_report.roc behind the nightly-report task. The
-# first two steps are those of actions/setup-blueprint, repeated because a
-# composite action cannot name a sibling at its own commit. They install the
+# installer is invoked directly with this action's own source root, so it
+# cannot read the caller's Blueprint configuration. These steps install the
 # blueprint release that this repository's Blueprint.roc names, whatever the
 # calling repository contains.
 runs:
