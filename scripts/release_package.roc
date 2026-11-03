@@ -571,9 +571,9 @@ newest_notes! = || {
 	}
 }
 
-## `roc bump` compares each package with the latest release's bundle of it and
-## fails when the version understates the change, so a breaking change cannot
-## go out as a patch. A dry run has no version to hold to that: it reports the
+## A higher major proves version sufficiency before API extraction. Other
+## requests require `roc bump` against each latest-release bundle, so a
+## breaking change cannot go out as a patch. A dry run has no version to hold to that: it reports the
 ## bump the change needs, and a comparison that cannot be made is not an error.
 check_version! = |version| {
 	settings = settings!()?
@@ -598,6 +598,7 @@ check_version! = |version| {
 	latest : Try({ tag : Str, assets : List(Str) }, _)
 	latest = Json.parse(Str.from_utf8_lossy(listing.stdout_bytes))
 	found = latest.map_err(|_| "unreadable release listing")?
+	major_suffices = if dry_run Bool.False else ReleasePackage.major_suffices(version, found.tag)?
 	for bundle in bundles!(working_suite!()?)? {
 		match ReleasePackage.published_bundle_file(pkg, bundle, found.assets) {
 			None => say!("NOTE release ${found.tag} has no bundle of ${bundle.root}, so ${version} is its first")?
@@ -610,6 +611,8 @@ check_version! = |version| {
 						Ok({}) => {}
 						Err(_) => say!("NOTE roc bump could not compare ${bundle.root} with ${found.tag}; a release would stop here")?
 					}
+				} else if major_suffices {
+					say!("VERSION ${version} has a higher major than ${found.tag}; every API change is permitted, so no API comparison is required for ${bundle.root}")?
 				} else {
 					run!(compare.concat(["--expect", ReleasePackage.base_version(version), bundle.root]), Path.utf8("."), "the version understates the change to ${bundle.root} since ${found.tag}, or roc bump could not compare")?
 				}

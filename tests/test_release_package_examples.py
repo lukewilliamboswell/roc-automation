@@ -142,3 +142,126 @@ class ReleasePlatformTests(unittest.TestCase):
         self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
         self.assertIn("SERVE", ran.stdout)
         self.assertIn("1 tested, 0 failed", ran.stdout)
+
+
+@unittest.skipUnless(os.environ.get("ROC_RELEASE_PACKAGE_BINARY"), "set ROC_RELEASE_PACKAGE_BINARY to test version validation")
+class ReleaseVersionTests(unittest.TestCase):
+    setUp = ReleasePlatformTests.setUp
+    run_tool = ReleasePlatformTests.run_tool
+
+    def prepare(self, version="4.0.0", previous="3.0.0", assets=None):
+        self.version = version
+        (self.root / "docs/releases" / (version + ".adoc")).write_text("= Release\n\n{platform-url}\n")
+        self.bin = self.root / "bin"
+        self.launcher = fixtures.CompatibilityRunnerTests.launcher
+        fixtures.CompatibilityRunnerTests.write_program(self, "gh", """import os,sys
+assert sys.argv[1:3] == ['release', 'view']
+if os.environ.get('FAKE_NO_RELEASE'):
+    print('release not found', file=sys.stderr)
+    sys.exit(1)
+if os.environ.get('FAKE_GH_FAIL'): sys.exit(1)
+print(os.environ['FAKE_BASELINE'])
+""")
+        fixtures.CompatibilityRunnerTests.write_program(self, "roc", """import json,os,sys
+from pathlib import Path
+with open(os.environ['FAKE_COMPILER_LOG'], 'a') as log: log.write(json.dumps(sys.argv[1:])+'\\n')
+if sys.argv[1]=='bump':
+    failing_root=os.environ.get('FAKE_BUMP_FAIL_ROOT')
+    sys.exit(int(os.environ.get('FAKE_BUMP_FAIL','0')) if not failing_root or sys.argv[-1]==failing_root else 0)
+if sys.argv[1]=='version': print('Roc compiler version '+os.environ['FAKE_NIGHTLY'])
+else: sys.exit(int(os.environ.get('FAKE_COMPILER_FAIL','0')))
+""")
+        self.log = self.root / "compiler.jsonl"
+        self.env.update(FAKE_BASELINE=json.dumps(dict(tag=previous, assets=assets if assets is not None else ["Old1.tar.zst"])),
+                        FAKE_COMPILER_LOG=str(self.log), FAKE_BUMP_FAIL="1")
+
+    def calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def test_new_major_proves_sufficiency_without_api_extraction(self):
+        self.prepare()
+        ran = self.run_tool("check-version", self.version)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("no API comparison is required", ran.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_new_major_prerelease_uses_the_same_proof(self):
+        self.prepare("4.0.0-rc.1")
+        ran = self.run_tool("check-version", self.version)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_same_major_requires_successful_api_comparison(self):
+        for version in ("3.0.1", "3.1.0", "3.1.0-rc.1"):
+            with self.subTest(version=version):
+                self.prepare(version)
+                self.log.unlink(missing_ok=True)
+                ran = self.run_tool("check-version", version)
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(self.calls(), [["bump", "--old", "https://github.com/o/pf/releases/download/3.0.0/Old1.tar.zst", "--expect", version.split("-")[0], "platform/main.roc"]])
+
+    def test_same_major_success_still_executes_the_comparison(self):
+        self.prepare("3.1.0")
+        self.env["FAKE_BUMP_FAIL"] = "0"
+        ran = self.run_tool("check-version", self.version)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_invalid_or_overflowing_baselines_cannot_prove_a_major(self):
+        for previous in ("", "garbage", "v3.0.0", "03.0.0", "3.0.0-rc.1", "18446744073709551616.0.0"):
+            with self.subTest(previous=previous):
+                self.prepare(previous=previous, assets=[])
+                ran = self.run_tool("check-version", self.version)
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(self.calls(), [])
+
+    def test_inaccessible_or_unreadable_baselines_still_fail(self):
+        self.prepare()
+        for extra in ({"FAKE_GH_FAIL": "1"}, {"FAKE_BASELINE": "{}"}, {"FAKE_BASELINE": "not JSON"}):
+            with self.subTest(extra=extra):
+                saved = dict(self.env)
+                self.env.update(extra)
+                self.assertNotEqual(self.run_tool("check-version", self.version).returncode, 0)
+                self.env = saved
+        self.assertEqual(self.calls(), [])
+
+    def test_new_major_does_not_accept_ambiguous_bundles(self):
+        self.prepare(assets=["Old1.tar.zst", "Other2.tar.zst"])
+        self.assertNotEqual(self.run_tool("check-version", self.version).returncode, 0)
+        self.assertEqual(self.calls(), [])
+
+    def test_new_major_does_not_override_current_example_compilation_failure(self):
+        self.prepare()
+        self.assertEqual(self.run_tool("check-version", self.version).returncode, 0)
+        self.env["FAKE_COMPILER_FAIL"] = "1"
+        ran = self.run_tool("test-examples")
+        self.assertNotEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertTrue(any(call[0] == "check" for call in self.calls()))
+
+    def test_dry_run_keeps_its_nonpublishing_comparison_behavior(self):
+        self.prepare("0.0.1-dryrun")
+        ran = self.run_tool("check-version", self.version)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("roc bump could not compare", ran.stdout)
+        self.assertEqual(self.calls()[0][0], "bump")
+        self.assertNotIn("--expect", self.calls()[0])
+
+    def test_first_release_has_no_api_baseline(self):
+        self.prepare()
+        self.env["FAKE_NO_RELEASE"] = "1"
+        ran = self.run_tool("check-version", self.version)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("first", ran.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_same_major_requires_success_for_every_bundle(self):
+        self.prepare("3.1.0", assets=["pf-Old1.tar.zst", "pf-package-Old2.tar.zst"])
+        (self.root / "package").mkdir()
+        (self.root / "package/main.roc").write_text("package []\n")
+        app = self.root / "examples/hello/main.roc"
+        app.write_text(app.read_text().replace('platform "../../platform/main.roc"',
+                       'platform "../../platform/main.roc", lib: "../../package/main.roc"'))
+        self.env["FAKE_BUMP_FAIL_ROOT"] = "package/main.roc"
+        ran = self.run_tool("check-version", self.version)
+        self.assertNotEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual([call[-1] for call in self.calls()], ["platform/main.roc", "package/main.roc"])

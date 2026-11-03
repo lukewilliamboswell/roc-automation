@@ -104,9 +104,16 @@ roc-automation's `.github/workflows/release-package.yml` at a full commit SHA:
 include::../examples/pure-package/.github/workflows/release.yml[]
 ----
 
+The optional numeric `build-timeout-minutes` input defaults to `30` and accepts
+integers from `1` to `360`. Set it high enough for the full configured checks and
+release assembly, for example `75` for a large parser conformance suite. The
+request guard rejects invalid values before candidate execution. A timeout or
+failed build prevents testing and publication; raising the limit changes no
+checks or token permissions.
+
 The shared workflow runs three jobs. *Build and test the source* resolves the
-latest nightly once, runs the package's `check` task, checks the version with
-`roc bump` against the latest release, runs the working-tree examples, and
+latest nightly once, runs the package's `check` task, checks version
+sufficiency against the latest release, runs the working-tree examples, and
 builds the bundle, the examples archive, the API documentation archive and the
 notes. *Test the release candidate* checks out no package source: it downloads
 those exact files and runs the archived examples against the bundle over a
@@ -257,8 +264,17 @@ roc bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
 * Run it before choosing a version, so the number follows from the change and
   not from habit.
 * `release.yml` runs it with `--expect` in its validate step, against the
-  latest release, and stops when the requested version understates the change.
+  latest release for same-major requests, and stops when the requested version understates the change.
   A breaking change can then never go out as a patch.
+* A requested major greater than the latest final major already satisfies the
+  lower bound for every possible API change. The released `release-package`
+  utility validates both versions and accepts that proof before attempting
+  extraction. It does not compute an API diff in that case. Same-major releases
+  still require a successful comparison, including when extraction fails.
+* This version proof does not establish that the candidate compiles or works.
+  The configured package checks, working-tree examples, exact candidate tests
+  and SBOM checks remain separate release requirements. Malformed or unreadable
+  latest-release metadata cannot authorize the proof.
 * A repository with several packages runs it once per package root.
 * It compares only the modules the package header exposes. A change in behavior
   behind an unchanged signature is still the maintainer's call, and belongs in

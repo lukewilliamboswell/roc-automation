@@ -229,7 +229,7 @@ digests.
 ----
 blueprint run release-test -- test-examples               # the working tree's examples against tests/spec.json
 blueprint run release-test -- test-examples --update      # record what they print now; writes the specification when it is missing
-blueprint run release-package -- check-version 0.14.0     # roc bump against the latest release's bundles; needs gh
+blueprint run release-package -- check-version 0.14.0     # version sufficiency against the latest release; needs gh
 blueprint run release-package -- build 0.14.0             # dist/: bundles, examples archive, API docs archive, notes
 blueprint run release-test -- test-archive                # the archive in dist/ against the bundles in dist/
 ----

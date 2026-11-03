@@ -56,11 +56,11 @@ class CompatibilityPackagingTests(unittest.TestCase):
                                  cwd=artifact, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
             # The release utility's suite ships beside the runner's and runs
-            # when its binary is given; without one its six tests are skipped.
-            self.assertIn("Ran 46 tests", ran.stderr)
+            # when its binary is given; without one its seventeen tests are skipped.
+            self.assertIn("Ran 57 tests", ran.stderr)
             release_package = bool(os.environ.get("ROC_RELEASE_PACKAGE_BINARY"))
             # Building a release needs zip, which Windows runners lack.
-            skipped = (0 if shutil.which("zip") else 2) if release_package else 6
+            skipped = (0 if shutil.which("zip") else 2) if release_package else 17
             if os.name == "nt":
                 skipped += 2
                 self.assertIn("POSIX executable permission admission", ran.stderr)
