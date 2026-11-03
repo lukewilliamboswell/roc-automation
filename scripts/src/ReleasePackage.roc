@@ -74,6 +74,29 @@ ReleasePackage := [].{
 			Err(_) => version
 		}
 
+	## A higher major satisfies every possible API-change lower bound. This
+	## decision precedes comparison; malformed metadata never proves a bump.
+	major_suffices : Str, Str -> Try(Bool, Str)
+	major_suffices = |requested, previous| {
+		if !publishable_version(requested) or !final_version(previous) {
+			return Err("requested and latest-final versions must be semantic versions")
+		}
+		for version in [requested, previous] {
+			if !base_version(version).split_on(".").all(|part| part == "0" or !part.starts_with("0")) {
+				return Err("version components must not contain leading zeroes")
+			}
+		}
+		match requested.split_first("-") {
+			Ok({ after, .. }) => if !after.split_on(".").all(|part| !part.is_empty() and (!GitHub.is_digits(part) or part == "0" or !part.starts_with("0"))) {
+				return Err("invalid prerelease identifiers")
+			}
+			Err(_) => {}
+		}
+		next = U64.from_str(base_version(requested).split_on(".").first() ?? "").map_err(|_| "requested major version exceeds the supported integer range")?
+		old = U64.from_str(previous.split_on(".").first() ?? "").map_err(|_| "latest-final major version exceeds the supported integer range")?
+		Ok(next > old)
+	}
+
 	## Where the authored notes of the release `version` live.
 	notes_file : Str -> Str
 	notes_file = |version| "docs/releases/${version}.adoc"
@@ -490,3 +513,17 @@ expect ReleasePackage.relative_file("examples/nested", "examples\\nested\\data\\
 expect ReleasePackage.relative_file("D:\\suite/package", "D:\\suite\\package\\main.roc", Bool.True) == Ok("main.roc")
 expect ReleasePackage.relative_file("package", "other/main.roc", Bool.True) == Err(OutsideDirectory)
 expect ReleasePackage.relative_file("package", "package\\main.roc", Bool.False) == Err(OutsideDirectory)
+
+expect ReleasePackage.major_suffices("4.0.0", "3.0.0") == Ok(True)
+expect ReleasePackage.major_suffices("4.0.0-rc.1", "3.0.0") == Ok(True)
+expect ReleasePackage.major_suffices("3.1.0", "3.0.0") == Ok(False)
+expect ReleasePackage.major_suffices("3.0.1", "3.0.0") == Ok(False)
+expect ReleasePackage.major_suffices("3.0.0", "3.0.0") == Ok(False)
+expect ReleasePackage.major_suffices("2.0.0", "3.0.0") == Ok(False)
+expect ReleasePackage.major_suffices("1.0.0", "0.9.0") == Ok(True)
+expect ["", "garbage", "v3.0.0", "3.0.0-rc.1", "03.0.0", "3.00.0", "18446744073709551616.0.0"].all(|previous| ReleasePackage.major_suffices("4.0.0", previous).is_err())
+expect ["04.0.0", "4.00.0", "4.0.00", "4.0.0-.", "4.0.0-rc..1", "4.0.0-01", "18446744073709551616.0.0"].all(|requested| ReleasePackage.major_suffices(requested, "3.0.0").is_err())
+
+expect ReleasePackage.major_suffices("10.0.0", "9.0.0") == Ok(True)
+expect ReleasePackage.major_suffices("18446744073709551615.0.0", "18446744073709551614.0.0") == Ok(True)
+expect ReleasePackage.major_suffices("4.0.0", "18446744073709551615.0.0") == Ok(False)

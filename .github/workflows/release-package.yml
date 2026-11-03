@@ -20,6 +20,10 @@ on:
         description: Exact Roc nightly for a diagnostic run; empty resolves the latest
         type: string
         default: ''
+      build-timeout-minutes:
+        description: Maximum time for source checks and release assembly (integer, 1 to 360)
+        type: number
+        default: 30
       check-task:
         description: Blueprint task that checks the package and its scripts before packaging; empty skips it
         type: string
@@ -72,7 +76,7 @@ jobs:
   build:
     name: Build and test the source
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.build-timeout-minutes }}
     permissions:
       contents: read
     outputs:
@@ -88,8 +92,13 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUILD_TIMEOUT: ${{ inputs.build-timeout-minutes }}
         run: |
           set -euo pipefail
+          if [[ ! "$BUILD_TIMEOUT" =~ ^[1-9][0-9]{0,2}$ ]] || (( BUILD_TIMEOUT > 360 )); then
+            echo "::error::build-timeout-minutes must be an integer from 1 to 360"
+            exit 1
+          fi
           if [ -n "$VERSION" ]; then
             if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] || [ "$GITHUB_REF_TYPE" != branch ] || [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
               echo "::error::A version is published only by dispatching from the default branch"
