@@ -10,6 +10,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless((ROOT / ".github/workflows/nightly-compatibility.yml").is_file(), "workflow source is not part of the standalone artifact")
 class CompatibilityWorkflowSecurityTests(unittest.TestCase):
+    def test_blueprint_installer_admits_reviewed_011_binaries(self):
+        import json
+        import re
+
+        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
+        revision = re.search(r"uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@([0-9a-f]{40})", action).group(1)
+        registry = json.loads(subprocess.check_output(
+            ["git", "show", f"{revision}:actions/setup-blueprint/releases.json"],
+            cwd=ROOT, text=True))
+        reviewed = json.loads((ROOT / "actions/setup-blueprint/releases.json").read_text())
+        for system in ("x86_64-linux", "aarch64-linux", "aarch64-darwin"):
+            self.assertEqual(registry.get("0.11.0", {}).get(system), reviewed["0.11.0"][system],
+                             f"pinned installer cannot admit reviewed Blueprint 0.11.0 on {system}")
+
     def test_pinned_engines_support_the_source_tested_runner_contract(self):
         import json
         import re
