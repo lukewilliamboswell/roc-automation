@@ -83,11 +83,18 @@ cross-compiled only. Windows uses the same archive admission, compiler diagnosti
 case deadlines and aggregate evidence contract as Linux and macOS; the runner
 adds the native `.exe` suffix automatically.
 
-A source test can pass while a workflow still invokes an older pinned engine,
-which can reject a newly supported runner before any examples execute. The
-selection, execution and aggregation phases use one reviewed engine revision;
-repository tests compare its actual runner allowlist with the source-tested
-contract. A complete native runtime verdict is still required for compatibility.
+Independent internal pins can select an old engine or an installer without the
+consumer's reviewed Blueprint checksums even when current source tests pass.
+The shared workflow and its composite action use `$/actions/...` references,
+which GitHub resolves from the containing file's repository and commit, without
+checking out workspace files. The consumer's one full workflow SHA therefore
+fixes selection, execution, aggregation, the installer registry and reporting.
+A consumer cannot shadow these actions with files in its checkout. External
+actions retain full SHA pins. Source regressions enforce this composition;
+hosted consumer tests exercise the real nested installation and archived games.
+Unknown Blueprint versions and wrong digests still fail admission. This workflow
+targets GitHub.com; self-repository references are unavailable on GitHub Enterprise
+Server. A complete native runtime verdict is still required for compatibility.
 
 For native prerequisites, `setup-command` is a JSON argv array, for example
 `["blueprint", "run", "nightly-prerequisites"]`. It runs from the event commit's

@@ -84,8 +84,10 @@ with release credentials.
 
 The nightly compatibility workflow has no contents, pull-request, actions or
 status write access in any job. It cannot commit, merge, dispatch or publish.
-Its report job runs `actions/nightly-report` at a full commit SHA and checks out
-nothing. It receives only the outcome of the examples step, the nightly tag and
+Its report job runs `actions/nightly-report` from the same immutable commit as
+the consumer-pinned reusable workflow, through a `$/` self-repository reference,
+and checks out nothing. The controller and nested installer use the same
+revision; no workspace action can replace them. It receives only the outcome of the examples step, the nightly tag and
 the release tag from the test job, never text produced by the examples under
 test. It edits a single tracking issue, identified by its exact title and a bot
 author. Every workflow in a repository shares the GitHub Actions bot identity,

@@ -492,7 +492,10 @@ jobs:
           # actionlint 1.7 predates job.workflow_repository and job.workflow_sha,
           # which the shared release workflow uses to check out its own commit.
           ignore='property "workflow_(repository|sha)" is not defined in object type'
-          actionlint -ignore "$ignore"
+          # This linter also predates GitHub.com's self-repository action syntax.
+          # Source-policy tests admit only these exact internal action paths;
+          # the consumer smoke executes the real nested references on GitHub.
+          actionlint -ignore "$ignore" -ignore 'specifying action "\$/actions/(release-compatibility|nightly-report)" in invalid format because ref is missing'
           actionlint examples/pure-package/.github/workflows/ci.yml
           actionlint examples/pure-package/.github/workflows/release.yml
           actionlint examples/sbom-chain/.github/workflows/release.yml

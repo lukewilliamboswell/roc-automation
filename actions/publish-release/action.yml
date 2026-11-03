@@ -34,8 +34,8 @@ outputs:
 
 # The action is a Roc script in this repository, run from the action's own
 # checkout: scripts/publish_release.roc behind the publish-release task. The
-# first two steps are those of actions/setup-blueprint, repeated because a
-# composite action cannot name a sibling at its own commit. They install the
+# installer is invoked directly with this action's own source root, so it
+# cannot read the caller's Blueprint configuration. These steps install the
 # blueprint release that this repository's Blueprint.roc names, whatever the
 # calling repository contains. The script resolves the asset globs and the
 # notes file against GITHUB_WORKSPACE, the caller's workspace.
