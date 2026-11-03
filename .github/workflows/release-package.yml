@@ -145,7 +145,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Install the package compiler
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ steps.nightly.outputs.tag }}
@@ -338,7 +338,7 @@ jobs:
           persist-credentials: false
 
       - name: Install the package compiler this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.build.outputs.nightly }}
