@@ -145,6 +145,30 @@ jobs:
           test -s "$PDF"
           grep -q 'data-lang="roc"' "$SITE/usage.html"
           grep -q 'images/diagram-' "$SITE/index.html"
+  setup-kai-action:
+    strategy:
+      fail-fast: false
+      matrix:
+        # The runners Kai publishes a release archive for.
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: kai
+        uses: ./actions/setup-kai
+        with:
+          directory: tests/fixtures/kai
+          cache: 'false'
+      - name: Check that the installed kai is the release the Kaifile names
+        env:
+          VERSION: ${{ steps.kai.outputs.version }}
+          BINARY: ${{ steps.kai.outputs.binary }}
+        run: |
+          test "$VERSION" = 0.0.12
+          test "$(kai --version)" = "$VERSION"
+          test "$(command -v kai)" = "$BINARY"
   setup-blueprint-action:
     strategy:
       fail-fast: false
