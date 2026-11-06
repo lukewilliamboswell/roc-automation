@@ -1,0 +1,83 @@
+[#run-a-repository-on-kai]
+= Run a repository on Kai
+
+A repository can pin its tooling with
+https://github.com/thebrandonlucas/kai[Kai] instead of Blueprint. Kai reads
+`Kaifile.roc` and pins every download in `.kai/lock.json`, and its direct
+backend needs no Nix, so a Kaifile can declare what a Blueprint.roc of fetched
+programs, `Expect` lists, environments and tasks declares. The shared release,
+documentation and nightly workflows run such a repository with the same inputs
+and outputs as a Blueprint one.
+
+[#choose-the-tool]
+== Which tool a workflow uses
+
+A repository with `Kaifile.roc` and no `Blueprint.roc` is on Kai. A repository
+with `Blueprint.roc` is on Blueprint, even with a Kaifile beside it, so no
+existing caller changes path; keep both only while moving, and delete
+`Blueprint.roc` and `Blueprint.lock` to switch.
+
+The Kaifile names its Kai release by its platform URL, as `Blueprint.roc`
+names its roc-blueprint release:
+
+[source,roc]
+----
+app [kaifile] {
+	pf: platform "https://github.com/thebrandonlucas/kai/releases/download/v<version>/<hash>.tar.zst",
+	std: "<std URL from the same release>",
+	sbom: "<sbom plugin URL from the same release>",
+}
+----
+
+`actions/setup-kai` installs that release, so changing it is a reviewed edit of
+the Kaifile. A platform named by a path, as when developing against a Kai
+checkout, names no release, and the action refuses it.
+
+[#move-a-repository-to-kai]
+== Move a repository to Kai
+
+. Write `Kaifile.roc` with the same names Blueprint.roc used: `FetchAll` for
+  each `SourceFile`, `FetchLocked` for each fetched program, the same
+  `RocPackages`, environments, `Expect` lists, shell and tasks. Run
+  `kai update` and commit `.kai/lock.json`; add `/.kai/*` and
+  `!/.kai/lock.json` to `.gitignore`.
+. For SBOMs, add Kai's sbom plugin beside std, as Kai's `docs/sbom.md`
+  describes. `kai sbom inputs` prints the input names the composition must
+  dispose of; Kai names them as Blueprint does, so a reviewed
+  `sbom/package.json` or `sbom/composition.json` carries over. The SBOM tool
+  is now the plugin, so drop a `blueprint-sbom` download and its task, and
+  their dispositions.
+. Point scripts that parsed `Blueprint.roc` or `Blueprint.lock` at
+  `Kaifile.roc`.
+. Replace `actions/setup-blueprint` in the repository's own jobs with
+  `actions/setup-kai`, `blueprint run` with `kai run`, and
+  `actions/blueprint-tool` with `actions/kai-tool`. Leave the shared release
+  and nightly workflows' inputs as they are.
+
+[#what-the-shared-workflows-run-on-kai]
+== What the shared workflows run
+
+The release workflow installs Kai with `actions/setup-kai` and runs the
+`check-task`, `release-package`, `sbom-task` and `docs-task` tasks with
+`kai run`. Tasks inherit the job's environment, so `RP_*`, `RELEASE_VERSION`,
+`BUNDLE_PATH`, `BUNDLE_URL` and `SBOM_COMPOSITION` reach them as before. The
+renderer comes from the `docs-path` task through `actions/kai-tool`.
+
+`actions/fetch-dependency-sboms` reads the pins from `kai sbom pins`, the same
+format-2 report as `blueprint lock show --json`. `actions/sbom-sidecars` runs
+`kai sbom inspect`, `bind` and `check` in the repository, where kai reads the
+Kaifile and its lock. Kai reads no release file, so the action lists and
+hashes a source bundle's members itself, states each file's SHA-256 and size in
+its subject, and compares the file with the SHA-256 the manifest states.
+
+The sbom plugin is the release's reviewed tool: `sbom-tools.json` records,
+under `kai`, the plugin URL each Kai release publishes, and the action refuses
+a Kaifile that names another. Its documents name `Tool: kai-sbom-<version>` as
+their generator and are otherwise the documents Blueprint's tool writes for the
+same composition: weaver's 0.10.1 sidecars, regenerated on Kai, differ only in
+that name. The transfer evidence records the Kai release as `generator.kai`,
+and the publish job admits it by the same record.
+
+The nightly workflow's `install-kai: true` installs the Kai release the
+caller's Kaifile names before its `setup-command`, such as
+`["kai", "run", "nightly-prerequisites"]`.

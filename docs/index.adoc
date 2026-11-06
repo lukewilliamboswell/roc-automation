@@ -38,6 +38,8 @@ Routine upkeep:: <<manual-maintenance-tasks>> lists the changes that only a
 maintainer makes, and how to make each one.
 Adopting the model:: Follow <<adopt-the-model-in-a-repository>> and its
 acceptance list.
+Using Kai:: <<run-a-repository-on-kai>> says how a repository moves from
+Blueprint to Kai and what the shared workflows run for it.
 Reviewing trust boundaries:: Read <<automation-trust-model>> and
 <<verify-released-artifacts>>.
 Understanding the choices:: <<scope-and-design-principles>> defines the scope;
@@ -60,6 +62,8 @@ working consumer starter, producer layout and utility interface conventions.
 include::overview.adoc[leveloffset=+1]
 
 include::environment.adoc[leveloffset=+1]
+
+include::kai.adoc[leveloffset=+1]
 
 include::pure-package.adoc[leveloffset=+1]
 
