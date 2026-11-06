@@ -1,5 +1,5 @@
 name: Fetch dependency SBOMs
-description: Find each locked dependency's published SBOM beside its file by naming convention, record its digest and identity for Blueprint's inspect, and report dependencies that publish none. The only SBOM step that uses the network.
+description: Find each locked dependency's published SBOM beside its file by naming convention, record its digest and identity for Blueprint's or Kai's inspect, and report dependencies that publish none. The only SBOM step that uses the network.
 
 inputs:
   target:
@@ -23,6 +23,9 @@ inputs:
   blueprint-binary:
     description: Installed Blueprint executable, otherwise blueprint on PATH
     default: blueprint
+  kai-binary:
+    description: Installed kai executable, otherwise kai on PATH; used instead of Blueprint when the repository has Kaifile.roc and no Blueprint.roc
+    default: kai
 
 outputs:
   imports:
@@ -54,5 +57,6 @@ runs:
         INPUT_MISSING: ${{ inputs.missing }}
         INPUT_STALE_OPT_OUTS: ${{ inputs.stale-opt-outs }}
         INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
+        INPUT_KAI_BINARY: ${{ inputs.kai-binary }}
         CONTROLLER: ${{ github.action_path }}/fetch_dependency_sboms.py
       run: python3 "$CONTROLLER"

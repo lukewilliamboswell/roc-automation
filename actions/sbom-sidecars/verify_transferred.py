@@ -2,7 +2,7 @@
 """Recheck inert SBOM bindings after transfer and before attestation.
 
 This reviewed controller uses only Python's standard library. It executes no
-producer code, Blueprint, compiler, schema download or document URL. The
+producer code, Blueprint, Kai, compiler, schema download or document URL. The
 existing producer envelope and Blueprint manifests establish final-byte
 consistency, not composition completeness or provenance of producer claims.
 """
@@ -140,6 +140,17 @@ class Files:
 
 
 def check_generator(generator):
+    require(isinstance(generator, dict), "unsupported generator record")
+    if "kai" in generator:
+        # A repository on Kai: the generator is the reviewed sbom plugin of the
+        # Kai release its Kaifile names, which kai builds from that bundle.
+        record(generator, "tool tool_sha256 generator kai created", "generator")
+        require(all(isinstance(value, str) for value in generator.values()), "generator fields must be strings")
+        tool = sbom_sidecars.kai_sbom_tool(generator["kai"])
+        require(generator["generator"] == tool["generator"], "generator differs from the reviewed Kai sbom plugin")
+        require((generator["tool"], generator["tool_sha256"]) == (tool["url"], ""), "generator plugin differs from the reviewed identity")
+        require(re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", generator["created"]), "generator creation time must be UTC")
+        return tool
     record(generator, "tool tool_sha256 compiler generator blueprint created", "generator")
     require(all(isinstance(value, str) for value in generator.values()), "generator fields must be strings")
     tool = sbom_sidecars.sbom_tool(generator["blueprint"])

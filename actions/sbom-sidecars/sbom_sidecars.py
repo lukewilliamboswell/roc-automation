@@ -7,6 +7,13 @@ compiler that release records, and never holds a write token. Every decision
 about composition is Blueprint's `inspect`; this controller stages inputs,
 names subjects and documents, refuses stale or aliased sidecars, and reports
 the complete asset set for the test jobs and the publisher.
+
+A repository on Kai (Kaifile.roc and no Blueprint.roc) gets the same
+documents from `kai sbom`, Kai's port of the same profile: `inspect`, `bind`
+and `check` read the Kaifile and its lock themselves. Kai reads no release
+file, so this controller lists and hashes a source bundle's members, states
+each file's SHA-256 and size in its subject, and compares the file with the
+SHA-256 the manifest states.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -28,10 +36,14 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup-blueprint"))
 import setup_blueprint  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup-kai"))
+import setup_kai  # noqa: E402
+
 SBOM_TOOLS = Path(__file__).resolve().parents[1] / "setup-blueprint" / "sbom-tools.json"
 SIDECAR_SUFFIXES = (".spdx.json", ".cdx.json", ".spdx-2.3.json")
 MANIFEST_SUFFIX = ".sbom-manifest.json"
 TOOL_FEATURES = ("members", "manifest", "complete-manifest")
+KAI_TOOL_FEATURES = ("members", "manifest")
 DOCUMENT_PROFILES = ("blueprint-spdx-3.0-v1", "blueprint-spdx-3.0-v2")
 SOURCE_INVOCATIONS = ("roc-run-separator-v1", "roc-run-direct-v1")
 MEMBER_ID = re.compile(r"[^A-Za-z0-9.-]+")
@@ -46,6 +58,11 @@ VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?
 AGENT = re.compile(r"(Organization|Person): \S.*")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 IMPORT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
+# What blueprint-sbom's `members` accepts in a source bundle, which a Kai
+# release lists here instead: regular files with portable relative names.
+MEMBER_NAME = re.compile(r"[A-Za-z0-9+._-]+(?:/[A-Za-z0-9+._-]+)*")
+MAX_MEMBERS = 4096
+MAX_MEMBER_BYTES = 1024**3
 
 Run = Callable[[list[str], Path], subprocess.CompletedProcess]
 
@@ -146,6 +163,79 @@ def source_tool_command(roc: str, tool: dict) -> list[str]:
     if tool["source_invocation"] == "roc-run-separator-v1":
         command.append("--")
     return command
+
+
+def kai_sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
+    """The reviewed sbom plugin of a Kai release, from the file's `kai` record.
+
+    Each Kai release publishes its sbom plugin as one content-addressed
+    bundle, which the repository's Kaifile names and kai builds; the record
+    is the URL a release's notes give it, and the generator its documents
+    name.
+    """
+    tools = json.loads(path.read_text(encoding="utf-8")).get("kai", {})
+    entry = tools.get(version) if isinstance(tools, dict) else None
+    if not isinstance(entry, dict):
+        raise Refusal(
+            f"this revision of roc-automation records no sbom plugin for Kai {version}; "
+            "use a revision whose actions/setup-blueprint/sbom-tools.json records it under kai"
+        )
+    url, generator = entry.get("plugin", ""), entry.get("generator", "")
+    if not re.fullmatch(re.escape(f"{setup_kai.RELEASES}/v{version}/sbom-") + setup_kai.BASE58 + r"\.tar\.zst", url):
+        raise Refusal(f"the recorded sbom plugin URL for Kai {version} is not an immutable Kai release bundle")
+    if generator != f"Tool: kai-sbom-{version}":
+        raise Refusal(f"the recorded generator name for Kai {version} must be Tool: kai-sbom-{version}")
+    # The sbom plugin lists members in this action, not with a `members`
+    # command, and writes manifests that list their SPDX 2.3 renderings.
+    features = entry.get("features", [])
+    if not isinstance(features, list) or sorted(features) != sorted(KAI_TOOL_FEATURES):
+        raise Refusal(f"the recorded sbom plugin features for Kai {version} must be {', '.join(KAI_TOOL_FEATURES)}")
+    profile = entry.get("profile", "")
+    if profile not in DOCUMENT_PROFILES:
+        raise Refusal(f"the recorded SBOM document profile for Kai {version} is unsupported")
+    return {"url": url, "compiler": "", "generator": generator, "binaries": {}, "features": list(features), "profile": profile, "payload_bytes": MAX_JSON_BYTES}
+
+
+def archive_members(archive: Path) -> dict:
+    """List a .tar.zst source bundle as blueprint-sbom's `members` does.
+
+    The listing is the archive's file name and SHA-256 and each member's name,
+    size and SHA-256 in archive order. Only regular files with portable,
+    unique relative names are accepted; nothing is extracted to disk.
+    """
+    members, seen, total = [], set(), 0
+    decompress = subprocess.Popen(["zstd", "-dcq", "--", str(archive)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        with tarfile.open(fileobj=decompress.stdout, mode="r|") as listing:
+            for member in listing:
+                name = member.name
+                if member.pax_headers or not member.isreg():
+                    raise Refusal(f"{archive.name}: member is not a plain regular file: {name!r}")
+                if not MEMBER_NAME.fullmatch(name) or name.startswith("-") or any(part in (".", "..") for part in name.split("/")):
+                    raise Refusal(f"{archive.name}: unsafe member name: {name!r}")
+                if name in seen:
+                    raise Refusal(f"{archive.name}: duplicate member: {name!r}")
+                seen.add(name)
+                if len(members) == MAX_MEMBERS:
+                    raise Refusal(f"{archive.name}: more than {MAX_MEMBERS} members")
+                total += member.size
+                if total > MAX_MEMBER_BYTES:
+                    raise Refusal(f"{archive.name}: members expand to more than {MAX_MEMBER_BYTES} bytes")
+                digest, size = hashlib.sha256(), 0
+                source = listing.extractfile(member)
+                while chunk := source.read(1024 * 1024):
+                    digest.update(chunk)
+                    size += len(chunk)
+                members.append({"name": name, "size": size, "sha256": digest.hexdigest()})
+    except tarfile.TarError as error:
+        raise Refusal(f"{archive.name} is not a readable tar archive: {error}") from error
+    finally:
+        decompress.stdout.close()
+        status, errors = decompress.wait(), decompress.stderr.read().decode("utf-8", "replace").strip()
+        decompress.stderr.close()
+    if status:
+        raise Refusal(f"zstd could not decompress {archive.name}: {errors or f'status {status}'}")
+    return {"archive": archive.name, "sha256": sha256_of(archive), "members": members}
 
 
 def binary_url(version: str, system: str) -> str:
@@ -366,7 +456,7 @@ SIDECAR_FORMATS = {".spdx.json": "SPDX-3.0.1", ".cdx.json": "CycloneDX-1.7", ".s
 
 
 def evidence_envelope(env: dict[str, str], workspace: Path, files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]],
-                      tool: dict, blueprint_version: str, target: str, version: str, url_base: str,
+                      tool: dict, project_version: tuple[str, str], target: str, version: str, url_base: str,
                       commit: str, created: str, rows: list[dict[str, str]], inventories: dict[Path, Path] | None = None) -> dict:
     """The producer's handoff: every file and sidecar by name, size and SHA-256, bound to source and run.
 
@@ -394,15 +484,24 @@ def evidence_envelope(env: dict[str, str], workspace: Path, files: list[Path], s
         "format": "roc-automation-sbom-evidence-v1",
         "source": {"server": env.get("GITHUB_SERVER_URL", ""), "repository": env.get("GITHUB_REPOSITORY", ""), "commit": commit},
         "producer": {"workflow": env.get("GITHUB_WORKFLOW_REF", ""), "run_id": env.get("GITHUB_RUN_ID", ""), "run_attempt": env.get("GITHUB_RUN_ATTEMPT", "")},
-        "generator": {"tool": tool["url"], "tool_sha256": tool.get("sha256", ""), "compiler": tool["compiler"], "generator": tool["generator"], "blueprint": blueprint_version, "created": created},
+        "generator": generator_record(tool, project_version, created),
         "subjects": subjects,
         "dependencies": [row for row in rows if row["origin"] != "coverage"],
         "coverage": [{"scope": row["component"], "status": "incomplete", "detail": row["detail"]} for row in rows if row["origin"] == "coverage"],
     }
 
 
+def generator_record(tool: dict, project_version: tuple[str, str], created: str) -> dict[str, str]:
+    """Who generated the documents: the Blueprint release and its tool, or the Kai release and its sbom plugin."""
+    project, release = project_version
+    if project == "kai":
+        return {"tool": tool["url"], "tool_sha256": "", "generator": tool["generator"], "kai": release, "created": created}
+    return {"tool": tool["url"], "tool_sha256": tool.get("sha256", ""), "compiler": tool["compiler"], "generator": tool["generator"], "blueprint": release, "created": created}
+
+
 def summary_text(files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]], rows: list[dict[str, str]], tool: dict[str, str], target: str) -> str:
-    lines = ["", "### SBOM sidecars", "", f"Tool `{tool['url']}` on compiler `{tool['compiler']}`; target `{target}`.", "", "| Release file | Sidecar | SHA-256 |", "| --- | --- | --- |"]
+    runner = f"on compiler `{tool['compiler']}`" if tool["compiler"] else "built by kai"
+    lines = ["", "### SBOM sidecars", "", f"Tool `{tool['url']}` {runner}; target `{target}`.", "", "| Release file | Sidecar | SHA-256 |", "| --- | --- | --- |"]
     for file in files:
         for sidecar, digest in sidecars[file]:
             lines.append(f"| `{file.name}` | `{sidecar.name}` | `{digest}` |")
@@ -415,13 +514,19 @@ def summary_text(files: list[Path], sidecars: dict[Path, list[tuple[Path, str]]]
     return "\n".join(lines) + "\n"
 
 
-def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_blueprint.fetch) -> None:
+def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_blueprint.fetch, list_members: Callable[[Path], dict] = archive_members) -> None:
     env = os.environ
     workspace = Path(env.get("GITHUB_WORKSPACE", ".")).resolve()
-    blueprint = env.get("INPUT_BLUEPRINT_BINARY") or "blueprint"
+    project = setup_kai.project_tool(workspace)
+    if project == "kai":
+        binary = env.get("INPUT_KAI_BINARY") or "kai"
+        if not clean(binary) or shutil.which(binary) is None:
+            raise Refusal(f"kai-binary is not an executable on this runner: {binary!r}")
+    else:
+        binary = env.get("INPUT_BLUEPRINT_BINARY") or "blueprint"
+        if not clean(binary) or shutil.which(binary) is None:
+            raise Refusal(f"blueprint-binary is not an executable on this runner: {binary!r}")
     roc = env.get("INPUT_ROC_BINARY") or "roc"
-    if not clean(blueprint) or shutil.which(blueprint) is None:
-        raise Refusal(f"blueprint-binary is not an executable on this runner: {blueprint!r}")
     version = env.get("INPUT_VERSION", "").strip()
     if not VERSION.fullmatch(version):
         raise Refusal("version must be a release version such as 0.12.0 or 0.12.0-rc1")
@@ -435,8 +540,8 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     if not AGENT.fullmatch(author) or not clean(author):
         raise Refusal("author must be an SPDX agent such as 'Organization: Example Ltd' or 'Person: A Maintainer'")
     spdx_2_3 = setup_blueprint.boolean_input(env.get("INPUT_SPDX_2_3", "false"), "spdx-2-3")
-    archive_members = env.get("INPUT_ARCHIVE_MEMBERS", "generate") or "generate"
-    if archive_members not in ("generate", "reviewed"):
+    archive_members_mode = env.get("INPUT_ARCHIVE_MEMBERS", "generate") or "generate"
+    if archive_members_mode not in ("generate", "reviewed"):
         raise Refusal("archive-members must be generate or reviewed")
     server, repository = env.get("GITHUB_SERVER_URL", "https://github.com"), env.get("GITHUB_REPOSITORY", "")
     url_base = https_base(env.get("INPUT_URL_BASE", "").strip() or f"{server}/{repository}/releases/download/{version}", "url-base")
@@ -444,8 +549,39 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
 
     files = release_files(env.get("INPUT_FILES", ""), workspace)
     refuse_stale_sidecars(files)
-    blueprint_version = setup_blueprint.version_in(setup_blueprint.read_config(workspace / "Blueprint.roc"))
-    tool = sbom_tool(blueprint_version, SBOM_TOOLS)
+    if project == "kai":
+        kaifile = setup_kai.read_kaifile(workspace / setup_kai.KAIFILE)
+        project_version = setup_kai.version_in(kaifile)
+        tool = kai_sbom_tool(project_version, SBOM_TOOLS)
+        named = setup_kai.plugin_url(kaifile, "sbom")
+        if named != tool["url"]:
+            raise Refusal(f"Kaifile.roc names the sbom plugin {named}, but Kai {project_version}'s reviewed sbom plugin is {tool['url']}")
+        installed = succeed(run, [binary, "--version"], workspace, "kai --version").strip()
+        if installed != project_version:
+            raise Refusal(f"kai-binary reports {installed!r}, but Kaifile.roc names Kai {project_version}; install it with actions/setup-kai")
+        tool_command = [binary, "sbom"]
+        tool_identity = {"url": tool["url"], "sha256": ""}
+    else:
+        project_version = setup_blueprint.version_in(setup_blueprint.read_config(workspace / "Blueprint.roc"))
+        tool = sbom_tool(project_version, SBOM_TOOLS)
+        system = setup_blueprint.SYSTEMS.get((env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", "")), "")
+        expected = tool["binaries"].get(system, "")
+        if expected:
+            # A released native tool: admitted by its reviewed digest, no compiler needed.
+            installed_binary = install_binary(project_version, system, expected, Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint-sbom", download)
+            tool_command = [str(installed_binary)]
+            tool_identity = {"url": binary_url(project_version, system), "sha256": expected}
+        else:
+            if not clean(roc) or shutil.which(roc) is None:
+                raise Refusal(f"roc-binary is not an executable on this runner: {roc!r}; roc-blueprint {project_version} records no native SBOM tool binary for {system or 'this runner'}, so the app bundle needs the compiler {tool['compiler']}")
+            compiler_output = succeed(run, [roc, "version"], workspace, f"{roc} version")
+            if not compiler_matches(compiler_output, tool["compiler"]):
+                raise Refusal(
+                    f"roc-binary reports {compiler_output.strip().splitlines()[0] if compiler_output.strip() else 'nothing'!r}, but roc-blueprint {project_version}'s SBOM tool "
+                    f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or roc-lang/setup-roc with nightly-tag"
+                )
+            tool_command = source_tool_command(roc, tool)
+            tool_identity = {"url": tool["url"], "sha256": ""}
     payload_bytes = tool["payload_bytes"]
     complete_manifest = "complete-manifest" in tool["features"]
     composition_path = workspace / (env.get("INPUT_COMPOSITION", "").strip() or "sbom/composition.json")
@@ -453,24 +589,6 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     imports_name = env.get("INPUT_IMPORTS", "").strip()
     imports = read_bounded_json(workspace / imports_name, "imports", payload_bytes) if imports_name else None
     composition = merge_imports(composition, imports, imports_name)
-    system = setup_blueprint.SYSTEMS.get((env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", "")), "")
-    expected = tool["binaries"].get(system, "")
-    if expected:
-        # A released native tool: admitted by its reviewed digest, no compiler needed.
-        binary = install_binary(blueprint_version, system, expected, Path(env["RUNNER_TEMP"]) / "roc-automation-blueprint-sbom", download)
-        tool_command = [str(binary)]
-        tool_identity = {"url": binary_url(blueprint_version, system), "sha256": expected}
-    else:
-        if not clean(roc) or shutil.which(roc) is None:
-            raise Refusal(f"roc-binary is not an executable on this runner: {roc!r}; roc-blueprint {blueprint_version} records no native SBOM tool binary for {system or 'this runner'}, so the app bundle needs the compiler {tool['compiler']}")
-        compiler_output = succeed(run, [roc, "version"], workspace, f"{roc} version")
-        if not compiler_matches(compiler_output, tool["compiler"]):
-            raise Refusal(
-                f"roc-binary reports {compiler_output.strip().splitlines()[0] if compiler_output.strip() else 'nothing'!r}, but roc-blueprint {blueprint_version}'s SBOM tool "
-                f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or roc-lang/setup-roc with nightly-tag"
-            )
-        tool_command = source_tool_command(roc, tool)
-        tool_identity = {"url": tool["url"], "sha256": ""}
 
     commit = succeed(run, ["git", "rev-parse", "HEAD"], workspace, "git rev-parse HEAD").strip()
     if not COMMIT.fullmatch(commit):
@@ -481,23 +599,30 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
     created = created_from_commit(succeed(run, ["git", "show", "-s", "--format=%ct", commit], workspace, "git show"))
 
     staging = private_directory(Path(env["RUNNER_TEMP"]) / f"roc-automation-sbom-{secrets.token_hex(8)}")
-    spec = succeed(run, [blueprint, "spec"], workspace, "blueprint spec")
-    if not spec.strip():
-        raise Refusal("blueprint spec printed nothing")
-    (staging / "Spec").write_text(spec, encoding="utf-8")
-    lock = workspace / "Blueprint.lock"
-    if lock.is_symlink() or not lock.is_file():
-        raise Refusal("Blueprint.lock must be a regular checked-in file")
-    shutil.copyfile(lock, staging / "Lock")
+    if project == "blueprint":
+        spec = succeed(run, [binary, "spec"], workspace, "blueprint spec")
+        if not spec.strip():
+            raise Refusal("blueprint spec printed nothing")
+        (staging / "Spec").write_text(spec, encoding="utf-8")
+        lock = workspace / "Blueprint.lock"
+        if lock.is_symlink() or not lock.is_file():
+            raise Refusal("Blueprint.lock must be a regular checked-in file")
+        shutil.copyfile(lock, staging / "Lock")
+    # kai runs in the repository, where it reads Kaifile.roc and .kai/lock.json.
+    tool_cwd = workspace if project == "kai" else staging
     features = set(tool["features"])
     member_files = {file for file in files if "members" in features and target == "source" and file.name.endswith(".tar.zst")}
     with_manifest = "manifest" in features
 
     def inspect(composition_path: Path, inventory_path: Path, listing: Path | None) -> dict:
-        command = tool_command + ["inspect", str(staging / "Spec"), str(staging / "Lock"), str(composition_path), target, str(inventory_path)]
-        if listing is not None:
-            command += ["--members", str(listing)]
-        result = run(command, staging)
+        if project == "kai":
+            command = tool_command + ["inspect", "--composition", str(composition_path), "--output", str(inventory_path)]
+            command += (["--members", str(listing)] if listing is not None else []) + ["--", target]
+        else:
+            command = tool_command + ["inspect", str(staging / "Spec"), str(staging / "Lock"), str(composition_path), target, str(inventory_path)]
+            if listing is not None:
+                command += ["--members", str(listing)]
+        result = run(command, tool_cwd)
         if result.stderr:
             print(result.stderr, file=sys.stderr, end="")
         if result.returncode:
@@ -507,6 +632,15 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
                 hint = "; run actions/fetch-dependency-sboms to fetch the supplier's sidecar by naming convention, or complete the unavailable_sboms stub it reports"
             raise Refusal(f"inspect refused the composition for {target}: {message}{hint}")
         return read_bounded_json(inventory_path, "inventory", payload_bytes)
+
+    def bind_commands(inventory: Path, subject: Path, context: Path, file: Path) -> tuple[list[str], list[str]]:
+        """The default bind, and the one that adds the SPDX 2.3 rendering."""
+        spdx_2_3_path = str(file.with_name(file.name + ".spdx-2.3.json"))
+        if project == "kai":
+            base = tool_command + ["bind", "--inventory", str(inventory), "--subject", str(subject), "--context", str(context), "--artifact", str(file)]
+            return base, base + ["--output", spdx_2_3_path, "--spdx-2-3"]
+        base = tool_command + ["bind", str(inventory), str(subject), str(context), str(file)]
+        return base, base + [spdx_2_3_path, "--spdx-2.3"]
 
     inventories: dict[Path, Path] = {}
     inventory_path = staging / "inventory.json"
@@ -524,20 +658,27 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
             # The archive is the authority on a source bundle's contents: list
             # it, account for every member, and inspect this file's inventory.
             listing_path = directory / "members.json"
-            succeed(run, tool_command + ["members", str(file), str(listing_path)], staging, f"members {file.name}")
+            if project == "kai":
+                write_json(listing_path, list_members(file), payload_bytes)
+            else:
+                succeed(run, tool_command + ["members", str(file), str(listing_path)], staging, f"members {file.name}")
             listing = read_bounded_json(listing_path, "members listing", payload_bytes)
-            accounted = member_components(composition, listing) if archive_members == "generate" else composition
+            accounted = member_components(composition, listing) if archive_members_mode == "generate" else composition
             write_json(directory / "composition.json", accounted, payload_bytes)
             inventories[file] = directory / "inventory.json"
             inventory = inspect(directory / "composition.json", inventories[file], listing_path)
             if index == 0:
                 inventory_path = inventories[file]
-        write_json(directory / "subject.json", subject_for(file.name, version, target, url_base))
+        subject = subject_for(file.name, version, target, url_base)
+        if project == "kai":
+            # kai reads no release file, so the subject states its bytes.
+            subject = {**subject, "sha256": sha256_of(file), "size": file.stat().st_size}
+        write_json(directory / "subject.json", subject)
         write_json(directory / "context.json", context_for(namespace_base, commit, file.name, revision, created, author, tool["generator"]))
-        base = tool_command + ["bind", str(inventories[file]), str(directory / "subject.json"), str(directory / "context.json"), str(file)]
-        succeed(run, base, staging, f"bind {file.name}")
+        base, with_spdx_2_3 = bind_commands(inventories[file], directory / "subject.json", directory / "context.json", file)
+        succeed(run, base, tool_cwd, f"bind {file.name}")
         if spdx_2_3 and not complete_manifest:
-            succeed(run, base + [str(file.with_name(file.name + ".spdx-2.3.json")), "--spdx-2.3"], staging, f"bind {file.name} (SPDX 2.3)")
+            succeed(run, with_spdx_2_3, tool_cwd, f"bind {file.name} (SPDX 2.3)")
         written[file] = []
         for suffix in sidecar_suffixes(spdx_2_3 or complete_manifest):
             sidecar = file.with_name(file.name + suffix)
@@ -560,8 +701,18 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         if file in manifests:
             command += ["--manifest", str(manifests[file][0])]
             documents = [] if complete_manifest else [sidecar for sidecar in documents if sidecar.name.endswith(".spdx-2.3.json")]
-        command += ["--inventory", str(inventories[file]), "--artifacts", str(file.parent)] + [str(sidecar) for sidecar in documents]
-        succeed(run, command, staging, f"check {file.name}")
+        if project == "kai":
+            command += ["--inventory", str(inventories[file]), "--"] + [str(sidecar) for sidecar in documents]
+        else:
+            command += ["--inventory", str(inventories[file]), "--artifacts", str(file.parent)] + [str(sidecar) for sidecar in documents]
+        succeed(run, command, tool_cwd, f"check {file.name}")
+        if project == "kai":
+            # kai check holds the documents to the manifest but never reads the
+            # release file; the file must be the bytes the manifest states.
+            stated = read_bounded_json(manifests[file][0], "manifest").get("subject", {})
+            actual = {"sha256": sha256_of(file), "size": file.stat().st_size}
+            if not isinstance(stated, dict) or not hmac.compare_digest(str(stated.get("sha256", "")), actual["sha256"]) or stated.get("size") != actual["size"]:
+                raise Refusal(f"{file.name} is {actual['size']} bytes with SHA-256 {actual['sha256']}, which differs from the subject its manifest states")
 
     for file in files:
         if file in manifests:
@@ -575,7 +726,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
                 output.write(f"{digest}  {sidecar.relative_to(workspace)}\n")
     rows = dependency_report(composition, inventory)
     evidence = staging / "sbom-evidence.json"
-    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, {**tool, **tool_identity}, blueprint_version, target, version, url_base, commit, created, rows, inventories))
+    write_json(evidence, evidence_envelope(dict(env), workspace, files, written, {**tool, **tool_identity}, (project, project_version), target, version, url_base, commit, created, rows, inventories))
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         delimiter = f"roc-automation-{secrets.token_hex(8)}"
         output.write(f"assets<<{delimiter}\n" + "\n".join(assets) + f"\n{delimiter}\n")

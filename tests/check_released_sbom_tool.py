@@ -133,7 +133,7 @@ def main():
         written = {delivered: [(Path(str(delivered) + suffix), sidecars.sha256_of(Path(str(delivered) + suffix))) for suffix in (*sidecars.SIDECAR_SUFFIXES, sidecars.MANIFEST_SUFFIX)]}
         env = {"GITHUB_SERVER_URL": source["server"], "GITHUB_REPOSITORY": source["repository"], "GITHUB_WORKFLOW_REF": producer["workflow"], "GITHUB_RUN_ID": producer["run_id"], "GITHUB_RUN_ATTEMPT": producer["run_attempt"]}
         envelope = sidecars.evidence_envelope(env, candidate, [delivered], written,
-            {**recorded, **tool_identity}, VERSION,
+            {**recorded, **tool_identity}, ("blueprint", VERSION),
             subject["target"], subject["version"], "https://github.com/owner/repo/releases/download/" + subject["version"], source["commit"], context["created"], [], {delivered: inventory})
         assert envelope["generator"]["tool"] == tool_identity["url"]
         assert envelope["generator"]["tool_sha256"] == tool_identity["sha256"]
