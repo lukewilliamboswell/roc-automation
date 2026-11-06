@@ -484,6 +484,12 @@ class WiringTests(unittest.TestCase):
         self.assertRegex(action, r"uses: thebrandonlucas/kai/\.github/actions/setup-kai@[0-9a-f]{40}\n")
         self.assertIn("version: ${{ steps.version.outputs.version }}", action)
 
+    def test_nightly_compatibility_installs_kai_on_request(self):
+        workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
+        self.assertIn("install-kai: ${{ inputs.install-kai }}", workflow)
+        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
+        self.assertIn("if: inputs.phase == 'test' && inputs.install-kai == 'true'\n      uses: $/actions/setup-kai", action)
+
 
 if __name__ == "__main__":
     unittest.main()
