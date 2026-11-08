@@ -191,6 +191,37 @@ else: sys.exit(int(os.environ.get('FAKE_COMPILER_FAIL','0')))
         self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
         self.assertEqual(self.calls(), [])
 
+    def test_pre_one_minor_proves_sufficiency_without_api_extraction(self):
+        for version in ("0.12.0", "0.12.0-rc.1"):
+            with self.subTest(version=version):
+                self.prepare(version, previous="0.11.9")
+                ran = self.run_tool("check-version", version)
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                self.assertIn("crosses a breaking-version boundary", ran.stdout)
+                self.assertEqual(self.calls(), [])
+
+    def test_pre_one_patch_and_downgrade_still_require_comparison(self):
+        for version in ("0.11.1", "0.11.1-rc.1", "0.10.9"):
+            with self.subTest(version=version):
+                self.prepare(version, previous="0.11.0")
+                self.log.unlink(missing_ok=True)
+                ran = self.run_tool("check-version", version)
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(self.calls(), [["bump", "--old", "https://github.com/o/pf/releases/download/0.11.0/Old1.tar.zst", "--expect", version.split("-")[0], "platform/main.roc"]])
+
+    def test_pre_one_minor_does_not_accept_ambiguous_bundles(self):
+        self.prepare("0.12.0", previous="0.11.0", assets=["Old1.tar.zst", "Other2.tar.zst"])
+        self.assertNotEqual(self.run_tool("check-version", self.version).returncode, 0)
+        self.assertEqual(self.calls(), [])
+
+    def test_pre_one_minor_does_not_override_current_compilation_failure(self):
+        self.prepare("0.12.0", previous="0.11.0")
+        self.assertEqual(self.run_tool("check-version", self.version).returncode, 0)
+        self.env["FAKE_COMPILER_FAIL"] = "1"
+        ran = self.run_tool("test-examples")
+        self.assertNotEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertTrue(any(call[0] == "check" for call in self.calls()))
+
     def test_same_major_requires_successful_api_comparison(self):
         for version in ("3.0.1", "3.1.0", "3.1.0-rc.1"):
             with self.subTest(version=version):
@@ -208,10 +239,18 @@ else: sys.exit(int(os.environ.get('FAKE_COMPILER_FAIL','0')))
         self.assertEqual(len(self.calls()), 1)
 
     def test_invalid_or_overflowing_baselines_cannot_prove_a_major(self):
-        for previous in ("", "garbage", "v3.0.0", "03.0.0", "3.0.0-rc.1", "18446744073709551616.0.0"):
+        for previous in ("", "garbage", "v3.0.0", "03.0.0", "3.0.0-rc.1", "18446744073709551616.0.0", "0.18446744073709551616.0", "0.11.18446744073709551616"):
             with self.subTest(previous=previous):
                 self.prepare(previous=previous, assets=[])
                 ran = self.run_tool("check-version", self.version)
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(self.calls(), [])
+
+    def test_pre_one_requested_metadata_cannot_prove_an_invalid_boundary(self):
+        for version in ("0.12.0-01", "0.12.0-rc..1", "0.012.0", "0.18446744073709551616.0", "0.12.18446744073709551616"):
+            with self.subTest(version=version):
+                self.prepare(version, previous="0.11.0")
+                ran = self.run_tool("check-version", version)
                 self.assertNotEqual(ran.returncode, 0)
                 self.assertEqual(self.calls(), [])
 

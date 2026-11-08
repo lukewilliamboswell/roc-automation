@@ -74,10 +74,11 @@ ReleasePackage := [].{
 			Err(_) => version
 		}
 
-	## A higher major satisfies every possible API-change lower bound. This
-	## decision precedes comparison; malformed metadata never proves a bump.
-	major_suffices : Str, Str -> Try(Bool, Str)
-	major_suffices = |requested, previous| {
+	## Crossing a breaking-version boundary satisfies every possible API-change
+	## lower bound: major after 1.0, minor within 0.x. Malformed metadata never
+	## proves a bump, and releases within a boundary still need API comparison.
+	breaking_suffices : Str, Str -> Try(Bool, Str)
+	breaking_suffices = |requested, previous| {
 		if !publishable_version(requested) or !final_version(previous) {
 			return Err("requested and latest-final versions must be semantic versions")
 		}
@@ -92,9 +93,12 @@ ReleasePackage := [].{
 			}
 			Err(_) => {}
 		}
-		next = U64.from_str(base_version(requested).split_on(".").first() ?? "").map_err(|_| "requested major version exceeds the supported integer range")?
-		old = U64.from_str(previous.split_on(".").first() ?? "").map_err(|_| "latest-final major version exceeds the supported integer range")?
-		Ok(next > old)
+		next = base_version(requested).split_on(".").map_try(|part| U64.from_str(part).map_err(|_| "requested version component exceeds the supported integer range"))?
+		old = previous.split_on(".").map_try(|part| U64.from_str(part).map_err(|_| "latest-final version component exceeds the supported integer range"))?
+		match (next, old) {
+			([next_major, next_minor, _], [old_major, old_minor, _]) => Ok(next_major > old_major or (old_major == 0 and next_major == 0 and next_minor > old_minor))
+			_ => Err("requested and latest-final versions must have three components")
+		}
 	}
 
 	## Where the authored notes of the release `version` live.
@@ -514,16 +518,27 @@ expect ReleasePackage.relative_file("D:\\suite/package", "D:\\suite\\package\\ma
 expect ReleasePackage.relative_file("package", "other/main.roc", Bool.True) == Err(OutsideDirectory)
 expect ReleasePackage.relative_file("package", "package\\main.roc", Bool.False) == Err(OutsideDirectory)
 
-expect ReleasePackage.major_suffices("4.0.0", "3.0.0") == Ok(True)
-expect ReleasePackage.major_suffices("4.0.0-rc.1", "3.0.0") == Ok(True)
-expect ReleasePackage.major_suffices("3.1.0", "3.0.0") == Ok(False)
-expect ReleasePackage.major_suffices("3.0.1", "3.0.0") == Ok(False)
-expect ReleasePackage.major_suffices("3.0.0", "3.0.0") == Ok(False)
-expect ReleasePackage.major_suffices("2.0.0", "3.0.0") == Ok(False)
-expect ReleasePackage.major_suffices("1.0.0", "0.9.0") == Ok(True)
-expect ["", "garbage", "v3.0.0", "3.0.0-rc.1", "03.0.0", "3.00.0", "18446744073709551616.0.0"].all(|previous| ReleasePackage.major_suffices("4.0.0", previous).is_err())
-expect ["04.0.0", "4.00.0", "4.0.00", "4.0.0-.", "4.0.0-rc..1", "4.0.0-01", "18446744073709551616.0.0"].all(|requested| ReleasePackage.major_suffices(requested, "3.0.0").is_err())
+expect ReleasePackage.breaking_suffices("4.0.0", "3.0.0") == Ok(True)
+expect ReleasePackage.breaking_suffices("4.0.0-rc.1", "3.0.0") == Ok(True)
+expect ReleasePackage.breaking_suffices("3.1.0", "3.0.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("3.0.1", "3.0.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("3.0.0", "3.0.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("2.0.0", "3.0.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("1.0.0", "0.9.0") == Ok(True)
+expect ["", "garbage", "v3.0.0", "3.0.0-rc.1", "03.0.0", "3.00.0", "18446744073709551616.0.0"].all(|previous| ReleasePackage.breaking_suffices("4.0.0", previous).is_err())
+expect ["04.0.0", "4.00.0", "4.0.00", "4.0.0-.", "4.0.0-rc..1", "4.0.0-01", "18446744073709551616.0.0"].all(|requested| ReleasePackage.breaking_suffices(requested, "3.0.0").is_err())
 
-expect ReleasePackage.major_suffices("10.0.0", "9.0.0") == Ok(True)
-expect ReleasePackage.major_suffices("18446744073709551615.0.0", "18446744073709551614.0.0") == Ok(True)
-expect ReleasePackage.major_suffices("4.0.0", "18446744073709551615.0.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("10.0.0", "9.0.0") == Ok(True)
+expect ReleasePackage.breaking_suffices("18446744073709551615.0.0", "18446744073709551614.0.0") == Ok(True)
+expect ReleasePackage.breaking_suffices("4.0.0", "18446744073709551615.0.0") == Ok(False)
+
+expect ReleasePackage.breaking_suffices("0.12.0", "0.11.0") == Ok(True)
+expect ReleasePackage.breaking_suffices("0.12.0-rc.1", "0.11.9") == Ok(True)
+expect ReleasePackage.breaking_suffices("0.11.1", "0.11.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("0.11.0", "0.11.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("0.10.9", "0.11.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("0.12.0", "1.11.0") == Ok(False)
+expect ReleasePackage.breaking_suffices("0.10.0", "0.9.9") == Ok(True)
+expect ReleasePackage.breaking_suffices("0.18446744073709551615.0", "0.18446744073709551614.0") == Ok(True)
+expect ["0.18446744073709551616.0", "0.11.18446744073709551616"].all(|previous| ReleasePackage.breaking_suffices("0.12.0", previous).is_err())
+expect ["0.18446744073709551616.0", "0.12.18446744073709551616"].all(|requested| ReleasePackage.breaking_suffices(requested, "0.11.0").is_err())
