@@ -101,6 +101,19 @@ ReleasePackage := [].{
 		}
 	}
 
+	## Byte equality proves no API difference, but still requires a new version.
+	## A prerelease of a later base is allowed; one of the previous final is not.
+	unchanged_suffices : Str, Str -> Try(Bool, Str)
+	unchanged_suffices = |requested, previous| {
+		_ = breaking_suffices(requested, previous)?
+		next = base_version(requested).split_on(".").map_try(|part| U64.from_str(part).map_err(|_| "invalid requested version"))?
+		old = previous.split_on(".").map_try(|part| U64.from_str(part).map_err(|_| "invalid latest-final version"))?
+		match (next, old) {
+			([a, b, c], [x, y, z]) => Ok(a > x or (a == x and (b > y or (b == y and c > z))))
+			_ => Err("requested and latest-final versions must have three components")
+		}
+	}
+
 	## Where the authored notes of the release `version` live.
 	notes_file : Str -> Str
 	notes_file = |version| "docs/releases/${version}.adoc"
@@ -542,3 +555,11 @@ expect ReleasePackage.breaking_suffices("0.10.0", "0.9.9") == Ok(True)
 expect ReleasePackage.breaking_suffices("0.18446744073709551615.0", "0.18446744073709551614.0") == Ok(True)
 expect ["0.18446744073709551616.0", "0.11.18446744073709551616"].all(|previous| ReleasePackage.breaking_suffices("0.12.0", previous).is_err())
 expect ["0.18446744073709551616.0", "0.12.18446744073709551616"].all(|requested| ReleasePackage.breaking_suffices(requested, "0.11.0").is_err())
+
+expect ReleasePackage.unchanged_suffices("0.5.1", "0.5.0") == Ok(True)
+expect ReleasePackage.unchanged_suffices("0.5.1-rc.1", "0.5.0") == Ok(True)
+expect ReleasePackage.unchanged_suffices("3.10.0", "3.9.9") == Ok(True)
+expect ["0.5.0", "0.5.0-rc.1", "0.4.9"].all(|version| ReleasePackage.unchanged_suffices(version, "0.5.0") == Ok(False))
+expect ReleasePackage.unchanged_suffices("0.5.1", "0.5.0-rc.1").is_err()
+expect ReleasePackage.unchanged_suffices("0.5.01", "0.5.0").is_err()
+expect ReleasePackage.unchanged_suffices("0.5.18446744073709551616", "0.5.0").is_err()

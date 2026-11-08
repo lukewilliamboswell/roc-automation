@@ -281,6 +281,45 @@ single_bundle! = |directory, what| {
 ## The member names of a bundle, in byte order.
 bundle_members! = |bundle| Ok(GitHub.sort(Str.split_on(capture!(["tar", "-tf", Path.display(bundle)], Path.utf8("."), "cannot list ${Path.display(bundle)}")?, "\n").map(|line| line.drop_suffix("\r")).keep_if(|line| line != "")))
 
+## Build a package from the current tracked files into a fresh directory and
+## require exactly that inventory. Both release construction and the unchanged
+## package proof use this path; neither reads a previous dist or package cache.
+package_bundle! = |settings, bundle| {
+	directory = parent(bundle.root)
+	tracked_files = tracked!(directory)?
+	if !tracked_files.contains(bundle.root) {
+		return Err("${bundle.root} is not tracked by Git")
+	}
+	files = tracked_files.keep_if(|path| parent(path) == directory).map(|path| path.drop_prefix("${directory}/"))
+	fresh = Path.absolute!(temp!(settings, "bundle")?).map_err(|_| "cannot resolve a temporary directory")?
+	_ = capture!([settings.compiler, "bundle", "main.roc"].concat(files.keep_if(|name| name != "main.roc")).concat(["--output-dir", Path.display(fresh)]), Path.utf8(directory), "roc bundle failed for ${bundle.root}")?
+	created = single_bundle!(fresh, "the output directory of roc bundle")?
+	members = bundle_members!(Path.join(fresh, created))?
+	if members != files {
+		return Err("the bundle of ${bundle.root} holds ${Str.inspect(members)}, not the tracked files ${Str.inspect(files)}")
+	}
+	Ok({ from: fresh, created, count: files.len() })
+}
+
+## A matching content-addressed name is only a hint. Download the exact selected
+## old release asset and compare its raw bytes, bounded by the fresh candidate.
+## No downloaded stdout is decoded, logged, extracted or executed.
+unchanged_package! = |settings, bundle, single, tag, file| {
+	made = package_bundle!(settings, bundle)?
+	if ReleasePackage.bundle_file(settings.pkg, bundle, made.created, single) != file {
+		return Ok(Bool.False)
+	}
+	candidate = Path.read_bytes!(Path.join(made.from, made.created)).map_err(|_| "cannot read the fresh bundle ${made.created}")?
+	download = Cmd.new("gh").args(["release", "download", tag, "--repo", settings.pkg.repository, "--pattern", file, "--output", "-", "--allow-escape-sequences"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(candidate.len() + 1).manage_tree(Bool.True).run!().map_err(|_| "cannot download ${settings.pkg.repository} release ${tag} bundle ${file} for byte comparison")?
+	if download.status != Exited(0) {
+		return Err("cannot download ${settings.pkg.repository} release ${tag} bundle ${file} for byte comparison")
+	}
+	if download.stdout_bytes != candidate {
+		return Err("release ${tag} bundle ${file} has the fresh candidate's name but different bytes")
+	}
+	Ok(Bool.True)
+}
+
 ## The applications under examples/, by path: each `.roc` file directly inside
 ## it that has an `app` header, and the `main.roc` of each directory inside it.
 ## A `.roc` file without an `app` header is a module the examples share.
@@ -435,13 +474,12 @@ build! = |version, platform_bundle| {
 	say!("\n== ${if single "Bundle" else "Bundles"}")?
 	built = bundles.map_try!(
 		|bundle| {
-			directory = parent(bundle.root)
-			tracked_files = tracked!(directory)?
-			if !tracked_files.contains(bundle.root) {
-				return Err("${bundle.root} is not tracked by Git")
-			}
 			made = match (bundle.kind, platform_bundle) {
 				(Platform, Ok(given)) => {
+					tracked_files = tracked!(parent(bundle.root))?
+					if !tracked_files.contains(bundle.root) {
+						return Err("${bundle.root} is not tracked by Git")
+					}
 					from = Path.utf8(given)
 					created = single_bundle!(from, "--platform-bundle ${given}")?
 					members = bundle_members!(Path.join(from, created))?
@@ -451,17 +489,7 @@ build! = |version, platform_bundle| {
 					}
 					{ from, created, count: members.len() }
 				}
-				_ => {
-					files = tracked_files.keep_if(|path| parent(path) == directory).map(|path| path.drop_prefix("${directory}/"))
-					fresh = Path.absolute!(temp!(settings, "bundle")?).map_err(|_| "cannot resolve a temporary directory")?
-					_ = capture!([compiler, "bundle", "main.roc"].concat(files.keep_if(|name| name != "main.roc")).concat(["--output-dir", Path.display(fresh)]), Path.utf8(directory), "roc bundle failed for ${bundle.root}")?
-					created = single_bundle!(fresh, "the output directory of roc bundle")?
-					members = bundle_members!(Path.join(fresh, created))?
-					if members != files {
-						return Err("the bundle of ${bundle.root} holds ${Str.inspect(members)}, not the tracked files ${Str.inspect(files)}")
-					}
-					{ from: fresh, created, count: files.len() }
-				}
+				_ => package_bundle!(settings, bundle)?
 			}
 			name = ReleasePackage.bundle_file(pkg, bundle, made.created, single)
 			Path.copy!(Path.join(made.from, made.created), Path.join(output, name)).map_err(|_| "cannot copy ${made.created} to ${Path.display(Path.join(output, name))}")?
@@ -572,9 +600,9 @@ newest_notes! = || {
 }
 
 ## A breaking-version boundary proves sufficiency before API extraction. Other
-## requests require `roc bump` against each latest-release bundle, so a
-## breaking change cannot go out as a patch. A dry run reports the required
-## bump; a comparison that cannot be made is not an error in that nonpublishing run.
+## requests require `roc bump` or exact fresh-package byte equality against each
+## latest-release bundle, so a breaking change cannot go out as a patch. A dry
+## run reports the required bump; an unavailable comparison does not fail it.
 check_version! = |version| {
 	settings = settings!()?
 	pkg = settings.pkg
@@ -599,7 +627,8 @@ check_version! = |version| {
 	latest = Json.parse(Str.from_utf8_lossy(listing.stdout_bytes))
 	found = latest.map_err(|_| "unreadable release listing")?
 	breaking_suffices = if dry_run Bool.False else ReleasePackage.breaking_suffices(version, found.tag)?
-	for bundle in bundles!(working_suite!()?)? {
+	bundles = bundles!(working_suite!()?)?
+	for bundle in bundles {
 		match ReleasePackage.published_bundle_file(pkg, bundle, found.assets) {
 			None => say!("NOTE release ${found.tag} has no bundle of ${bundle.root}, so ${version} is its first")?
 			Several => return Err("release ${found.tag} has several bundles that could be ${bundle.root}")
@@ -613,6 +642,8 @@ check_version! = |version| {
 					}
 				} else if breaking_suffices {
 					say!("VERSION ${version} crosses a breaking-version boundary from ${found.tag}; every API change is permitted, so no API comparison is required for ${bundle.root}")?
+				} else if bundle.kind == Package and ReleasePackage.unchanged_suffices(version, found.tag)? and unchanged_package!(settings, bundle, bundles.len() == 1, found.tag, file)? {
+					say!("VERSION ${version}: fresh ${bundle.root} bundle is byte-identical to ${previous}; no API difference")?
 				} else {
 					run!(compare.concat(["--expect", ReleasePackage.base_version(version), bundle.root]), Path.utf8("."), "the version understates the change to ${bundle.root} since ${found.tag}, or roc bump could not compare")?
 				}
