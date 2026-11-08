@@ -264,13 +264,17 @@ roc bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
 * Run it before choosing a version, so the number follows from the change and
   not from habit.
 * `release.yml` runs it with `--expect` in its validate step, against the
-  latest release for same-major requests, and stops when the requested version understates the change.
-  A breaking change can then never go out as a patch.
+  latest release within the same compatibility boundary, and stops when the
+  requested version understates the change. A breaking change can then never
+  go out as a patch.
 * A requested major greater than the latest final major already satisfies the
-  lower bound for every possible API change. The released `release-package`
-  utility validates both versions and accepts that proof before attempting
-  extraction. It does not compute an API diff in that case. Same-major releases
-  still require a successful comparison, including when extraction fails.
+  lower bound for every possible API change. Before 1.0, Roc uses the minor
+  component as that breaking boundary: `0.12.0` permits every API change from
+  `0.11.0`, while `0.11.1` still needs comparison. The `release-package` utility
+  validates every version component and accepts that proof before attempting
+  extraction. It does not compute an API diff in that case. Releases within
+  the same boundary still require a successful comparison, including when
+  extraction fails.
 * This version proof does not establish that the candidate compiles or works.
   The configured package checks, working-tree examples, exact candidate tests
   and SBOM checks remain separate release requirements. Malformed or unreadable
