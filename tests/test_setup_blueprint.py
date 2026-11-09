@@ -215,7 +215,11 @@ class SetupBlueprintTests(unittest.TestCase):
         (root / "temp").mkdir(exist_ok=True)
         (root / "workspace").mkdir(exist_ok=True)
         seen = []
-        with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", serving(content, seen)):
+        # These tests isolate CLI selection/hash admission with synthetic binary
+        # bytes. Core ordering, failure and native payload admission have their
+        # own integration and fixed-source tests.
+        with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", serving(content, seen)), \
+                patch.object(setup.core_sources, "admit", return_value=None):
             with patch.object(setup, "known_releases", lambda: known):
                 setup.main()
         return seen
@@ -417,13 +421,20 @@ class ExecutableCacheTests(unittest.TestCase):
     def test_cache_file_permissions_are_never_used_as_execution_authority(self):
         installed = self.install()
         cached = self.cache / "blueprint"
-        self.assertEqual(cached.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(self.cache.stat().st_mode & 0o777, 0o700)
-        self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
+        if os.name != "nt":
+            self.assertEqual(cached.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(self.cache.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
         cached.chmod(0o777)
         installed = self.install()
-        self.assertEqual(cached.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        if os.name != "nt":
+            self.assertEqual(cached.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        for path in (cached, installed):
+            self.assertTrue(path.is_file())
+            self.assertFalse(path.is_symlink())
+            self.assertFalse(getattr(path.lstat(), "st_file_attributes", 0) & 0x400)
+            self.assertEqual(path.read_bytes(), BINARY)
         self.assertNotEqual(installed.stat().st_ino, cached.stat().st_ino)
 
     def test_symlink_cache_file_is_rejected_without_download_or_target_mutation(self):
@@ -452,7 +463,10 @@ class ExecutableCacheTests(unittest.TestCase):
 
     def test_nonregular_cache_entry_is_rejected(self):
         self.cache.mkdir(parents=True)
-        os.mkfifo(self.cache / "blueprint")
+        if os.name == "nt":
+            (self.cache / "blueprint").mkdir()
+        else:
+            os.mkfifo(self.cache / "blueprint")
         with self.assertRaisesRegex(ValueError, "regular file"):
             self.install()
 

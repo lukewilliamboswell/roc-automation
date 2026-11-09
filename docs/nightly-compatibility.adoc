@@ -110,6 +110,18 @@ For a mixed matrix, keep both installers disabled and let a portable setup scrip
 select the native provisioning steps for each operating system. A prerequisite
 failure is a setup failure, never a compatibility pass.
 
+`blueprint-core-version: '0.12.0'` is a narrow alternative for published
+Blueprint applications whose configuration needs that release's Core package.
+It requires an empty `setup-command` and is accepted only in the read-only test
+phase. The wrapper constructs an argv array for the Core helper from its own
+pinned action source, with the selected compiler's absolute path. The normal
+runner then executes it without tokens in its managed empty cache before
+building archived examples. The helper admits the fixed public Core asset with
+official `roc unbundle` and full-file verification; no caller script or receipt
+can substitute another source. This works on native Windows without requesting
+either shared installer. See
+xref:security-model.adoc#blueprint-core-bootstrap[Core bootstrap admission].
+
 `test-environment` is a JSON array of public name/value records, for example
 `[{"name":"DISPLAY","value":":99"}]`, for a headless native test environment.
 Reserved compiler, cache and Actions variables cannot be overridden. Names and
@@ -158,6 +170,15 @@ excludes drafts, prereleases and auxiliary tags such as `tools-*`, `runtime-*`
 and `linker-inputs-*`. Release lists are paginated; an incomplete listing is an
 error. All targets receive the same `selection.json`, never separate moving
 lookups. Compiler execution verifies the installed version names that nightly.
+
+The compiler installer uses `download-method: asset-api` at a reviewed full
+action SHA. It admits the unique platform archive's size and SHA-256 from the
+selected tag's official release metadata, verifies the downloaded bytes before
+extraction, and exposes that archive's executable on `PATH`. A failed download,
+missing identity or changed bytes cannot become a compatibility pass. This
+avoids relying on the browser download route; the
+xref:security-model.adoc#compilers[compiler trust boundary] still trusts GitHub's
+release metadata rather than claiming upstream build provenance.
 
 The selected release must contain exactly one
 `<package-name>-examples-<release-tag>.zip`. `package-name` defaults to the

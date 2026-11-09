@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -39,6 +40,11 @@ MAX_CONFIG_BYTES = 1024 * 1024
 KNOWN_RELEASES = Path(__file__).with_name("releases.json")
 
 Fetch = Callable[[str, Path], None]
+
+# Load only the sibling helper from this pinned action, never an ambient module.
+_core_spec = importlib.util.spec_from_file_location("_setup_blueprint_core_sources", Path(__file__).with_name("core_sources.py"))
+core_sources = importlib.util.module_from_spec(_core_spec)
+_core_spec.loader.exec_module(core_sources)
 
 
 def system_for(runner_os: str, runner_arch: str) -> str:
@@ -261,7 +267,8 @@ def main(prepare: bool = False) -> None:
         checked_version(version)
     else:
         version = version_in(read_config(Path(env.get("GITHUB_WORKSPACE", ".")) / "Blueprint.roc"))
-    expected = expected_sha256(supplied, known_releases(), version, system)
+    reviewed = known_releases()
+    expected = expected_sha256(supplied, reviewed, version, system)
     artifacts, cache_key = cache_settings(env, version, system)
     binary_directory, binary_key = binary_cache_settings(env, version, system, expected)
     if prepare:
@@ -274,6 +281,17 @@ def main(prepare: bool = False) -> None:
     installed = install(version, system, expected, directory,
                         cache_directory=Path(binary_directory) if binary_directory else None,
                         cache_status=cache_status)
+    # Only the built-in reviewed 0.12 native binary record authorizes this Core
+    # record, after verified downloads AND executable-cache hits. Custom binary
+    # digests retain their existing behavior. Never select an ambient compiler.
+    core_admission = None
+    if version == core_sources.VERSION and hmac.compare_digest(expected, reviewed.get(version, {}).get(system, "")):
+        try:
+            core_admission = core_sources.admit(version, env, compiler=None)
+        except OSError as error:
+            raise ValueError("Core admission failed: unavailable or unsafe local data") from error
+    if core_admission is not None:
+        print(json.dumps(core_admission, sort_keys=True))
     duration = time.perf_counter() - started
     size = installed.stat().st_size
     with open(env["GITHUB_PATH"], "a", encoding="utf-8") as path_file:

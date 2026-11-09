@@ -179,12 +179,22 @@ of arbitrary pre-existing package caches on a maintainer's machine.
 
 The package compiler is the latest published nightly and is not pinned. It is
 installed by the official `roc-lang/setup-roc` action, referenced by full
-commit SHA, from a `roc-lang/nightlies` release over HTTPS. That action does not
-check a nightly download against a digest, so the compiler's integrity rests on
-GitHub's release hosting and the action's pinned revision. This is accepted
-because the nightly only ever runs in jobs that hold no write access. A workflow
-resolves the moving release once and passes the tag to every job. Release notes
-record the version used.
+commit SHA, with `download-method: asset-api`. A browser download route can fail
+while the official asset API still serves the selected release's exact bytes.
+The installer binds that API request to the selected repository, tag, platform
+and unique asset, then checks the bounded archive against its recorded size and
+SHA-256 before extraction or adding the selected executable to `PATH`. Invalid
+metadata or bytes stop installation. An unrelated compiler directory cannot
+stand in for that executable.
+
+The digest comes from the same GitHub release metadata that selects the asset;
+it binds delivery to that selection and is neither a separately reviewed hash
+nor provenance for the upstream compiler build. GitHub's metadata and release
+hosting remain trusted. The nightly runs only in jobs that hold no write access.
+A workflow resolves the moving release once and passes the tag to every job;
+release notes record the version used. Installer refusal tests and native
+platform jobs verify admission and execution, while the shared workflow tests
+check that the selected tag reaches that installer before consumer code runs.
 
 [#the-blueprint-binary]
 == The `blueprint` binary
@@ -223,6 +233,46 @@ also fixes the embedded compiler archive; it does not prove that compiler
 is free of defects. This compiler remains separate from fixed repository tooling
 and the floating package compiler. `Programs`/`Fetch`/`Expect` environments need
 no Nix; environments selecting Nix-sourced tools and sandboxed builds do.
+
+[#blueprint-core-bootstrap]
+=== Core bootstrap admission
+
+The recorded 0.12.0 executable also needs its Core package to evaluate
+configuration, before a provider or repository task can run. For those exact
+executable digests, the installer prepares only the known Core blob recorded in
+`actions/setup-blueprint/core_sources.py`. That record binds a fixed official
+release asset ID, compressed and tar sizes and SHA-256 digests, and the complete
+25-file inventory. Review compared this inventory with official Roc BLAKE3
+unbundle results on Linux and Windows. Checking those exact bytes admits the
+same witnessed material; it does not authorize arbitrary new content hashes or
+establish provenance for the release. A new Core blob needs a new reviewed
+record and an independent unbundle witness.
+
+The bootstrap downloads anonymous public data with a bounded, token-free child
+environment. An isolated Python standard-library zstd decoder or trusted host
+`zstd` decodes it with memory, output and time bounds. It verifies the complete
+tar before writing only the literal recorded regular files into a private
+staging directory. A native atomic rename refuses an occupied destination.
+This path executes no downloaded source, compiler or candidate configuration.
+Privileged controllers use the helper from their pinned action source, never
+from the caller's checkout.
+
+Existing Core trees are fully reverified; a `main.roc` file or receipt alone is
+insufficient. Only a verified tree permits invalidating its adjacent regular
+`.deps` file. Links, partial trees, extra files, changed bytes and unsafe cache
+entries fail closed. Unix admission checks ownership and private file modes;
+Windows checks regular files, hard links and reparse points and relies on a
+caller-private cache rather than asserting SID ownership. The helper does not
+protect against another hostile process with the same cache authority. It
+does not copy IR, create dependency sidecars or alter provider/artifact stores.
+
+The read-only compatibility runner can instead invoke this pinned helper with
+its explicitly selected Roc compiler in the runner's managed empty cache. That
+mode uses official `roc unbundle` and the same full-file checks. It is separate
+from the compiler-free bootstrap used by privileged controllers; no ambient
+`roc` or floating compiler is selected for controller setup.
+
+=== Blueprint caches and task execution
 
 The default executable cache is separate from the artifact store. Its exact key
 includes release, system and reviewed digest. The installer copies bounded

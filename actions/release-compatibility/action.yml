@@ -31,6 +31,9 @@ inputs:
   setup-command:
     description: Optional JSON argv array for native prerequisites; runs only in the read-only test job
     default: '[]'
+  blueprint-core-version:
+    description: Reviewed fixed Core source prerequisite; test phase only, with an empty setup-command
+    default: ''
   case-timeout-ms:
     description: Per-example deadline, 1–120000 milliseconds
     default: '10000'
@@ -73,7 +76,20 @@ runs:
       env:
         INSTALL_BLUEPRINT: ${{ inputs.install-blueprint }}
         INSTALL_NIX: ${{ inputs.install-nix }}
+        CORE_VERSION: ${{ inputs.blueprint-core-version }}
+        CORE_PHASE: ${{ inputs.phase }}
+        CORE_SETUP: ${{ inputs.setup-command }}
       run: |
+        case "$CORE_VERSION" in
+          ''|0.12.0) ;;
+          *) echo '::error::Unsupported Blueprint Core source version.'; exit 1 ;;
+        esac
+        if [[ -n "$CORE_VERSION" ]]; then
+          if [[ "$CORE_PHASE" != test || ! "$CORE_SETUP" =~ ^[[:space:]]*\[[[:space:]]*\][[:space:]]*$ ]]; then
+            echo '::error::Blueprint Core preparation requires test phase and an empty setup-command.'
+            exit 1
+          fi
+        fi
         if [[ "$RUNNER_OS" == Windows && ( "$INSTALL_BLUEPRINT" == true || "$INSTALL_NIX" == true ) ]]; then
           echo '::error::Windows prerequisites must use native setup-command tools; Blueprint and Nix have no supported Windows installer.'
           exit 1
@@ -96,10 +112,11 @@ runs:
           python3 "$ACTION_PATH/bootstrap.py"
         fi
     - if: inputs.phase == 'test'
-      uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
       with:
         version: nightly-new-compiler
         nightly-tag: ${{ inputs.nightly-tag }}
+        download-method: asset-api
     - if: inputs.phase == 'test' && inputs.install-blueprint == 'true'
       uses: $/actions/setup-blueprint
       with:
@@ -107,6 +124,7 @@ runs:
     - id: run
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         RA_PYTHON: ${{ steps.build.outputs.python }}
         RA_ARCHIVE_HELPER: ${{ steps.build.outputs.archive-helper }}
         RA_PHASE: ${{ inputs.phase }}
@@ -120,6 +138,7 @@ runs:
         RA_ARTIFACTS: ${{ inputs.artifacts }}
         RA_TEST_RESULT: ${{ inputs.test-result }}
         RA_SETUP: ${{ inputs.setup-command }}
+        RA_BLUEPRINT_CORE: ${{ inputs.blueprint-core-version }}
         RA_CASE_TIMEOUT_MS: ${{ inputs.case-timeout-ms }}
         RA_ENVIRONMENT: ${{ inputs.test-environment }}
         GH_TOKEN: ${{ github.token }}
@@ -127,6 +146,11 @@ runs:
         set -euo pipefail
         export RA_PACKAGE="${RA_PACKAGE_INPUT:-${GITHUB_REPOSITORY#*/}}"
         export RA_COMPILER="$("$RA_PYTHON" -c 'import shutil; print(shutil.which("roc") or "")')"
+        # This only constructs argv. The existing runner executes it later with
+        # blank credentials and its managed empty cache, before archived code.
+        if [[ -n "$RA_BLUEPRINT_CORE" ]]; then
+          export RA_SETUP="$("$RA_PYTHON" -c 'import json, os; from pathlib import Path; helper = Path(os.environ["ACTION_PATH"]).resolve().parent / "setup-blueprint" / "core_sources.py"; print(json.dumps([os.environ["RA_PYTHON"], str(helper), "--version", os.environ["RA_BLUEPRINT_CORE"], "--compiler", os.environ["RA_COMPILER"]]))')"
+        fi
         if [[ "$RUNNER_OS" == Windows ]]; then
           "$RA_DIRECTORY/runner.exe" "$RA_PHASE"
         else

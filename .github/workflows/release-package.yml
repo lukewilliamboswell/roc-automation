@@ -145,10 +145,11 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Install the package compiler
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ steps.nightly.outputs.tag }}
+          download-method: asset-api
 
       # Blueprint provisions the release-package utility the repository's lock
       # names, and every other locked tool, as it does for a maintainer.
@@ -338,10 +339,11 @@ jobs:
           persist-credentials: false
 
       - name: Install the package compiler this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.build.outputs.nightly }}
+          download-method: asset-api
 
       - name: Install Blueprint
         uses: ./.roc-automation/actions/setup-blueprint
