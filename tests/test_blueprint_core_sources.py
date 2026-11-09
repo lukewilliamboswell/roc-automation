@@ -463,7 +463,7 @@ class CoreContractTests(unittest.TestCase):
     def test_cache_selection_matches_unix_and_windows_primary_source(self):
         self.assertEqual(core.cache_home({"XDG_CACHE_HOME": "/xdg", "LOCALAPPDATA": "/local", "HOME": "/home"}, windows=True), "/xdg")
         self.assertEqual(core.cache_home({"LOCALAPPDATA": "/local", "HOME": "/home"}, windows=True), "/local")
-        self.assertEqual(core.cache_home({"LOCALAPPDATA": "/local", "HOME": "/home"}, windows=False), "/home/.cache")
+        self.assertEqual(core.cache_home({"LOCALAPPDATA": "/local", "HOME": "/home"}, windows=False), str(Path("/home") / ".cache"))
         with self.assertRaises(ValueError):
             core.physical_path("relative")
         for environment in ({"XDG_CACHE_HOME": "", "LOCALAPPDATA": "/local", "HOME": "/home"},
