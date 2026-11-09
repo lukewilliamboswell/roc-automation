@@ -245,6 +245,7 @@ Managing releases carefully is a large part of what makes a package dependable.
 A user meets a release through three things: its version number, its notes, and
 the URL they paste into a header. Each is handled deliberately.
 
+[#choose-the-version-with-roc-bump]
 === Choose the version with `roc bump`
 
 A version number is a promise about compatibility, and `roc bump` checks the
@@ -272,9 +273,17 @@ roc bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
   component as that breaking boundary: `0.12.0` permits every API change from
   `0.11.0`, while `0.11.1` still needs comparison. The `release-package` utility
   validates every version component and accepts that proof before attempting
-  extraction. It does not compute an API diff in that case. Releases within
-  the same boundary still require a successful comparison, including when
-  extraction fails.
+  extraction. It does not compute an API diff in that case.
+* Within the same boundary, a pure package can instead prove that its API is
+  unchanged by reproducing the exact published bundle bytes. The utility
+  freshly bundles the current tracked files with the same member-inventory
+  checks as `build`, requires the resulting release filename to match the
+  uniquely selected latest-final bundle, then downloads that exact filename
+  from that repository and final tag and compares every byte. An unchanged
+  package still needs a later base version. A changed filename runs the normal
+  API comparison; a matching filename with different bytes or a failed download
+  stops validation. Platforms retain their normal API comparison because their
+  host outputs cannot be reconstructed by this package-only proof.
 * This version proof does not establish that the candidate compiles or works.
   The configured package checks, working-tree examples, exact candidate tests
   and SBOM checks remain separate release requirements. Malformed or unreadable
@@ -283,6 +292,19 @@ roc bump --old <previous release bundle URL> --expect 0.13.0 package/main.roc
 * It compares only the modules the package header exposes. A change in behavior
   behind an unchanged signature is still the maintainer's call, and belongs in
   the notes.
+
+A compiler may fail to extract the old API even when no package code
+changed. Equality of freshly constructed and published bundle bytes establishes
+that there is no API difference without depending on that extraction. A matching
+name alone, stale `dist/` files and an extracted package cache cannot establish
+this evidence. The bounded download stays inert bytes and is never decoded,
+printed, extracted or executed by the comparison. Executable regressions cover
+identical packages with failing API extraction, changed tracked files beside
+stale outputs, tampered and oversized downloads, ambiguous identities, invalid
+versions and failing current candidates. The proof assumes the selected GitHub
+release and the package compiler's bundle operation have their stated meaning;
+it does not establish provenance or candidate correctness. Different compression
+bytes conservatively prevent the proof even if package sources are equivalent.
 
 A package version is independent of any compiler version. A changed package is
 always a new version. Nothing is ever republished under an existing version.
@@ -368,7 +390,8 @@ flowchart TD
 
 . *Validate.* Require the default branch. Reject a version whose tag or release
   already exists. Require `docs/releases/<version>.adoc`. Check the version
-  with `roc bump --expect`. Record the event commit and use that SHA in every
+  with `roc bump --expect` or the utility's exact unchanged-package proof.
+  Record the event commit and use that SHA in every
   later job.
 . *Check.* Run `blueprint run check` on that commit.
 . *Build.* Build the bundle with the latest nightly, then the examples archive

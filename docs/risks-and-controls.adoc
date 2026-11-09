@@ -13,7 +13,7 @@ Storage or an upgrade substitutes executable bytes::
 xref:artifact-verification.adoc#risk-artifact-admission[Artifact admission], xref:pure-package.adoc#risk-utility-provisioning[provisioning], xref:environment.adoc#risk-tooling-selection[tool selection] and xref:maintenance.adoc#risk-input-upgrades[upgrades].
 
 Tested source or assets differ from the delivered release::
-xref:workflows.adoc#risk-release-evidence[Release evidence], xref:examples.adoc#risk-example-identity[example archives] and xref:linker-input-releases.adoc#risk-linker-publication[native-input publication].
+xref:workflows.adoc#risk-release-evidence[Release evidence], xref:workflows.adoc#choose-the-version-with-roc-bump[version and unchanged-package evidence], xref:examples.adoc#risk-example-identity[example archives] and xref:linker-input-releases.adoc#risk-linker-publication[native-input publication].
 
 Source roles or native targets are confused::
 xref:repository.adoc#risk-source-boundaries[Source boundaries] and xref:platforms.adoc#risk-native-targets[native targets].
