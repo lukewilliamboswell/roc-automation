@@ -1,9 +1,10 @@
-"""Check the admitted Blueprint 0.11 tool against its immutable public fixtures.
+"""Check admitted native and source SBOM tools against released fixtures.
 
-Runs on each of the five released native systems without a Roc compiler or
-Blueprint configuration. Downloads are admitted by reviewed SHA-256 values;
-this is a build-job acceptance test, never a privileged publisher operation.
+Native mode runs on all five systems without Roc or Blueprint configuration.
+Source mode uses the record's exact compiler and invocation protocol. This is a
+read-only acceptance test, never a privileged publisher operation.
 """
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -14,6 +15,7 @@ import tempfile
 import zipfile
 import shutil
 import sys
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("sbom_sidecars", ROOT / "actions/sbom-sidecars/sbom_sidecars.py")
@@ -21,12 +23,20 @@ sidecars = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sidecars)
 sys.path.insert(0, str(ROOT / "actions/sbom-sidecars"))
 import verify_transferred
-VERSION = "0.11.0"
-FIXTURES_SHA256 = "ab138ce9fcc20736ca014d81e27d865cadb653d6dedfaff149cd23fb8d57a42a"
+VERSION = os.environ.get("BLUEPRINT_VERSION", "0.11.0")
+FIXTURE_DIGESTS = {
+    "0.11.0": "ab138ce9fcc20736ca014d81e27d865cadb653d6dedfaff149cd23fb8d57a42a",
+    "0.12.0": "d6c2582aab61b45c9df4feefa883df834643b304e9c3588c7731f467207bfada",
+}
+
+
+class Tool(NamedTuple):
+    argv: list[str]
+    timeout: int
 
 
 def check(tool, directory, *arguments, refusal=None):
-    result = subprocess.run([str(tool), *map(str, arguments)], cwd=directory, capture_output=True, text=True, timeout=60)
+    result = subprocess.run([*tool.argv, *map(str, arguments)], cwd=directory, capture_output=True, text=True, timeout=tool.timeout)
     if refusal is None:
         assert result.returncode == 0, result.stderr
     else:
@@ -34,14 +44,27 @@ def check(tool, directory, *arguments, refusal=None):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", action="store_true", help="Exercise the released source app with its exact recorded compiler.")
+    parser.add_argument("--roc-binary", default="roc")
+    args = parser.parse_args()
     system = sidecars.setup_blueprint.SYSTEMS[(os.environ["RUNNER_OS"], os.environ["RUNNER_ARCH"])]
     recorded = sidecars.sbom_tool(VERSION)
     with tempfile.TemporaryDirectory(prefix="released-sbom-") as temporary:
         root = Path(temporary)
-        tool = sidecars.install_binary(VERSION, system, recorded["binaries"][system], root / "tool")
+        if args.source:
+            # This explicit test mode exercises source invocation even where a
+            # native asset exists; the production action still prefers native.
+            compiler = subprocess.run([args.roc_binary, "version"], capture_output=True, text=True, check=True, timeout=30)
+            assert sidecars.compiler_matches(compiler.stdout, recorded["compiler"]), "source app requires the reviewed compiler"
+            tool = Tool(sidecars.source_tool_command(args.roc_binary, recorded), 180)
+            tool_identity = {"url": recorded["url"], "sha256": ""}
+        else:
+            tool = Tool([str(sidecars.install_binary(VERSION, system, recorded["binaries"][system], root / "tool"))], 60)
+            tool_identity = {"url": sidecars.binary_url(VERSION, system), "sha256": recorded["binaries"][system]}
         archive = root / "fixtures.zip"
         sidecars.setup_blueprint.fetch(f"{sidecars.setup_blueprint.RELEASES}/{VERSION}/roc-blueprint-sbom-fixtures-{VERSION}.zip", archive)
-        assert sidecars.sha256_of(archive) == FIXTURES_SHA256, "released fixture bytes differ from their reviewed digest"
+        assert sidecars.sha256_of(archive) == FIXTURE_DIGESTS[VERSION], "released fixture bytes differ from their reviewed digest"
         with zipfile.ZipFile(archive) as source:
             for item in source.infolist():
                 name = Path(item.filename)
@@ -94,8 +117,10 @@ def main():
         written = {delivered: [(Path(str(delivered) + suffix), sidecars.sha256_of(Path(str(delivered) + suffix))) for suffix in (*sidecars.SIDECAR_SUFFIXES, sidecars.MANIFEST_SUFFIX)]}
         env = {"GITHUB_SERVER_URL": source["server"], "GITHUB_REPOSITORY": source["repository"], "GITHUB_WORKFLOW_REF": producer["workflow"], "GITHUB_RUN_ID": producer["run_id"], "GITHUB_RUN_ATTEMPT": producer["run_attempt"]}
         envelope = sidecars.evidence_envelope(env, candidate, [delivered], written,
-            {**recorded, "url": sidecars.binary_url(VERSION, system), "sha256": recorded["binaries"][system]}, VERSION,
+            {**recorded, **tool_identity}, VERSION,
             subject["target"], subject["version"], "https://github.com/owner/repo/releases/download/" + subject["version"], source["commit"], context["created"], [], {delivered: inventory})
+        assert envelope["generator"]["tool"] == tool_identity["url"]
+        assert envelope["generator"]["tool_sha256"] == tool_identity["sha256"]
         (candidate / verify_transferred.EVIDENCE_PATH).write_text(json.dumps(envelope))
         assets = "\n".join(str(file.relative_to(candidate)) for file in [delivered, *(path for path, _ in written[delivered])])
         transferred = root / "transferred"
@@ -119,7 +144,7 @@ def main():
             output = root / f"{name}.json"
             check(tool, fixtures, "inspect", imported / "Spec", imported / "Lock", imported / f"{name}.json", "x86_64-linux", output, refusal=refusal)
             assert not output.exists()
-    print(f"Released Blueprint {VERSION} SBOM contract passed on {system}")
+    print(f"Released Blueprint {VERSION} {'source-app' if args.source else 'native'} SBOM contract passed on {system}")
 
 
 if __name__ == "__main__":
