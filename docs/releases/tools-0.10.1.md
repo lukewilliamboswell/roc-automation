@@ -29,3 +29,19 @@ A hosted smoke test uses the immutable roc-wasm4 0.8.0 consumer, actually instal
 Blueprint 0.11 through the nested action, and executes all four published games.
 Conflicting workspace actions must never run. Source regressions preserve the
 read-only test jobs, isolated issue reporter, and same-revision composition.
+
+The SBOM source-app fallback uses the invocation protocol in its reviewed tool
+record. Legacy records keep `roc run URL --`, which their compilers need for
+app flags; `roc-run-direct-v1` uses `roc run URL` for compilers that forward
+the separator to the app. Unknown or malformed protocols stop before execution.
+The exact compiler check, reviewed native binary preference and all artifact
+bindings remain required. Tests exercise both protocols and trailing flags,
+wrong compilers, invalid metadata and native selection without a compiler.
+
+`setup-blueprint` admits Blueprint 0.12.0 and its matching SBOM tool on all five
+released native systems by reviewed SHA-256. The source app records the November 7
+compiler and direct invocation protocol. The shared controller environment uses
+the matching platform; its October 9 maintenance compiler and locked provider
+identities remain fixed. Adoption verifies exact released bytes, source/workflow
+provenance and subject-bound sidecars; ordinary installations verify the recorded
+hashes locally.

@@ -126,6 +126,26 @@ class PureTests(unittest.TestCase):
                 self.assertTrue(entry["url"].startswith("https://github.com/lukewilliamboswell/roc-blueprint/releases/download/" + version + "/roc-blueprint-sbom-"))
                 self.assertEqual(entry["generator"], f"Tool: blueprint-sbom-{version}")
 
+    def test_source_invocation_defaults_to_legacy_and_selects_explicit_protocols(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "tools.json"
+            record = {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0"}
+            path.write_text(json.dumps({"0.7.0": record}))
+            self.assertEqual(sidecars.source_tool_command("roc", sidecars.sbom_tool("0.7.0", path)), ["roc", "run", TOOL, "--"])
+            for protocol, prefix in (("roc-run-separator-v1", ["roc", "run", TOOL, "--"]),
+                                     ("roc-run-direct-v1", ["roc", "run", TOOL])):
+                with self.subTest(protocol=protocol):
+                    path.write_text(json.dumps({"0.7.0": {**record, "source_invocation": protocol}}))
+                    self.assertEqual(sidecars.source_tool_command("roc", sidecars.sbom_tool("0.7.0", path)), prefix)
+
+    def test_invalid_source_invocation_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "tools.json"
+            for value in (None, True, False, 1, [], {}, "", "direct", "roc-run-direct-v2", "roc-run-direct-v1\n"):
+                path.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "source_invocation": value}}))
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, "recorded SBOM source invocation"):
+                    sidecars.sbom_tool("0.7.0", path)
+
     def test_release_versions_match_semver_without_build_metadata(self):
         for value in ("0.0.1-dry-run", "1.2.3-rc-1", "1.2.3-0", "1.2.3-0a.1-x", "1.2.3--", "1.2.3"):
             with self.subTest(value=value):
@@ -135,12 +155,17 @@ class PureTests(unittest.TestCase):
                 self.assertIsNone(sidecars.VERSION.fullmatch(value))
 
     def test_current_released_tool_has_every_native_system_and_corrected_profile(self):
-        current = sidecars.sbom_tool("0.11.0")
-        self.assertEqual(set(current["binaries"]), set(sidecars.setup_blueprint.SYSTEMS.values()))
-        self.assertEqual(current["compiler"], "nightly-2026-10-28-bad769b")
-        self.assertEqual(current["profile"], "blueprint-spdx-3.0-v2")
+        for version, compiler in (("0.11.0", "nightly-2026-10-28-bad769b"),
+                                  ("0.12.0", "nightly-2026-11-07-ad3a5d2")):
+            with self.subTest(version=version):
+                current = sidecars.sbom_tool(version)
+                self.assertEqual(set(current["binaries"]), set(sidecars.setup_blueprint.SYSTEMS.values()))
+                self.assertEqual(current["compiler"], compiler)
+                self.assertEqual(current["profile"], "blueprint-spdx-3.0-v2")
+                self.assertEqual(current["source_invocation"], "roc-run-direct-v1" if version == "0.12.0" else "roc-run-separator-v1")
         for version in ("0.7.0", "0.8.0"):
             self.assertEqual(sidecars.sbom_tool(version)["profile"], "blueprint-spdx-3.0-v1")
+            self.assertEqual(sidecars.sbom_tool(version)["source_invocation"], "roc-run-separator-v1")
 
     def test_recorded_binaries_map_released_systems_to_digests(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -471,6 +496,46 @@ class EndToEndTests(unittest.TestCase):
         self.assertFalse(self.log.exists())
         self.assertFalse((self.root / "outputs").exists())
 
+    def with_source_invocation(self, protocol):
+        tools = self.root / "source-tools.json"
+        tools.write_text(json.dumps({"0.7.0": {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0", "source_invocation": protocol}}))
+        return patch.object(sidecars, "SBOM_TOOLS", tools)
+
+    def test_explicit_legacy_source_invocation_forwards_trailing_app_flags(self):
+        with self.with_source_invocation("roc-run-separator-v1"):
+            self.run_action(INPUT_FILES="dist/app", INPUT_SPDX_2_3="true")
+        calls = [c["args"] for c in self.calls()]
+        self.assertEqual(calls[0], ["version"])
+        self.assertTrue(all(c[:3] == ["run", TOOL, "--"] for c in calls[1:]))
+        self.assertTrue(any(c[-1] == "--spdx-2.3" for c in calls[1:]))
+        self.assertTrue((self.workspace / "dist/app.spdx-2.3.json").is_file())
+
+    def test_direct_source_invocation_forwards_flags_without_a_separator(self):
+        legacy = 'assert args[:2] == ["run", os.environ["EXPECTED_TOOL"]] and args[2] == "--", args\ncommand, rest = args[3], args[4:]'
+        direct = 'assert args[:2] == ["run", os.environ["EXPECTED_TOOL"]], args\ncommand, rest = args[2], args[3:]'
+        self.assertIn(legacy, FAKE_ROC)
+        (self.bin / "roc").write_text(FAKE_ROC.replace(legacy, direct))
+        with self.with_source_invocation("roc-run-direct-v1"):
+            self.run_action(INPUT_FILES="dist/app", INPUT_SPDX_2_3="true")
+        calls = [c["args"] for c in self.calls()]
+        self.assertEqual(calls[0], ["version"])
+        self.assertTrue(all(c[:2] == ["run", TOOL] and c[2] in ("inspect", "bind", "check") for c in calls[1:]))
+        self.assertTrue(any(c[-1] == "--spdx-2.3" for c in calls[1:]))
+        self.assertTrue((self.workspace / "dist/app.spdx-2.3.json").is_file())
+
+    def test_invalid_source_invocation_stops_before_any_program_runs(self):
+        for value in (None, True, [], {}, "unknown"):
+            with self.subTest(value=value), self.with_source_invocation(value), self.assertRaisesRegex(ValueError, "recorded SBOM source invocation"):
+                self.run_action()
+            self.assertFalse(self.log.exists())
+            self.assertFalse((self.root / "outputs").exists())
+
+    def test_direct_source_invocation_keeps_the_exact_compiler_guard(self):
+        with self.with_source_invocation("roc-run-direct-v1"), self.assertRaisesRegex(ValueError, "needs compiler"):
+            self.run_action(FAKE_ROC_VERSION="Roc compiler version nightly-2026-11-07-ad3a5d2")
+        self.assertEqual([c["args"] for c in self.calls()], [["version"]])
+        self.assertFalse((self.root / "outputs").exists())
+
     def test_a_recorded_native_binary_runs_without_any_compiler(self):
         # The pretend binary is the pretend roc with the `run URL --` prefix stripped.
         binary = FAKE_ROC.replace('assert args[:2] == ["run", os.environ["EXPECTED_TOOL"]] and args[2] == "--", args\ncommand, rest = args[3], args[4:]', 'command, rest = args[0], args[1:]').encode()
@@ -483,7 +548,7 @@ class EndToEndTests(unittest.TestCase):
             served.append(url)
             destination.write_bytes(binary)
 
-        with patch.object(sidecars, "SBOM_TOOLS", tools), patch.dict(os.environ, {**self.env, "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "INPUT_ROC_BINARY": str(self.root / "no-such-roc"), "INPUT_FILES": "dist/app"}, clear=False):
+        with patch.object(sidecars, "SBOM_TOOLS", tools), patch.object(sidecars, "source_tool_command", side_effect=AssertionError("native preference must not enter the source path")), patch.dict(os.environ, {**self.env, "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "INPUT_ROC_BINARY": str(self.root / "no-such-roc"), "INPUT_FILES": "dist/app"}, clear=False):
             sidecars.main(download=serving)
         values = self.outputs()
         self.assertEqual(served, ["https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.7.0/blueprint-sbom-x86_64-linux"])

@@ -34,5 +34,23 @@
       "manifest"
     ],
     "profile": "blueprint-spdx-3.0-v2"
+  },
+  "0.12.0": {
+    "url": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/roc-blueprint-sbom-BnF7gg2KtuLgXa4Avhhksh6JnTE6QyFLVnzUi8ULGUW7.tar.zst",
+    "compiler": "nightly-2026-11-07-ad3a5d2",
+    "generator": "Tool: blueprint-sbom-0.12.0",
+    "binaries": {
+      "x86_64-linux": "2feb407a6c5bd0663d49644b9044db6632a85b5a2146064949bcb71e93eab0e1",
+      "aarch64-linux": "620b4232d1eeda88c332ed28603fd7e8911399e5ec3161598a1183b9cbadc890",
+      "aarch64-darwin": "84162351181658047811ba9453b8775ebc42cb1439083d76f984a17954106b76",
+      "x86_64-darwin": "3f26770c7ee60edaa1634688e16cac88dcc453be5d208e29467f9278c99813fb",
+      "x86_64-windows": "5cc12a581c017d41dc57f7e273026c9eecc86693f27163164a89c98f81307ec9"
+    },
+    "features": [
+      "members",
+      "manifest"
+    ],
+    "profile": "blueprint-spdx-3.0-v2",
+    "source_invocation": "roc-run-direct-v1"
   }
 }

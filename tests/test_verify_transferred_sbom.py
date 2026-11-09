@@ -112,7 +112,7 @@ class TransferredTests(unittest.TestCase):
 
     def test_valid_existing_record_generations_need_no_candidate_program(self):
         with patch("subprocess.run", side_effect=AssertionError("no program may execute")):
-            for blueprint in ("0.7.0", "0.8.0", "0.11.0"):
+            for blueprint in ("0.7.0", "0.8.0", "0.11.0", "0.12.0"):
                 with self.subTest(blueprint=blueprint):
                     self.make_candidate(blueprint)
                     self.assertEqual(self.verify(), self.envelope)

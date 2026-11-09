@@ -117,6 +117,19 @@ release. Native tools are admitted by SHA-256; app bundles use a verified conten
 hash and the recorded compiler. Output manifests must match that tool's recorded
 profile. Run these repository-evaluating actions only in read-only jobs.
 
+The source app's invocation is part of the reviewed tool record. A compiler can
+consume an argument separator or forward it to the app, while older compilers
+need that separator to pass app flags. The action selects either
+`roc-run-separator-v1` (`roc run URL --`) or `roc-run-direct-v1`
+(`roc run URL`) from `source_invocation`; omitted fields retain the legacy
+separator protocol. It rejects unknown or malformed protocols before executing
+anything and still requires the recorded compiler. It does not infer a protocol
+from a date or retry another command after an error. Native binaries remain
+preferred where a reviewed digest exists. Regression tests cover both protocols,
+trailing app flags, compiler mismatches and refusal before execution; source-app
+acceptance runs the released tool as well as its native counterpart. Admission
+must verify the chosen compiler/app interface when that record changes.
+
 Only source `.tar.zst` bundles enter archive member enumeration. Each member must
 be accounted for by the reviewed composition or generated member records.
 Other subjects, including ZIP and PDF files, require a reviewed composition and

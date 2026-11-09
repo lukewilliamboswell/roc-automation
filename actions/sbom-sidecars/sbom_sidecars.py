@@ -33,6 +33,7 @@ SIDECAR_SUFFIXES = (".spdx.json", ".cdx.json", ".spdx-2.3.json")
 MANIFEST_SUFFIX = ".sbom-manifest.json"
 TOOL_FEATURES = ("members", "manifest")
 DOCUMENT_PROFILES = ("blueprint-spdx-3.0-v1", "blueprint-spdx-3.0-v2")
+SOURCE_INVOCATIONS = ("roc-run-separator-v1", "roc-run-direct-v1")
 MEMBER_ID = re.compile(r"[^A-Za-z0-9.-]+")
 MAX_JSON_BYTES = 1024 * 1024
 MAX_FILES = 256
@@ -102,7 +103,8 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
     Every release records the Roc app bundle and the compiler it needs. A
     release that also ships `blueprint-sbom-<system>` binaries records their
     reviewed SHA-256 per system; the action then runs the binary and needs
-    no compiler.
+    no compiler. Source invocation is a bounded compiler/app protocol; omitted
+    fields preserve the legacy separator prefix.
     """
     tools = json.loads(path.read_text(encoding="utf-8"))
     entry = tools.get(version)
@@ -127,7 +129,18 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
     profile = entry.get("profile", DOCUMENT_PROFILES[0])
     if profile not in DOCUMENT_PROFILES:
         raise Refusal(f"the recorded SBOM document profile for roc-blueprint {version} is unsupported")
-    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features), "profile": profile}
+    source_invocation = entry.get("source_invocation", SOURCE_INVOCATIONS[0])
+    if not isinstance(source_invocation, str) or source_invocation not in SOURCE_INVOCATIONS:
+        raise Refusal(f"the recorded SBOM source invocation for roc-blueprint {version} must be one of {', '.join(SOURCE_INVOCATIONS)}")
+    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features), "profile": profile, "source_invocation": source_invocation}
+
+
+def source_tool_command(roc: str, tool: dict) -> list[str]:
+    """Use the reviewed compiler/app interface, never retry another prefix."""
+    command = [roc, "run", tool["url"]]
+    if tool["source_invocation"] == "roc-run-separator-v1":
+        command.append("--")
+    return command
 
 
 def binary_url(version: str, system: str) -> str:
@@ -448,7 +461,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
                 f"roc-binary reports {compiler_output.strip().splitlines()[0] if compiler_output.strip() else 'nothing'!r}, but roc-blueprint {blueprint_version}'s SBOM tool "
                 f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or roc-lang/setup-roc with nightly-tag"
             )
-        tool_command = [roc, "run", tool["url"], "--"]
+        tool_command = source_tool_command(roc, tool)
         tool_identity = {"url": tool["url"], "sha256": ""}
 
     commit = succeed(run, ["git", "rev-parse", "HEAD"], workspace, "git rev-parse HEAD").strip()

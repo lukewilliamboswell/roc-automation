@@ -10,6 +10,7 @@ changed supplier document, and a sidecar left from an earlier build.
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -131,9 +132,14 @@ def main():
     _, values = run(SIDECARS, sidecar_env)
     expected = [str(archive)] + [f"{archive}{suffix}" for suffix in (".cdx.json", ".sbom-manifest.json", ".spdx-2.3.json", ".spdx.json")]
     assert values["assets"].splitlines() == expected, values["assets"]
-    blueprint_version = "0.11.0" if "/0.11.0/" in (workspace / "Blueprint.roc").read_text() else "0.8.0"
-    expected_profile = "blueprint-spdx-3.0-v2" if blueprint_version == "0.11.0" else "blueprint-spdx-3.0-v1"
-    expected_compiler = "nightly-2026-10-28-bad769b" if blueprint_version == "0.11.0" else "nightly-2026-10-21-5349569"
+    platform = re.search(r'platform "https://github\.com/lukewilliamboswell/roc-blueprint/releases/download/([^/]+)/', (workspace / "Blueprint.roc").read_text())
+    assert platform, "fixture must name a released Blueprint platform"
+    blueprint_version = platform[1]
+    expected_compiler, expected_profile = {
+        "0.8.0": ("nightly-2026-10-21-5349569", "blueprint-spdx-3.0-v1"),
+        "0.11.0": ("nightly-2026-10-28-bad769b", "blueprint-spdx-3.0-v2"),
+        "0.12.0": ("nightly-2026-11-07-ad3a5d2", "blueprint-spdx-3.0-v2"),
+    }[blueprint_version]
     assert values["compiler"] == expected_compiler and values["commit"] == commit
     digest = hashlib.sha256((workspace / archive).read_bytes()).hexdigest()
     spdx = json.loads((workspace / f"{archive}.spdx.json").read_text())

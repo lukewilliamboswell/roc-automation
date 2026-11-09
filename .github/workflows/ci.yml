@@ -153,9 +153,10 @@ jobs:
           - { runner: ubuntu-24.04, nix: 'true', version: '' }
           - { runner: ubuntu-24.04-arm, nix: 'true', version: '' }
           - { runner: macos-15, nix: 'true', version: '' }
-          # Windows and Intel macOS run Blueprint without Nix, from the first
-          # release with both binaries; this repository's own Blueprint.roc
-          # names an older one.
+          # Exercise the current admitted release on all five systems, and
+          # retain the older explicit-version installation contract.
+          - { runner: macos-15-intel, nix: 'false', version: '' }
+          - { runner: windows-2025, nix: 'false', version: '' }
           - { runner: macos-15-intel, nix: 'false', version: 0.10.0 }
           - { runner: windows-2025, nix: 'false', version: 0.10.0 }
     runs-on: ${{ matrix.runner }}
@@ -242,11 +243,12 @@ jobs:
         run: python3 tools/roc-build-runner/tests/test_cli.py -v
 
   sbom-released-tool:
-    name: Released SBOM tool contract (${{ matrix.runner }})
+    name: Released SBOM tool contract (${{ matrix.runner }}, Blueprint ${{ matrix.blueprint }})
     strategy:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+        blueprint: [0.11.0, 0.12.0]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -256,7 +258,34 @@ jobs:
           persist-credentials: false
       - name: Exercise the admitted native tool and its reviewed release fixtures
         shell: bash
+        env:
+          BLUEPRINT_VERSION: ${{ matrix.blueprint }}
         run: '"${{ runner.os == ''Windows'' && ''python'' || ''python3'' }}" tests/check_released_sbom_tool.py'
+
+  sbom-source-tool:
+    name: Released source SBOM contract (Blueprint ${{ matrix.blueprint }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { blueprint: 0.11.0, compiler: nightly-2026-10-28-bad769b }
+          - { blueprint: 0.12.0, compiler: nightly-2026-11-07-ad3a5d2 }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4
+        with:
+          version: nightly
+          nightly-tag: ${{ matrix.compiler }}
+      - name: Exercise the released source app and trailing format flags
+        env:
+          BLUEPRINT_VERSION: ${{ matrix.blueprint }}
+        run: python3 tests/check_released_sbom_tool.py --source
 
   sbom-actions:
     name: SBOM sidecars and supplier chain (${{ matrix.system }}, Blueprint ${{ matrix.blueprint }})
@@ -266,10 +295,13 @@ jobs:
         include:
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.8.0 }
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.11.0 }
+          - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.12.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.8.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.11.0 }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.12.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.8.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.11.0 }
+          - { runner: macos-15, system: aarch64-darwin, blueprint: 0.12.0 }
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -285,13 +317,20 @@ jobs:
         run: |
           cp examples/sbom-chain/Blueprint.roc examples/sbom-chain/Blueprint.lock .
           cp -R examples/sbom-chain/package examples/sbom-chain/app examples/sbom-chain/sbom .
-          if [ "$BLUEPRINT_VERSION" = 0.11.0 ]; then
-            python3 - <<'PY'
+          python3 - <<'PY_FIXTURE'
+          import os
           from pathlib import Path
           path = Path("Blueprint.roc")
-          path.write_text(path.read_text().replace("0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu", "0.11.0/EuSPs8vc71qJNFg29YzegvVRL1bR9pKqUYDHFiSCPTQ1"))
-          PY
-          fi
+          current = "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst"
+          platforms = {
+              "0.8.0": current,
+              "0.11.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.11.0/EuSPs8vc71qJNFg29YzegvVRL1bR9pKqUYDHFiSCPTQ1.tar.zst",
+              "0.12.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/GSb71LxYHqLohZz8jMfawWEwQcyev9ZdVC26sfsDwfq8.tar.zst",
+          }
+          source = path.read_text()
+          assert source.count(current) == 1
+          path.write_text(source.replace(current, platforms[os.environ["BLUEPRINT_VERSION"]]))
+          PY_FIXTURE
       - uses: ./actions/setup-blueprint
       # The SBOM tool bundle runs on the exact Roc release its Blueprint release records.
       - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697

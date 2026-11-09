@@ -25,7 +25,7 @@ A test hangs, hides diagnostics or substitutes smoke for deeper testing::
 xref:testing.adoc#risk-test-evidence[Test evidence] and xref:optional-workflows.adoc#risk-campaign-separation[campaign separation].
 
 Utility copies, companions or interfaces drift::
-xref:shared-utilities.adoc#risk-utility-contracts[Utility contracts] and xref:policy.adoc#risk-policy-evidence[policy evidence].
+xref:shared-utilities.adoc#risk-utility-contracts[Utility contracts], xref:software-bill-of-materials.adoc#generate-sidecars-with-the-shared-actions[SBOM tool invocation] and xref:policy.adoc#risk-policy-evidence[policy evidence].
 
 Composition records omit components or bind the wrong artifact::
 xref:software-bill-of-materials.adoc#risk-component-evidence[Component evidence].
