@@ -119,6 +119,33 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
             self.assertTrue(Path(values["archive-helper"]).is_file())
             build.assert_called_once()
 
+    def test_admitted_package_compiler_retains_the_selected_pair_and_execution_boundary(self):
+        import re
+
+        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
+        steps = re.split(r"(?m)^    - ", action)[1:]
+        installers = [step for step in steps if "uses: roc-lang/setup-roc@" in step]
+        self.assertEqual(len(installers), 2)
+        tooling, package = installers
+        # Controller tooling is still fixed; the new transport must not turn
+        # that build into execution by a consumer-selected compiler.
+        self.assertIn("nightly-tag: nightly-2026-10-09-258ab27", tooling)
+        self.assertNotIn("inputs.nightly-tag", tooling)
+        self.assertTrue(package.startswith("if: inputs.phase == 'test'\n"))
+        self.assertIn("nightly-tag: ${{ inputs.nightly-tag }}", package)
+        self.assertIn("download-method: asset-api", package)
+        self.assertRegex(package, r"uses: roc-lang/setup-roc@[0-9a-f]{40}\n")
+        self.assertNotIn("nightly-tag: ''", package)
+        self.assertLess(action.index(package), action.index("    - id: run\n"))
+
+        workflow = (ROOT / ".github/workflows/release-package.yml").read_text()
+        for name, selected in (
+                ("Install the package compiler", "${{ steps.nightly.outputs.tag }}"),
+                ("Install the package compiler this run resolved", "${{ needs.build.outputs.nightly }}")):
+            block = workflow.split(f"      - name: {name}\n", 1)[1].split("\n      - ", 1)[0]
+            self.assertIn("nightly-tag: " + selected, block)
+            self.assertIn("download-method: asset-api", block)
+
     def test_report_job_has_no_consumer_execution_or_artifact_download(self):
         workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
         report = workflow.split("\n  report:\n", 1)[1]

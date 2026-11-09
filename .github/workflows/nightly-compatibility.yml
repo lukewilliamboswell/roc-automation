@@ -22,6 +22,10 @@ on:
         description: Optional JSON argv array for native prerequisites
         type: string
         default: '[]'
+      blueprint-core-version:
+        description: Admit the reviewed Blueprint Core source in the managed cache; requires an empty setup-command
+        type: string
+        default: ''
       install-blueprint:
         type: boolean
         default: false
@@ -108,6 +112,7 @@ jobs:
           selection: ${{ runner.temp }}/nightly-selection/selection.json
           runner: ${{ matrix.runner }}
           setup-command: ${{ inputs.setup-command }}
+          blueprint-core-version: ${{ inputs.blueprint-core-version }}
           install-blueprint: ${{ inputs.install-blueprint }}
           install-nix: ${{ inputs.install-nix }}
           case-timeout-ms: ${{ inputs.case-timeout-ms }}

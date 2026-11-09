@@ -215,7 +215,11 @@ class SetupBlueprintTests(unittest.TestCase):
         (root / "temp").mkdir(exist_ok=True)
         (root / "workspace").mkdir(exist_ok=True)
         seen = []
-        with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", serving(content, seen)):
+        # These tests isolate CLI selection/hash admission with synthetic binary
+        # bytes. Core ordering, failure and native payload admission have their
+        # own integration and fixed-source tests.
+        with patch.dict(os.environ, env, clear=True), patch.object(setup, "fetch", serving(content, seen)), \
+                patch.object(setup.core_sources, "admit", return_value=None):
             with patch.object(setup, "known_releases", lambda: known):
                 setup.main()
         return seen

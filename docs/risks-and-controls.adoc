@@ -10,7 +10,7 @@ Executed code crosses into publication authority::
 xref:security-model.adoc#risk-execution-authority[Execution boundaries], xref:actions.adoc#risk-action-boundaries[Action wrappers] and xref:settings.adoc#risk-settings-enforcement[effective settings].
 
 Storage or an upgrade substitutes executable bytes::
-xref:artifact-verification.adoc#risk-artifact-admission[Artifact admission], xref:pure-package.adoc#risk-utility-provisioning[provisioning], xref:environment.adoc#risk-tooling-selection[tool selection] and xref:maintenance.adoc#risk-input-upgrades[upgrades].
+xref:artifact-verification.adoc#risk-artifact-admission[Artifact admission], xref:security-model.adoc#compilers[compiler admission], xref:security-model.adoc#blueprint-core-bootstrap[Core bootstrap], xref:pure-package.adoc#risk-utility-provisioning[provisioning], xref:environment.adoc#risk-tooling-selection[tool selection] and xref:maintenance.adoc#risk-input-upgrades[upgrades].
 
 Tested source or assets differ from the delivered release::
 xref:workflows.adoc#risk-release-evidence[Release evidence], xref:workflows.adoc#choose-the-version-with-roc-bump[version and unchanged-package evidence], xref:examples.adoc#risk-example-identity[example archives] and xref:linker-input-releases.adoc#risk-linker-publication[native-input publication].

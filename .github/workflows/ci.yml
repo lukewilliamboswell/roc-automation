@@ -160,6 +160,8 @@ jobs:
           - { runner: macos-15-intel, nix: 'false', version: 0.10.0 }
           - { runner: windows-2025, nix: 'false', version: 0.10.0 }
     runs-on: ${{ matrix.runner }}
+    env:
+      PYTHON_COMMAND: ${{ startsWith(matrix.runner, 'windows-') && 'python' || 'python3' }}
     defaults:
       run:
         shell: bash
@@ -167,10 +169,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Select private native Core test caches
+        run: |
+          "$PYTHON_COMMAND" - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write("XDG_CACHE_HOME=" + str(root / "blueprint-core-action-cache") + "\n")
+              output.write("ROC_CACHE_DIR=" + str(root / "blueprint-core-action-ir") + "\n")
+          PY
+      - name: Exercise native Core admission and installer boundaries
+        if: matrix.version == ''
+        run: |
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_blueprint_core_sources.py -v
+          "$PYTHON_COMMAND" -m unittest discover -s tests -p test_setup_blueprint.py -v
       - id: blueprint
         uses: ./actions/setup-blueprint
         with:
-          install-nix: ${{ matrix.nix }}
+          # Check real configuration evaluation before installing any provider.
+          install-nix: 'false'
+          version: ${{ matrix.version }}
+      - name: Evaluate known Core with the installed native CLI before providers
+        if: matrix.version == ''
+        env:
+          BLUEPRINT: ${{ steps.blueprint.outputs.blueprint-path }}
+          BLUEPRINT_SYSTEM: ${{ steps.blueprint.outputs.system }}
+          BLUEPRINT_VERSION: ${{ steps.blueprint.outputs.version }}
+        run: '"$PYTHON_COMMAND" tests/run_blueprint_core_smoke.py'
+      - name: Exercise requested provider installation after native Core evaluation
+        if: matrix.nix == 'true'
+        uses: ./actions/setup-blueprint
+        with:
+          install-nix: 'true'
           version: ${{ matrix.version }}
       - name: Check the installed command
         env:
@@ -187,6 +218,17 @@ jobs:
             nix --version
             blueprint --help
           fi
+      - name: Install the fixed compiler only after the compiler-free native checks
+        if: matrix.version == ''
+        uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
+        with:
+          version: nightly
+          nightly-tag: nightly-2026-11-07-ad3a5d2
+          download-method: asset-api
+          cache: 'false'
+      - name: Exercise explicit trusted-compiler Core admission in fresh source and IR caches
+        if: matrix.version == ''
+        run: '"$PYTHON_COMMAND" tests/run_blueprint_core_smoke.py --compiler-mode'
   nightly-report-action:
     runs-on: ubuntu-24.04
     permissions:
@@ -278,10 +320,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4
+      - uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
         with:
           version: nightly
           nightly-tag: ${{ matrix.compiler }}
+          download-method: asset-api
       - name: Exercise the released source app and trailing format flags
         env:
           BLUEPRINT_VERSION: ${{ matrix.blueprint }}

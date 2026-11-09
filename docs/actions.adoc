@@ -35,8 +35,9 @@ The setup action builds nothing.
 
 The executable cache is enabled by default. Its exact identity includes the
 Blueprint release, runner system and reviewed SHA-256. Restored bytes are copied
-into a private file and rehashed before installation; a verified hit makes no
-GitHub Releases request. A version or digest change selects a new cache entry.
+into a private file and rehashed before installation; a verified hit avoids the
+executable download. Core source admission, described below, is independent of
+this cache. A version or digest change selects a new cache entry.
 `cache-binary: false` disables this cache. `binary-cache-hit` reports actual
 verified reuse, rather than trusting the cache service's hit flag.
 
@@ -107,6 +108,24 @@ installs nothing. It takes no token and needs no cache account.
 xref:security-model.adoc#the-blueprint-binary[The `blueprint` binary] states
 what the checksum does and does not establish.
 
+For the recorded Blueprint 0.12.0 executable digests, the installer also admits
+that release's known Core source before exposing `blueprint`. It downloads one
+fixed public release asset through the official asset API, checks its recorded
+compressed and tar SHA-256, and verifies all 25 regular files before an atomic
+insertion into Roc's package cache. This prepares configuration evaluation before
+providers are available. It needs either Python 3.14 with its optional
+`compression.zstd` module or a trusted host `zstd`; it installs no compiler.
+Older releases and caller-supplied executable digests that differ from the
+recorded 0.12.0 digest retain their existing installation behavior.
+
+On reuse, the installer checks every Core file again. It rejects partial,
+modified, linked or otherwise unsafe entries, and invalidates only an adjacent
+regular Core `.deps` sidecar after successful verification. It does not restore
+compiled IR or rotate caches. The cache must be private to the caller; Windows
+checks regular files and reparse points without claiming to verify SID ownership.
+See xref:security-model.adoc#blueprint-core-bootstrap[Core bootstrap admission]
+for the fixed source authority and its limits.
+
 [#blueprint-tool]
 == `actions/blueprint-tool`
 
@@ -141,13 +160,18 @@ action in this repository. Reference it by full commit SHA like any other.
 ----
 - uses: roc-lang/setup-roc@REVIEWED_FULL_SHA
   with:
-    version: nightly-new-compiler
+    version: nightly
     nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+    download-method: asset-api
 ----
 
 It installs the compiler on `PATH` as `roc`. With `nightly-tag` empty it
 installs the latest release of `roc-lang/nightlies`; with a tag it installs that
-release.
+release. Choose a reviewed action revision supporting `asset-api`: this mode
+checks the selected archive's size and SHA-256 from official release metadata
+before extraction and selects its exact executable. See
+xref:security-model.adoc#compilers[the compiler trust boundary] for what that
+metadata establishes.
 
 A workflow with more than one job resolves the latest tag once, in its first
 job, and passes it to every job through `nightly-tag`, so that one run uses one
