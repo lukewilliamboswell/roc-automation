@@ -130,6 +130,14 @@ trailing app flags, compiler mismatches and refusal before execution; source-app
 acceptance runs the released tool as well as its native counterpart. Admission
 must verify the chosen compiler/app interface when that record changes.
 
+The reviewed tool record also declares its JSON payload limit and whether
+`bind` writes all three standard formats in one operation. Generation
+checks the staged composition against that limit after adding members or
+imports. Transfer verification applies the same limit to the sidecar
+documents and requires a complete manifest to name all three. The transfer
+envelope and binding manifest retain their 1 MiB limits. Tests exercise
+oversized inputs, legacy tools and a missing entry in a complete manifest.
+
 Only source `.tar.zst` bundles enter archive member enumeration. Each member must
 be accounted for by the reviewed composition or generated member records.
 Other subjects, including ZIP and PDF files, require a reviewed composition and

@@ -30,7 +30,7 @@ inputs:
     description: Document revision; a correction of a published SBOM increments it
     default: '1'
   spdx-2-3:
-    description: Also write an SPDX 2.3 rendering for consumers that read only SPDX 2
+    description: Request SPDX 2.3 from tools that bind it separately. Tools with a complete manifest always include SPDX 2.3.
     default: 'false'
   archive-members:
     description: For source .tar.zst bundles with a tool that lists archive members, generate a component per member the composition does not account for, or reviewed to require the composition to account for every member itself

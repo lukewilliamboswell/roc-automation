@@ -49,7 +49,7 @@ if command == "inspect":
     if os.environ.get("INSPECT_REFUSES"):
         sys.stderr.write("SBOM: Invalid(\"" + os.environ["INSPECT_REFUSES"] + "\")\n"); sys.exit(1)
     with open(output, "x") as out:
-        json.dump({"profile": os.environ.get("FAKE_PROFILE", "blueprint-spdx-3.0-v1"), "target": target, "components": [c["id"] for c in comp["components"]], "coverage": comp.get("coverage", []) + [{"scope": "sbom:" + e["component"], "status": "incomplete", "reason": "No supplier SBOM: " + e["reason"], "contact": e["contact"]} for e in comp.get("unavailable_sboms", [])], "imports": [e["id"] for e in comp.get("imported_documents", [])]}, out)
+        json.dump({"profile": os.environ.get("FAKE_PROFILE", "blueprint-spdx-3.0-v1"), "target": target, "components": [c["id"] for c in comp["components"]], "padding": comp.get("padding", ""), "coverage": comp.get("coverage", []) + [{"scope": "sbom:" + e["component"], "status": "incomplete", "reason": "No supplier SBOM: " + e["reason"], "contact": e["contact"]} for e in comp.get("unavailable_sboms", [])], "imports": [e["id"] for e in comp.get("imported_documents", [])]}, out)
     print(output); sys.exit(0)
 if command == "bind":
     inventory, subject, context, artifact = rest[:4]
@@ -57,6 +57,8 @@ if command == "bind":
     assert os.path.basename(artifact) == subject["filename"], "subject filename differs from final artifact"
     digest = hashlib.sha256(open(artifact, "rb").read()).hexdigest()
     outputs = [(artifact + ".spdx.json", "SPDX-3.0.1"), (artifact + ".cdx.json", "CycloneDX-1.7")] if len(rest) == 4 else [(rest[4], {"--spdx-2.3": "SPDX-2.3", "--cyclonedx": "CycloneDX-1.7"}.get(rest[5] if len(rest) > 5 else "", "SPDX-3.0.1"))]
+    if len(rest) == 4 and "complete-manifest" in features:
+        outputs.append((artifact + ".spdx-2.3.json", "SPDX-2.3"))
     for path, fmt in outputs:
         with open(path, "x") as out:
             json.dump({"format": fmt, "subject": {**subject, "sha256": digest}, "context": context, "inventory": os.path.basename(inventory)}, out)
@@ -251,6 +253,18 @@ class PureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "more than"):
                 sidecars.release_files("\n".join(["dist/app"] * (sidecars.MAX_FILES + 1)), workspace)
 
+    def test_reviewed_payload_bounds_and_complete_binding_are_explicit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "tools.json"
+            record = {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0"}
+            for payload_mib in (True, 0, 17, "16"):
+                path.write_text(json.dumps({"0.7.0": {**record, "payload_mib": payload_mib}}))
+                with self.subTest(payload_mib=payload_mib), self.assertRaisesRegex(ValueError, "1 or 16 MiB"):
+                    sidecars.sbom_tool("0.7.0", path)
+            path.write_text(json.dumps({"0.7.0": {**record, "features": ["complete-manifest"]}}))
+            with self.assertRaisesRegex(ValueError, "requires manifest"):
+                sidecars.sbom_tool("0.7.0", path)
+
     def test_a_sidecar_left_from_an_earlier_build_is_stale_and_refused(self):
         with tempfile.TemporaryDirectory() as temporary:
             file = Path(temporary) / "app"
@@ -443,6 +457,24 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(len(binds), 2)
         self.assertEqual(binds[0][4:7], binds[1][4:7])
         self.assertEqual(binds[1][-2:], [str(self.workspace / "dist/app.spdx-2.3.json"), "--spdx-2.3"])
+
+    def test_large_reviewed_tool_binds_once_and_checks_the_complete_manifest(self):
+        composition_path = self.workspace / "sbom/composition.json"
+        composition_path.write_text(json.dumps(composition(padding="x" * sidecars.MAX_JSON_BYTES)))
+        with self.assertRaisesRegex(ValueError, "composition exceeds the 1 MiB"):
+            self.run_action(INPUT_FILES="dist/app")
+        record = {"url": TOOL, "compiler": COMPILER, "generator": "Tool: blueprint-sbom-0.7.0",
+                  "features": ["manifest", "complete-manifest"], "payload_mib": 16}
+        registry = self.root / "tools.json"
+        registry.write_text(json.dumps({"0.7.0": record}))
+        with patch.object(sidecars, "SBOM_TOOLS", registry):
+            values = self.run_action(INPUT_FILES="dist/app", INPUT_SPDX_2_3="true",
+                                     FAKE_FEATURES="manifest,complete-manifest")
+        self.assertIn("dist/app.spdx-2.3.json", values["assets"].splitlines())
+        commands = [call["args"][3:] for call in self.calls() if call["args"][:1] == ["run"]]
+        self.assertEqual([command[0] for command in commands], ["inspect", "bind", "check"])
+        self.assertEqual(commands[-1][1::2], ["--manifest", "--inventory", "--artifacts"])
+        self.assertEqual(len(commands[-1]), 7)
 
     def test_imports_file_joins_the_composition_before_inspect(self):
         (self.workspace / "sbom/imports.json").write_text(json.dumps({"profile": "roc-automation-sbom-imports-v1", "imported_documents": [{"id": "lib-sbom", "subject": {"component": "lib"}}], "unavailable_sboms_stub": []}))

@@ -31,7 +31,7 @@ import setup_blueprint  # noqa: E402
 SBOM_TOOLS = Path(__file__).resolve().parents[1] / "setup-blueprint" / "sbom-tools.json"
 SIDECAR_SUFFIXES = (".spdx.json", ".cdx.json", ".spdx-2.3.json")
 MANIFEST_SUFFIX = ".sbom-manifest.json"
-TOOL_FEATURES = ("members", "manifest")
+TOOL_FEATURES = ("members", "manifest", "complete-manifest")
 DOCUMENT_PROFILES = ("blueprint-spdx-3.0-v1", "blueprint-spdx-3.0-v2")
 SOURCE_INVOCATIONS = ("roc-run-separator-v1", "roc-run-direct-v1")
 MEMBER_ID = re.compile(r"[^A-Za-z0-9.-]+")
@@ -71,14 +71,14 @@ def clean(value: str) -> bool:
     return bool(value) and not any(ord(c) < 32 or ord(c) == 127 for c in value)
 
 
-def read_bounded_json(path: Path, what: str) -> dict:
+def read_bounded_json(path: Path, what: str, limit: int = MAX_JSON_BYTES) -> dict:
     """Read a bounded regular JSON object, refusing duplicate keys."""
     if path.is_symlink() or not path.is_file():
         raise Refusal(f"{what} must be a regular file: {path}")
     with path.open("rb") as source:
-        content = source.read(MAX_JSON_BYTES + 1)
-    if len(content) > MAX_JSON_BYTES:
-        raise Refusal(f"{what} exceeds the 1 MiB bound Blueprint accepts: {path}")
+        content = source.read(limit + 1)
+    if len(content) > limit:
+        raise Refusal(f"{what} exceeds the {limit // MAX_JSON_BYTES} MiB bound Blueprint accepts: {path}")
 
     def no_duplicates(pairs):
         record = {}
@@ -132,7 +132,12 @@ def sbom_tool(version: str, path: Path = SBOM_TOOLS) -> dict:
     source_invocation = entry.get("source_invocation", SOURCE_INVOCATIONS[0])
     if not isinstance(source_invocation, str) or source_invocation not in SOURCE_INVOCATIONS:
         raise Refusal(f"the recorded SBOM source invocation for roc-blueprint {version} must be one of {', '.join(SOURCE_INVOCATIONS)}")
-    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features), "profile": profile, "source_invocation": source_invocation}
+    payload_mib = entry.get("payload_mib", 1)
+    if type(payload_mib) is not int or payload_mib not in (1, 16):
+        raise Refusal(f"the recorded SBOM payload bound for roc-blueprint {version} must be 1 or 16 MiB")
+    if "complete-manifest" in features and "manifest" not in features:
+        raise Refusal(f"the complete-manifest feature for roc-blueprint {version} requires manifest")
+    return {"url": url, "compiler": compiler, "generator": generator, "binaries": dict(binaries), "features": list(features), "profile": profile, "source_invocation": source_invocation, "payload_bytes": payload_mib * MAX_JSON_BYTES}
 
 
 def source_tool_command(roc: str, tool: dict) -> list[str]:
@@ -324,10 +329,12 @@ def private_directory(directory: Path) -> Path:
     return directory
 
 
-def write_json(path: Path, value: dict) -> None:
+def write_json(path: Path, value: dict, limit: int | None = None) -> None:
     with path.open("x", encoding="utf-8") as output:
         json.dump(value, output, indent=2, sort_keys=True)
         output.write("\n")
+    if limit is not None and path.stat().st_size > limit:
+        raise Refusal(f"staged composition exceeds the {limit // MAX_JSON_BYTES} MiB bound Blueprint accepts: {path}")
 
 
 def dependency_report(composition: dict, inventory: dict) -> list[dict[str, str]]:
@@ -437,14 +444,15 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
 
     files = release_files(env.get("INPUT_FILES", ""), workspace)
     refuse_stale_sidecars(files)
-    composition_path = workspace / (env.get("INPUT_COMPOSITION", "").strip() or "sbom/composition.json")
-    composition = read_bounded_json(composition_path, "composition")
-    imports_name = env.get("INPUT_IMPORTS", "").strip()
-    imports = read_bounded_json(workspace / imports_name, "imports") if imports_name else None
-    composition = merge_imports(composition, imports, imports_name)
-
     blueprint_version = setup_blueprint.version_in(setup_blueprint.read_config(workspace / "Blueprint.roc"))
     tool = sbom_tool(blueprint_version, SBOM_TOOLS)
+    payload_bytes = tool["payload_bytes"]
+    complete_manifest = "complete-manifest" in tool["features"]
+    composition_path = workspace / (env.get("INPUT_COMPOSITION", "").strip() or "sbom/composition.json")
+    composition = read_bounded_json(composition_path, "composition", payload_bytes)
+    imports_name = env.get("INPUT_IMPORTS", "").strip()
+    imports = read_bounded_json(workspace / imports_name, "imports", payload_bytes) if imports_name else None
+    composition = merge_imports(composition, imports, imports_name)
     system = setup_blueprint.SYSTEMS.get((env.get("RUNNER_OS", ""), env.get("RUNNER_ARCH", "")), "")
     expected = tool["binaries"].get(system, "")
     if expected:
@@ -498,14 +506,14 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
             if "has no supplier SBOM" in message:
                 hint = "; run actions/fetch-dependency-sboms to fetch the supplier's sidecar by naming convention, or complete the unavailable_sboms stub it reports"
             raise Refusal(f"inspect refused the composition for {target}: {message}{hint}")
-        return read_bounded_json(inventory_path, "inventory")
+        return read_bounded_json(inventory_path, "inventory", payload_bytes)
 
     inventories: dict[Path, Path] = {}
     inventory_path = staging / "inventory.json"
     if len(member_files) != len(files):
         # Composition-only inventories apply to binaries, ZIPs and PDFs. Only
         # source .tar.zst bundles enter the archive member listing path.
-        write_json(staging / "composition.json", composition)
+        write_json(staging / "composition.json", composition, payload_bytes)
         inventory = inspect(staging / "composition.json", inventory_path, None)
         inventories = {file: inventory_path for file in files if file not in member_files}
     written: dict[Path, list[tuple[Path, str]]] = {}
@@ -517,9 +525,9 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
             # it, account for every member, and inspect this file's inventory.
             listing_path = directory / "members.json"
             succeed(run, tool_command + ["members", str(file), str(listing_path)], staging, f"members {file.name}")
-            listing = read_bounded_json(listing_path, "members listing")
+            listing = read_bounded_json(listing_path, "members listing", payload_bytes)
             accounted = member_components(composition, listing) if archive_members == "generate" else composition
-            write_json(directory / "composition.json", accounted)
+            write_json(directory / "composition.json", accounted, payload_bytes)
             inventories[file] = directory / "inventory.json"
             inventory = inspect(directory / "composition.json", inventories[file], listing_path)
             if index == 0:
@@ -528,10 +536,10 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         write_json(directory / "context.json", context_for(namespace_base, commit, file.name, revision, created, author, tool["generator"]))
         base = tool_command + ["bind", str(inventories[file]), str(directory / "subject.json"), str(directory / "context.json"), str(file)]
         succeed(run, base, staging, f"bind {file.name}")
-        if spdx_2_3:
+        if spdx_2_3 and not complete_manifest:
             succeed(run, base + [str(file.with_name(file.name + ".spdx-2.3.json")), "--spdx-2.3"], staging, f"bind {file.name} (SPDX 2.3)")
         written[file] = []
-        for suffix in sidecar_suffixes(spdx_2_3):
+        for suffix in sidecar_suffixes(spdx_2_3 or complete_manifest):
             sidecar = file.with_name(file.name + suffix)
             if sidecar.is_symlink() or not sidecar.is_file():
                 raise Refusal(f"bind did not write {sidecar}")
@@ -551,7 +559,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
         documents = [sidecar for sidecar, _ in written[file]]
         if file in manifests:
             command += ["--manifest", str(manifests[file][0])]
-            documents = [sidecar for sidecar in documents if sidecar.name.endswith(".spdx-2.3.json")]
+            documents = [] if complete_manifest else [sidecar for sidecar in documents if sidecar.name.endswith(".spdx-2.3.json")]
         command += ["--inventory", str(inventories[file]), "--artifacts", str(file.parent)] + [str(sidecar) for sidecar in documents]
         succeed(run, command, staging, f"check {file.name}")
 
