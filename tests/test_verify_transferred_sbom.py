@@ -117,6 +117,47 @@ class TransferredTests(unittest.TestCase):
                     self.make_candidate(blueprint)
                     self.assertEqual(self.verify(), self.envelope)
 
+    def test_reviewed_larger_sidecar_and_complete_manifest_are_both_required(self):
+        for subject in self.envelope["subjects"]:
+            manifest_entry = subject["sidecars"][-1]
+            manifest = json.loads((self.root / manifest_entry["path"]).read_text())
+            for sidecar in subject["sidecars"][:-1]:
+                if sidecar["format"] == "SPDX-3.0.1":
+                    path = self.root / sidecar["path"]
+                    path.write_bytes(path.read_bytes() + b" " * verifier.MAX_JSON_BYTES)
+                    sidecar.update(self.entry(sidecar["path"]))
+            manifest["sidecars"] = [
+                {"filename": item["name"], "format": item["format"].lower(),
+                 "size": item["size"], "sha256": item["sha256"]}
+                for item in subject["sidecars"][:-1]
+            ]
+            self.write(manifest_entry["path"], manifest)
+            manifest_entry.update(self.entry(manifest_entry["path"]))
+        self.save()
+        with self.assertRaisesRegex(ValueError, "exceeds its file size bound"):
+            self.verify()
+
+        base = verifier.sbom_sidecars.sbom_tool("0.11.0")
+        tool = {**base, "payload_bytes": 16 * verifier.MAX_JSON_BYTES,
+                "features": [*base["features"], "complete-manifest"]}
+        with patch.object(verifier.sbom_sidecars, "sbom_tool", return_value=tool):
+            self.assertEqual(self.verify(spdx_2_3=False), self.envelope)
+            entry = self.envelope["subjects"][0]["sidecars"][-1]
+            path = self.root / entry["path"]
+            original = path.read_bytes()
+            manifest = json.loads(original)
+            manifest["sidecars"].pop()
+            self.write(entry["path"], manifest)
+            entry.update(self.entry(entry["path"]))
+            self.save()
+            with self.assertRaisesRegex(ValueError, "manifest omits a required sidecar"):
+                self.verify()
+            path.write_bytes(original + b" " * verifier.MAX_JSON_BYTES)
+            entry.update(self.entry(entry["path"]))
+            self.save()
+            with self.assertRaisesRegex(ValueError, "manifest.json exceeds its file size bound"):
+                self.verify()
+
     def test_publication_retry_uses_the_build_attempt(self):
         env = {"GITHUB_SERVER_URL": self.source["server"], "GITHUB_REPOSITORY": self.source["repository"], "GITHUB_SHA": self.source["commit"],
                "GITHUB_WORKFLOW_REF": self.producer["workflow"], "GITHUB_RUN_ID": self.producer["run_id"], "GITHUB_RUN_ATTEMPT": "3", "INPUT_PRODUCING_ATTEMPT": "2",

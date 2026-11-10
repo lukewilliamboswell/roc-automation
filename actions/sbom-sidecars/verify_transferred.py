@@ -42,7 +42,7 @@ def record(value, fields, what):
     return value
 
 
-def json_object(content, what):
+def json_object(content, what, limit=MAX_JSON_BYTES):
     def pairs(entries):
         result = {}
         for key, value in entries:
@@ -53,7 +53,7 @@ def json_object(content, what):
     def constant(value):
         raise ValueError(f"{what} contains invalid JSON constant {value}")
 
-    require(len(content) <= MAX_JSON_BYTES, f"{what} exceeds 1 MiB")
+    require(len(content) <= limit, f"{what} exceeds {limit // MAX_JSON_BYTES} MiB")
     try:
         value = json.loads(content.decode("utf-8"), object_pairs_hook=pairs, parse_constant=constant)
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
@@ -95,11 +95,10 @@ class Files:
         self.inodes = set()
         self.total = 0
 
-    def measure(self, name, *, document=False):
+    def measure(self, name, *, json_limit=None):
         if name in self.observed:
-            size, digest, content = self.observed[name]
-            require(not document or content is not None, f"{name} was not read as JSON")
-            return size, digest, content
+            require(json_limit is None, f"{name} was already read")
+            return (*self.observed[name], None)
         relative = portable_path(name)
         path = self.workspace
         for part in relative.parts:
@@ -110,7 +109,7 @@ class Files:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as source:
             before = os.fstat(source.fileno())
-            limit = MAX_JSON_BYTES if document else MAX_FILE_BYTES
+            limit = MAX_FILE_BYTES if json_limit is None else json_limit
             require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, f"{name} must be a regular unaliased file")
             require(before.st_size <= limit, f"{name} exceeds its file size bound")
             identity = (before.st_dev, before.st_ino)
@@ -123,21 +122,21 @@ class Files:
                 size += len(chunk)
                 require(size <= limit, f"{name} exceeds its file size bound")
                 digest.update(chunk)
-                if document:
+                if json_limit is not None:
                     pieces.append(chunk)
             after = os.fstat(source.fileno())
             require((before.st_size, before.st_mtime_ns, before.st_ctime_ns) == (after.st_size, after.st_mtime_ns, after.st_ctime_ns) and size == before.st_size, f"{name} changed while verifying")
-        content = b"".join(pieces) if document else None
-        self.observed[name] = (size, digest.hexdigest(), content)
-        return self.observed[name]
+        content = b"".join(pieces) if json_limit is not None else None
+        self.observed[name] = (size, digest.hexdigest())
+        return (*self.observed[name], content)
 
-    def check(self, entry, *, document=False):
+    def check(self, entry, *, json_limit=None):
         require(type(entry.get("size")) is int and entry["size"] >= 0 and isinstance(entry.get("sha256"), str) and SHA256.fullmatch(entry["sha256"]), "file record needs an integer size and lowercase SHA-256")
         path = portable_path(entry.get("path"))
         require(entry.get("name") == path.name, "file record name differs from its path")
-        size, digest, content = self.measure(str(path), document=document)
+        size, digest, content = self.measure(str(path), json_limit=json_limit)
         require(size == entry["size"] and digest == entry["sha256"], f"{path} bytes differ from SBOM evidence")
-        return json_object(content, str(path)) if document else None
+        return json_object(content, str(path), json_limit) if json_limit is not None else None
 
 
 def check_generator(generator):
@@ -178,7 +177,7 @@ def check_document(document, subject, fmt):
         require(all(isinstance(identifier, str) for identifier in identifiers) and len(identifiers) == len(set(identifiers)), "sidecar repeats SPDX element identifiers")
 
 
-def check_manifest(manifest, subject, entries, generator, profile, commit):
+def check_manifest(manifest, subject, entries, generator, profile, commit, *, complete=False):
     record(manifest, "profile subject inventory_sha256 context sidecars", "Blueprint manifest")
     require(manifest["profile"] == profile, "manifest profile differs from the reviewed tool")
     listed_subject = record(manifest["subject"], "filename version target sha256 size", "manifest subject")
@@ -200,7 +199,8 @@ def check_manifest(manifest, subject, entries, generator, profile, commit):
         expected = entries[name]
         require(type(entry["size"]) is int, "manifest sidecar size must be an integer")
         require(entry == {"filename": name, "format": expected["format"].lower(), "sha256": expected["sha256"], "size": expected["size"]}, f"manifest sidecar differs from the envelope: {name}")
-    require({subject["name"] + ".spdx.json", subject["name"] + ".cdx.json"} <= seen, "manifest omits a default sidecar")
+    required = set(entries) if complete else {subject["name"] + ".spdx.json", subject["name"] + ".cdx.json"}
+    require(required <= seen, "manifest omits a required sidecar")
 
 
 def verify(workspace, subjects, assets, expected_source, expected_producer, version, target="source", spdx_2_3=True):
@@ -210,7 +210,7 @@ def verify(workspace, subjects, assets, expected_source, expected_producer, vers
     require(EVIDENCE_PATH not in assets, "the transfer envelope must not be published")
     require(set(subjects) <= assets, "published assets omit an expected subject")
     files = Files(workspace)
-    _, _, content = files.measure(EVIDENCE_PATH, document=True)
+    _, _, content = files.measure(EVIDENCE_PATH, json_limit=MAX_JSON_BYTES)
     evidence = record(json_object(content, EVIDENCE_PATH), "format source producer generator subjects dependencies coverage", "producer envelope")
     require(evidence["format"] == "roc-automation-sbom-evidence-v1", "unsupported producer envelope format")
     require(evidence["source"] == expected_source, "SBOM source identity differs from this publication")
@@ -221,7 +221,8 @@ def verify(workspace, subjects, assets, expected_source, expected_producer, vers
     require(isinstance(evidence["dependencies"], list) and isinstance(evidence["coverage"], list), "envelope dependency and coverage records must be lists")
     expected = set(subjects)
     bound_assets = set()
-    suffixes = [".spdx.json", ".cdx.json"] + ([".spdx-2.3.json"] if spdx_2_3 else [])
+    complete_manifest = "complete-manifest" in tool["features"]
+    suffixes = list(sbom_sidecars.sidecar_suffixes(spdx_2_3 or complete_manifest))
     if "manifest" in tool["features"]:
         suffixes.append(".sbom-manifest.json")
     for subject in evidence["subjects"]:
@@ -240,7 +241,8 @@ def verify(workspace, subjects, assets, expected_source, expected_producer, vers
             record(sidecar, "name path size sha256 format", "envelope sidecar")
             sidecar_path = str(portable_path(sidecar["path"]))
             require(sidecar_path in expected_sidecars and sidecar["format"] == expected_sidecars.pop(sidecar_path), "envelope lists an unexpected, repeated or mislabelled sidecar")
-            document = files.check(sidecar, document=True)
+            limit = MAX_JSON_BYTES if sidecar["format"] == "manifest" else tool["payload_bytes"]
+            document = files.check(sidecar, json_limit=limit)
             bound_assets.add(sidecar_path)
             if sidecar["format"] == "manifest":
                 manifest = document
@@ -248,7 +250,7 @@ def verify(workspace, subjects, assets, expected_source, expected_producer, vers
                 entries[sidecar["name"]] = sidecar
                 check_document(document, subject, sidecar["format"])
         if manifest is not None:
-            check_manifest(manifest, subject, entries, evidence["generator"], tool["profile"], expected_source["commit"])
+            check_manifest(manifest, subject, entries, evidence["generator"], tool["profile"], expected_source["commit"], complete=complete_manifest)
         bound_assets.add(path)
     require(not expected and bound_assets <= assets, "published assets omit a bound subject or sidecar")
     require({path for path in assets if path.endswith(tuple(FORMATS))} == bound_assets - set(subjects), "published assets contain an unbound sidecar")
