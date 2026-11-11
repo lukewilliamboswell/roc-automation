@@ -40,7 +40,8 @@ import src/ReleasePackage
 ## defaults to `GITHUB_REPOSITORY` or the `origin` remote. `RP_NAME` is the
 ## name in asset file names and defaults to the repository name. `RP_DIRECTORY`
 ## keeps the command logs; `RP_AUTOMATION` is recorded in the notes as the
-## shared workflow revision.
+## shared workflow revision. `RP_CASE_TIMEOUT_MS` bounds each example case
+## to 1–120000 milliseconds and defaults to 10000.
 main! = |args| {
 	result = match args.map(OsStr.display) {
 		["build", version] => build!(version, Err(Missing))
@@ -70,7 +71,7 @@ examples_root = Path.utf8("examples")
 
 spec_path = Path.utf8("tests/spec.json")
 
-Settings : { pkg : ReleasePackage.Package, compiler : Str, output : Path, directory : Path, automation : Str }
+Settings : { pkg : ReleasePackage.Package, compiler : Str, output : Path, directory : Path, automation : Str, case_timeout_ms : U64 }
 
 settings! : () => Try(Settings, Str)
 settings! = || {
@@ -85,6 +86,10 @@ settings! = || {
 	if !ReleasePackage.valid_name(name) {
 		return Err("RP_NAME must be a package name usable in file names, got ${name}")
 	}
+	case_timeout_ms = match U64.from_str(optional!("RP_CASE_TIMEOUT_MS", "10000")?) {
+		Ok(value) if value > 0 and value <= 120_000 => value
+		_ => return Err("RP_CASE_TIMEOUT_MS must be 1–120000 milliseconds")
+	}
 	directory = match optional!("RP_DIRECTORY", "")? {
 		"" => Env.create_temp_dir_in!(Path.utf8(optional!("RUNNER_TEMP", optional!("TMPDIR", "/tmp")?)?), "release-package-").map_err(|_| "cannot create a directory for command logs")?
 		given => {
@@ -93,7 +98,7 @@ settings! = || {
 			given_path
 		}
 	}
-	Ok({ pkg: { name, repository }, compiler: optional!("RP_COMPILER", "roc")?, output: Path.utf8(optional!("RP_OUTPUT", "dist")?), directory, automation: optional!("RP_AUTOMATION", "")? })
+	Ok({ pkg: { name, repository }, case_timeout_ms, compiler: optional!("RP_COMPILER", "roc")?, output: Path.utf8(optional!("RP_OUTPUT", "dist")?), directory, automation: optional!("RP_AUTOMATION", "")? })
 }
 
 optional! = |name, fallback| {
@@ -680,7 +685,7 @@ test_examples! = |mode| {
 			Path.copy!(Path.utf8("${directory}/${file}"), Path.join(stage, "${directory}/${file}")).map_err(|_| "cannot copy ${directory}/${file}")?
 		}
 	}
-	ran = Examples.execute!({ compiler: settings.compiler, root: stage, suite, dependencies: declared, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: 10_000, source: Direct, mode, first_number: 1 })?
+	ran = Examples.execute!({ compiler: settings.compiler, root: stage, suite, dependencies: declared, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: settings.case_timeout_ms, source: Direct, mode, first_number: 1 })?
 	match mode {
 		Update => {
 			rendered = Compatibility.render(ran.updated)
@@ -756,6 +761,6 @@ test_archive! = || {
 	for s in served {
 		say!("SERVE ${Path.display(s.bundle)} in place of ${s.url}")?
 	}
-	ran = Examples.execute!({ compiler: settings.compiler, root: suite_root, suite, dependencies: urls, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: 10_000, source: Served(served), mode: Compare, first_number: 1 })?
+	ran = Examples.execute!({ compiler: settings.compiler, root: suite_root, suite, dependencies: urls, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: settings.case_timeout_ms, source: Served(served), mode: Compare, first_number: 1 })?
 	verdict!(ran, "Archived examples against the bundles")
 }

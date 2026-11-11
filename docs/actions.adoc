@@ -259,9 +259,9 @@ blueprint run release-test -- test-archive                # the archive in dist/
 ----
 
 `build` and `check-version` need Git, `gh` and the archive tools, and run on
-Linux or macOS. `test-examples` and `test-archive` start nothing but the
-compiler, which is why `release-test` expects only `roc`: they run on every
-system a repository releases for, Windows included. On Windows the archive is
+Linux or macOS. `test-examples` and `test-archive` run the compiler and each
+application’s declared runtime. Provision those programs on every supported
+system, including Windows. On Windows the archive is
 read by the system's own `%SystemRoot%\System32\tar.exe`, by its full path,
 because Windows has no `unzip` and the `tar` of Git Bash cannot read a ZIP.
 
@@ -301,8 +301,23 @@ The package compiler is the `roc` on `PATH`, or `RP_COMPILER`. `RP_REPOSITORY`
 is the `owner/name` the bundle URLs name; it defaults to `GITHUB_REPOSITORY`
 and then to the `origin` remote. `RP_DIRECTORY` keeps the numbered command
 records and output streams of every compiler and example command, the same
-files the nightly runner preserves. The tools release names the compiler the
-utility was built with; the lock fixes its bytes.
+files the nightly runner preserves. `RP_CASE_TIMEOUT_MS` sets each example
+case's deadline in milliseconds, from 1 to 120000, with a default of 10000.
+The compiler check and build commands retain their separate five-minute limits.
+
+An examples archive can carry portable harnesses and fixture files anywhere
+beneath its exact versioned root. Every path component passes the same checks
+for traversal, ambiguous Windows names and separators before extraction.
+The README and specification are required. The specification controls which
+applications and commands execute, and its release identity, application
+members and dependency URLs are checked against the candidate bundles.
+Candidate harnesses execute in read-only jobs with the same authority as their
+applications. Path admission assumes the archive comes from the build job
+bound to this run. Native archive regressions exercise ancillary files and
+rejected paths through the release utility itself.
+
+The tools release names the compiler used to build the utility. The lock fixes
+its bytes.
 
 == `actions/release-compatibility`
 
