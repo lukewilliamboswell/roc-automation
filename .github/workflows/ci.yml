@@ -290,7 +290,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
-        blueprint: [0.11.0, 0.12.0]
+        blueprint: [0.11.0, 0.12.0, 0.13.0]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -312,6 +312,7 @@ jobs:
         include:
           - { blueprint: 0.11.0, compiler: nightly-2026-10-28-bad769b }
           - { blueprint: 0.12.0, compiler: nightly-2026-11-07-ad3a5d2 }
+          - { blueprint: 0.13.0, compiler: nightly-2026-11-10-f7d1f19 }
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -339,12 +340,15 @@ jobs:
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.8.0 }
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.11.0 }
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.12.0 }
+          - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.13.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.8.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.11.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.12.0 }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.13.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.8.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.11.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.12.0 }
+          - { runner: macos-15, system: aarch64-darwin, blueprint: 0.13.0 }
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -369,6 +373,7 @@ jobs:
               "0.8.0": current,
               "0.11.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.11.0/EuSPs8vc71qJNFg29YzegvVRL1bR9pKqUYDHFiSCPTQ1.tar.zst",
               "0.12.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/GSb71LxYHqLohZz8jMfawWEwQcyev9ZdVC26sfsDwfq8.tar.zst",
+              "0.13.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.13.0/DBtzmMfrSgt6nCGVAcZYCVPxWbhpqw3MXpm6sdQzMn4v.tar.zst",
           }
           source = path.read_text()
           assert source.count(current) == 1
