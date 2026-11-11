@@ -451,10 +451,10 @@ jobs:
           DIGESTS: ${{ steps.sidecars-native.outputs.digests }}
           EVIDENCE: ${{ steps.sidecars-native.outputs.evidence }}
           SYSTEM: ${{ matrix.system }}
+          BLUEPRINT_VERSION: ${{ matrix.blueprint }}
         run: |
           test "$FETCHED" = 1
           test "$MISSING" = 0
-          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 4
           shasum -a 256 --check "$DIGESTS"
           test -s dist-native/hello.sbom-manifest.json
           grep -q "\"blueprint:target\",\"value\":\"$SYSTEM\"" dist-native/hello.cdx.json
@@ -464,6 +464,9 @@ jobs:
           # The evidence envelope binds the same bytes to this commit and run.
           python3 - "$EVIDENCE" "$SYSTEM" <<'PY'
           import hashlib, json, os, sys
+          tool = json.load(open("actions/setup-blueprint/sbom-tools.json"))[os.environ["BLUEPRINT_VERSION"]]
+          expected_assets = 5 if "complete-manifest" in tool["features"] else 4
+          assert len(os.environ["ASSETS"].splitlines()) == expected_assets
           envelope = json.load(open(sys.argv[1]))
           assert envelope["format"] == "roc-automation-sbom-evidence-v1"
           assert envelope["source"]["commit"] == os.environ["GITHUB_SHA"] and envelope["producer"]["run_id"] == os.environ["GITHUB_RUN_ID"]
