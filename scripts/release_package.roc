@@ -41,7 +41,7 @@ import src/ReleasePackage
 ## name in asset file names and defaults to the repository name. `RP_DIRECTORY`
 ## keeps the command logs; `RP_AUTOMATION` is recorded in the notes as the
 ## shared workflow revision. `RP_CASE_TIMEOUT_MS` bounds each example case
-## to 1–120000 milliseconds and defaults to 10000.
+## to 1–300000 milliseconds and defaults to 10000.
 main! = |args| {
 	result = match args.map(OsStr.display) {
 		["build", version] => build!(version, Err(Missing))
@@ -87,8 +87,8 @@ settings! = || {
 		return Err("RP_NAME must be a package name usable in file names, got ${name}")
 	}
 	case_timeout_ms = match U64.from_str(optional!("RP_CASE_TIMEOUT_MS", "10000")?) {
-		Ok(value) if value > 0 and value <= 120_000 => value
-		_ => return Err("RP_CASE_TIMEOUT_MS must be 1–120000 milliseconds")
+		Ok(value) if value > 0 and value <= 300_000 => value
+		_ => return Err("RP_CASE_TIMEOUT_MS must be 1–300000 milliseconds")
 	}
 	directory = match optional!("RP_DIRECTORY", "")? {
 		"" => Env.create_temp_dir_in!(Path.utf8(optional!("RUNNER_TEMP", optional!("TMPDIR", "/tmp")?)?), "release-package-").map_err(|_| "cannot create a directory for command logs")?

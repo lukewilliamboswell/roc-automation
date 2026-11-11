@@ -343,6 +343,22 @@ else:
         self.assertTrue(list(directory.glob("*-expected.json")))
         self.assertEqual(json.loads((directory / "result.json").read_text())["failed"], 1)
 
+    def test_native_case_deadline_reaches_the_existing_runner(self):
+        for value in (10000, 120000, 300000):
+            with self.subTest(value=value):
+                ran, directory, _ = self.run_phase("test", RA_CASE_TIMEOUT_MS=str(value))
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                record = json.loads((directory / "4-command.json").read_text())
+                self.assertEqual(record["timeout_ms"], value)
+
+    def test_invalid_case_deadlines_fail_before_compiler_execution(self):
+        for value in ("0", "300001", "-1", "1.5", "unbounded"):
+            with self.subTest(value=value):
+                ran, directory, _ = self.run_phase("test", RA_CASE_TIMEOUT_MS=value)
+                self.assertNotEqual(ran.returncode, 0)
+                self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "setup-failed")
+                self.assertFalse((directory / "2-command.json").exists())
+
     def test_timeout_keeps_partial_output_and_is_not_a_compatibility_verdict(self):
         self.case["stderr_match"] = "ignore"
         self.make_archive()

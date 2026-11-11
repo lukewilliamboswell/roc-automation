@@ -133,7 +133,7 @@ setup child does not change the runner's environment.
 
 The action has a fixed 300-second compiler deadline, a 600-second prerequisite
 deadline and a default 10-second deadline per example case. `case-timeout-ms`
-can select 1–120000 milliseconds. The matrix job has a 60-minute overall limit.
+can select 1–300000 milliseconds. The matrix job has a 60-minute overall limit.
 Each command has a 10 MB capture budget; timeout and output-limit results keep
 the partial bytes captured before cancellation and terminate child processes.
 On Windows, basic-cli manages the complete child tree in a Windows Job Object;

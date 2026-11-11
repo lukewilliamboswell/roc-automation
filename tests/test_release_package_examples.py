@@ -151,13 +151,13 @@ sys.exit(subprocess.run([sys.argv[2]]).returncode)
                                   ("runtime-assets/abc.bin", b"payload"),
                                   ("fixture-aliases.json", json.dumps({"fixture": "abc.bin"}))]:
                 archive.writestr("pf-examples-0.0.1/" + name, content)
-        self.env["RP_CASE_TIMEOUT_MS"] = "120000"
+        self.env["RP_CASE_TIMEOUT_MS"] = "300000"
         ran = self.run_tool("test-archive")
         self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
         self.assertIn("SERVE", ran.stdout)
         self.assertIn("1 tested, 0 failed", ran.stdout)
         record = json.loads((self.root / "evidence/3-command.json").read_text())
-        self.assertEqual(record["timeout_ms"], 120000)
+        self.assertEqual(record["timeout_ms"], 300000)
         self.assertIn("scripts", record["argv"][1])
 
     def test_archive_refuses_unsafe_ancillary_paths_before_execution(self):
@@ -176,7 +176,7 @@ sys.exit(subprocess.run([sys.argv[2]]).returncode)
                 self.assertFalse(list((self.root / "evidence").glob("*-command.json")))
 
     def test_case_deadline_defaults_and_reaches_working_tree_runner(self):
-        for supplied, expected in [("", 10000), ("1", 1), ("120000", 120000)]:
+        for supplied, expected in [("", 10000), ("1", 1), ("120000", 120000), ("300000", 300000)]:
             with self.subTest(supplied=supplied):
                 self.env["RP_CASE_TIMEOUT_MS"] = supplied
                 ran = self.run_tool("test-examples")
@@ -186,12 +186,12 @@ sys.exit(subprocess.run([sys.argv[2]]).returncode)
                     self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
 
     def test_invalid_case_deadlines_are_refused_before_execution(self):
-        for value in ("0", "120001", "-1", "1.5", "unbounded"):
+        for value in ("0", "300001", "-1", "1.5", "unbounded"):
             with self.subTest(value=value):
                 self.env["RP_CASE_TIMEOUT_MS"] = value
                 ran = self.run_tool("test-examples")
                 self.assertNotEqual(ran.returncode, 0, ran.stdout)
-                self.assertIn("RP_CASE_TIMEOUT_MS must be 1–120000 milliseconds", ran.stderr)
+                self.assertIn("RP_CASE_TIMEOUT_MS must be 1–300000 milliseconds", ran.stderr)
                 self.assertFalse((self.root / "evidence").exists())
 
     def test_configured_case_deadline_interrupts_the_application(self):

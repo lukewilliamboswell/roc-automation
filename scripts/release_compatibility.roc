@@ -166,8 +166,8 @@ execute! = |selected, initial, directory| {
 	suite = Compatibility.suite(read!(Path.join(root, "spec.json"))?, selected)?
 	compiler = env!("RA_COMPILER")?
 	case_timeout = match U64.from_str(env!("RA_CASE_TIMEOUT_MS")?) {
-		Ok(value) if value > 0 and value <= 120_000 => value
-		_ => return Err("case timeout must be 1–120000 milliseconds")
+		Ok(value) if value > 0 and value <= 300_000 => value
+		_ => return Err("case timeout must be 1–300000 milliseconds")
 	}
 	version = Examples.command!(commands, 1, [compiler, "version"], root, [], 30_000)?
 	if version.status != "exited" or version.code != 0 or !Str.from_utf8_lossy(version.stdout).contains(selected.nightly) {

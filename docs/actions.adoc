@@ -302,7 +302,7 @@ is the `owner/name` the bundle URLs name; it defaults to `GITHUB_REPOSITORY`
 and then to the `origin` remote. `RP_DIRECTORY` keeps the numbered command
 records and output streams of every compiler and example command, the same
 files the nightly runner preserves. `RP_CASE_TIMEOUT_MS` sets each example
-case's deadline in milliseconds, from 1 to 120000, with a default of 10000.
+case's deadline in milliseconds, from 1 to 300000, with a default of 10000.
 The compiler check and build commands retain their separate five-minute limits.
 
 An examples archive can carry portable harnesses and fixture files anywhere
