@@ -8,12 +8,12 @@ about composition is Blueprint's `inspect`; this controller stages inputs,
 names subjects and documents, refuses stale or aliased sidecars, and reports
 the complete asset set for the test jobs and the publisher.
 
-A repository on Kai (Kaifile.roc and no Blueprint.roc) gets the same
-documents from `kai sbom`, Kai's port of the same profile: `inspect`, `bind`
-and `check` read the Kaifile and its lock themselves. Kai reads no release
-file, so this controller lists and hashes a source bundle's members, states
-each file's SHA-256 and size in its subject, and compares the file with the
-SHA-256 the manifest states.
+A repository on Kai (Kaifile.roc and no Blueprint.roc) gets documents in the
+profile Blueprint's SBOM tool writes from `kai sbom`, Kai's port of that
+tool: `inspect`, `bind` and `check` read the Kaifile and its lock themselves.
+Kai reads no release file, so this controller lists and hashes a source
+bundle's members, states each file's SHA-256 and size in its subject, and
+compares the file with the SHA-256 the manifest states.
 """
 
 from __future__ import annotations

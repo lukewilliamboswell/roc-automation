@@ -467,7 +467,7 @@ class WiringTests(unittest.TestCase):
                 self.assertEqual(len(runs), 6 if job == "build" else 1)
                 self.assertEqual(body.count("TOOL: ${{ steps.tool.outputs.tool }}"), len(runs))
         self.assertIn("uses: ./.roc-automation/actions/kai-tool", workflow)
-        self.assertIn("renderer-binary: ${{ steps.renderer.outputs.binary || steps.kai-renderer.outputs.binary }}", workflow)
+        self.assertIn("renderer-binary: ${{ steps.blueprint-renderer.outputs.binary || steps.kai-renderer.outputs.binary }}", workflow)
         inputs = workflow.split("    inputs:\n", 1)[1].split("    outputs:\n", 1)[0]
         self.assertNotIn("required: true", inputs)
 
