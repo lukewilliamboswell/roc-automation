@@ -290,7 +290,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
-        blueprint: [0.11.0, 0.12.0]
+        blueprint: [0.11.0, 0.12.0, 0.13.0]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -312,6 +312,7 @@ jobs:
         include:
           - { blueprint: 0.11.0, compiler: nightly-2026-10-28-bad769b }
           - { blueprint: 0.12.0, compiler: nightly-2026-11-07-ad3a5d2 }
+          - { blueprint: 0.13.0, compiler: nightly-2026-11-10-f7d1f19 }
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -339,12 +340,15 @@ jobs:
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.8.0 }
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.11.0 }
           - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.12.0 }
+          - { runner: ubuntu-24.04, system: x86_64-linux, blueprint: 0.13.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.8.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.11.0 }
           - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.12.0 }
+          - { runner: ubuntu-24.04-arm, system: aarch64-linux, blueprint: 0.13.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.8.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.11.0 }
           - { runner: macos-15, system: aarch64-darwin, blueprint: 0.12.0 }
+          - { runner: macos-15, system: aarch64-darwin, blueprint: 0.13.0 }
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -369,6 +373,7 @@ jobs:
               "0.8.0": current,
               "0.11.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.11.0/EuSPs8vc71qJNFg29YzegvVRL1bR9pKqUYDHFiSCPTQ1.tar.zst",
               "0.12.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/GSb71LxYHqLohZz8jMfawWEwQcyev9ZdVC26sfsDwfq8.tar.zst",
+              "0.13.0": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.13.0/DBtzmMfrSgt6nCGVAcZYCVPxWbhpqw3MXpm6sdQzMn4v.tar.zst",
           }
           source = path.read_text()
           assert source.count(current) == 1
@@ -446,10 +451,10 @@ jobs:
           DIGESTS: ${{ steps.sidecars-native.outputs.digests }}
           EVIDENCE: ${{ steps.sidecars-native.outputs.evidence }}
           SYSTEM: ${{ matrix.system }}
+          BLUEPRINT_VERSION: ${{ matrix.blueprint }}
         run: |
           test "$FETCHED" = 1
           test "$MISSING" = 0
-          test "$(printf '%s\n' "$ASSETS" | wc -l | tr -d ' ')" = 4
           shasum -a 256 --check "$DIGESTS"
           test -s dist-native/hello.sbom-manifest.json
           grep -q "\"blueprint:target\",\"value\":\"$SYSTEM\"" dist-native/hello.cdx.json
@@ -459,6 +464,9 @@ jobs:
           # The evidence envelope binds the same bytes to this commit and run.
           python3 - "$EVIDENCE" "$SYSTEM" <<'PY'
           import hashlib, json, os, sys
+          tool = json.load(open("actions/setup-blueprint/sbom-tools.json"))[os.environ["BLUEPRINT_VERSION"]]
+          expected_assets = 5 if "complete-manifest" in tool["features"] else 4
+          assert len(os.environ["ASSETS"].splitlines()) == expected_assets
           envelope = json.load(open(sys.argv[1]))
           assert envelope["format"] == "roc-automation-sbom-evidence-v1"
           assert envelope["source"]["commit"] == os.environ["GITHUB_SHA"] and envelope["producer"]["run_id"] == os.environ["GITHUB_RUN_ID"]

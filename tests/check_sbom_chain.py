@@ -139,7 +139,10 @@ def main():
         "0.8.0": ("nightly-2026-10-21-5349569", "blueprint-spdx-3.0-v1"),
         "0.11.0": ("nightly-2026-10-28-bad769b", "blueprint-spdx-3.0-v2"),
         "0.12.0": ("nightly-2026-11-07-ad3a5d2", "blueprint-spdx-3.0-v2"),
+        "0.13.0": ("nightly-2026-11-10-f7d1f19", "blueprint-spdx-3.0-v2"),
     }[blueprint_version]
+    tool = json.loads((ROOT / "actions/setup-blueprint/sbom-tools.json").read_text())[blueprint_version]
+    complete_manifest = "complete-manifest" in tool["features"]
     assert values["compiler"] == expected_compiler and values["commit"] == commit
     digest = hashlib.sha256((workspace / archive).read_bytes()).hexdigest()
     spdx = json.loads((workspace / f"{archive}.spdx.json").read_text())
@@ -156,7 +159,10 @@ def main():
     manifest = json.loads((workspace / f"{archive}.sbom-manifest.json").read_text())
     assert manifest["profile"] == expected_profile
     assert manifest["subject"]["sha256"] == digest and manifest["subject"]["target"] == "source"
-    assert {entry["filename"] for entry in manifest["sidecars"]} == {f"{archive.name}.spdx.json", f"{archive.name}.cdx.json"}
+    manifest_files = {f"{archive.name}.spdx.json", f"{archive.name}.cdx.json"}
+    if complete_manifest:
+        manifest_files.add(f"{archive.name}.spdx-2.3.json")
+    assert {entry["filename"] for entry in manifest["sidecars"]} == manifest_files
     # The archive, not the argument list, is the authority: its one member is a component.
     assert any(element.get("name") == "main.roc" and "archive-member" in json.dumps(element) for element in spdx["@graph"]), "bundle member missing from the SBOM"
     for line in listing:
@@ -193,7 +199,10 @@ def main():
     (workspace / "sbom/composition-exempt.json").write_text(json.dumps(exempt))
     result, values = run(SIDECARS, {**sidecar_env, "INPUT_IMPORTS": "", "INPUT_COMPOSITION": "sbom/composition-exempt.json", "INPUT_SPDX_2_3": "false"})
     assert "unavailable: blueprint-core" in result.stdout and "incomplete: sbom:blueprint-core" in result.stdout
-    assert values["assets"].splitlines() == [str(archive), f"{archive}.cdx.json", f"{archive}.sbom-manifest.json", f"{archive}.spdx.json"]
+    default_suffixes = [".cdx.json", ".sbom-manifest.json", ".spdx.json"]
+    if complete_manifest:
+        default_suffixes.insert(2, ".spdx-2.3.json")
+    assert values["assets"].splitlines() == [str(archive), *(f"{archive}{suffix}" for suffix in default_suffixes)]
     # The package-to-platform chain on every system: the native executable's
     # composition imports the supplier's source bundle SBOM bound to the locked
     # bytes, with the bundle's own `source` target kept, and the executable's
@@ -216,7 +225,7 @@ def main():
     copied = [element for element in spdx["@graph"] if element.get("relationshipType") == "copiedTo"]
     assert copied and copied[0]["to"][0].endswith("#blueprint-core"), "no copiedTo binding in the native SBOM"
     assert "sbom:roc-stable" in json.dumps(spdx), "the reviewed compiler gap is missing"
-    assert len(values["assets"].splitlines()) == 4, values["assets"]
+    assert len(values["assets"].splitlines()) == 1 + len(default_suffixes), values["assets"]
     print("SBOM chain checks passed")
 
 

@@ -27,6 +27,12 @@ VERSION = os.environ.get("BLUEPRINT_VERSION", "0.11.0")
 FIXTURE_DIGESTS = {
     "0.11.0": "ab138ce9fcc20736ca014d81e27d865cadb653d6dedfaff149cd23fb8d57a42a",
     "0.12.0": "d6c2582aab61b45c9df4feefa883df834643b304e9c3588c7731f467207bfada",
+    "0.13.0": "2098dc20816af426f65447614f1f210ad08a31abcf731d9ac05f5ab613a4589d",
+}
+CYCLONEDX_PROFILES = {
+    "0.11.0": "standard-containment-v1",
+    "0.12.0": "standard-containment-v1",
+    "0.13.0": "standard-evidence-v2",
 }
 
 
@@ -43,6 +49,13 @@ def check(tool, directory, *arguments, refusal=None):
         assert result.returncode == 1 and refusal in result.stderr, result.stderr
 
 
+def bind_complete_set(tool, directory, inventory, subject, context, artifact, complete_manifest):
+    check(tool, directory, "bind", inventory, subject, context, artifact)
+    if not complete_manifest:
+        check(tool, directory, "bind", inventory, subject, context, artifact,
+              Path(str(artifact) + ".spdx-2.3.json"), "--spdx-2.3")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", action="store_true", help="Exercise the released source app with its exact recorded compiler.")
@@ -50,6 +63,7 @@ def main():
     args = parser.parse_args()
     system = sidecars.setup_blueprint.SYSTEMS[(os.environ["RUNNER_OS"], os.environ["RUNNER_ARCH"])]
     recorded = sidecars.sbom_tool(VERSION)
+    complete_manifest = "complete-manifest" in recorded["features"]
     with tempfile.TemporaryDirectory(prefix="released-sbom-") as temporary:
         root = Path(temporary)
         if args.source:
@@ -77,12 +91,14 @@ def main():
         check(tool, fixtures, "inspect", inputs / "Spec", inputs / "Lock", inputs / "composition.json", "x86_64-linux", inventory)
         assert inventory.read_bytes() == (inputs / "inventory.json").read_bytes()
         artifact = inputs / "sample-artifact"
-        check(tool, fixtures, "bind", inventory, inputs / "subject.json", inputs / "context.json", artifact)
-        check(tool, fixtures, "bind", inventory, inputs / "subject.json", inputs / "context.json", artifact, inputs / "sample-artifact.spdx-2.3.json", "--spdx-2.3")
+        bind_complete_set(tool, fixtures, inventory, inputs / "subject.json", inputs / "context.json",
+                          artifact, complete_manifest)
         for suffix in ("spdx.json", "cdx.json", "spdx-2.3.json"):
             assert (inputs / f"sample-artifact.{suffix}").read_bytes() == (fixtures / f"native-linux.{suffix}").read_bytes(), suffix
         assert json.loads((inputs / "sample-artifact.sbom-manifest.json").read_text())["profile"] == recorded["profile"]
-        check(tool, fixtures, "check", "--manifest", inputs / "sample-artifact.sbom-manifest.json", "--inventory", inventory, "--artifacts", inputs, inputs / "sample-artifact.spdx-2.3.json")
+        extra = [] if complete_manifest else [inputs / "sample-artifact.spdx-2.3.json"]
+        check(tool, fixtures, "check", "--manifest", inputs / "sample-artifact.sbom-manifest.json",
+              "--inventory", inventory, "--artifacts", inputs, *extra)
 
         # Read the standard v2 representation independently: containment is
         # nested, the compiler remains build-only, and coverage stays visible.
@@ -92,7 +108,7 @@ def main():
         assert platform["components"][0]["bom-ref"] == "native"
         compiler = next(item for item in bom["components"] if item["bom-ref"] == "compiler")
         assert compiler["scope"] == "excluded"
-        assert {item["value"] for item in bom["metadata"]["properties"] if item["name"] == "blueprint:cyclonedx-profile"} == {"standard-containment-v1"}
+        assert {item["value"] for item in bom["metadata"]["properties"] if item["name"] == "blueprint:cyclonedx-profile"} == {CYCLONEDX_PROFILES[VERSION]}
         assert "native-closure" in json.dumps(bom)
         check(tool, fixtures, "check", fixtures / "legacy/blueprint-0.8.cdx.json")
 
@@ -112,8 +128,8 @@ def main():
         context["namespace"] = f"https://github.com/owner/repo/sbom/{source['commit']}/{subject['filename']}/revision-1"
         context["generator"] = recorded["generator"]
         (root / "context.json").write_text(json.dumps(context))
-        check(tool, root, "bind", inventory, root / "subject.json", root / "context.json", delivered)
-        check(tool, root, "bind", inventory, root / "subject.json", root / "context.json", delivered, str(delivered) + ".spdx-2.3.json", "--spdx-2.3")
+        bind_complete_set(tool, root, inventory, root / "subject.json", root / "context.json",
+                          delivered, complete_manifest)
         written = {delivered: [(Path(str(delivered) + suffix), sidecars.sha256_of(Path(str(delivered) + suffix))) for suffix in (*sidecars.SIDECAR_SUFFIXES, sidecars.MANIFEST_SUFFIX)]}
         env = {"GITHUB_SERVER_URL": source["server"], "GITHUB_REPOSITORY": source["repository"], "GITHUB_WORKFLOW_REF": producer["workflow"], "GITHUB_RUN_ID": producer["run_id"], "GITHUB_RUN_ATTEMPT": producer["run_attempt"]}
         envelope = sidecars.evidence_envelope(env, candidate, [delivered], written,
