@@ -35,7 +35,7 @@ inputs:
     description: Reviewed fixed Core source prerequisite; test phase only, with an empty setup-command
     default: ''
   case-timeout-ms:
-    description: Per-example deadline, 1–120000 milliseconds
+    description: Per-example deadline, 1–300000 milliseconds
     default: '10000'
   test-environment:
     description: JSON array of public name/value variables for native or headless tests; reserved compiler, cache and Actions variables cannot be overridden
