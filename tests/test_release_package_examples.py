@@ -70,7 +70,7 @@ class ReleasePlatformTests(unittest.TestCase):
 
     def run_tool(self, *args):
         return subprocess.run([os.environ["ROC_RELEASE_PACKAGE_BINARY"], *args], cwd=self.root, env=self.env,
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8", timeout=60)
 
     def platform_bundle(self, path, modules=("main.roc", "Host.roc", "Stdout.roc")):
         """What a repository's bundle command writes: its modules and host outputs."""
@@ -164,7 +164,7 @@ sys.exit(subprocess.run([sys.argv[2]]).returncode)
         dist = self.root / "dist"
         self.platform_bundle(dist / "Fixture1.tar.zst")
         for entry in ("../escape", "scripts/../escape", "scripts/CON.txt", "runtime-assets/trailing.",
-                      "scripts/back\\slash.py", "scripts/C:drive.py", "/absolute/runtime.py"):
+                      "scripts\\..\\..\\escape.py", "scripts/C:drive.py", "/absolute/runtime.py"):
             with self.subTest(entry=entry):
                 with zipfile.ZipFile(dist / "pf-examples-0.0.1.zip", "w") as archive:
                     archive.writestr("pf-examples-0.0.1/README.md", "examples")
