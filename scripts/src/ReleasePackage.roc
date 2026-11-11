@@ -264,12 +264,12 @@ ReleasePackage := [].{
 	docs_archive = |pkg, version| "${pkg.name}-docs-${version}.zip"
 
 	## Whether `entry` may appear in the examples archive whose top-level
-	## directory is `root`: the README, the expected-output specification, or a
-	## file under `examples/` whose every path component is a plain name, so
-	## that the archive unpacks the same way on every system.
+	## directory is `root`. Applications, harnesses and fixture files share the
+	## same portable component checks, so the archive unpacks the same way on
+	## every system. The caller separately requires the README and specification.
 	valid_examples_entry : Str, Str -> Bool
 	valid_examples_entry = |root, entry|
-		entry == "${root}/README.md" or entry == "${root}/spec.json" or (entry.starts_with("${root}/examples/") and safe_components(Str.split_on(entry.drop_prefix("${root}/examples/"), "/")))
+		entry.starts_with("${root}/") and safe_components(Str.split_on(entry.drop_prefix("${root}/"), "/"))
 
 	## The README at the top of the examples archive.
 	examples_readme : Package, Str, List(Str) -> Str
@@ -563,3 +563,7 @@ expect ["0.5.0", "0.5.0-rc.1", "0.4.9"].all(|version| ReleasePackage.unchanged_s
 expect ReleasePackage.unchanged_suffices("0.5.1", "0.5.0-rc.1").is_err()
 expect ReleasePackage.unchanged_suffices("0.5.01", "0.5.0").is_err()
 expect ReleasePackage.unchanged_suffices("0.5.18446744073709551616", "0.5.0").is_err()
+
+expect ["benchmarks/animation/main.roc", "scripts/semantic.py", "runtime-assets/abc.bin", "fixture-aliases.json"].all(|path| ReleasePackage.valid_examples_entry("pkg-examples-1.0.0", "pkg-examples-1.0.0/${path}"))
+expect ["../escape", "scripts/../escape", "scripts/CON.txt", "runtime-assets/trailing.", "scripts//empty.py", "scripts/back\\slash.py", "scripts/C:drive.py", ""].all(|path| !ReleasePackage.valid_examples_entry("pkg-examples-1.0.0", "pkg-examples-1.0.0/${path}"))
+expect !ReleasePackage.valid_examples_entry("pkg-examples-1.0.0", "pkg-examples-1.0.0-other/scripts/semantic.py")

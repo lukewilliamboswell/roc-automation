@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import unittest
 import zipfile
@@ -127,21 +128,80 @@ class ReleasePlatformTests(unittest.TestCase):
                 self.assertIn(message, ran.stderr)
 
     def test_archive_unpacks_and_runs_on_every_system(self):
-        # The archive as build writes it, made here so that a system without
-        # zip, such as Windows, still tests unpacking it and running it.
+        # The archived runtime consumes ancillary files before invoking the
+        # compiled application. Every native test uses this same release path.
         dist = self.root / "dist"
         self.platform_bundle(dist / "Fixture1.tar.zst")
         spec = json.loads((self.root / "tests/spec.json").read_text())
         spec.update(release="0.0.1", dependencies=[PLATFORM_URL])
+        spec["apps"][0]["run"] = [sys.executable, "{suite}/scripts/runtime.py", "{suite}", "{executable}"]
         app = (self.root / "examples/hello/main.roc").read_text().replace("../../platform/main.roc", PLATFORM_URL)
+        runtime = """import json,subprocess,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+assert (root/'benchmarks/animation/data.txt').read_text() == 'fixture'
+assert (root/'runtime-assets/abc.bin').read_bytes() == b'payload'
+assert json.loads((root/'fixture-aliases.json').read_text()) == {'fixture': 'abc.bin'}
+sys.exit(subprocess.run([sys.argv[2]]).returncode)
+"""
         with zipfile.ZipFile(dist / "pf-examples-0.0.1.zip", "w") as archive:
             for name, content in [("README.md", "examples\n"), ("spec.json", json.dumps(spec)),
-                                  ("examples/hello/main.roc", app)]:
+                                  ("examples/hello/main.roc", app), ("scripts/runtime.py", runtime),
+                                  ("benchmarks/animation/data.txt", "fixture"),
+                                  ("runtime-assets/abc.bin", b"payload"),
+                                  ("fixture-aliases.json", json.dumps({"fixture": "abc.bin"}))]:
                 archive.writestr("pf-examples-0.0.1/" + name, content)
+        self.env["RP_CASE_TIMEOUT_MS"] = "120000"
         ran = self.run_tool("test-archive")
         self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
         self.assertIn("SERVE", ran.stdout)
         self.assertIn("1 tested, 0 failed", ran.stdout)
+        record = json.loads((self.root / "evidence/3-command.json").read_text())
+        self.assertEqual(record["timeout_ms"], 120000)
+        self.assertIn("scripts", record["argv"][1])
+
+    def test_archive_refuses_unsafe_ancillary_paths_before_execution(self):
+        dist = self.root / "dist"
+        self.platform_bundle(dist / "Fixture1.tar.zst")
+        for entry in ("../escape", "scripts/../escape", "scripts/CON.txt", "runtime-assets/trailing.",
+                      "scripts/back\\slash.py", "scripts/C:drive.py", "/absolute/runtime.py"):
+            with self.subTest(entry=entry):
+                with zipfile.ZipFile(dist / "pf-examples-0.0.1.zip", "w") as archive:
+                    archive.writestr("pf-examples-0.0.1/README.md", "examples")
+                    archive.writestr("pf-examples-0.0.1/spec.json", "invalid until path checks pass")
+                    archive.writestr("pf-examples-0.0.1/" + entry, "unsafe")
+                ran = self.run_tool("test-archive")
+                self.assertNotEqual(ran.returncode, 0, ran.stdout)
+                self.assertIn("unexpected entry in the examples archive", ran.stderr)
+                self.assertFalse(list((self.root / "evidence").glob("*-command.json")))
+
+    def test_case_deadline_defaults_and_reaches_working_tree_runner(self):
+        for supplied, expected in [("", 10000), ("1", 1), ("120000", 120000)]:
+            with self.subTest(supplied=supplied):
+                self.env["RP_CASE_TIMEOUT_MS"] = supplied
+                ran = self.run_tool("test-examples")
+                record = json.loads((self.root / "evidence/3-command.json").read_text())
+                self.assertEqual(record["timeout_ms"], expected)
+                if expected > 1:
+                    self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+
+    def test_invalid_case_deadlines_are_refused_before_execution(self):
+        for value in ("0", "120001", "-1", "1.5", "unbounded"):
+            with self.subTest(value=value):
+                self.env["RP_CASE_TIMEOUT_MS"] = value
+                ran = self.run_tool("test-examples")
+                self.assertNotEqual(ran.returncode, 0, ran.stdout)
+                self.assertIn("RP_CASE_TIMEOUT_MS must be 1–120000 milliseconds", ran.stderr)
+                self.assertFalse((self.root / "evidence").exists())
+
+    def test_configured_case_deadline_interrupts_the_application(self):
+        self.env.update(RP_CASE_TIMEOUT_MS="500", FAKE_CASE_SLEEP="1")
+        ran = self.run_tool("test-examples")
+        self.assertNotEqual(ran.returncode, 0, ran.stdout)
+        record = json.loads((self.root / "evidence/3-command.json").read_text())
+        self.assertEqual(record["timeout_ms"], 500)
+        self.assertTrue(record["timed_out"])
+        self.assertIn("hello", (self.root / "evidence/3-stdout.log").read_text())
 
 
 @unittest.skipUnless(os.environ.get("ROC_RELEASE_PACKAGE_BINARY"), "set ROC_RELEASE_PACKAGE_BINARY to test version validation")
