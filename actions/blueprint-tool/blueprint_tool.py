@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run a repository task that reports one persistent executable path."""
+"""Run a repository task that reports one persistent executable path.
+
+The task runs with `blueprint run TASK`, or with `kai run TASK` from the
+kai-tool action, which passes kai as the binary.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -14,24 +18,24 @@ import time
 
 def locate(blueprint: str, task: str, workspace: Path) -> tuple[Path, float]:
     if not task or task.startswith('-') or len(task) > 512 or any(ord(c) < 32 for c in task):
-        raise ValueError('task must be a nonempty Blueprint task name, not an option')
+        raise ValueError('task must be a nonempty task name, not an option')
     command = shutil.which(blueprint)
     if command is None:
-        raise ValueError('Blueprint executable is missing; run setup-blueprint first')
+        raise ValueError(f'{blueprint} is not an executable on this runner; run setup-blueprint or setup-kai first')
     started = time.perf_counter()
     result = subprocess.run([command, 'run', task], cwd=workspace, capture_output=True, text=True)
     duration = time.perf_counter() - started
     if result.stderr:
         print(result.stderr, file=sys.stderr, end='')
     if result.returncode:
-        raise ValueError(f'Blueprint task {task!r} failed with status {result.returncode}')
+        raise ValueError(f'the task {task!r} failed with status {result.returncode}')
     path = result.stdout.strip()
     if not path or len(path.splitlines()) != 1 or any(ord(c) < 32 for c in path) or not Path(path).is_absolute():
         raise ValueError('the task must print exactly one absolute executable path; resolve command -v with realpath inside the task')
     try:
         executable = Path(path).resolve(strict=True)
     except OSError as error:
-        raise ValueError('task executable expired or is missing; resolve the temporary PATH link with realpath before the Blueprint task ends') from error
+        raise ValueError('task executable expired or is missing; resolve the temporary PATH link with realpath before the task ends') from error
     if any(ord(c) < 32 or ord(c) == 127 for c in str(executable)):
         raise ValueError('resolved executable path contains control characters')
     if not executable.is_file() or not os.access(executable, os.X_OK):

@@ -100,8 +100,11 @@ For native prerequisites, `setup-command` is a JSON argv array, for example
 `["blueprint", "run", "nightly-prerequisites"]`. It runs from the event commit's
 checkout in the read-only test job; it must provision dependencies, not rebuild
 the package or replace archived examples. `install-blueprint: true` installs the
-consumer's verified Blueprint; `install-nix: true` explicitly enables Nix for
-an environment that needs it. Leave both false for a runner that needs neither.
+consumer's verified Blueprint, and `install-kai: true` the Kai release the
+consumer's `Kaifile.roc` names, for a command such as
+`["kai", "run", "nightly-prerequisites"]`; set at most one.
+`install-nix: true` explicitly enables Nix for an environment that needs it.
+Leave all three false for a runner that needs none.
 Toolchain installation precedes the prerequisite command. Windows prerequisites
 must use native tools through `setup-command`, such as a checked-in Python setup
 script. Nix is not a Windows prerequisite backend. Requesting either shared

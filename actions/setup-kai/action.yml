@@ -1,0 +1,61 @@
+name: Set up Kai
+description: Install the Kai release the checked-out Kaifile.roc names by its platform URL, with Kai's own setup-kai action, which checks it against the release's SHA256SUMS.
+
+inputs:
+  directory:
+    description: Directory whose Kaifile.roc names the Kai release, relative to the workspace or absolute
+    default: '.'
+  nix:
+    description: Install Nix, which every Kai backend but the direct one needs; Nix already on PATH is used as it is
+    default: 'false'
+  cache:
+    description: Cache ~/.cache/kai, keyed by the release, the runner and the workspace's .kai/lock.json
+    default: 'true'
+
+outputs:
+  version:
+    description: Kai release that was installed
+    value: ${{ steps.version.outputs.version }}
+  binary:
+    description: Absolute path of the installed kai binary
+    value: ${{ steps.installed.outputs.binary }}
+  cache-hit:
+    description: Whether the cache held exactly this key
+    value: ${{ steps.kai.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    # The release comes from the Kaifile, as setup-blueprint takes its release
+    # from Blueprint.roc, so the version is reviewed with the configuration it
+    # evaluates.
+    - id: version
+      name: Read the Kai release the Kaifile names
+      shell: bash
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+        SCRIPT: ${{ github.action_path }}/setup_kai.py
+      run: python3 "$SCRIPT" version "$DIRECTORY"
+
+    - id: kai
+      name: Install Kai
+      # Kai's v0.0.12 tag.
+      uses: thebrandonlucas/kai/.github/actions/setup-kai@fd316fbad644f2e52c620ad83385fcc4b9c31372
+      with:
+        version: ${{ steps.version.outputs.version }}
+        nix: ${{ inputs.nix }}
+        cache: ${{ inputs.cache }}
+
+    - id: installed
+      name: Check the installed release
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        set -euo pipefail
+        actual="$(kai --version)"
+        if [ "$actual" != "$VERSION" ]; then
+          echo "::error::kai --version reports $actual, but Kaifile.roc names Kai $VERSION"
+          exit 1
+        fi
+        echo "binary=$(command -v kai)" >> "$GITHUB_OUTPUT"

@@ -29,6 +29,10 @@ on:
       install-blueprint:
         type: boolean
         default: false
+      install-kai:
+        description: Install the Kai release the caller's Kaifile.roc names, for a setup-command such as ["kai", "run", "nightly-prerequisites"]
+        type: boolean
+        default: false
       install-nix:
         type: boolean
         default: false
@@ -114,6 +118,7 @@ jobs:
           setup-command: ${{ inputs.setup-command }}
           blueprint-core-version: ${{ inputs.blueprint-core-version }}
           install-blueprint: ${{ inputs.install-blueprint }}
+          install-kai: ${{ inputs.install-kai }}
           install-nix: ${{ inputs.install-nix }}
           case-timeout-ms: ${{ inputs.case-timeout-ms }}
           test-environment: ${{ inputs.test-environment }}

@@ -8,6 +8,10 @@ a locked `SourceFile` or fetched program, it tries `URL.spdx.json` then
 identity, and writes an imports file for `inspect` to verify. It never invents
 an opt-out: a dependency with no published SBOM is reported as a stub for the
 maintainer to complete, and a recorded document whose bytes changed fails.
+
+The pins come from `blueprint lock show --json`, or, in a repository on Kai
+(Kaifile.roc and no Blueprint.roc), from `kai sbom pins`, which prints the
+same format-2 report from .kai/lock.json.
 """
 
 from __future__ import annotations
@@ -23,6 +27,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup-kai"))
+import setup_kai  # noqa: E402
 
 IMPORTS_PROFILE = "roc-automation-sbom-imports-v1"
 SUFFIXES = (".spdx.json", ".cdx.json")
@@ -232,13 +239,14 @@ def cyclonedx_identity(document: dict) -> dict[str, str]:
     }
 
 
-def lock_snapshot(run: Run, blueprint: str, workspace: Path) -> dict:
+def lock_snapshot(run: Run, binary: str, workspace: Path, project: str = "blueprint") -> dict:
     """The public format-2 lock report; never the lock's private representation."""
-    result = run([blueprint, "lock", "show", "--json"], workspace)
+    arguments = ["sbom", "pins"] if project == "kai" else ["lock", "show", "--json"]
+    result = run([binary] + arguments, workspace)
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
     if result.returncode:
-        raise Refusal(f"blueprint lock show --json failed with status {result.returncode}")
+        raise Refusal(f"{project} {' '.join(arguments)} failed with status {result.returncode}")
     if len(result.stdout.encode("utf-8")) > MAX_LOCK_BYTES:
         raise Refusal("the lock report exceeds 8 MiB")
     report = parse_json(result.stdout.encode("utf-8"), "lock report")
@@ -369,9 +377,10 @@ def summary_text(rows: list[dict[str, str]], output: Path) -> str:
 def main(run: Run = run_command, download: Fetch = fetch) -> None:
     env = os.environ
     workspace = Path(env.get("GITHUB_WORKSPACE", ".")).resolve()
-    blueprint = env.get("INPUT_BLUEPRINT_BINARY") or "blueprint"
-    if not clean(blueprint) or shutil.which(blueprint) is None:
-        raise Refusal(f"blueprint-binary is not an executable on this runner: {blueprint!r}")
+    project = setup_kai.project_tool(workspace)
+    binary = env.get(f"INPUT_{project.upper()}_BINARY") or project
+    if not clean(binary) or shutil.which(binary) is None:
+        raise Refusal(f"{project}-binary is not an executable on this runner: {binary!r}")
     target = env.get("INPUT_TARGET", "").strip()
     if target != "source" and not re.fullmatch(r"[a-z0-9_]+-[a-z0-9]+", target):
         raise Refusal("target must be a Blueprint system name such as x86_64-linux, or source")
@@ -395,7 +404,7 @@ def main(run: Run = run_command, download: Fetch = fetch) -> None:
     bound = {text(entry.get("subject", {}).get("component")) for entry in composition.get("imported_documents", []) if isinstance(entry, dict) and isinstance(entry.get("subject"), dict)}
     exempt = {text(entry.get("component")): entry for entry in composition.get("unavailable_sboms", []) if isinstance(entry, dict)}
     previous = read_bounded(output, "recorded imports", MAX_IMPORTS * MAX_DOCUMENT_BYTES) if output.exists() or output.is_symlink() else None
-    report = lock_snapshot(run, blueprint, workspace) if consumed else {"format": 2, "sources": {}, "fetched": []}
+    report = lock_snapshot(run, binary, workspace, project) if consumed else {"format": 2, "sources": {}, "fetched": []}
 
     entries: list[dict] = []
     rows: list[dict[str, str]] = []

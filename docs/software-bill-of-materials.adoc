@@ -138,6 +138,12 @@ documents and requires a complete manifest to name all three. The transfer
 envelope and binding manifest retain their 1 MiB limits. Tests exercise
 oversized inputs, legacy tools and a missing entry in a complete manifest.
 
+A repository on Kai gets the same documents from Kai's sbom plugin, which
+`sbom-tools.json` records under `kai` for each Kai release; `Kaifile.roc`
+selects the release and must name its plugin. The documents differ from
+Blueprint's only in the generator name; see
+xref:kai.adoc#what-the-shared-workflows-run-on-kai[What the shared workflows run].
+
 Only source `.tar.zst` bundles enter archive member enumeration. Each member must
 be accounted for by the reviewed composition or generated member records.
 Other subjects, including ZIP and PDF files, require a reviewed composition and

@@ -43,6 +43,9 @@ inputs:
   install-blueprint:
     description: Install the caller's verified Blueprint for its optional prerequisite command
     default: 'false'
+  install-kai:
+    description: Install the Kai release the caller's Kaifile.roc names for its optional prerequisite command
+    default: 'false'
   install-nix:
     description: Explicitly install Nix for prerequisite environments that need it
     default: 'false'
@@ -75,6 +78,7 @@ runs:
       shell: bash
       env:
         INSTALL_BLUEPRINT: ${{ inputs.install-blueprint }}
+        INSTALL_KAI: ${{ inputs.install-kai }}
         INSTALL_NIX: ${{ inputs.install-nix }}
         CORE_VERSION: ${{ inputs.blueprint-core-version }}
         CORE_PHASE: ${{ inputs.phase }}
@@ -90,8 +94,12 @@ runs:
             exit 1
           fi
         fi
-        if [[ "$RUNNER_OS" == Windows && ( "$INSTALL_BLUEPRINT" == true || "$INSTALL_NIX" == true ) ]]; then
-          echo '::error::Windows prerequisites must use native setup-command tools; Blueprint and Nix have no supported Windows installer.'
+        if [[ "$RUNNER_OS" == Windows && ( "$INSTALL_BLUEPRINT" == true || "$INSTALL_KAI" == true || "$INSTALL_NIX" == true ) ]]; then
+          echo '::error::Windows prerequisites must use native setup-command tools; Blueprint, Kai and Nix have no supported Windows installer.'
+          exit 1
+        fi
+        if [[ "$INSTALL_BLUEPRINT" == true && "$INSTALL_KAI" == true ]]; then
+          echo '::error::Set install-blueprint or install-kai, not both.'
           exit 1
         fi
     # Build the controller with its fixed tooling compiler before installing the
@@ -121,6 +129,10 @@ runs:
       uses: $/actions/setup-blueprint
       with:
         install-nix: ${{ inputs.install-nix }}
+    - if: inputs.phase == 'test' && inputs.install-kai == 'true'
+      uses: $/actions/setup-kai
+      with:
+        nix: ${{ inputs.install-nix }}
     - id: run
       shell: bash
       env:

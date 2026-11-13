@@ -9,6 +9,11 @@ name: Release a Roc package
 # release is tested with what its users will install. The utility that fixes
 # the order, names and checks between the compiler's commands is built from
 # this workflow's own commit, so a caller pins exactly one revision.
+#
+# A repository with Blueprint.roc runs its tasks with Blueprint. One with
+# Kaifile.roc and no Blueprint.roc runs the same tasks with Kai, installed
+# from the release its Kaifile names, and gets its SBOM sidecars from
+# `kai sbom`; the inputs and outputs are the same for both.
 on:
   workflow_call:
     inputs:
@@ -25,7 +30,7 @@ on:
         type: number
         default: 30
       check-task:
-        description: Blueprint task that checks the package and its scripts before packaging; empty skips it
+        description: Blueprint or Kai task that checks the package and its scripts before packaging; empty skips it
         type: string
         default: check
       setup-command:
@@ -41,15 +46,15 @@ on:
         type: string
         default: ''
       sbom-task:
-        description: Blueprint task that writes the reviewed composition to dist/sbom-composition.json before the sidecars are generated; empty uses sbom/composition.json as committed
+        description: Blueprint or Kai task that writes the reviewed composition to dist/sbom-composition.json before the sidecars are generated; empty uses sbom/composition.json as committed
         type: string
         default: ''
       manual:
-        description: Render docs/ as a PDF release asset with the renderer the docs-path Blueprint task resolves
+        description: Render docs/ as a PDF release asset with the renderer the docs-path Blueprint or Kai task resolves
         type: boolean
         default: false
       docs-task:
-        description: Blueprint task that writes generated manual sources before rendering, given RELEASE_VERSION and BUNDLE_URL; empty skips it
+        description: Blueprint or Kai task that writes generated manual sources before rendering, given RELEASE_VERSION and BUNDLE_URL; empty skips it
         type: string
         default: ''
     outputs:
@@ -151,13 +156,23 @@ jobs:
           nightly-tag: ${{ steps.nightly.outputs.tag }}
           download-method: asset-api
 
-      # Blueprint provisions the release-package utility the repository's lock
-      # names, and every other locked tool, as it does for a maintainer.
+      - id: tool
+        name: Select Blueprint or Kai
+        run: python3 .roc-automation/actions/setup-kai/setup_kai.py tool .
+
+      # Blueprint or Kai provisions the release-package utility the
+      # repository's lock names, and every other locked tool, as it does for a
+      # maintainer.
       - name: Install Blueprint
+        if: steps.tool.outputs.tool == 'blueprint'
         uses: ./.roc-automation/actions/setup-blueprint
         with:
           cache: 'true'
           cache-workload: release
+
+      - name: Install Kai
+        if: steps.tool.outputs.tool == 'kai'
+        uses: ./.roc-automation/actions/setup-kai
 
       - name: Install the prerequisites the package's checks need
         if: inputs.setup-command != '[]'
@@ -171,8 +186,9 @@ jobs:
       - name: Check the package
         if: inputs.check-task != ''
         env:
+          TOOL: ${{ steps.tool.outputs.tool }}
           TASK: ${{ inputs.check-task }}
-        run: blueprint run "$TASK"
+        run: '"$TOOL" run "$TASK"'
 
       - name: Check the version against the latest release
         env:
@@ -180,13 +196,15 @@ jobs:
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.request.outputs.version }}
-        run: blueprint run release-package -- check-version "$VERSION"
+          TOOL: ${{ steps.tool.outputs.tool }}
+        run: '"$TOOL" run release-package -- check-version "$VERSION"'
 
       - name: Test the examples against the working tree
         env:
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
-        run: blueprint run release-package -- test-examples
+          TOOL: ${{ steps.tool.outputs.tool }}
+        run: '"$TOOL" run release-package -- test-examples'
 
       - id: build
         name: Build the bundles, examples archive, documentation archive and notes
@@ -195,7 +213,8 @@ jobs:
           RP_REPOSITORY: ${{ github.repository }}
           RP_AUTOMATION: ${{ job.workflow_repository }}@${{ job.workflow_sha }}
           VERSION: ${{ steps.request.outputs.version }}
-        run: blueprint run release-package -- build "$VERSION"
+          TOOL: ${{ steps.tool.outputs.tool }}
+        run: '"$TOOL" run release-package -- build "$VERSION"'
 
       - name: Prepare the reviewed SBOM composition
         if: inputs.sbom-author != '' && inputs.sbom-task != ''
@@ -205,7 +224,8 @@ jobs:
           BUNDLE_PATH: ${{ steps.build.outputs.bundle }}
           BUNDLE_URL: ${{ steps.build.outputs.url }}
           SBOM_COMPOSITION: dist/sbom-composition.json
-        run: blueprint run "$TASK"
+          TOOL: ${{ steps.tool.outputs.tool }}
+        run: '"$TOOL" run "$TASK"'
 
       - name: Fetch the suppliers' SBOMs the composition imports
         if: inputs.sbom-author != '' && inputs.sbom-imports != ''
@@ -253,12 +273,20 @@ jobs:
           TASK: ${{ inputs.docs-task }}
           RELEASE_VERSION: ${{ steps.request.outputs.version }}
           BUNDLE_URL: ${{ steps.build.outputs.url }}
-        run: blueprint run "$TASK"
+          TOOL: ${{ steps.tool.outputs.tool }}
+        run: '"$TOOL" run "$TASK"'
 
-      - id: renderer
+      - id: blueprint-renderer
         name: Resolve the documentation renderer
-        if: inputs.manual
+        if: inputs.manual && steps.tool.outputs.tool == 'blueprint'
         uses: ./.roc-automation/actions/blueprint-tool
+        with:
+          task: docs-path
+
+      - id: kai-renderer
+        name: Resolve the documentation renderer with Kai
+        if: inputs.manual && steps.tool.outputs.tool == 'kai'
+        uses: ./.roc-automation/actions/kai-tool
         with:
           task: docs-path
 
@@ -267,7 +295,7 @@ jobs:
         if: inputs.manual
         uses: ./.roc-automation/actions/build-docs
         with:
-          renderer-binary: ${{ steps.renderer.outputs.binary }}
+          renderer-binary: ${{ steps.blueprint-renderer.outputs.binary || steps.kai-renderer.outputs.binary }}
           site-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           pdf-filename: ${{ github.event.repository.name }}-${{ steps.request.outputs.version }}.pdf
           docs-version: ${{ steps.request.outputs.version }}
@@ -325,8 +353,9 @@ jobs:
       contents: read
     steps:
       # The candidate files are tested as the exact bytes that would be
-      # published. The repository is checked out only for its Blueprint, which
-      # provisions the locked utility; no package source is built or run.
+      # published. The repository is checked out only for its Blueprint or Kai
+      # configuration, which provisions the locked utility; no package source
+      # is built or run.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -345,11 +374,20 @@ jobs:
           nightly-tag: ${{ needs.build.outputs.nightly }}
           download-method: asset-api
 
+      - id: tool
+        name: Select Blueprint or Kai
+        run: python3 .roc-automation/actions/setup-kai/setup_kai.py tool .
+
       - name: Install Blueprint
+        if: steps.tool.outputs.tool == 'blueprint'
         uses: ./.roc-automation/actions/setup-blueprint
         with:
           cache: 'true'
           cache-workload: release
+
+      - name: Install Kai
+        if: steps.tool.outputs.tool == 'kai'
+        uses: ./.roc-automation/actions/setup-kai
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -372,7 +410,8 @@ jobs:
         env:
           RP_DIRECTORY: ${{ runner.temp }}/release-package
           RP_REPOSITORY: ${{ github.repository }}
-        run: blueprint run release-package -- test-archive
+          TOOL: ${{ steps.tool.outputs.tool }}
+        run: '"$TOOL" run release-package -- test-archive'
 
       - name: Retain command logs
         if: always()

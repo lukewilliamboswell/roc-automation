@@ -149,6 +149,26 @@ task's verification/download work. Labels and reported digests do not replace
 Blueprint's reviewed lock or authenticate an arbitrary task's chosen program.
 Paths are valid in that job; a new runner restores artifacts and reruns the task.
 
+[#setup-kai]
+== `actions/setup-kai`
+
+Installs the Kai release that the platform URL in `Kaifile.roc` names, with
+Kai's own setup-kai action, which checks the archive against the release's
+`SHA256SUMS`, and checks that `kai --version` reports it. `directory` names a
+Kaifile outside the workspace root, as for this repository's own actions run
+from their checkout. `nix: 'true'` installs Nix for a Kaifile whose backend
+needs it; `cache` keeps `~/.cache/kai` between runs, keyed by the release, the
+runner and `.kai/lock.json`. Outputs are `version`, `binary` and `cache-hit`.
+See xref:kai.adoc#run-a-repository-on-kai[Run a repository on Kai].
+
+[#kai-tool]
+== `actions/kai-tool`
+
+`actions/blueprint-tool` for a repository on Kai: it runs the task with
+`kai run`, with the same inputs and outputs, and `kai-binary` in place of
+`blueprint-binary`. The task resolves its executable with `realpath`, as for
+Blueprint.
+
 [#install-the-nightly-compiler]
 == Install the nightly compiler
 

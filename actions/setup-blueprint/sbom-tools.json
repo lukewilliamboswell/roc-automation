@@ -73,4 +73,16 @@
     "source_invocation": "roc-run-direct-v1",
     "payload_mib": 16
   }
+,
+  "kai": {
+    "0.0.12": {
+      "plugin": "https://github.com/thebrandonlucas/kai/releases/download/v0.0.12/sbom-HzyZunZdK6VM3Ve3WK2cVtnFtRcTH6qUU6T65ZNG17TF.tar.zst",
+      "generator": "Tool: kai-sbom-0.0.12",
+      "features": [
+        "members",
+        "manifest"
+      ],
+      "profile": "blueprint-spdx-3.0-v2"
+    }
+  }
 }

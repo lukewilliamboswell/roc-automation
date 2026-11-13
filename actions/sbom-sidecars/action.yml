@@ -1,5 +1,5 @@
 name: Generate SBOM sidecars
-description: Inspect the reviewed composition against the evaluated Spec and Lock, bind SPDX 3.0.1 and CycloneDX 1.7 sidecars to each release file's final bytes, and check them. Use in read-only build jobs.
+description: Inspect the reviewed composition against the evaluated Spec and Lock (Blueprint) or the Kaifile and its lock (kai sbom), bind SPDX 3.0.1 and CycloneDX 1.7 sidecars to each release file's final bytes, and check them. Use in read-only build jobs.
 
 inputs:
   files:
@@ -41,6 +41,9 @@ inputs:
   blueprint-binary:
     description: Installed Blueprint executable, otherwise blueprint on PATH
     default: blueprint
+  kai-binary:
+    description: Installed kai executable, otherwise kai on PATH; used instead of Blueprint when the repository has Kaifile.roc and no Blueprint.roc
+    default: kai
 
 outputs:
   run-attempt:
@@ -96,5 +99,6 @@ runs:
         INPUT_ARCHIVE_MEMBERS: ${{ inputs.archive-members }}
         INPUT_ROC_BINARY: ${{ inputs.roc-binary }}
         INPUT_BLUEPRINT_BINARY: ${{ inputs.blueprint-binary }}
+        INPUT_KAI_BINARY: ${{ inputs.kai-binary }}
         CONTROLLER: ${{ github.action_path }}/sbom_sidecars.py
       run: python3 "$CONTROLLER"
