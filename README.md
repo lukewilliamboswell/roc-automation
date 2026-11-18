@@ -45,6 +45,8 @@ compiler inputs and compile a native executable; the runner has no Blueprint
 dependency. Blueprint owns project planning and lock validation and supplies
 the runner's inputs. The current isolation contract requires Linux namespaces.
 
+For local compiler regression investigations, use the [downstream nightly sweep](tools/downstream-regressions/README.adoc) to generate an offline HTML matrix from installed compiler paths.
+
 ## Downstream status
 
 Published-release compatibility and automation revisions for the supported
