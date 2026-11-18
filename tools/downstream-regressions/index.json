@@ -170,41 +170,6 @@
           "path": "examples/subcommands.roc"
         }
       ]
-    },
-    {
-      "repository": "lukewilliamboswell/basic-ssg",
-      "skip": "Latest observed release has no examples archive; no older-release fallback.",
-      "examples": []
-    },
-    {
-      "repository": "lukewilliamboswell/roc-fuzz",
-      "skip": "Fuzz-specific build and runtime are outside this native CLI corpus.",
-      "examples": []
-    },
-    {
-      "repository": "lukewilliamboswell/roc-gui",
-      "skip": "Requires graphical runtime.",
-      "examples": []
-    },
-    {
-      "repository": "lukewilliamboswell/roc-pandoc",
-      "skip": "Requires the external Pandoc executable.",
-      "examples": []
-    },
-    {
-      "repository": "lukewilliamboswell/roc-ray",
-      "skip": "Requires graphical runtime.",
-      "examples": []
-    },
-    {
-      "repository": "lukewilliamboswell/roc-signals",
-      "skip": "Browser/Wasm runtime is outside this native CLI corpus.",
-      "examples": []
-    },
-    {
-      "repository": "lukewilliamboswell/roc-wasm4",
-      "skip": "Requires a Wasm console runtime.",
-      "examples": []
     }
   ]
 }
