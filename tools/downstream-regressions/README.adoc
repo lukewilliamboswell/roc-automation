@@ -113,8 +113,6 @@ The Automation tests workflow builds the runner with its pinned nightly and
 runs the offline helper and native engine regressions in a read-only job.
 It does not run the live downstream corpus.
 
-CI builds the entrypoint with its fixed test compiler and runs the native
-acceptance fixtures in a read-only job, without resolving downstream releases.
 Use the latest nightly to check and format the Roc entrypoint. For native runner
 acceptance tests, build it once and supply its absolute executable path:
 
