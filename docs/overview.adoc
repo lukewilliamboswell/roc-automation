@@ -135,9 +135,9 @@ repositories need not agree.
 This model treats that as the last good build and does not check upstream CI
 separately.
 
-CI installs that compiler as `roc` with the official
-https://github.com/roc-lang/setup-roc[`roc-lang/setup-roc`] action, which is
-also how it is named on a contributor's machine. The Blueprint environment
+CI installs that compiler as `roc` with
+xref:actions.adoc#install-the-nightly-compiler[`actions/setup-roc-nightly`],
+which is also how it is named on a contributor's machine. The Blueprint environment
 provides `roc-stable` and no `roc`, so the two names never collide.
 
 == What each workflow answers

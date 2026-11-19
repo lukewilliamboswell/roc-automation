@@ -104,9 +104,8 @@ runs:
         fi
     # Build the controller with its fixed tooling compiler before installing the
     # package compiler. No consumer Blueprint, Nix environment or code is needed.
-    - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+    - uses: $/actions/setup-roc-nightly
       with:
-        version: nightly-new-compiler
         nightly-tag: nightly-2026-10-09-258ab27
     - id: build
       shell: bash
@@ -120,11 +119,9 @@ runs:
           python3 "$ACTION_PATH/bootstrap.py"
         fi
     - if: inputs.phase == 'test'
-      uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
+      uses: $/actions/setup-roc-nightly
       with:
-        version: nightly-new-compiler
         nightly-tag: ${{ inputs.nightly-tag }}
-        download-method: asset-api
     - if: inputs.phase == 'test' && inputs.install-blueprint == 'true'
       uses: $/actions/setup-blueprint
       with:

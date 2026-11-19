@@ -87,7 +87,7 @@ class CoreFixture(unittest.TestCase):
             file.chmod(0o600)
 
     def fake_process(self, command, maximum, seconds, environment, label, cwd=None):
-        if label == "Core API download":
+        if label == "Core download":
             return self.raw
         if label == "Core stdlib zstd availability":
             return b"unavailable\n"
@@ -117,7 +117,10 @@ class CoreFixture(unittest.TestCase):
         command = self.process.call_args_list[0].args[0]
         self.assertEqual(command[:2], ["curl", "--disable"])
         self.assertEqual(command[-1], core.ASSET_URL)
-        self.assertIn("725946981", command[-1])
+        self.assertTrue(command[-1].startswith(
+            "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/"))
+        self.assertIn(core.CONTENT_HASH, command[-1])
+        self.assertNotIn("api.github.com", command[-1])
         self.assertNotIn("Authorization", " ".join(command))
         self.assertFalse(any(call.args[4].startswith("Core compiler") for call in self.process.call_args_list))
         core.verify_tree(self.tree)
@@ -303,8 +306,8 @@ class CoreFixture(unittest.TestCase):
         self.process.assert_not_called()
 
     def test_raw_and_tar_mismatches_never_publish(self):
-        for phase, data in (("Core API download", self.raw[:-1]),
-                            ("Core API download", b"x" * len(self.raw)),
+        for phase, data in (("Core download", self.raw[:-1]),
+                            ("Core download", b"x" * len(self.raw)),
                             ("Core data decode", self.tar + b"x"),
                             ("Core data decode", b"x" + self.tar[1:])):
             def bad(command, maximum, seconds, environment, label, cwd=None):

@@ -1,0 +1,130 @@
+= Local downstream compiler sweeps
+
+Run from the roc-automation checkout root using your latest Roc nightly:
+
+[source,sh]
+----
+roc tools/downstream-regressions/main.roc /path/to/sweep.json
+----
+
+The argument is a JSON configuration file. Copy `sweep.example.json` and replace
+its `nightlies` entries with paths to installed compiler executables. The script
+runs those compilers, in order; it never downloads or discovers compilers. It also
+needs Python 3 and curl, or an authenticated `gh`. Blueprint and Nix are not
+required. The runner's basic-cli dependency has an immutable bundle URL.
+
+[source,json]
+----
+{
+  "nightlies": ["~/roc_nightly-macos_apple_silicon-2026-11-18-a520eed/roc"],
+  "cache_dir": "./.downstream-cache",
+  "output": "./downstream-report.html"
+}
+----
+
+Relative paths are relative to the configuration file, and leading `~/` expands
+to your home directory. The cache and output paths default to those shown.
+Open the generated HTML in a browser; it embeds the results and command output
+and can be shared as one file. This is a local diagnostic tool, with no workflow,
+badge, publication or issue reporting integration.
+
+== Select examples and interpret results
+
+`index.json` selects representative apps from each repository's most recently
+published versioned product release, including prereleases such as `6.0.0-rc.5`.
+Selection compares publication timestamps, not version precedence or GitHub's
+Latest designation. Drafts and auxiliary releases such as `tools-*` and
+`linker-inputs-*` are excluded. Each invocation freezes release IDs, publication
+dates and examples assets. Missing archives or selected examples are visible skips;
+the runner never silently substitutes an older release. Edit the index to add
+examples, explain coverage, or supply a skip reason. Graph examples explicitly
+use the suite-root working directory their released wrapper documents.
+
+An example can declare an expected exit code for an exact nightly and stage.
+These declarations affect the HTML comparison, preserve the saved observations,
+and require a note; the runner never infers that a failure is intentional.
+Omit `case_name` to apply the declaration to every case of that runtime stage.
+Runtime stdout and stderr must still match the published case.
+
+[source,json]
+----
+{
+  "path": "examples/main.roc",
+  "expectations": [
+    {
+      "nightly": "nightly-2026-11-18-a520eed",
+      "stage": "test",
+      "code": 1,
+      "note": "Explain the observed failure and why it is expected here."
+    }
+  ]
+}
+----
+
+Each eligible app is checked, tested and built, then each archived case runs
+through `roc run` and the built binary. Stages are independent: check or test
+failure does not suppress later commands. Failed builds block binary execution.
+Expected nonzero runtime exits remain valid when the archived expectation matches.
+Stdout and stderr comparisons remain separate from process exit status.
+`roc test` exercises local expectations, including the platform templates'
+`tests` examples, but excludes expectations in downloaded URL dependencies.
+
+Nightlies are eligible from the release's UTC publication date minus one day,
+providing a 24-hour grace period on the date cutoff for timezone differences.
+For a November 19 release, November 18 nightlies are eligible and November 17
+nightlies are not applicable. This compares calendar dates from nightly tags,
+not exact publication timestamps.
+The HTML records the exact executable hash and reported version. Changes between
+adjacent tested builds identify an interval, not the exact breaking commit or
+proof that the compiler caused the difference. Skips, setup failures and missing
+observations provide no compatibility evidence. Compiler warnings and nonzero
+statuses are retained without special allowances.
+
+== Cache, resume and execution boundaries
+
+Downloads are bound to release asset IDs, sizes and SHA-256 digests. Cached ZIPs
+are rehashed before use, and the shared archive validator rejects unsafe paths,
+links, collisions and oversized inventories before extraction. Each invocation
+extracts fresh source material; runtime cases receive separate writable copies.
+Only managed working directories under `cache_dir/work` are replaced.
+
+Saved observations resume when compiler bytes, host, corpus and execution policy
+match. Delete `cache_dir/observations.json` to repeat observations. Changing an
+indexed example or release changes its corpus identity. Keep the local JSON,
+cache and generated HTML out of commits. The reusable example configuration
+contains no machine-specific compiler paths.
+
+Compiler commands have a five-minute deadline, binary cases ten seconds, and
+captured output is limited to 10 MB per command. Process trees are managed so a
+deadline terminates descendants. GitHub token variables are cleared for compiler
+and application children. These controls do not sandbox published applications:
+they run with your local account's filesystem and network access. Run only
+compilers and downstream releases you trust. GitHub release metadata is the
+archive integrity reference, not independent build provenance.
+
+A completed sweep returns success even when apps fail. Invalid configuration,
+failed preparation helpers or an inability to preserve observations are operational
+errors. The HTML is refreshed after each compiler and at completion; observations
+are saved atomically after each command, so completed work survives interruption.
+
+== Validate changes locally
+
+The Automation tests workflow builds the runner with its pinned nightly and
+runs the offline helper and native engine regressions in a read-only job.
+It does not run the live downstream corpus.
+
+Use the latest nightly to check and format the Roc entrypoint. For native runner
+acceptance tests, build it once and supply its absolute executable path:
+
+[source,sh]
+----
+roc check tools/downstream-regressions/main.roc
+roc fmt --check tools/downstream-regressions/main.roc
+roc build --opt=dev --output=/tmp/downstream-runner tools/downstream-regressions/main.roc
+DOWNSTREAM_RUNNER=/tmp/downstream-runner python3 -m unittest discover -s tests -p 'test_downstream*.py' -v
+python3 -m unittest discover -s tests -p test_compatibility_archive.py -v
+----
+
+The tests use fake compilers and local ZIP fixtures, without GitHub downloads.
+They exercise independent stages, date selection, resumed observations, signal
+and output-limit handling, stale binaries, archive identity and report escaping.

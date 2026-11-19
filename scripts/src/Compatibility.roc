@@ -119,8 +119,8 @@ Compatibility := [].{
 		}
 		for example in found.apps {
 			build_args = example.build_args ?? []
-			if build_args != [] and build_args != ["--fuzz"] {
-				return Err("build_args must be empty or contain only --fuzz once")
+			if build_args != [] and build_args != ["--fuzz"] and build_args != ["--specialize=yes"] {
+				return Err("build_args must be empty, [--fuzz], or [--specialize=yes]")
 			}
 			if !example.cases.all(|case| ["exact", "ignore"].contains(case.stderr_match ?? "exact")) {
 				return Err("stderr_match must be exact or ignore")
@@ -294,3 +294,8 @@ expect Compatibility.published_suite(Compatibility.published(fuzz_suite, "1.0.0"
 expect Compatibility.stderr_matches(case, []) and !Compatibility.stderr_matches(case, Str.to_utf8("statistics"))
 expect Compatibility.stderr_matches({ ..case, stderr_match: Ok("ignore") }, Str.to_utf8("statistics"))
 expect !Compatibility.stderr_matches({ ..case, stderr_match: Ok("exact") }, Str.to_utf8("statistics"))
+
+specialized_suite = { ..working, apps: [{ path: "examples/specialized.roc", target: Err(Missing), run: Err(Missing), build_args: Ok(["--specialize=yes"]), cases: [case] }] }
+
+expect Compatibility.working_tree_suite(Compatibility.render(specialized_suite)) == Ok(specialized_suite)
+expect Compatibility.published_suite(Compatibility.published(specialized_suite, "1.0.0", [published_url]), "o/pkg", "1.0.0") == Ok({ ..specialized_suite, release: "1.0.0", dependencies: [published_url] })

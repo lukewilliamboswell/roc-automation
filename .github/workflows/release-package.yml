@@ -150,11 +150,9 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Install the package compiler
-        uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
+        uses: ./.roc-automation/actions/setup-roc-nightly
         with:
-          version: nightly-new-compiler
           nightly-tag: ${{ steps.nightly.outputs.tag }}
-          download-method: asset-api
 
       - id: tool
         name: Select Blueprint or Kai
@@ -368,11 +366,9 @@ jobs:
           persist-credentials: false
 
       - name: Install the package compiler this run resolved
-        uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
+        uses: ./.roc-automation/actions/setup-roc-nightly
         with:
-          version: nightly-new-compiler
           nightly-tag: ${{ needs.build.outputs.nightly }}
-          download-method: asset-api
 
       - id: tool
         name: Select Blueprint or Kai

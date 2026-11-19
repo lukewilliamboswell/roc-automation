@@ -14,9 +14,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      - uses: ./actions/setup-roc-nightly
         with:
-          version: nightly-new-compiler
           nightly-tag: nightly-2026-10-15-38e6c42
       - name: Check source and unit tests
         shell: bash

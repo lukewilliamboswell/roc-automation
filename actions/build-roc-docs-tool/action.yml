@@ -28,9 +28,8 @@ runs:
         path: dist/roc-docs-${{ steps.target.outputs.system }}
         key: roc-docs-speed-${{ steps.target.outputs.system }}-nightly-2026-10-28-bad769b-${{ hashFiles('tools/roc-docs/**/*.roc', 'tools/roc-docs/*.css', 'tools/roc-docs/*.js', 'tools/roc-docs/vendor/**') }}
     - if: steps.cache.outputs.cache-hit != 'true'
-      uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+      uses: $/actions/setup-roc-nightly
       with:
-        version: nightly-new-compiler
         nightly-tag: nightly-2026-10-28-bad769b
     - if: steps.cache.outputs.cache-hit != 'true'
       name: Build the optimized native renderer once
