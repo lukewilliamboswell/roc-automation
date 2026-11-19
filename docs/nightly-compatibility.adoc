@@ -27,8 +27,11 @@ fixtures cover these states and hosted tests
 exercise native execution. The dashboard is a dated snapshot; a stopped publisher
 cannot update its colour. A pass covers the declared examples and targets only.
 
-Fuzzing builds may add only the admitted `--fuzz` switch; archived metadata cannot
-replace the compiler, output path or other compiler arguments. Cases with unstable
+Build metadata may select one admitted switch: `--fuzz` for fuzz instrumentation
+or `--specialize=yes` for development specialization. It cannot replace the
+compiler, output path or other compiler arguments; combinations and duplicates
+are rejected. Runner tests verify both admitted switches reach only the build
+command and that output and backend selection remain owned by the runner. Cases with unstable
 fuzzer statistics explicitly opt out of stderr comparison while preserving its raw
 bytes. Stdout and the normal exit code remain assertions. Signals, timeouts and
 output limits cannot satisfy an expected failure code. Regression tests cover these
@@ -279,11 +282,13 @@ stdout/stderr capture and exact case comparison. The runtime must exercise the
 built artifact and exit after its assertions; merely building a cart or opening
 a window does not establish behavioral compatibility.
 
-An application may add `build_args: ["--fuzz"]` to link a fuzz target. Missing or
-empty `build_args` keeps the ordinary build; every other argument or duplicate is
-rejected. These arguments affect `roc build` only, never `roc check`. Fuzz builds
-use `--opt=speed`, since fuzz instrumentation requires the LLVM backend; ordinary
-examples keep `--opt=dev`.
+An application may add `build_args: ["--fuzz"]` to link a fuzz target, or
+`build_args: ["--specialize=yes"]` to enable lambda-set specialization with the
+development backend, for example to avoid a compiler defect in unspecialized
+lowering. Missing or empty `build_args` keeps the ordinary build. Other arguments,
+combinations and duplicates are rejected. These arguments affect `roc build` only,
+never `roc check`. Fuzz builds use `--opt=speed`, since fuzz instrumentation
+requires the LLVM backend; ordinary and specialized examples keep `--opt=dev`.
 
 A case may add `stderr_match: "ignore"` for unstable libFuzzer diagnostics, with
 `stderr: ""`. Missing `stderr_match` or `"exact"` retains exact stderr comparison;
