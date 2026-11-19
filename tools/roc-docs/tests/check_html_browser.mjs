@@ -43,9 +43,33 @@ const server = http.createServer(async (req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}/`;
 const child = spawn(chrome, ['--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-  `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: 'ignore' });
-let browserError;
-child.on('error', error => { browserError = error; });
+  `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+// Chrome announces its endpoint on stderr once it listens. Waiting for that line
+// from launch, rather than polling DevToolsActivePort for a fixed time after the
+// renders, tolerates slow cold starts; failures report Chrome's own output.
+const browserStartup = 60000;
+const devtools = new Promise((resolve, reject) => {
+  let output = '';
+  let settled = false;
+  const settle = (error, endpoint) => {
+    if (settled) return;
+    settled = true; clearTimeout(timeout);
+    if (error) reject(new Error(`Chrome did not expose a debugging port: ${error}\n${output.slice(-8192)}`));
+    else resolve(endpoint);
+  };
+  const timeout = setTimeout(() => settle(`no endpoint within ${browserStartup / 1000} s`), browserStartup);
+  child.stderr.setEncoding('utf8');
+  // Keep draining stderr after the endpoint so Chrome never blocks on a full pipe.
+  child.stderr.on('data', chunk => {
+    if (settled) return;
+    output = (output + chunk).slice(-65536);
+    const match = /^DevTools listening on (ws:\/\/\S+)$/m.exec(output);
+    if (match) settle(null, new URL(match[1]));
+  });
+  child.once('error', error => settle(error.message));
+  child.once('exit', (code, signal) => settle(`Chrome exited (${signal ?? `code ${code}`})`));
+});
+devtools.catch(() => {});
 let ws;
 try {
   await fs.cp(fixtures, path.join(fixtureRoot, 'docs'), {recursive:true});
@@ -68,13 +92,7 @@ try {
   const diagramInput = path.join(profile, 'diagrams.md');
   await fs.writeFile(diagramInput, '# Diagram acceptance\n\n'+diagramBodies.map(body=>'```mermaid\n'+body+'```\n').join('\n'));
   await runRenderer(renderer, ['render',diagramInput,diagramSite], renderOptions);
-  let port;
-  for (let n = 0; n < 100; n++) {
-    if (browserError) throw browserError;
-    try { port = (await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; break; }
-    catch { await pause(100); }
-  }
-  assert.ok(port, 'Chrome did not expose a debugging port');
+  const {port} = await devtools;
   const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
   ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
