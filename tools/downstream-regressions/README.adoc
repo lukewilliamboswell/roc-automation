@@ -30,9 +30,12 @@ badge, publication or issue reporting integration.
 
 == Select examples and interpret results
 
-`index.json` selects representative apps from each repository's latest final
-numeric release. Each invocation freezes release IDs, publication dates and
-examples assets. Missing archives or selected examples are visible skips;
+`index.json` selects representative apps from each repository's most recently
+published versioned product release, including prereleases such as `6.0.0-rc.5`.
+Selection compares publication timestamps, not version precedence or GitHub's
+Latest designation. Drafts and auxiliary releases such as `tools-*` and
+`linker-inputs-*` are excluded. Each invocation freezes release IDs, publication
+dates and examples assets. Missing archives or selected examples are visible skips;
 the runner never silently substitutes an older release. Edit the index to add
 examples, explain coverage, or supply a skip reason. Graph examples explicitly
 use the suite-root working directory their released wrapper documents.

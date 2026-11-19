@@ -47,14 +47,14 @@ class LocalCorpusTests(unittest.TestCase):
 
         self.client = Client()
 
-    def make_archive(self, extra=None):
-        suite = {"schema_version": 1, "release": "1.0.0",
-                 "dependencies": ["https://github.com/owner/package/releases/download/1.0.0/hash.tar.zst"],
+    def make_archive(self, extra=None, version="1.0.0"):
+        suite = {"schema_version": 1, "release": version,
+                 "dependencies": [f"https://github.com/owner/package/releases/download/{version}/hash.tar.zst"],
                  "apps": [{"path": "examples/main.roc", "cases": [{"name": "hello", "args": ["argument"],
                            "stdin": "input", "stdout": "hello\n", "stderr": "", "exit_code": 0}]}]}
         with zipfile.ZipFile(self.archive, "w") as archive:
             for name, content in {"spec.json": json.dumps(suite), "examples/main.roc": "app [] {}", **(extra or {})}.items():
-                entry = zipfile.ZipInfo("package-examples-1.0.0/" + name)
+                entry = zipfile.ZipInfo(f"package-examples-{version}/" + name)
                 entry.create_system = 3
                 entry.external_attr = (stat.S_IFREG | 0o644) << 16
                 archive.writestr(entry, content)
@@ -78,16 +78,54 @@ class LocalCorpusTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     support.load_config(self.config)
 
-    def test_latest_release_excludes_prereleases_and_auxiliary_tags_without_fallback(self):
-        releases = [self.release, {**self.release, "tag_name": "tools-9.0.0", "published_at": "2027-01-01"},
-                    {**self.release, "tag_name": "2.0.0", "prerelease": True, "published_at": "2027-01-01"}]
-        with patch.object(self.client, "metadata", return_value=releases):
+    def test_latest_release_includes_prereleases_and_uses_publication_time(self):
+        for tag, flag in [("6.0.0-rc.5", True), ("v6.0.0-beta.1", False), ("2.0.0", True)]:
+            with self.subTest(tag=tag, prerelease=flag):
+                newest = {**self.release, "tag_name": tag, "prerelease": flag,
+                          "published_at": "2026-11-19T00:27:00Z"}
+                higher_version = {**self.release, "tag_name": "100.0.0",
+                                  "published_at": "2026-11-18T23:00:00Z"}
+                with patch.object(self.client, "metadata", return_value=[higher_version, newest, self.release]):
+                    self.assertEqual(support.latest_release(self.client, "owner/package")["tag_name"], tag)
+        newest_stable = {**self.release, "tag_name": "6.0.0", "published_at": "2026-11-20T00:00:00Z"}
+        with patch.object(self.client, "metadata", return_value=[newest, newest_stable]):
+            self.assertEqual(support.latest_release(self.client, "owner/package")["tag_name"], "6.0.0")
+
+    def test_latest_release_excludes_drafts_and_auxiliary_tags(self):
+        excluded = [{**self.release, "tag_name": tag, "published_at": "2027-01-01T00:00:00Z"}
+                    for tag in ["tools-9.0.0", "runtime-9.0.0", "linker-inputs-9.0.0", "nightly-latest"]]
+        excluded.append({**self.release, "tag_name": "9.0.0-rc.1", "draft": True,
+                         "published_at": "2027-01-01T00:00:00Z"})
+        with patch.object(self.client, "metadata", return_value=excluded + [self.release]):
             self.assertEqual(support.latest_release(self.client, "owner/package")["tag_name"], "1.0.0")
-        self.release["assets"] = []
-        manifest = self.prepare()
+
+    def test_newest_prerelease_without_examples_never_falls_back_to_stable(self):
+        newest = {**self.release, "tag_name": "6.0.0-rc.5", "prerelease": True,
+                  "published_at": "2026-11-19T00:27:00Z", "assets": []}
+        with patch.object(self.client, "metadata", return_value=[self.release, newest]):
+            manifest = self.prepare()
         self.assertIn("lacks one", manifest["apps"][0]["skip"])
-        self.assertEqual(manifest["apps"][0]["release"], "1.0.0")
+        self.assertEqual(manifest["apps"][0]["release"], "6.0.0-rc.5")
         self.assertEqual(self.client.downloads, 0)
+
+    def test_prerelease_archive_and_dependencies_are_bound_to_selected_tag(self):
+        version = "6.0.0-rc.5"
+        self.make_archive(version=version)
+        self.asset.update(name=f"package-examples-{version}.zip", size=self.archive.stat().st_size,
+                          digest="sha256:" + support.file_hash(self.archive))
+        self.release.update(tag_name=version, prerelease=True, published_at="2026-11-19T00:27:00Z")
+        manifest = self.prepare()
+        self.assertEqual(manifest["apps"][0]["release"], version)
+        self.assertEqual(manifest["apps"][0]["earliest_nightly"], "2026-11-18")
+        self.assertEqual(manifest["apps"][0]["skip"], "")
+        self.assertEqual(len(manifest["apps"][0]["cases"]), 1)
+
+    def test_pagination_can_find_the_most_recently_published_release(self):
+        newest = {**self.release, "tag_name": "6.0.0-rc.5", "prerelease": True,
+                  "published_at": "2026-11-19T00:27:00Z"}
+        with patch.object(self.client, "metadata", side_effect=[[self.release] * 100, [newest]]) as requests:
+            self.assertEqual(support.latest_release(self.client, "owner/package")["tag_name"], "6.0.0-rc.5")
+        self.assertIn("page=2", requests.call_args.args[0])
 
     def test_grace_cutoff_handles_calendar_boundaries_and_preserves_publication_date(self):
         for published, cutoff in [("2026-11-19", "2026-11-18"),

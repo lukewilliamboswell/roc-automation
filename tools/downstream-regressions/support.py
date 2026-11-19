@@ -24,7 +24,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 REPOSITORY = HERE.parents[1]
 MAX_DOWNLOAD = 50_000_000
-VERSION = re.compile(r"v?\d+\.\d+\.\d+\Z")
+VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\Z")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 REPO_NAME = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 NIGHTLY = re.compile(r"nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40}\Z")
@@ -121,13 +121,13 @@ def latest_release(client, repository):
         if not isinstance(found, list):
             raise ValueError("invalid release listing")
         releases.extend(release for release in found if not release.get("draft") and
-                        not release.get("prerelease") and VERSION.fullmatch(release.get("tag_name", "")))
+                        VERSION.fullmatch(release.get("tag_name", "")))
         if len(found) < 100:
             break
     else:
         raise ValueError("release listing exceeds 2000 entries")
     if not releases:
-        raise ValueError("no published final product release")
+        raise ValueError("no published versioned product release")
     return max(releases, key=lambda release: release.get("published_at") or "")
 
 
@@ -526,6 +526,7 @@ def render(config_source, observation_source):
                  "they do not identify a compiler commit as the cause.</p>",
                  "<p>Host: <code>" + escape(manifest.get("host", "unrecorded")) + "</code>. Generated: " +
                  escape(datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")) + "</p>",
+                 "<p>Releases are selected by publication time across stable and prerelease product versions; drafts and auxiliary releases are excluded.</p>",
                  "<p>Nightlies are eligible from the UTC release date minus one day (a 24-hour grace period on the date cutoff).</p>",
                  "<p>Test runs exercise app and local-module expectations. Roc does not run expectations inside URL dependencies.</p>"]
     if not records:
