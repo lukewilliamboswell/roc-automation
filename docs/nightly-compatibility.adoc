@@ -174,14 +174,15 @@ and `linker-inputs-*`. Release lists are paginated; an incomplete listing is an
 error. All targets receive the same `selection.json`, never separate moving
 lookups. Compiler execution verifies the installed version names that nightly.
 
-The compiler installer uses `download-method: asset-api` at a reviewed full
-action SHA. It admits the unique platform archive's size and SHA-256 from the
-selected tag's official release metadata, verifies the downloaded bytes before
-extraction, and exposes that archive's executable on `PATH`. A failed download,
-missing identity or changed bytes cannot become a compatibility pass. This
-avoids relying on the browser download route; the
-xref:security-model.adoc#compilers[compiler trust boundary] still trusts GitHub's
-release metadata rather than claiming upstream build provenance.
+The compiler is installed with
+xref:actions.adoc#install-the-nightly-compiler[`actions/setup-roc-nightly`],
+which admits the platform archive only when its size and SHA-256 match the
+selected tag's official release metadata, and verifies restored cache entries
+the same way. A failed download, missing identity or changed bytes cannot
+become a compatibility pass. A target that starts after another target on the
+same system has saved the archive restores it instead of downloading it. The
+xref:security-model.adoc#compilers[compiler trust boundary] still trusts
+GitHub's release metadata rather than claiming upstream build provenance.
 
 The selected release must contain exactly one
 `<package-name>-examples-<release-tag>.zip`. `package-name` defaults to the

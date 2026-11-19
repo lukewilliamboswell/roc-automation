@@ -1,0 +1,77 @@
+name: Set up a Roc nightly
+description: Install a roc-lang/nightlies compiler whose archive matches the size and SHA-256 its release publishes, reusing verified archives from the Actions cache.
+
+inputs:
+  nightly-tag:
+    description: Exact roc-lang/nightlies release, such as nightly-2026-11-18-a520eed; empty installs the latest
+    default: ''
+  token:
+    description: Token for the one release-metadata request; the archive download sends no credential
+    default: ${{ github.token }}
+  cache:
+    description: Restore and save the verified archive, keyed by its SHA-256; restored bytes are verified before use
+    default: 'true'
+
+outputs:
+  tag:
+    description: The nightly installed
+    value: ${{ steps.select.outputs.tag }}
+  sha256:
+    description: SHA-256 of the admitted archive, as its release publishes it
+    value: ${{ steps.select.outputs.sha256 }}
+  roc:
+    description: Absolute path of the installed compiler, which is also first on PATH
+    value: ${{ steps.install.outputs.roc }}
+  directory:
+    description: Directory of the extracted compiler, outside the workspace
+    value: ${{ steps.install.outputs.directory }}
+  cache-hit:
+    description: Whether verified cached bytes avoided the download
+    value: ${{ steps.install.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - id: select
+      name: Read the nightly's published archive identity
+      shell: bash
+      env:
+        INPUT_NIGHTLY_TAG: ${{ inputs.nightly-tag }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INSTALLER: ${{ github.action_path }}/setup_roc_nightly.py
+      run: '"${{ runner.os == ''Windows'' && ''python'' || ''python3'' }}" "$INSTALLER" --prepare'
+
+    - id: restore
+      name: Restore the verified archive
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.select.outputs.store }}
+        key: ${{ steps.select.outputs.cache-key }}
+
+    - id: install
+      name: Verify, extract and put the compiler on PATH
+      shell: bash
+      env:
+        INPUT_CACHE: ${{ inputs.cache }}
+        SELECTED_TAG: ${{ steps.select.outputs.tag }}
+        SELECTED_PLATFORM: ${{ steps.select.outputs.platform }}
+        SELECTED_ASSET: ${{ steps.select.outputs.asset }}
+        SELECTED_SIZE: ${{ steps.select.outputs.size }}
+        SELECTED_SHA256: ${{ steps.select.outputs.sha256 }}
+        SELECTED_URL: ${{ steps.select.outputs.url }}
+        SELECTED_DIRECTORY: ${{ steps.select.outputs.directory }}
+        SELECTED_EXTENSION: ${{ steps.select.outputs.extension }}
+        SELECTED_STORE: ${{ steps.select.outputs.store }}
+        INSTALLER: ${{ github.action_path }}/setup_roc_nightly.py
+      run: '"${{ runner.os == ''Windows'' && ''python'' || ''python3'' }}" "$INSTALLER"'
+
+    # Saved here, straight after admission, rather than when the job ends, so
+    # nothing the job runs later can change what is saved.
+    - name: Save the verified archive
+      if: inputs.cache == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.select.outputs.store }}
+        key: ${{ steps.select.outputs.cache-key }}

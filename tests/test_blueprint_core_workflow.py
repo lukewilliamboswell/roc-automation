@@ -91,7 +91,7 @@ class BlueprintCoreWorkflowTests(unittest.TestCase):
             self.assertNotIn("blueprint-core-version:", other)
         action = ACTION.read_text()
         self.assertLess(action.index("Validate native prerequisite support"),
-                        action.index("uses: roc-lang/setup-roc@"))
+                        action.index("uses: $/actions/setup-roc-nightly"))
         self.assertLess(action.index('if [[ -n "$RA_BLUEPRINT_CORE" ]]'),
                         action.index('"$RA_DIRECTORY/runner" "$RA_PHASE"'))
 

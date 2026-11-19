@@ -245,16 +245,14 @@ separate from all repository tasks.
 
 == Keep the package nightly floating
 
-The package-check job installs the latest nightly with the official setup action
+The package-check job installs the latest nightly with
+xref:actions.adoc#install-the-nightly-compiler[`actions/setup-roc-nightly`]
 and then runs `blueprint run check-package`. It does not fetch a program called
 `roc` from the fixed-tooling environment:
 
 [source,yaml]
 ----
-- uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
-  with:
-    version: nightly-new-compiler
-    download-method: asset-api
+- uses: lukewilliamboswell/roc-automation/actions/setup-roc-nightly@REVIEWED_FULL_SHA
 - run: blueprint run check-package
 ----
 

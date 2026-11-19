@@ -97,9 +97,6 @@ jobs:
           cp examples/pure-package/Blueprint.roc Blueprint.roc
           cp examples/pure-package/Blueprint.lock Blueprint.lock
       - uses: ./actions/setup-blueprint
-      - uses: roc-lang/setup-roc@30af91a173612e462a5df47f3b697c53c211f48c
-        with:
-          version: nightly-new-compiler
-          download-method: asset-api
+      - uses: ./actions/setup-roc-nightly
       - run: blueprint run check-package
         working-directory: examples/pure-package

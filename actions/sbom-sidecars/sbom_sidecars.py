@@ -578,7 +578,7 @@ def main(run: Run = run_command, download: setup_blueprint.Fetch = setup_bluepri
             if not compiler_matches(compiler_output, tool["compiler"]):
                 raise Refusal(
                     f"roc-binary reports {compiler_output.strip().splitlines()[0] if compiler_output.strip() else 'nothing'!r}, but roc-blueprint {project_version}'s SBOM tool "
-                    f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or roc-lang/setup-roc with nightly-tag"
+                    f"needs compiler {tool['compiler']}; provision that nightly through a Blueprint Fetch recipe and actions/blueprint-tool, or actions/setup-roc-nightly with nightly-tag"
                 )
             tool_command = source_tool_command(roc, tool)
             tool_identity = {"url": tool["url"], "sha256": ""}
