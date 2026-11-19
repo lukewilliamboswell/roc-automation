@@ -10,7 +10,7 @@ import cli.Duration
 
 Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, exit_code : I32, skip : Str }
 
-App : { id : Str, repository : Str, release : Str, date : Str, root : Str, path : Str, cwd : Str, cases : List(Case), note : Str, skip : Str }
+App : { id : Str, repository : Str, release : Str, date : Str, earliest_nightly : Str, root : Str, path : Str, cwd : Str, cases : List(Case), note : Str, skip : Str }
 
 Manifest : { cache : Str, output : Str, observations : Str, corpus_hash : Str, host : Str, nightlies : List({ path : Str, sha256 : Str }), apps : List(App) }
 
@@ -61,9 +61,9 @@ sweep! = |config| {
 		for application in manifest.apps {
 			identity = "${manifest.corpus_hash}|${manifest.host}|${compiler.path}|${compiler.sha256}|${application.id}|v1"
 			seed = { ..base, key: identity, app_id: application.id, repository: application.repository, release: application.release, version, nightly_date: date, note: application.note }
-			if application.skip != "" or date == "" or identified.status != "exited" or identified.code != 0 or before(date, application.date) {
-				reason = if (application.skip != "") application.skip else if (date == "" or identified.status != "exited" or identified.code != 0) "compiler identity unavailable: ${identified.stderr}" else "nightly predates release"
-				$records = $records.keep_if(|r| r.key != "${identity}|skip").append({ ..seed, key: "${identity}|skip", stage: "suite", status: if (reason == "nightly predates release") "not-applicable" else "skipped", note: reason })
+			if application.skip != "" or date == "" or identified.status != "exited" or identified.code != 0 or before(date, application.earliest_nightly) {
+				reason = if (application.skip != "") application.skip else if (date == "" or identified.status != "exited" or identified.code != 0) "compiler identity unavailable: ${identified.stderr}" else "nightly predates 24-hour release window"
+				$records = $records.keep_if(|r| r.key != "${identity}|skip").append({ ..seed, key: "${identity}|skip", stage: "suite", status: if (reason == "nightly predates 24-hour release window") "not-applicable" else "skipped", note: reason })
 				_ = helper!(["save", manifest.observations], Json.to_str($records))?
 			} else {
 				complete = ["check", "test", "build"].all(|stage| $records.any(|r| r.key == "${identity}|${stage}")) and application.cases.all(|case| ["run", "binary"].all(|stage| $records.any(|r| r.key == "${identity}|${stage}|${case.name}")))

@@ -66,7 +66,11 @@ Stdout and stderr comparisons remain separate from process exit status.
 `roc test` exercises local expectations, including the platform templates'
 `tests` examples, but excludes expectations in downloaded URL dependencies.
 
-Nightlies earlier than the release's UTC publication date are not applicable.
+Nightlies are eligible from the release's UTC publication date minus one day,
+providing a 24-hour grace period on the date cutoff for timezone differences.
+For a November 19 release, November 18 nightlies are eligible and November 17
+nightlies are not applicable. This compares calendar dates from nightly tags,
+not exact publication timestamps.
 The HTML records the exact executable hash and reported version. Changes between
 adjacent tested builds identify an interval, not the exact breaking commit or
 proof that the compiler caused the difference. Skips, setup failures and missing

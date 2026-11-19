@@ -2,6 +2,7 @@
 
 Build main.roc with the latest nightly and set DOWNSTREAM_RUNNER to that binary.
 """
+import datetime
 import json
 import os
 from pathlib import Path
@@ -53,7 +54,9 @@ if stage == 'run':
                                  'root':str(source),'path':'main.roc','cwd':'.','note':'','skip':'','expectations':[],
                                  'cases':[{'name':'default','args':['--flag=some value'],'stdin':'input\n',
                                            'stdout':'ok\n','stderr':'','exit_code':0,'skip':''}]}]}
-            if failure == 'predates': manifest['apps'][0]['date'] = '2026-11-19'
+            if failure == 'predates': manifest['apps'][0]['date'] = '2026-11-20'
+            if failure == 'grace': manifest['apps'][0]['date'] = '2026-11-19'
+            manifest['apps'][0]['earliest_nightly'] = (datetime.date.fromisoformat(manifest['apps'][0]['date']) - datetime.timedelta(days=1)).isoformat()
             (root/'manifest.json').write_text(json.dumps(manifest))
             (tool/'support.py').write_text('''import json, pathlib, shutil, sys
 op = sys.argv[1]
@@ -113,5 +116,8 @@ if op == 'render': pass
     def test_success_without_output_cannot_execute_archived_stale_binary(self):
         self.exercise('no-output')
 
-    def test_nightly_before_publication_date_is_not_applicable(self):
+    def test_nightly_before_grace_window_is_not_applicable(self):
         self.exercise('predates')
+
+    def test_previous_day_nightly_is_eligible_with_24_hour_grace(self):
+        self.exercise('grace')

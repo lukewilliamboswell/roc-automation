@@ -89,6 +89,23 @@ class LocalCorpusTests(unittest.TestCase):
         self.assertEqual(manifest["apps"][0]["release"], "1.0.0")
         self.assertEqual(self.client.downloads, 0)
 
+    def test_grace_cutoff_handles_calendar_boundaries_and_preserves_publication_date(self):
+        for published, cutoff in [("2026-11-19", "2026-11-18"),
+                                  ("2026-03-01", "2026-02-28"),
+                                  ("2024-03-01", "2024-02-29"),
+                                  ("2026-01-01", "2025-12-31")]:
+            with self.subTest(published=published):
+                self.release["published_at"] = published + "T01:00:00Z"
+                manifest = self.prepare()
+                self.assertEqual(manifest["apps"][0]["date"], published)
+                self.assertEqual(manifest["apps"][0]["earliest_nightly"], cutoff)
+
+    def test_grace_policy_changes_corpus_identity_so_old_skips_cannot_resume(self):
+        current = self.prepare()
+        with patch.object(support, "earliest_nightly_date", side_effect=lambda date: date):
+            old_policy = self.prepare()
+        self.assertNotEqual(current["corpus_hash"], old_policy["corpus_hash"])
+
     def test_compiler_hash_is_bytes_and_missing_compiler_remains_visible(self):
         compiler = self.root / "bin/roc"
         compiler.parent.mkdir()

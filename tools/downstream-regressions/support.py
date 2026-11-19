@@ -206,10 +206,18 @@ def case_record(case):
     return result
 
 
+def earliest_nightly_date(publication_date):
+    """Nightly tags contain dates: allow the previous UTC calendar day."""
+    if not publication_date:
+        return ""
+    return (datetime.date.fromisoformat(publication_date) - datetime.timedelta(days=1)).isoformat()
+
+
 def base_app(repository, entry, note="", skip="", release="", date=""):
     path = entry.get("path", "")
     return {"id": repository + (":" + path if path else ""), "repository": repository,
-            "release": release, "date": date, "root": "", "path": path,
+            "release": release, "date": date, "earliest_nightly": earliest_nightly_date(date),
+            "root": "", "path": path,
             "cwd": ".", "cases": [], "note": note, "skip": skip,
             "expectations": validate_expectations(entry.get("expectations", []))}
 
@@ -518,6 +526,7 @@ def render(config_source, observation_source):
                  "they do not identify a compiler commit as the cause.</p>",
                  "<p>Host: <code>" + escape(manifest.get("host", "unrecorded")) + "</code>. Generated: " +
                  escape(datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")) + "</p>",
+                 "<p>Nightlies are eligible from the UTC release date minus one day (a 24-hour grace period on the date cutoff).</p>",
                  "<p>Test runs exercise app and local-module expectations. Roc does not run expectations inside URL dependencies.</p>"]
     if not records:
         fragments.append("<p>No compiler observations have been recorded.</p>")
