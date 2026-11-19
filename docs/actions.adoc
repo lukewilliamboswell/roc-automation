@@ -110,7 +110,8 @@ what the checksum does and does not establish.
 
 For the recorded Blueprint 0.12.0 executable digests, the installer also admits
 that release's known Core source before exposing `blueprint`. It downloads one
-fixed public release asset through the official asset API, checks its recorded
+fixed public release asset from its release download address, without a
+credential and so outside the API's 60-an-hour anonymous limit, checks its recorded
 compressed and tar SHA-256, and verifies all 25 regular files before an atomic
 insertion into Roc's package cache. This prepares configuration evaluation before
 providers are available. It needs either Python 3.14 with its optional

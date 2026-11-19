@@ -28,7 +28,9 @@ import time
 VERSION = "0.12.0"
 CONTENT_HASH = "3mh7nRh7hHcVamEwYFCtd7aMUEoP3cdpAk9gLsZMV17m"
 ASSET_ID = 725946981
-ASSET_URL = "https://api.github.com/repos/lukewilliamboswell/roc-blueprint/releases/assets/725946981"
+# The public download address: the anonymous asset API answers 60 requests an
+# hour per address, which shared hosted runners exhaust.
+ASSET_URL = "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/roc-blueprint-core-3mh7nRh7hHcVamEwYFCtd7aMUEoP3cdpAk9gLsZMV17m.tar.zst"
 RAW_BYTES = 132723
 RAW_SHA256 = "b367d5d91a32c002d09d5309a28ae82c0e978a6cd59ed4eb249e395700a01910"
 TAR_BYTES = 531968
@@ -451,8 +453,8 @@ def fetch_raw(environment):
     data = run_bounded(["curl", "--disable", "--no-netrc", "--fail", "--silent", "--show-error",
                         "--location", "--proto", "=https", "--proto-redir", "=https", "--max-redirs", "3",
                         "--connect-timeout", "10", "--max-time", "60", "--max-filesize", str(RAW_BYTES),
-                        "--header", "Accept: application/octet-stream", ASSET_URL],
-                       RAW_BYTES, 60, environment, "Core API download")
+                        ASSET_URL],
+                       RAW_BYTES, 60, environment, "Core download")
     verify_raw(data)
     return data
 
