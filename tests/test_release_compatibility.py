@@ -194,8 +194,22 @@ else:
         self.assertIn("--opt=speed", build["argv"])
         self.assertEqual(sum(arg.startswith("--output=") for arg in build["argv"]), 1)
 
+    def test_specialization_is_owned_by_the_dev_build_command(self):
+        self.spec["apps"][0]["build_args"] = ["--specialize=yes"]
+        self.make_archive()
+        self.refresh_selection()
+        ran, directory, _ = self.run_phase("test")
+        self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
+        check = json.loads((directory / "2-command.json").read_text())
+        build = json.loads((directory / "3-command.json").read_text())
+        self.assertNotIn("--specialize=yes", check["argv"])
+        self.assertEqual(build["argv"].count("--specialize=yes"), 1)
+        self.assertIn("--opt=dev", build["argv"])
+        self.assertNotIn("--opt=speed", build["argv"])
+        self.assertEqual(sum(arg.startswith("--output=") for arg in build["argv"]), 1)
+
     def test_unadmitted_build_arguments_and_stream_policies_fail_setup(self):
-        for arguments in (["--output=elsewhere"], ["--fuzz", "--fuzz"], ["--fuzz", "--target=wasm32"], ["--opt=all"], "--fuzz"):
+        for arguments in (["--output=elsewhere"], ["--fuzz", "--fuzz"], ["--fuzz", "--target=wasm32"], ["--opt=all"], "--fuzz", ["--specialize=no"], ["--specialize=yes", "--specialize=yes"], ["--specialize=yes", "--output=elsewhere"], ["--fuzz", "--specialize=yes"]):
             with self.subTest(build_args=arguments):
                 self.spec["apps"][0]["build_args"] = arguments
                 self.make_archive()
