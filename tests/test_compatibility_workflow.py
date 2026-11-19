@@ -101,9 +101,9 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
         bootstrap = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bootstrap)
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            compiler = root / "roc_nightly-windows_x86_64-tooling"
-            compiler.mkdir()
+            root = Path(temporary).resolve()
+            compiler = root / "roc-nightly-install" / "roc_nightly-windows_x86_64-tooling"
+            compiler.mkdir(parents=True)
             executable = compiler / ("roc.exe" if os.name == "nt" else "roc")
             executable.write_bytes(b"fixture")
             outputs = root / "outputs"
@@ -115,16 +115,38 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
             values = dict(line.split("=", 1) for line in outputs.read_text().splitlines())
             directory = Path(values["directory"])
             self.assertTrue((directory / "tooling" / executable.name).is_file())
-            self.assertEqual(list(root.glob("roc_nightly-*")), [])
+            self.assertEqual(list(root.glob("roc-nightly-install/roc_nightly-*")), [])
             self.assertTrue(Path(values["archive-helper"]).is_file())
             build.assert_called_once()
+
+    def test_bootstrap_refuses_a_compiler_setup_roc_nightly_did_not_install(self):
+        import importlib.util
+        from unittest.mock import patch
+        source = ROOT / "actions/release-compatibility/bootstrap.py"
+        spec = importlib.util.spec_from_file_location("compatibility_bootstrap", source)
+        bootstrap = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bootstrap)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            # An extracted compiler in the workspace, as roc-lang/setup-roc leaves it.
+            compiler = root / "workspace" / "roc_nightly-linux_x86_64-tooling"
+            compiler.mkdir(parents=True)
+            executable = compiler / "roc"
+            executable.write_bytes(b"fixture")
+            with patch.dict(os.environ, {"GITHUB_WORKSPACE": str(root / "workspace"), "RUNNER_TEMP": str(root),
+                                          "GITHUB_OUTPUT": str(root / "outputs")}), \
+                    patch.object(bootstrap.shutil, "which", return_value=str(executable)), \
+                    patch.object(bootstrap.subprocess, "run"):
+                with self.assertRaisesRegex(RuntimeError, "unexpected tooling compiler directory"):
+                    bootstrap.main()
+            self.assertTrue(executable.is_file())
 
     def test_admitted_package_compiler_retains_the_selected_pair_and_execution_boundary(self):
         import re
 
         action = (ROOT / "actions/release-compatibility/action.yml").read_text()
         steps = re.split(r"(?m)^    - ", action)[1:]
-        installers = [step for step in steps if "uses: roc-lang/setup-roc@" in step]
+        installers = [step for step in steps if "uses: $/actions/setup-roc-nightly\n" in step]
         self.assertEqual(len(installers), 2)
         tooling, package = installers
         # Controller tooling is still fixed; the new transport must not turn
@@ -133,8 +155,6 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
         self.assertNotIn("inputs.nightly-tag", tooling)
         self.assertTrue(package.startswith("if: inputs.phase == 'test'\n"))
         self.assertIn("nightly-tag: ${{ inputs.nightly-tag }}", package)
-        self.assertIn("download-method: asset-api", package)
-        self.assertRegex(package, r"uses: roc-lang/setup-roc@[0-9a-f]{40}\n")
         self.assertNotIn("nightly-tag: ''", package)
         self.assertLess(action.index(package), action.index("    - id: run\n"))
 
@@ -143,8 +163,8 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
                 ("Install the package compiler", "${{ steps.nightly.outputs.tag }}"),
                 ("Install the package compiler this run resolved", "${{ needs.build.outputs.nightly }}")):
             block = workflow.split(f"      - name: {name}\n", 1)[1].split("\n      - ", 1)[0]
+            self.assertIn("uses: ./.roc-automation/actions/setup-roc-nightly\n", block)
             self.assertIn("nightly-tag: " + selected, block)
-            self.assertIn("download-method: asset-api", block)
 
     def test_report_job_has_no_consumer_execution_or_artifact_download(self):
         workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()

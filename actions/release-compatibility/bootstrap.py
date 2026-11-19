@@ -18,11 +18,12 @@ def main():
     executable = directory / ("runner.exe" if os.name == "nt" else "runner")
     subprocess.run([compiler, "build", str(action / "../../scripts/release_compatibility.roc"),
                     "--output=" + str(executable)], check=True)
-    # setup-roc finds the first extracted compiler in the workspace. Move this
-    # installation aside so the package nightly cannot resolve to tooling again.
+    # Move the installation setup-roc-nightly made aside, so no later step
+    # running the package's code can resolve `roc` to the tooling compiler.
     tooling = Path(compiler).resolve().parent
-    workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-    if tooling.parent != workspace or not tooling.name.startswith("roc_nightly-"):
+    installs = Path(os.environ["RUNNER_TEMP"]).resolve()
+    if tooling.parent.parent != installs or not tooling.parent.name.startswith("roc-nightly-") \
+            or not tooling.name.startswith("roc_nightly-"):
         raise RuntimeError("unexpected tooling compiler directory")
     shutil.move(str(tooling), directory / "tooling")
 

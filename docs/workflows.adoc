@@ -31,7 +31,7 @@ Rules that hold in all three:
 * A job that runs repository code has no write access. A job with write access
   runs no repository code.
 * The nightly tag is resolved once, in the first job, and passed to every other
-  job as the `nightly-tag` input of `roc-lang/setup-roc`. Matrix jobs never
+  job as the `nightly-tag` input of `actions/setup-roc-nightly`. Matrix jobs never
   each resolve "latest" for themselves, or one run could test several
   compilers.
 * Each job calls a `blueprint run <task>` and holds no logic of its own.

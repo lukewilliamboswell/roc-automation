@@ -174,8 +174,8 @@ the latest nightly, then calls a task:
 
 . Set up the verified `blueprint` binary, requesting Nix when needed, with
   xref:actions.adoc#setup-blueprint[`actions/setup-blueprint`].
-. Install the latest nightly as `roc` with the official `roc-lang/setup-roc`
-  action; see xref:actions.adoc#install-the-nightly-compiler[Install the nightly compiler].
+. Install the latest nightly as `roc` with
+  xref:actions.adoc#install-the-nightly-compiler[`actions/setup-roc-nightly`].
 . Run `blueprint run <task>`.
 
 Choose runners for which the selected release has reviewed binaries in

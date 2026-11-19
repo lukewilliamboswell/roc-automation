@@ -178,23 +178,36 @@ the disposable runner's intact local cache. This does not establish integrity
 of arbitrary pre-existing package caches on a maintainer's machine.
 
 The package compiler is the latest published nightly and is not pinned. It is
-installed by the official `roc-lang/setup-roc` action, referenced by full
-commit SHA, with `download-method: asset-api`. A browser download route can fail
-while the official asset API still serves the selected release's exact bytes.
-The installer binds that API request to the selected repository, tag, platform
-and unique asset, then checks the bounded archive against its recorded size and
-SHA-256 before extraction or adding the selected executable to `PATH`. Invalid
-metadata or bytes stop installation. An unrelated compiler directory cannot
-stand in for that executable.
+installed by xref:actions.adoc#install-the-nightly-compiler[`actions/setup-roc-nightly`],
+which roc-automation's own workflows also use for their fixed tooling
+nightlies. A compromised or corrupted download, or a cache entry written by an
+earlier job, could otherwise put different compiler bytes on `PATH` than the
+release publishes. The action reads the selected release once through the
+GitHub API with the workflow token, binds the request to the repository, tag,
+platform and unique asset, and takes that asset's size and SHA-256 from the
+answer. The archive itself comes from the release's public download address
+without a credential, as Blueprint fetches it, and is admitted only when its
+bytes match. Invalid metadata or bytes stop installation; nothing is extracted
+before admission, every member must lie inside the asset's compiler directory,
+and the tree is extracted outside the workspace, so candidate content cannot
+supply the compiler.
+
+Only verified archives are cached, under the content-addressed key of their
+digest. The cache is saved immediately after admission, before a job runs
+repository code, and restored bytes are verified again before every use, so a
+tampered entry costs a download and never selects the compiler. Extracted
+trees and Roc's compiled-module cache are not carried between runs. Unit tests
+cover refused metadata, altered cache entries, digest mismatches, paths outside
+the compiler directory, symlinks, HTTPS downgrades and credential-free
+downloads; CI installs real nightlies on every hosted system.
 
 The digest comes from the same GitHub release metadata that selects the asset;
 it binds delivery to that selection and is neither a separately reviewed hash
 nor provenance for the upstream compiler build. GitHub's metadata and release
 hosting remain trusted. The nightly runs only in jobs that hold no write access.
 A workflow resolves the moving release once and passes the tag to every job;
-release notes record the version used. Installer refusal tests and native
-platform jobs verify admission and execution, while the shared workflow tests
-check that the selected tag reaches that installer before consumer code runs.
+release notes record the version used. The shared workflow tests check that
+the selected tag reaches that installer before consumer code runs.
 
 [#the-blueprint-binary]
 == The `blueprint` binary

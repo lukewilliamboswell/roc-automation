@@ -170,32 +170,53 @@ See xref:kai.adoc#run-a-repository-on-kai[Run a repository on Kai].
 Blueprint.
 
 [#install-the-nightly-compiler]
-== Install the nightly compiler
+== `actions/setup-roc-nightly`
 
-The package compiler is installed by the official
-https://github.com/roc-lang/setup-roc[`roc-lang/setup-roc`] action, not by an
-action in this repository. Reference it by full commit SHA like any other.
+Installs a compiler from a `roc-lang/nightlies` release as `roc`, first on
+`PATH`, on the runners the nightlies are built for: x86-64 and arm64 Linux,
+Apple Silicon and Intel macOS, and x86-64 Windows.
 
 [source,yaml]
 ----
-- uses: roc-lang/setup-roc@REVIEWED_FULL_SHA
+- uses: lukewilliamboswell/roc-automation/actions/setup-roc-nightly@REVIEWED_FULL_SHA
   with:
-    version: nightly
     nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
-    download-method: asset-api
 ----
 
-It installs the compiler on `PATH` as `roc`. With `nightly-tag` empty it
-installs the latest release of `roc-lang/nightlies`; with a tag it installs that
-release. Choose a reviewed action revision supporting `asset-api`: this mode
-checks the selected archive's size and SHA-256 from official release metadata
-before extraction and selects its exact executable. See
-xref:security-model.adoc#compilers[the compiler trust boundary] for what that
-metadata establishes.
+With `nightly-tag` empty it installs the latest release. It asks the GitHub API
+once, with the workflow token (input `token`), for the release, and admits only
+an immutable release with exactly one archive for the runner and a published
+SHA-256. It downloads that archive from the release's public download address,
+`+https://github.com/roc-lang/nightlies/releases/download/<tag>/<asset>+`, with
+no credential, as Blueprint fetches a `Recipes.roc_nightly`. The bytes must
+match the published size and SHA-256 before anything is extracted. Every
+archive member must lie inside the compiler directory the asset is named for,
+and the tree is extracted outside the workspace, so a checkout never contains,
+or supplies, a compiler. The `ROC_GLUE_*` variables a nightly's `glue`
+directory defines are exported as `roc-lang/setup-roc` exports them.
+
+The release question is the only request to the API. GitHub answers 60
+requests an hour from one address without a token, and hosted runners share
+addresses, so an anonymous asset-API download can be refused with HTTP 403
+while the same bytes are served from the download address.
+
+With `cache` true, the default, the verified archive is kept, keyed by its
+SHA-256, in `roc-automation/roc-nightly/v1/sha256/<digest>` under
+`XDG_CACHE_HOME`, `LOCALAPPDATA` on Windows, or `~/.cache`, beside Blueprint's
+own store. The action restores that directory from the Actions cache before
+admission and saves it straight after, before any later step of the job runs.
+Restored bytes are hashed and compared again on every use, and a mismatch is
+downloaded afresh, so a cache entry can save a download but cannot choose the
+compiler. Extracted trees and Roc's module cache are never cached. A fixed
+tooling nightly therefore downloads once per runner system for as long as
+GitHub keeps the entry, and a moving nightly once per new release. The outputs
+are `tag`, `sha256`, `roc`, `directory` and `cache-hit`. See
+xref:security-model.adoc#compilers[the compiler trust boundary] for what the
+published digest establishes.
 
 A workflow with more than one job resolves the latest tag once, in its first
 job, and passes it to every job through `nightly-tag`, so that one run uses one
-compiler:
+compiler and every later job restores the archive the first one saved:
 
 [source,yaml]
 ----
@@ -722,7 +743,7 @@ The job requires only `contents: read`. A native tool needs no compiler; the
 app-bundle path needs its fixed compiler and can download dependencies on first
 use. Supply that compiler separately through a Fetch recipe and
 xref:actions.adoc#blueprint-tool[`actions/blueprint-tool`], or through
-`roc-lang/setup-roc` in a job that does not also need the package nightly.
+`actions/setup-roc-nightly` in a job that does not also need the package nightly.
 
 What the action establishes is bounded. The tool's `inspect` decides what the
 composition may claim, and the sidecars bind that claim to the final bytes.
