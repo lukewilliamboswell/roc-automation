@@ -33,6 +33,18 @@ colours. These checks do not establish PDF/A or PDF/UA conformance.
 
 == Review the complete publication
 
+Run the browser startup regressions before the full audit:
+
+[source,sh]
+----
+node --test tools/roc-docs/tests/test_chrome_startup.mjs
+----
+
+The audit waits for a complete DevTools endpoint line from Chrome’s stderr,
+including when the line spans stream chunks. A startup deadline, spawn failure
+or early exit reports bounded diagnostics; stderr remains drained after startup.
+These tests cover startup handling, while the full audit verifies browser behavior.
+
 Build the manual as xref:contributing.adoc#change-the-manual[the contributor guide]
 describes, then run the browser audit with Node 22.4+ and Chrome on the test host:
 

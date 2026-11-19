@@ -100,6 +100,29 @@ jobs:
         env:
           ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner
         run: python3 tests/run_fuzz_compatibility_smoke.py
+  downstream-runner:
+    name: Native downstream sweep regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./actions/setup-roc-nightly
+        with:
+          nightly-tag: nightly-2026-11-18-a520eed
+      - name: Check and build the downstream runner
+        run: |
+          roc fmt --check tools/downstream-regressions/main.roc
+          roc check tools/downstream-regressions/main.roc
+          roc build --opt=dev tools/downstream-regressions/main.roc --output="$RUNNER_TEMP/downstream-runner"
+      - name: Exercise the native engine with offline fixtures
+        env:
+          DOWNSTREAM_RUNNER: ${{ runner.temp }}/downstream-runner
+        run: |
+          python3 -m unittest discover -s tests -p test_downstream_regressions.py -v
+          python3 -m unittest discover -s tests -p test_downstream_runner.py -v
+
   controller-tests:
     runs-on: ubuntu-24.04
     steps:

@@ -1,6 +1,7 @@
 // Optional real-browser acceptance audit. Uses Node and an installed Chrome only
 // on the test host; the documentation utility has no browser or Node dependency.
 import assert from 'node:assert/strict';
+import { waitForDevtools } from './chrome_startup.mjs';
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -48,27 +49,7 @@ const child = spawn(chrome, ['--headless', '--disable-gpu', '--no-first-run', '-
 // from launch, rather than polling DevToolsActivePort for a fixed time after the
 // renders, tolerates slow cold starts; failures report Chrome's own output.
 const browserStartup = 60000;
-const devtools = new Promise((resolve, reject) => {
-  let output = '';
-  let settled = false;
-  const settle = (error, endpoint) => {
-    if (settled) return;
-    settled = true; clearTimeout(timeout);
-    if (error) reject(new Error(`Chrome did not expose a debugging port: ${error}\n${output.slice(-8192)}`));
-    else resolve(endpoint);
-  };
-  const timeout = setTimeout(() => settle(`no endpoint within ${browserStartup / 1000} s`), browserStartup);
-  child.stderr.setEncoding('utf8');
-  // Keep draining stderr after the endpoint so Chrome never blocks on a full pipe.
-  child.stderr.on('data', chunk => {
-    if (settled) return;
-    output = (output + chunk).slice(-65536);
-    const match = /^DevTools listening on (ws:\/\/\S+)$/m.exec(output);
-    if (match) settle(null, new URL(match[1]));
-  });
-  child.once('error', error => settle(error.message));
-  child.once('exit', (code, signal) => settle(`Chrome exited (${signal ?? `code ${code}`})`));
-});
+const devtools = waitForDevtools(child, browserStartup);
 devtools.catch(() => {});
 let ws;
 try {
