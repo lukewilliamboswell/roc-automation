@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "repositories": [
+    {
+      "repository": "lukewilliamboswell/plume",
+      "note": "Charts and JSON input/error paths",
+      "examples": [
+        {
+          "path": "examples/hello.roc"
+        },
+        {
+          "path": "examples/budget.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-ansi",
+      "note": "ANSI formatting and text edits",
+      "examples": [
+        {
+          "path": "examples/colors.roc"
+        },
+        {
+          "path": "examples/piece-table.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-blueprint",
+      "note": "Configuration composition and tagged extension values",
+      "examples": [
+        {
+          "path": "examples/composition/Blueprint.roc"
+        },
+        {
+          "path": "examples/extensions/Blueprint.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-docx",
+      "note": "Document construction and inspection",
+      "examples": [
+        {
+          "path": "examples/agreement/main.roc"
+        },
+        {
+          "path": "examples/inspect/main.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-font",
+      "note": "Font shaping and binary input validation",
+      "examples": [
+        {
+          "path": "examples/shape.roc"
+        },
+        {
+          "path": "examples/font-file.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-graph-layout",
+      "note": "Graph layout and diagram generation",
+      "examples": [
+        {
+          "path": "examples/build_pipeline/main.roc",
+          "cwd": "."
+        },
+        {
+          "path": "examples/mermaid_sequence/main.roc",
+          "cwd": "."
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-parser",
+      "note": "Compile-time values and parser combinators",
+      "examples": [
+        {
+          "path": "examples/compile-time-parsing.roc"
+        },
+        {
+          "path": "examples/csv-movies.roc"
+        },
+        {
+          "path": "examples/roc-syntax.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-pdf",
+      "note": "Document layout and vector rendering",
+      "examples": [
+        {
+          "path": "examples/business-report/main.roc"
+        },
+        {
+          "path": "examples/vector-diagrams/main.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-platform-template-go",
+      "note": "Native host ABI, language syntax, expects and streaming stdin",
+      "examples": [
+        {
+          "path": "examples/all_roc_syntax/main.roc"
+        },
+        {
+          "path": "examples/tests/main.roc"
+        },
+        {
+          "path": "examples/echo_multiline/main.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-platform-template-rust",
+      "note": "Native host ABI, language syntax, expects and streaming stdin",
+      "examples": [
+        {
+          "path": "examples/all_roc_syntax/main.roc"
+        },
+        {
+          "path": "examples/tests/main.roc"
+        },
+        {
+          "path": "examples/echo_multiline/main.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-platform-template-zig",
+      "note": "Native host ABI, language syntax, expects and streaming stdin",
+      "examples": [
+        {
+          "path": "examples/all_roc_syntax/main.roc"
+        },
+        {
+          "path": "examples/tests/main.roc"
+        },
+        {
+          "path": "examples/echo_multiline/main.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/roc-time",
+      "note": "Time zones and recurring schedules",
+      "examples": [
+        {
+          "path": "examples/repeated_local_time/main.roc"
+        },
+        {
+          "path": "examples/schedule_exchange/main.roc"
+        }
+      ]
+    },
+    {
+      "repository": "lukewilliamboswell/weaver",
+      "note": "Argument parsing, nested commands and error handling",
+      "examples": [
+        {
+          "path": "examples/basic.roc"
+        },
+        {
+          "path": "examples/subcommands.roc"
+        }
+      ]
+    }
+  ]
+}

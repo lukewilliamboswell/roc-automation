@@ -1,0 +1,8 @@
+{
+  "nightlies": [
+    "/path/to/first-nightly/roc",
+    "/path/to/second-nightly/roc"
+  ],
+  "cache_dir": "./.downstream-cache",
+  "output": "./downstream-report.html"
+}

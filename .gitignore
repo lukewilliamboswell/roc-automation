@@ -6,3 +6,8 @@ htmlcov/
 /.docs-out/
 /.blueprint/
 /dist/
+
+# Local downstream compiler sweeps
+/.downstream-cache/
+/sweep.local.json
+/downstream-report.html
