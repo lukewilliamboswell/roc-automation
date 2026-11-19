@@ -123,8 +123,8 @@ class KaiToolRecordTests(unittest.TestCase):
             tools = tools_file(Path(temporary))
             entry = sidecars.kai_sbom_tool(KAI, tools)
             self.assertEqual((entry["url"], entry["generator"], entry["compiler"], entry["profile"]), (PLUGIN, f"Tool: kai-sbom-{KAI}", "", "blueprint-spdx-3.0-v2"))
-            with self.assertRaisesRegex(ValueError, "records no sbom plugin for Kai 0.0.13"):
-                sidecars.kai_sbom_tool("0.0.13", tools)
+            with self.assertRaisesRegex(ValueError, "records no sbom plugin for Kai 0.0.14"):
+                sidecars.kai_sbom_tool("0.0.14", tools)
             for field, value, reason in (
                 ("plugin", PLUGIN.replace("v0.0.12", "v0.0.11"), "not an immutable Kai release bundle"),
                 ("plugin", PLUGIN.replace("sbom-", "std-"), "not an immutable Kai release bundle"),
@@ -375,8 +375,8 @@ class KaiSidecarsTests(KaiWorkspace):
         with self.assertRaisesRegex(ValueError, "names the sbom plugin .*reviewed sbom plugin is"):
             self.run_action()
         self.assertEqual(self.calls(), [])
-        (self.workspace / "Kaifile.roc").write_text(kaifile(platform=PLATFORM.replace("v0.0.12", "v0.0.13")))
-        with self.assertRaisesRegex(ValueError, "records no sbom plugin for Kai 0.0.13"):
+        (self.workspace / "Kaifile.roc").write_text(kaifile(platform=PLATFORM.replace("v0.0.12", "v0.0.14")))
+        with self.assertRaisesRegex(ValueError, "records no sbom plugin for Kai 0.0.14"):
             self.run_action()
 
     def test_the_installed_kai_must_be_the_release_the_kaifile_names(self):
@@ -418,7 +418,7 @@ class KaiGeneratorTests(unittest.TestCase):
             ({"tool": PLUGIN.replace("HzyZ", "JzyZ")}, "differs from the reviewed identity"),
             ({"tool_sha256": "a" * 64}, "differs from the reviewed identity"),
             ({"generator": "Tool: blueprint-sbom-0.11.0"}, "differs from the reviewed Kai sbom plugin"),
-            ({"kai": "0.0.13"}, "records no sbom plugin for Kai 0.0.13"),
+            ({"kai": "0.0.14"}, "records no sbom plugin for Kai 0.0.14"),
             ({"created": "2026-10-21 01:02:03"}, "must be UTC"),
             ({"compiler": ""}, "unsupported generator record"),
             ({"blueprint": "0.11.0"}, "unsupported generator record"),
