@@ -108,6 +108,8 @@ consumer's `Kaifile.roc` names, for a command such as
 `["kai", "run", "nightly-prerequisites"]`; set at most one.
 `install-nix: true` explicitly enables Nix for an environment that needs it.
 Leave all three false for a runner that needs none.
+Repositories with a selected-actions policy need to approve the nested pinned
+Kai action only when they enable `install-kai`.
 Toolchain installation precedes the prerequisite command. Windows prerequisites
 must use native tools through `setup-command`, such as a checked-in Python setup
 script. Nix is not a Windows prerequisite backend. Requesting either shared

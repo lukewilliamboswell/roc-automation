@@ -380,6 +380,11 @@ limit violations before extraction. Archived examples and native prerequisites
 run only in the read-only test job. Prerequisites require schedule/manual
 execution on the actual default branch and a checkout matching the event SHA.
 Checkout credentials are disabled and child token variables are cleared.
+GitHub resolves nested actions during runner setup, before step conditions.
+The workflow puts the pinned Kai installer in a test job gated by the
+caller's `install-kai` input, so the default job can keep a narrower action
+allowlist. Both test jobs share the checkout, suite and evidence steps.
+Aggregation takes the result of the selected test job.
 
 The runner bounds child execution and output, cleans up descendants, preserves
 successful and failed diagnostics, and escapes workflow commands in console

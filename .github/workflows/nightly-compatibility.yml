@@ -83,11 +83,12 @@ jobs:
     name: Published examples (${{ matrix.runner }})
     needs: select
     if: >-
+      inputs.install-kai == false &&
       needs.select.outputs.ready == 'true' &&
       github.ref_type == 'branch' &&
       github.ref_name == github.event.repository.default_branch &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    strategy:
+    strategy: &test-strategy
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
@@ -95,18 +96,22 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           # The pinned checkout defaults to the caller's exact event SHA.
           persist-credentials: false
-      - name: Verify the event checkout
+      - &verify-checkout
+        name: Verify the event checkout
         shell: bash
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      - &selection
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: nightly-selection
           path: ${{ runner.temp }}/nightly-selection
-      - id: test
+      - &test-suite
+        id: test
         name: Check, build and run the published suite
         continue-on-error: true
         uses: $/actions/release-compatibility
@@ -118,11 +123,11 @@ jobs:
           setup-command: ${{ inputs.setup-command }}
           blueprint-core-version: ${{ inputs.blueprint-core-version }}
           install-blueprint: ${{ inputs.install-blueprint }}
-          install-kai: ${{ inputs.install-kai }}
           install-nix: ${{ inputs.install-nix }}
           case-timeout-ms: ${{ inputs.case-timeout-ms }}
           test-environment: ${{ inputs.test-environment }}
-      - name: Preserve raw diagnostics, including after success or failure
+      - &upload-evidence
+        name: Preserve raw diagnostics, including after success or failure
         if: always() && steps.test.outputs.directory != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -137,16 +142,56 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           overwrite: true
-      - name: Keep failed tests red after preserving their evidence
+      - &test-verdict
+        name: Keep failed tests red after preserving their evidence
         if: always()
         shell: bash
         env:
           TEST_OUTCOME: ${{ steps.test.outcome }}
         run: test "$TEST_OUTCOME" = success
 
+  # Job-level gating keeps Kai out of runner action setup for default callers.
+  test-kai:
+    name: Published examples with Kai (${{ matrix.runner }})
+    needs: select
+    if: >-
+      inputs.install-kai &&
+      needs.select.outputs.ready == 'true' &&
+      github.ref_type == 'branch' &&
+      github.ref_name == github.event.repository.default_branch &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    strategy: *test-strategy
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - *checkout
+      - *verify-checkout
+      - *selection
+      - name: Validate Kai prerequisites
+        shell: bash
+        env:
+          INSTALL_BLUEPRINT: ${{ inputs.install-blueprint }}
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            echo '::error::Kai prerequisites require a Unix runner.'
+            exit 1
+          fi
+          if [[ "$INSTALL_BLUEPRINT" == true ]]; then
+            echo '::error::Set install-blueprint or install-kai, not both.'
+            exit 1
+          fi
+      - uses: $/actions/setup-kai
+        with:
+          nix: ${{ inputs.install-nix }}
+      - *test-suite
+      - *upload-evidence
+      - *test-verdict
+
   aggregate:
     name: Compatibility verdict
-    needs: [select, test]
+    needs: [select, test, test-kai]
     if: always() && github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -174,7 +219,7 @@ jobs:
           phase: aggregate
           selection: ${{ runner.temp }}/nightly-selection/selection.json
           artifacts: ${{ runner.temp }}/nightly-evidence
-          test-result: ${{ needs.test.result }}
+          test-result: ${{ inputs.install-kai && needs.test-kai.result || needs.test.result }}
       - name: Preserve the machine-readable compatibility summary
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
