@@ -484,11 +484,28 @@ class WiringTests(unittest.TestCase):
         self.assertRegex(action, r"uses: thebrandonlucas/kai/\.github/actions/setup-kai@[0-9a-f]{40}\n")
         self.assertIn("version: ${{ steps.version.outputs.version }}", action)
 
-    def test_nightly_compatibility_installs_kai_on_request(self):
+    def test_nightly_compatibility_isolates_kai_action_resolution(self):
         workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
-        self.assertIn("install-kai: ${{ inputs.install-kai }}", workflow)
-        action = (ROOT / "actions/release-compatibility/action.yml").read_text()
-        self.assertIn("if: inputs.phase == 'test' && inputs.install-kai == 'true'\n      uses: $/actions/setup-kai", action)
+        before, after = workflow.split("\n  test-kai:\n", 1)
+        kai_job, after = after.split("\n  aggregate:\n", 1)
+        self.assertNotIn("uses: $/actions/setup-kai", before + after)
+        self.assertIn("uses: $/actions/setup-kai\n        with:\n          nix: ${{ inputs.install-nix }}", kai_job)
+        self.assertIn("- *test-suite\n      - *upload-evidence\n      - *test-verdict", kai_job)
+        self.assertIn("needs: [select, test, test-kai]", after)
+        self.assertIn("test-result: ${{ inputs.install-kai && needs.test-kai.result || needs.test.result }}", after)
+
+        # An action referenced by the shared composite would still be fetched
+        # during setup even if the composite step condition always skips it.
+        pending = ["actions/release-compatibility", "actions/nightly-report"]
+        visited = set()
+        while pending:
+            component = pending.pop()
+            if component in visited:
+                continue
+            visited.add(component)
+            action = (ROOT / component / "action.yml").read_text()
+            self.assertNotIn("setup-kai", action)
+            pending.extend(re.findall(r"(?m)^\s*(?:- )?uses: \$/([^\s]+)", action))
 
 
 if __name__ == "__main__":

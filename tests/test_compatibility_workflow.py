@@ -58,8 +58,6 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
 
     def test_consumer_checkout_requires_default_branch_schedule_or_dispatch(self):
         import ast
-        import itertools
-        import re
 
         def evaluate(node):
             if isinstance(node, ast.Constant):
@@ -72,26 +70,38 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
             raise AssertionError("unsupported job-guard expression")
 
         workflow = (ROOT / ".github/workflows/nightly-compatibility.yml").read_text()
-        job = workflow.split("\n  test:\n", 1)[1].split("\n  aggregate:\n", 1)[0]
-        condition = job.split("    if: >-\n", 1)[1].split("    strategy:", 1)[0]
-        condition = " ".join(condition.split()).replace("&&", " and ").replace("||", " or ")
-        for event, ref_type, ref_name, ready in itertools.product(
-                ("schedule", "workflow_dispatch", "pull_request", "pull_request_target", "push", "workflow_run"),
-                ("branch", "tag"), ("trunk", "feature"), ("true", "false", "")):
-            with self.subTest(event=event, ref_type=ref_type, ref_name=ref_name, ready=ready):
-                context = {"github.event_name": event, "github.ref_type": ref_type,
-                           "github.ref_name": ref_name, "github.event.repository.default_branch": "trunk",
-                           "needs.select.outputs.ready": ready}
-                expression = re.sub(r"\b(?:github|needs)\.[A-Za-z_.]+",
-                                    lambda match: repr(context[match.group()]), condition)
-                actual = evaluate(ast.parse(expression, mode="eval").body)
-                expected = (event in ("schedule", "workflow_dispatch") and ref_type == "branch"
-                            and ref_name == "trunk" and ready == "true")
-                self.assertEqual(actual, expected)
-        checkout = job.split("uses: actions/checkout@", 1)[1].split("      - name:", 1)[0]
+        job, kai_job = workflow.split("\n  test:\n", 1)[1].split("\n  test-kai:\n", 1)
+        kai_job = kai_job.split("\n  aggregate:\n", 1)[0]
+        self.assertIn("strategy: *test-strategy", kai_job)
+        self.assertIn("permissions:\n      contents: read", kai_job)
+        self.assertIn("- *checkout\n      - *verify-checkout\n", kai_job)
+        for use_kai, matrix_job in ((False, job), (True, kai_job)):
+            self.assert_test_job_guard(matrix_job, use_kai, evaluate)
+        checkout = job.split("uses: actions/checkout@", 1)[1].split("      - &verify-checkout", 1)[0]
         self.assertNotRegex(checkout, r"(?m)^\s+(ref|repository):")
         self.assertIn("persist-credentials: false", checkout)
         self.assertIn('run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', job)
+
+    def assert_test_job_guard(self, job, use_kai, evaluate):
+        import ast
+        import itertools
+        import re
+
+        condition = job.split("    if: >-\n", 1)[1].split("    strategy:", 1)[0]
+        condition = " ".join(condition.split()).replace("&&", " and ").replace("||", " or ")
+        for event, ref_type, ref_name, ready, kai in itertools.product(
+                ("schedule", "workflow_dispatch", "pull_request", "pull_request_target", "push", "workflow_run"),
+                ("branch", "tag"), ("trunk", "feature"), ("true", "false", ""), (False, True)):
+            with self.subTest(event=event, ref_type=ref_type, ref_name=ref_name, ready=ready, kai=kai, use_kai=use_kai):
+                context = {"github.event_name": event, "github.ref_type": ref_type,
+                           "github.ref_name": ref_name, "github.event.repository.default_branch": "trunk",
+                           "needs.select.outputs.ready": ready, "inputs.install-kai": kai, "false": False}
+                expression = re.sub(r"\b(?:github|needs|inputs)\.[A-Za-z_.-]+|\bfalse\b",
+                                    lambda match: repr(context[match.group()]), condition)
+                actual = evaluate(ast.parse(expression, mode="eval").body)
+                expected = (event in ("schedule", "workflow_dispatch") and ref_type == "branch"
+                            and ref_name == "trunk" and ready == "true" and kai == use_kai)
+                self.assertEqual(actual, expected)
 
     def test_tooling_installation_cannot_shadow_package_nightly(self):
         import importlib.util
