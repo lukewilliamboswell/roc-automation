@@ -18,7 +18,7 @@ import font.Font as BundledFont
 ## Pure reusable Markdown-to-HTML/PDF rendering with embedded licensed fonts.
 Renderer :: [].{
 
-	Metadata : { title : Str, author : Str, version : Str, language : Str, pdf_filename : Str }
+	Metadata : { title : Str, author : Str, version : Str, language : Str, pdf_filename : Str, repository_url : Str }
 	Asset : { href : Str, name : Str, data : [Raster({ dimensions : Image.Dimensions, pixels : List(U8), png : List(U8), size : Layout.Size }), Vector({ picture : DiagramAdapter.Picture, svg : List(U8) })] }
 	safe_path = |path| safe_text(path) and !path.is_empty() and !path.starts_with("/") and !path.contains("\\") and path.split_on("/").all(|part| part != "" and part != "." and part != "..")
 	safe_text = |text| text.to_utf8().all(|byte| byte >= 32 and byte != 127)

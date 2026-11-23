@@ -170,7 +170,7 @@ class RepositoryTests(unittest.TestCase):
         self.source('usage.adoc', '= Usage\n\n[#start]\n== Start\n\nxref:usage.adoc#start[Start] xref:extra.adoc#details[Extra] link:https://example.com/usage.html[External] link:downloads/reference.pdf[PDF]\n\nLiteral `usage.html#start`.\n\n[source,roc]\n----\n' + code + '----\n\n[cols="1,2",options="header"]\n|===\n|Key |Value\n|One |Two\n|===\n\nNOTE: Keep this warning.\n\nimage::pixel.png[Pixel]\n')
         self.source('extra.adoc', '= Extra\n\n[#details]\n== Details\n\nWebsite only.\n')
         (self.docs/'pixel.png').write_bytes(png_bytes())
-        self.run_build('--markdown', 'true', '--docs-version', '7', '--site-url', 'https://example.com/project/')
+        self.run_build('--markdown', 'true', '--docs-version', '7', '--site-url', 'https://example.com/project/', '--repository-url', 'https://github.com/owner/project')
         site = self.root/'.docs-out/site'
         markdown = (site/'usage.md').read_text()
         self.assertIn('Documentation version: 7', markdown)
@@ -191,6 +191,8 @@ class RepositoryTests(unittest.TestCase):
         html = (site/'usage.html').read_text()
         self.assertIn('<link rel="alternate" type="text/markdown" href="usage.md">', html)
         self.assertIn('<a href="usage.md">View Markdown</a>', html)
+        for page in ('index.html', 'usage.html'):
+            self.assertIn('<a href="https://github.com/owner/project">Source repository</a></div></header>', (site/page).read_text())
         self.assertIn('[Usage](https://example.com/project/usage.md)', (site/'llms.txt').read_text())
         self.assertEqual((site/'pixel.png').read_bytes(), png_bytes())
 

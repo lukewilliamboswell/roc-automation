@@ -492,6 +492,7 @@ using xref:pure-package.adoc#adopt-a-pure-package-without-nix[the complete Bluep
 | `roc-command` | `roc` | Roc executable used when `api-entrypoint` is set
 | `markdown` | `true` | Publish chapter `.md` files, HTML discovery links and `llms.txt`; set `false` to omit them
 | `site-url` | empty | HTTPS publication directory for PDF links, Markdown source links and absolute `llms.txt` chapter URLs
+| `repository-url` | empty | HTTPS URL of the source repository, linked as "Source repository" in every website page's header
 | `renderer-binary` | environment or `PATH` | Path or executable name of the precompiled renderer
 | `title`, `author`, `language` | empty | Optional overrides for document metadata
 | `pdf-image-dpi` | `144` | PDF raster resolution limit, from 72 to 300; original website images are retained

@@ -163,7 +163,7 @@ parse = |args| {
 		["render", source, destination, .. as rest] => (source, destination, rest)
 		_ => return Err("usage: roc-docs render INPUT.md NEW_OUTPUT_DIRECTORY [options]; see --help")
 	}
-	var $metadata = { title: "Manual", author: "", version: "unreleased", language: "en", pdf_filename: "manual.pdf" }
+	var $metadata = { title: "Manual", author: "", version: "unreleased", language: "en", pdf_filename: "manual.pdf", repository_url: "" }
 	var $mode = Both
 	var $dpi = 144.U64
 	var $assets = []
