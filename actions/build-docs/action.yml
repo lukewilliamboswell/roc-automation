@@ -35,6 +35,9 @@ inputs:
   site-url:
     description: HTTPS publication directory used for PDF links, Markdown HTML-source links and llms.txt chapter URLs
     default: ""
+  repository-url:
+    description: HTTPS URL of the source repository, linked from every website page's header
+    default: ""
   title:
     description: Optional document title override
     default: ""
@@ -73,6 +76,7 @@ runs:
         DOCS_RENDERER_BINARY: ${{ inputs.renderer-binary }}
         DOCS_MARKDOWN: ${{ inputs.markdown }}
         DOCS_SITE_URL: ${{ inputs.site-url }}
+        DOCS_REPOSITORY_URL: ${{ inputs.repository-url }}
         DOCS_TITLE: ${{ inputs.title }}
         DOCS_AUTHOR: ${{ inputs.author }}
         DOCS_LANGUAGE: ${{ inputs.language }}
@@ -89,6 +93,7 @@ runs:
         --roc-command "$DOCS_ROC_COMMAND"
         --renderer-binary "$DOCS_RENDERER_BINARY"
         --site-url "$DOCS_SITE_URL"
+        --repository-url "$DOCS_REPOSITORY_URL"
         --markdown "$DOCS_MARKDOWN"
         --title "$DOCS_TITLE"
         --author "$DOCS_AUTHOR"

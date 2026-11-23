@@ -50,3 +50,5 @@ expect match BuildOptions.parse(["prepare"]) {
 	Ok(o) => !o.markdown
 	Err(_) => False
 }
+expect BuildOptions.parse(["build", "--repository-url", "https://github.com/o/r"]).map_ok(|o| o.repository_url) == Ok("https://github.com/o/r")
+expect ["http://github.com/o/r", "javascript:alert(1)", "https://github.com/o/r#readme", "https://x/\"><script>", "https://"].all(|url| BuildOptions.parse(["build", "--repository-url", url]).is_err())

@@ -31,6 +31,8 @@ files, suitable for GitHub Pages without content negotiation.
 Markdown publication defaults to true in the CLI and shared action. Use
 `--markdown false` or `markdown: "false"` to omit Markdown and its index. `--site-url` makes index and HTML-source links absolute under the
 publication directory; chapter and asset links remain relative.
+`--repository-url https://github.com/owner/project` adds a "Source repository"
+link to every website page's header, so a reader can get back to the project.
 `--api-entrypoint` and `--roc-command` add API documentation as a separate,
 explicitly requested compiler invocation.
 

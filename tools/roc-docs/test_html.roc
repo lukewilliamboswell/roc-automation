@@ -79,3 +79,10 @@ expect {
 		_ => False
 	}
 }
+
+expect {
+	metadata = { title: "Guide", author: "", version: "1", language: "en", pdf_filename: "manual.pdf", repository_url: "https://github.com/o/r" }
+	with_link = Html.document("<h1 id=\"guide\">Guide</h1><p>x</p>", Markdown.parse_str("# Guide\n\nx\n"), metadata, False, 2, "")
+	without = Html.document("<p>x</p>", Markdown.parse_str("x\n"), { ..metadata, repository_url: "" }, False, 2, "")
+	with_link.contains("<a href=\"https://github.com/o/r\">Source repository</a></div></header>") and !without.contains("Source repository")
+}

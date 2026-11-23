@@ -73,7 +73,7 @@ RepositoryBuild :: [].{
 		expanded = SourceIncludes.expand!(workspace, options.docs_directory, options.output_directory, $sources)?
 		prepared = Preparation.prepare(expanded.files, { entrypoint: options.entrypoint, version: options.docs_version, pdf_filename: options.pdf_filename, site_url: options.site_url })?
 		metadata : Renderer.Metadata
-		metadata = { title: if (options.title == "") prepared.metadata.title else options.title, author: if (options.author == "") prepared.metadata.author else options.author, language: if (options.language == "") prepared.metadata.language else options.language, version: options.docs_version, pdf_filename: options.pdf_filename }
+		metadata = { title: if (options.title == "") prepared.metadata.title else options.title, author: if (options.author == "") prepared.metadata.author else options.author, language: if (options.language == "") prepared.metadata.language else options.language, version: options.docs_version, pdf_filename: options.pdf_filename, repository_url: options.repository_url }
 		if metadata.title.is_empty() or metadata.language.is_empty() or ![metadata.title, metadata.author, metadata.language, metadata.version].all(BuildOptions.safe_text) {
 			return Err("invalid document metadata")
 		}
