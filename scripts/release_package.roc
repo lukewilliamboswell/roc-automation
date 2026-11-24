@@ -432,6 +432,7 @@ compiler_version! = |compiler| Ok(capture!([compiler, "version"], Path.utf8(".")
 
 ## Fail unless the suite ran completely and every case passed. Skips are
 ## declared in the suite and never pass silently, exactly as in the nightly.
+verdict! : Examples.Outcome, Str => Try({}, Str)
 verdict! = |ran, what| {
 	for failure in ran.failures {
 		say!("FAIL ${Compatibility.console(failure)}")?
