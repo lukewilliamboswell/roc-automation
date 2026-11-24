@@ -64,11 +64,13 @@ class LocalCorpusTests(unittest.TestCase):
 
     def test_config_paths_resolve_from_file_and_do_not_require_working_directory(self):
         config = support.load_config(self.config)
-        self.assertEqual(config["nightlies"], [str(self.root / "bin/roc"), str(self.root / "missing")])
+        self.assertEqual([compiler["path"] for compiler in config["nightlies"]],
+                         [str(self.root / "bin/roc"), str(self.root / "missing")])
         self.assertEqual(config["cache"], str(self.root / ".downstream-cache"))
         self.assertEqual(config["output"], str(self.root / "downstream-report.html"))
         self.config.write_text(json.dumps({"nightlies": ["~/roc"], "output": "reports/results.html"}))
-        self.assertEqual(support.load_config(self.config)["nightlies"], [str((Path.home() / "roc").resolve())])
+        self.assertEqual(support.load_config(self.config)["nightlies"][0]["path"],
+                         str((Path.home() / "roc").resolve()))
 
     def test_config_rejects_discovery_and_missing_or_invalid_compiler_lists(self):
         for config in ({}, {"nightlies": []}, {"nightlies": "roc"}, {"nightlies": [1]},
@@ -77,6 +79,21 @@ class LocalCorpusTests(unittest.TestCase):
                 self.config.write_text(json.dumps(config))
                 with self.assertRaises(ValueError):
                     support.load_config(self.config)
+
+    def test_config_validates_source_commit_and_utc_date(self):
+        entry = {"path": "bin/roc", "source_commit": "a" * 40, "source_date": "2026-11-23"}
+        self.config.write_text(json.dumps({"nightlies": ["nightly/roc", entry]}))
+        compiler = support.load_config(self.config)["nightlies"][1]
+        self.assertEqual(compiler, {**entry, "path": str(self.root / "bin/roc")})
+        for invalid in ({**entry, "source_commit": "a" * 7}, {**entry, "source_date": "2026-02-29"},
+                        {**entry, "source_date": "20261123"}, {**entry, "extra": True},
+                        {"path": "bin/roc", "source_commit": entry["source_commit"]}):
+            with self.subTest(entry=invalid), self.assertRaises(ValueError):
+                self.config.write_text(json.dumps({"nightlies": [invalid]}))
+                support.load_config(self.config)
+        with self.assertRaisesRegex(ValueError, "configure each compiler path once"):
+            self.config.write_text(json.dumps({"nightlies": ["bin/roc", entry]}))
+            support.load_config(self.config)
 
     def test_latest_release_includes_prereleases_and_uses_publication_time(self):
         for tag, flag in [("6.0.0-rc.5", True), ("v6.0.0-beta.1", False), ("2.0.0", True)]:
@@ -90,6 +107,26 @@ class LocalCorpusTests(unittest.TestCase):
         newest_stable = {**self.release, "tag_name": "6.0.0", "published_at": "2026-11-20T00:00:00Z"}
         with patch.object(self.client, "metadata", return_value=[newest, newest_stable]):
             self.assertEqual(support.latest_release(self.client, "owner/package")["tag_name"], "6.0.0")
+
+    def test_compiler_release_candidate_uses_its_exact_tag_and_utc_publication_date(self):
+        for tag in ("0.1.0_RC1", "0.2.0_RC12"):
+            with self.subTest(tag=tag):
+                release = {"tag_name": tag, "published_at": "2026-11-22T00:30:00+02:00"}
+                with patch.object(self.client, "metadata", return_value=release) as request:
+                    date = support.compiler_release_date(f"Roc compiler version {tag}", self.client)
+                self.assertEqual(date, "2026-11-21")
+                request.assert_called_once_with(f"repos/roc-lang/roc/releases/tags/{tag}")
+
+    def test_compiler_release_candidate_rejects_wrong_or_unpublished_release(self):
+        release = {"tag_name": "0.1.0_RC1", "published_at": "2026-11-21T19:38:08Z"}
+        for metadata in ({**release, "tag_name": "0.1.0_RC2"}, {**release, "draft": True},
+                         {**release, "published_at": None}, {**release, "published_at": "2026-11-21"}):
+            with self.subTest(metadata=metadata), patch.object(self.client, "metadata", return_value=metadata):
+                with self.assertRaises(ValueError):
+                    support.compiler_release_date("Roc compiler version 0.1.0_RC1", self.client)
+        with patch.object(self.client, "metadata") as request:
+            self.assertEqual(support.compiler_release_date("Roc compiler version 0.1.0_RC1/other", self.client), "")
+        request.assert_not_called()
 
     def test_latest_release_excludes_drafts_and_auxiliary_tags(self):
         excluded = [{**self.release, "tag_name": tag, "published_at": "2027-01-01T00:00:00Z"}
@@ -239,6 +276,35 @@ class LocalCorpusTests(unittest.TestCase):
         self.assertIn("expected", output)
         self.assertNotIn("STALE RECORD", output)
 
+    def test_report_labels_source_commit_and_excludes_prior_metadata(self):
+        entry = {"path": "bin/roc", "source_commit": "a" * 40, "source_date": "2026-11-23"}
+        self.config.write_text(json.dumps({"nightlies": [entry]}))
+        manifest = self.prepare()
+        manifest["apps"][0]["expectations"] = [{
+            "nightly": "nightly-2026-11-23-abcdef0", "stage": "check", "case_name": "",
+            "code": 1, "note": "Declared only for the published binary",
+        }]
+        support.atomic_json(Path(manifest["cache"]) / "manifest.json", manifest)
+        compiler = manifest["nightlies"][0]
+        prefix = f"{manifest['corpus_hash']}|{manifest['host']}|"
+        key = f"{compiler['path']}|{compiler['sha256']}|app|v1|check"
+        record = {"key": prefix + compiler["source_key"] + key, "compiler_path": compiler["path"],
+                  "compiler_hash": compiler["sha256"], "version": "Roc compiler version ReleaseFast-aaaaaaa",
+                  "nightly_date": entry["source_date"], "app_id": manifest["apps"][0]["id"],
+                  "stage": "check", "status": "exited", "code": 0, "stdout": "CURRENT-SOURCE-RESULT"}
+        path = self.root / "observations.json"
+        path.write_text(json.dumps([record, {**record, "key": prefix + key, "stdout": "STALE-NIGHTLY-RESULT"},
+                                   {**record, "key": record["key"].replace("2026-11-23", "2026-11-22"),
+                                    "stdout": "STALE-SOURCE-RESULT"},
+                                   {**record, "version": "Roc compiler version nightly-2026-11-23-abcdef0"}]))
+        support.render(self.config, path)
+        output = Path(manifest["output"]).read_text()
+        self.assertIn("Source commit " + entry["source_commit"], output)
+        self.assertIn("CURRENT-SOURCE-RESULT", output)
+        self.assertNotIn("STALE-NIGHTLY-RESULT", output)
+        self.assertNotIn("STALE-SOURCE-RESULT", output)
+        self.assertNotIn("Declared only for the published binary", output)
+
     def test_explicit_expectations_match_only_exact_nightly_stage_and_case(self):
         app = {"expectations": support.validate_expectations([
             {"nightly": "nightly-2026-11-02-a123456", "stage": "run", "code": 1,
@@ -297,7 +363,7 @@ class ReportCompletenessTests(unittest.TestCase):
                   'stage': 'check', 'status': 'exited', 'code': 0}
         result = ''.join(support.overview(
             ['example'], {'example': {'cases': [{'name': 'default'}]}},
-            {'example': [(0, record)]}, {compiler: ('2026-11-18', 'nightly', '/compiler')},
+            {'example': [(0, record)]}, {compiler: ('2026-11-18', 'nightly', '/compiler', '')},
             [compiler], html.escape))
         self.assertIn('incomplete observations', result)
         self.assertNotIn('<td class="pass">', result)

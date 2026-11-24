@@ -28,6 +28,8 @@ VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 REPO_NAME = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 NIGHTLY = re.compile(r"nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40}\Z")
+ROC_RELEASE_CANDIDATE = re.compile(r"Roc compiler version ([0-9]+\.[0-9]+\.[0-9]+_RC[0-9]+)")
+FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def file_hash(path):
@@ -45,17 +47,35 @@ def absolute(value, base):
     return (base / path).resolve() if not path.is_absolute() else path.resolve()
 
 
+def compiler_config(entry, base):
+    if isinstance(entry, str):
+        return {"path": str(absolute(entry, base)), "source_commit": "", "source_date": ""}
+    if not isinstance(entry, dict) or set(entry) != {"path", "source_commit", "source_date"}:
+        raise ValueError("each nightlies entry must be a path or a source build with path, source_commit and source_date")
+    commit = entry["source_commit"]
+    date = entry["source_date"]
+    if not isinstance(commit, str) or not FULL_COMMIT.fullmatch(commit):
+        raise ValueError("source_commit must be a full lowercase Git commit SHA")
+    if not isinstance(date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise ValueError("source_date must be a UTC date in YYYY-MM-DD format")
+    datetime.date.fromisoformat(date)
+    return {**entry, "path": str(absolute(entry["path"], base))}
+
+
 def load_config(source):
     source = Path(source).expanduser().resolve()
     with source.open(encoding="utf-8") as incoming:
         config = json.load(incoming)
     if not isinstance(config, dict) or set(config) - {"nightlies", "cache_dir", "output"}:
         raise ValueError("configuration accepts only nightlies, cache_dir and output")
-    paths = config.get("nightlies")
-    if not isinstance(paths, list) or not paths or any(not isinstance(p, str) or not p for p in paths):
-        raise ValueError("nightlies must be a nonempty list of installed Roc executable paths")
+    entries = config.get("nightlies")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("nightlies must be a nonempty list of Roc compilers")
+    compilers = [compiler_config(entry, source.parent) for entry in entries]
+    if len({compiler["path"] for compiler in compilers}) != len(compilers):
+        raise ValueError("configure each compiler path once")
     return {
-        "nightlies": [str(absolute(path, source.parent)) for path in paths],
+        "nightlies": compilers,
         "cache": str(absolute(config.get("cache_dir", ".downstream-cache"), source.parent)),
         "output": str(absolute(config.get("output", "downstream-report.html"), source.parent)),
     }
@@ -112,6 +132,22 @@ class GitHub:
                                     stderr=subprocess.PIPE, timeout=130, check=False)
         if result.returncode:
             raise ValueError("GitHub examples download failed")
+
+
+def compiler_release_date(version, client=None):
+    candidate = ROC_RELEASE_CANDIDATE.fullmatch(version)
+    if candidate is None:
+        return ""
+    tag = candidate.group(1)
+    client = client if client is not None else GitHub()
+    release = client.metadata(f"repos/roc-lang/roc/releases/tags/{tag}")
+    published = release.get("published_at") if isinstance(release, dict) else None
+    if not isinstance(published, str) or not published or release.get("tag_name") != tag or release.get("draft"):
+        raise ValueError(f"no matching published Roc release for {tag}")
+    timestamp = datetime.datetime.fromisoformat(published.replace("Z", "+00:00"))
+    if timestamp.tzinfo is None:
+        raise ValueError(f"Roc release {tag} has no publication timezone")
+    return timestamp.astimezone(datetime.timezone.utc).date().isoformat()
 
 
 def latest_release(client, repository):
@@ -331,12 +367,15 @@ def prepare(config_source, catalog_source=None, client=None):
                 if app["id"] not in known:
                     apps.append(app)
     nightlies = []
-    for path in config["nightlies"]:
+    for compiler in config["nightlies"]:
         try:
-            digest = file_hash(path)
+            digest = file_hash(compiler["path"])
         except OSError:
             digest = "unavailable"
-        nightlies.append({"path": path, "sha256": digest})
+        source_key = ""
+        if compiler["source_commit"]:
+            source_key = f"source|{compiler['source_commit']}|{compiler['source_date']}|"
+        nightlies.append({**compiler, "sha256": digest, "source_key": source_key})
     stable_apps = [{key: value for key, value in app.items()
                     if key != "root" and (key != "expectations" or value)} for app in apps]
     corpus_hash = hashlib.sha256(json.dumps({"catalog": catalog, "releases": identities,
@@ -403,6 +442,13 @@ def compiler_identity(record):
     return record.get("compiler_path", ""), record.get("compiler_hash", "")
 
 
+def compiler_column(identity, details, escape):
+    date, version, path, commit = details
+    return ("<th>" + escape(date or version or "unavailable") + "<br><small>" +
+            escape(version) + ("<br>Source commit " + escape(commit) if commit else "") +
+            "<br>" + escape(identity[1][:12]) + "<br>" + escape(path) + "</small></th>")
+
+
 def expected_record(record, app):
     # NIGHTLY is anchored for validation; version output also contains a prefix.
     nightly = re.search(r"(?<![A-Za-z0-9_-])(nightly-\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40})(?![A-Za-z0-9_-])",
@@ -427,9 +473,7 @@ def overview(app_ids, app_index, by_app, compilers, ordered, escape):
                  '<option value="failure">Failure</option><option value="missing">Skipped / unobserved</option></select></label></p>',
                  '<table id="overview"><thead><tr><th>Example / release</th>']
     for identity in ordered:
-        date, version, path = compilers[identity]
-        fragments.append("<th>" + escape(date or version or "unavailable") + "<br><small>" +
-                         escape(version) + "<br>" + escape(identity[1][:12]) + "<br>" + escape(path) + "</small></th>")
+        fragments.append(compiler_column(identity, compilers[identity], escape))
     fragments.append("</tr></thead><tbody>")
     for app_number, app_id in enumerate(app_ids):
         app = app_index.get(app_id, {})
@@ -495,19 +539,32 @@ def render(config_source, observation_source):
         raise ValueError("observations must be a JSON list of records")
     manifest_path = Path(config["cache"]) / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+    configured = {(compiler["path"], compiler["sha256"]): compiler for compiler in manifest.get("nightlies", [])}
     if manifest:
         prefix = manifest["corpus_hash"] + "|" + manifest["host"] + "|"
-        configured = {(compiler["path"], compiler["sha256"]) for compiler in manifest["nightlies"]}
-        records = [record for record in records if record.get("key", "").startswith(prefix) and
-                   compiler_identity(record) in configured]
+        observed = []
+        for record in records:
+            compiler = configured.get(compiler_identity(record))
+            key = record.get("key", "")
+            if compiler is None or not key.startswith(prefix):
+                continue
+            source_key = compiler.get("source_key", "")
+            has_source_key = key.startswith(prefix + "source|")
+            if (source_key and key.startswith(prefix + source_key)) or (not source_key and not has_source_key):
+                observed.append(record)
+        records = observed
     app_index = {app["id"]: app for app in manifest.get("apps", [])}
-    records = [expected_record(record, app_index.get(record.get("app_id", ""), {})) for record in records]
+    records = [
+        record if configured.get(compiler_identity(record), {}).get("source_commit")
+        else expected_record(record, app_index.get(record.get("app_id", ""), {}))
+        for record in records
+    ]
     escape = lambda value: html.escape(str(value), quote=True)
     compilers = {}
     for record in records:
         identity = compiler_identity(record)
         compilers[identity] = (record.get("nightly_date", ""), record.get("version", ""),
-                               record.get("compiler_path", ""))
+                               record.get("compiler_path", ""), configured.get(identity, {}).get("source_commit", ""))
     ordered = sorted(compilers, key=lambda identity: (compilers[identity][0], compilers[identity][1], identity))
     app_ids = list(app_index)
     app_ids.extend(sorted({record.get("app_id", "") for record in records} - set(app_ids) - {""}))
@@ -527,7 +584,8 @@ def render(config_source, observation_source):
                  "<p>Host: <code>" + escape(manifest.get("host", "unrecorded")) + "</code>. Generated: " +
                  escape(datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")) + "</p>",
                  "<p>Releases are selected by publication time across stable and prerelease product versions; drafts and auxiliary releases are excluded.</p>",
-                 "<p>Nightlies are eligible from the UTC release date minus one day (a 24-hour grace period on the date cutoff).</p>",
+                 "<p>Compilers are eligible from the example release’s UTC publication date minus one day. ",
+                 "Dates come from nightly tags, Roc release candidate publication dates, or configured source commit dates.</p>",
                  "<p>Test runs exercise app and local-module expectations. Roc does not run expectations inside URL dependencies.</p>"]
     if not records:
         fragments.append("<p>No compiler observations have been recorded.</p>")
@@ -548,9 +606,7 @@ def render(config_source, observation_source):
                                           if item[0] in ["version", "check", "test", "build", "run", "binary"] else 9, item[1]))
         fragments.append("<table><thead><tr><th>Command / case</th>")
         for identity in ordered:
-            date, version, path = compilers[identity]
-            fragments.append("<th>" + escape(date or version or "unavailable") + "<br><small>" +
-                             escape(version) + "<br>" + escape(identity[1][:12]) + "<br>" + escape(path) + "</small></th>")
+            fragments.append(compiler_column(identity, compilers[identity], escape))
         fragments.append("</tr></thead><tbody>")
         for stage, case_name in stages:
             fragments.append("<tr><th>" + escape(stage + (" / " + case_name if case_name else "")) + "</th>")
@@ -594,6 +650,8 @@ def main(argv=None):
     try:
         if len(argv) == 2 and argv[0] == "prepare":
             print(json.dumps(prepare(argv[1])))
+        elif argv == ["compiler-release-date"]:
+            print(compiler_release_date(sys.stdin.read()))
         elif len(argv) == 3 and argv[0] == "render":
             print(json.dumps(render(argv[1], argv[2])))
         elif len(argv) == 2 and argv[0] == "save":
@@ -604,7 +662,7 @@ def main(argv=None):
         elif len(argv) == 4 and argv[0] == "copy":
             copy_workspace(argv[1], argv[2], argv[3])
         else:
-            raise ValueError("usage: support.py prepare CONFIG | render CONFIG OBSERVATIONS | save OBSERVATIONS | copy ROOT DEST CACHE")
+            raise ValueError("usage: support.py prepare CONFIG | compiler-release-date | render CONFIG OBSERVATIONS | save OBSERVATIONS | copy ROOT DEST CACHE")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print("downstream regressions: " + str(error), file=sys.stderr)
         return 1

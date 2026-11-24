@@ -8,15 +8,24 @@ roc tools/downstream-regressions/main.roc /path/to/sweep.json
 ----
 
 The argument is a JSON configuration file. Copy `sweep.example.json` and replace
-its `nightlies` entries with paths to installed compiler executables. The script
-runs those compilers, in order; it never downloads or discovers compilers. It also
-needs Python 3 and curl, or an authenticated `gh`. Blueprint and Nix are not
-required. The runner's basic-cli dependency has an immutable bundle URL.
+its `nightlies` entries with your compiler paths. An entry can be an installed
+nightly or Roc release candidate path, or a source build with commit metadata.
+The script runs those compilers in configuration order.
+It also needs Python 3 and curl, or an authenticated `gh`. Blueprint and Nix
+are not required. The runner's basic-cli dependency has an immutable bundle URL.
 
 [source,json]
 ----
 {
-  "nightlies": ["~/roc_nightly-macos_apple_silicon-2026-11-18-a520eed/roc"],
+  "nightlies": [
+    "~/roc_nightly-linux_x86_64-2026-11-21-09f4dc3/roc",
+    "~/roc-linux_x86_64-0.1.0_RC1/roc",
+    {
+      "path": "../roc/zig-out/bin/roc",
+      "source_commit": "0123456789abcdef0123456789abcdef01234567",
+      "source_date": "2026-11-23"
+    }
+  ],
   "cache_dir": "./.downstream-cache",
   "output": "./downstream-report.html"
 }
@@ -24,9 +33,14 @@ required. The runner's basic-cli dependency has an immutable bundle URL.
 
 Relative paths are relative to the configuration file, and leading `~/` expands
 to your home directory. The cache and output paths default to those shown.
-Open the generated HTML in a browser; it embeds the results and command output
-and can be shared as one file. This is a local diagnostic tool, with no workflow,
-badge, publication or issue reporting integration.
+For a source build, use the full SHA of the commit you built and the UTC calendar
+date of its Git committer timestamp. From the compiler checkout, run
+`TZ=UTC git show -s --format='%H%n%cd' --date=format-local:%Y-%m-%d HEAD` to
+print both values. The report displays the supplied commit
+alongside the version the executable reports. The commit and date are your
+record of the build's origin, and the executable hash identifies the bytes run.
+Open the generated HTML in a browser. It embeds the results and command output
+and can be shared as one file.
 
 == Select examples and interpret results
 
@@ -69,11 +83,13 @@ Stdout and stderr comparisons remain separate from process exit status.
 `roc test` exercises local expectations, including the platform templates'
 `tests` examples, but excludes expectations in downloaded URL dependencies.
 
-Nightlies are eligible from the release's UTC publication date minus one day,
-providing a 24-hour grace period on the date cutoff for timezone differences.
-For a November 19 release, November 18 nightlies are eligible and November 17
-nightlies are not applicable. This compares calendar dates from nightly tags,
-not exact publication timestamps.
+Compilers are eligible from the example release's UTC publication date minus
+one day. The runner uses calendar dates from nightly tags, the configured UTC
+date for a source build, and the GitHub UTC publication date for a Roc release
+candidate such as `0.1.0_RC1`. It looks up
+the exact tag reported by the executable in `roc-lang/roc` and requires a
+published release with that tag. If the lookup fails, the sweep reports an
+operational error and preserves any completed observations.
 The HTML records the exact executable hash and reported version. Changes between
 adjacent tested builds identify an interval, not the exact breaking commit or
 proof that the compiler caused the difference. Skips, setup failures and missing
@@ -88,9 +104,9 @@ links, collisions and oversized inventories before extraction. Each invocation
 extracts fresh source material; runtime cases receive separate writable copies.
 Only managed working directories under `cache_dir/work` are replaced.
 
-Saved observations resume when compiler bytes, host, corpus and execution policy
-match. Delete `cache_dir/observations.json` to repeat observations. Changing an
-indexed example or release changes its corpus identity. Keep the local JSON,
+Saved observations resume when compiler bytes, source build metadata, host,
+corpus and execution policy match. Delete `cache_dir/observations.json` to repeat
+observations. Changing an indexed example or release changes its corpus identity. Keep the local JSON,
 cache and generated HTML out of commits. The reusable example configuration
 contains no machine-specific compiler paths.
 
