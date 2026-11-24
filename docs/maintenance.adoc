@@ -70,8 +70,12 @@ xref:platforms.adoc#choose-the-correct-maintainer-path[Choose the correct mainta
 . Change the tag in the `Command("roc-stable", ...)` setting of `Blueprint.roc`.
 . Change the `roc` field in every script header to the same tag. The check
   script fails until they all match.
-. If the locked overlay revision predates that release, run
-  `blueprint update roc` and commit `Blueprint.lock` in the same pull request.
+. If the locked overlay revision predates that release, refresh the `roc`
+  input and commit `Blueprint.lock` in the same pull request. Run
+  `blueprint update roc` if the input tracks the overlay's default branch.
+  If the input names a full commit, verify the new revision's compiler archive
+  hashes against the nightly release, update the reference and run
+  `blueprint update`.
 . Fix any script the new compiler breaks in that pull request, so the tag and
   the scripts move together.
 . Merge after `ci.yml` passes.
