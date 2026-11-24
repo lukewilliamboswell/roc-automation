@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-10-09-258ab27
+          nightly-tag: nightly-2026-11-23-b5c77fc
       - id: build
         name: Build the shared runner using its native action bootstrap
         run: '"$PYTHON_COMMAND" actions/release-compatibility/bootstrap.py'
@@ -55,11 +55,14 @@ jobs:
         run: |
           "$TOOLING_COMPILER" build scripts/downstream_status.roc --output="$ROC_DOWNSTREAM_STATUS_BINARY"
           "$PYTHON_COMMAND" -m unittest discover -s tests -p test_downstream_status.py -v
+      - uses: ./actions/setup-roc-nightly
+        if: runner.os == 'Windows'
+        with:
+          nightly-tag: nightly-2026-10-09-258ab27
       - name: Build and execute a real Windows example with the fixed baseline compiler
         if: runner.os == 'Windows'
         env:
           ROC_COMPATIBILITY_BINARY: ${{ steps.build.outputs.directory }}/runner.exe
-          ROC_COMPATIBILITY_SMOKE_COMPILER: ${{ steps.build.outputs.directory }}/tooling/roc.exe
         run: '"$PYTHON_COMMAND" tests/run_compatibility_smoke.py'
       - uses: ./actions/setup-roc-nightly
         with:
@@ -89,7 +92,7 @@ jobs:
           persist-credentials: false
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-10-09-258ab27
+          nightly-tag: nightly-2026-11-23-b5c77fc
       - id: build
         name: Build the shared runner with its tooling compiler
         run: python3 actions/release-compatibility/bootstrap.py
@@ -110,7 +113,7 @@ jobs:
           persist-credentials: false
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-11-18-a520eed
+          nightly-tag: nightly-2026-11-23-b5c77fc
       - name: Check and build the downstream runner
         run: |
           roc fmt --check tools/downstream-regressions/main.roc
@@ -535,7 +538,7 @@ jobs:
       # tools release builds it; consumers fetch that release through Blueprint.
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-10-09-258ab27
+          nightly-tag: nightly-2026-11-23-b5c77fc
       - id: tool
         name: Build the release utility with the tooling compiler
         run: |

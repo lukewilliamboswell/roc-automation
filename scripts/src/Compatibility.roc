@@ -19,11 +19,11 @@ Compatibility := [].{
 			GitHub.is_plain(entry.name, "_") and !["PATH", "PATHEXT", "SYSTEMROOT", "COMSPEC", "ROC", "ROC_CACHE_DIR", "NO_COLOR", "XDG_CACHE_HOME"].contains(name) and !name.starts_with("GITHUB_") and !name.starts_with("GH_") and !name.starts_with("RA_")
 		},
 	)
-	upper = |value| Str.from_utf8_lossy(Str.to_utf8(value).map(|byte| if byte >= 'a' and byte <= 'z' byte - 32 else byte))
+	upper = |value| Str.from_utf8_lossy(Str.to_utf8(value).map(|byte| if (byte >= 'a' and byte <= 'z') byte - 32 else byte))
 
 	## External compiler/runtime interfaces receive the host's path separators;
 	## Windows compiler cache identities compare their literal root prefixes.
-	native_path = |value, windows| if windows value.replace_each("/", "\\") else value
+	native_path = |value, windows| if (windows) value.replace_each("/", "\\") else value
 	valid_repository = GitHub.valid_repository
 
 	runners = ["ubuntu-22.04", "ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "macos-26", "windows-2022", "windows-2025"]
@@ -35,7 +35,7 @@ Compatibility := [].{
 	}
 	digest = |value| value.starts_with("sha256:") and Str.to_utf8(value).len() == 71 and Str.to_utf8(value.drop_prefix("sha256:")).all(|b| (b >= '0' and b <= '9') or (b >= 'a' and b <= 'f'))
 	path = |value| value != "" and !value.starts_with("/") and Str.split_on(value, "/").all(|part| part != "." and part != ".." and GitHub.is_plain(part, "-._"))
-	unique = |values| values.fold([], |seen, value| if seen.contains(value) seen else seen.append(value))
+	unique = |values| values.fold([], |seen, value| if (seen.contains(value)) seen else seen.append(value))
 
 	## Product releases use final numeric tags. Linker-input, runtime and tools
 	## releases are never mistaken for the package_name, even when newer. No fallback
@@ -46,7 +46,7 @@ Compatibility := [].{
 			return Err("invalid repository, nightly, package_name name or runner list")
 		}
 		products = releases.keep_if(|release| !release.draft and !release.prerelease and version(release.tag_name) and (requested == "" or release.tag_name == requested))
-		ordered = products.sort_with(|a, b| if a.published_at == b.published_at Same else if GitHub.sort([a.published_at, b.published_at]) == [a.published_at, b.published_at] After else Before)
+		ordered = products.sort_with(|a, b| if (a.published_at == b.published_at) Same else if (GitHub.sort([a.published_at, b.published_at]) == [a.published_at, b.published_at]) After else Before)
 		selected = match ordered {
 			[first, ..] => first
 			[] => return Err("no published final product release")
@@ -157,7 +157,7 @@ Compatibility := [].{
 	## Preserve raw diagnostics as artifacts; escape command markers and control
 	## characters only in their console rendering. Success never discards output.
 	console = |value| value.replace_each("::", ": :").replace_each("\r", "\\r").replace_each("\u(001b)", "\\e")
-	classify = |tested, failed, skipped| if failed > 0 "incompatible" else if tested == 0 or skipped > 0 "not-tested" else "compatible"
+	classify = |tested, failed, skipped| if (failed > 0) "incompatible" else if (tested == 0 or skipped > 0) "not-tested" else "compatible"
 
 	## Every target must contribute the current attempt's matching evidence.
 	## An infrastructure failure can never close a compatibility issue.

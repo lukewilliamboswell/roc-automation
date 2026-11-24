@@ -76,7 +76,7 @@ DownstreamStatus := [].{
 					return Err("unsupported caller indentation")
 				}
 				candidate = line.drop_prefix("- ")
-				scalar = if ["'", "\"", "[", "{", "&", "*", "!"].any(|marker| candidate.starts_with(marker)) candidate else match Str.split_first(line, ":") {
+				scalar = if (["'", "\"", "[", "{", "&", "*", "!"].any(|marker| candidate.starts_with(marker))) candidate else match Str.split_first(line, ":") {
 					Ok({ after, .. }) => after
 					Err(_) => candidate
 				}
@@ -245,7 +245,7 @@ DownstreamStatus := [].{
 
 	short_date = |value| Str.from_utf8_lossy(Str.to_utf8(value).take_first(10))
 	compatibility_badge : CompatibilityResult, Str -> Str
-	compatibility_badge = |result, checked| Json.to_str({ schemaVersion: 1, label: if result.date == "" "checked ${short_date(checked)}" else "run ${result.date}", message: result.message, color: result.color, cacheSeconds: 3600 })
+	compatibility_badge = |result, checked| Json.to_str({ schemaVersion: 1, label: if (result.date == "") "checked ${short_date(checked)}" else "run ${result.date}", message: result.message, color: result.color, cacheSeconds: 3600 })
 
 	repositories = ["basic-ssg", "plume", "roc-ansi", "roc-blueprint", "roc-docx", "roc-font", "roc-fuzz", "roc-graph-layout", "roc-gui", "roc-pandoc", "roc-parser", "roc-pdf", "roc-platform-template-go", "roc-platform-template-rust", "roc-platform-template-zig", "roc-ray", "roc-signals", "roc-time", "roc-wasm4", "weaver"]
 	owner = "lukewilliamboswell"
@@ -262,7 +262,7 @@ DownstreamStatus := [].{
 	safe_path : Str -> Bool
 	safe_path = |path| path != "" and !path.starts_with("/") and Str.split_on(path, "/").all(|part| part != "." and part != ".." and part != "" and Str.to_utf8(part).all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or ['-', '_', '.'].contains(byte)))
 
-	lower = |value| Str.from_utf8_lossy(Str.to_utf8(value).map(|byte| if byte >= 'A' and byte <= 'Z' byte + 32 else byte))
+	lower = |value| Str.from_utf8_lossy(Str.to_utf8(value).map(|byte| if (byte >= 'A' and byte <= 'Z') byte + 32 else byte))
 
 	## Incomplete trees and symbolic links cannot establish a complete inventory.
 	source_paths : Str -> Try(List(Str), Str)
@@ -281,7 +281,7 @@ DownstreamStatus := [].{
 	}
 
 	get_args : Str, Str, Str -> List(Str)
-	get_args = |path, accept, jq| ["api", "--method", "GET", "-H", "Accept: ${accept}", path].concat(if jq == "" [] else ["--jq", jq])
+	get_args = |path, accept, jq| ["api", "--method", "GET", "-H", "Accept: ${accept}", path].concat(if (jq == "") [] else ["--jq", jq])
 
 	## A deliberately narrow reader of literal block-style uses lines. Unhandled
 	## syntax mentioning this repository makes the snapshot unknown, not current.
@@ -360,7 +360,7 @@ DownstreamStatus := [].{
 	short = |value| Str.from_utf8_lossy(Str.to_utf8(value).take_first(7))
 
 	unique : List(Str) -> List(Str)
-	unique = |values| values.fold([], |seen, value| if seen.contains(value) seen else seen.append(value))
+	unique = |values| values.fold([], |seen, value| if (seen.contains(value)) seen else seen.append(value))
 
 	## Escape every piece of API/source text before putting it in the report.
 	html : Str -> Str

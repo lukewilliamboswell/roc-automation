@@ -1,11 +1,13 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
-	roc: "nightly-2026-10-09-258ab27",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-23-b5c77fc",
 }
 
 import cli.Cmd
+import cli.Duration
 import cli.Env
+import cli.System
 import cli.OsStr
 import cli.Path
 import cli.Stderr
@@ -128,7 +130,7 @@ output! = |pairs| {
 			before = Path.read_utf8!(path) ?? ""
 			lines = pairs.map(
 				|(key, value)|
-					if value.contains("\n") "${key}<<RELEASE_PACKAGE_EOF\n${value}\nRELEASE_PACKAGE_EOF" else "${key}=${value}",
+					if (value.contains("\n")) "${key}<<RELEASE_PACKAGE_EOF\n${value}\nRELEASE_PACKAGE_EOF" else "${key}=${value}",
 			)
 			write!(path, "${before}${Str.join_with(lines, "\n")}\n")
 		}
@@ -156,7 +158,7 @@ parent = |path|
 capture! = |argv, cwd, problem| {
 	match argv {
 		[program, .. as arguments] => {
-			ran = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdout(Capture).stderr(Capture).timeout_ms(600_000).output_limit(50_000_000).manage_tree(Bool.True).run!().map_err(|_| "${problem}: ${program} did not complete")?
+			ran = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdout(Capture).stderr(Capture).timeout(Duration.millis(600_000)).output_limit(MaxBytes(50_000_000)).manage_tree(Bool.True).run!().map_err(|_| "${problem}: ${program} did not complete")?
 			if ran.status != Exited(0) {
 				Stderr.write_bytes!(ran.stderr_bytes).map_err(|_| "cannot write to stderr")?
 				return Err("${problem}: ${Str.join_with(argv, " ")} failed")
@@ -171,7 +173,7 @@ capture! = |argv, cwd, problem| {
 run! = |argv, cwd, problem| {
 	say!("+ ${Str.join_with(argv, " ")}")?
 	match argv {
-		[program, .. as arguments] => Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).exec_cmd!().map_err(|_| "${problem}: ${Str.join_with(argv, " ")} failed")
+		[program, .. as arguments] => Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).call!().map_err(|_| "${problem}: ${Str.join_with(argv, " ")} failed")
 		[] => Err("empty command")
 	}
 }
@@ -181,8 +183,8 @@ run! = |argv, cwd, problem| {
 ## ever read or archived.
 all_files! = |directory| {
 	found = walk!(Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")?, [])?
-	windows = match Env.platform!().os {
-		WINDOWS => Bool.True
+	windows = match System.target!().os() {
+		Windows(_) => Bool.True
 		_ => Bool.False
 	}
 	relative = found.map_try(|path| ReleasePackage.relative_file(Path.display(directory), Path.display(path), windows).map_err(|_| "${Path.display(path)} is outside ${Path.display(directory)}"))?
@@ -220,7 +222,7 @@ temp! = |settings, label| Env.create_temp_dir_in!(settings.directory, "${label}-
 
 ## The names of the entries directly inside `directory`.
 direct_names! = |directory| {
-	entries = if Path.is_dir!(directory) ?? Bool.False Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")? else []
+	entries = if (Path.is_dir!(directory) ?? Bool.False) Path.list!(directory).map_err(|_| "cannot list ${Path.display(directory)}")? else []
 	entries.map_try(file_name)
 }
 
@@ -235,7 +237,7 @@ zip! = |stage, entries, archive| {
 	_ = capture!(["env", "TZ=UTC", "touch", "-t", "198001010000"].concat(staged), Path.utf8("."), "cannot fix archive times")?
 	# -X leaves out owner and timestamp extras, -D directory entries; -@ reads
 	# the entries to add from standard input, which Cmd supplies as bytes.
-	ran = Cmd.new("env").args(["TZ=UTC", "zip", "-q", "-X", "-D", Path.display(archive), "-@"].map(OsStr.from_str)).cwd(stage).stdin(Bytes(Str.to_utf8(Str.join_with(entries, "\n")))).stdout(Capture).stderr(Capture).timeout_ms(600_000).output_limit(10_000_000).run!().map_err(|_| "zip did not complete")?
+	ran = Cmd.new("env").args(["TZ=UTC", "zip", "-q", "-X", "-D", Path.display(archive), "-@"].map(OsStr.from_str)).cwd(stage).stdin(Bytes(Str.to_utf8(Str.join_with(entries, "\n")))).stdout(Capture).stderr(Capture).timeout(Duration.millis(600_000)).output_limit(MaxBytes(10_000_000)).run!().map_err(|_| "zip did not complete")?
 	if ran.status != Exited(0) {
 		Stderr.write_bytes!(ran.stderr_bytes).map_err(|_| "cannot write to stderr")?
 		return Err("zip failed for ${Path.display(archive)}")
@@ -246,8 +248,8 @@ zip! = |stage, entries, archive| {
 ## What reads a ZIP here. Windows has no unzip, and the tar of Git Bash
 ## cannot read a ZIP, so there the system's own tar.exe does, by its full path.
 zip_reader! = || {
-	match Env.platform!().os {
-		WINDOWS => Ok(SystemTar("${optional!("SystemRoot", "C:\\Windows")?}\\System32\\tar.exe"))
+	match System.target!().os() {
+		Windows(_) => Ok(SystemTar("${optional!("SystemRoot", "C:\\Windows")?}\\System32\\tar.exe"))
 		_ => Ok(Unzip)
 	}
 }
@@ -315,7 +317,7 @@ unchanged_package! = |settings, bundle, single, tag, file| {
 		return Ok(Bool.False)
 	}
 	candidate = Path.read_bytes!(Path.join(made.from, made.created)).map_err(|_| "cannot read the fresh bundle ${made.created}")?
-	download = Cmd.new("gh").args(["release", "download", tag, "--repo", settings.pkg.repository, "--pattern", file, "--output", "-", "--allow-escape-sequences"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(candidate.len() + 1).manage_tree(Bool.True).run!().map_err(|_| "cannot download ${settings.pkg.repository} release ${tag} bundle ${file} for byte comparison")?
+	download = Cmd.new("gh").args(["release", "download", tag, "--repo", settings.pkg.repository, "--pattern", file, "--output", "-", "--allow-escape-sequences"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout(Duration.millis(120_000)).output_limit(MaxBytes(candidate.len() + 1)).manage_tree(Bool.True).run!().map_err(|_| "cannot download ${settings.pkg.repository} release ${tag} bundle ${file} for byte comparison")?
 	if download.status != Exited(0) {
 		return Err("cannot download ${settings.pkg.repository} release ${tag} bundle ${file} for byte comparison")
 	}
@@ -476,7 +478,7 @@ build! = |version, platform_bundle| {
 	# writes must hold exactly those. The repository's bundle command writes
 	# the platform's, which must hold at least every tracked module beside its
 	# host outputs. Each comes from a directory holding only it.
-	say!("\n== ${if single "Bundle" else "Bundles"}")?
+	say!("\n== ${if (single) "Bundle" else "Bundles"}")?
 	built = bundles.map_try!(
 		|bundle| {
 			made = match (bundle.kind, platform_bundle) {
@@ -566,7 +568,7 @@ build! = |version, platform_bundle| {
 
 	# The notes: authored for this version, or the newest ones on a dry run.
 	say!("\n== Release notes")?
-	noted = if dry_run newest_notes!()? else version
+	noted = if (dry_run) newest_notes!()? else version
 	notes_path = Path.utf8(ReleasePackage.notes_file(noted))
 	if !(Path.is_file!(notes_path) ?? Bool.False) {
 		return Err("${Path.display(notes_path)} does not exist: write the notes for ${version} and merge them before releasing it")
@@ -620,7 +622,7 @@ check_version! = |version| {
 	}
 	# Without a tag, gh selects the latest published release that is not a
 	# draft or a prerelease. A repository without one is making its first release.
-	listing = Cmd.new("gh").args(["release", "view", "--repo", pkg.repository, "--json", "tagName,assets", "--jq", "{tag: .tagName, assets: [.assets[].name]}"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(60_000).output_limit(2_000_000).run!().map_err(|_| "gh did not complete")?
+	listing = Cmd.new("gh").args(["release", "view", "--repo", pkg.repository, "--json", "tagName,assets", "--jq", "{tag: .tagName, assets: [.assets[].name]}"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout(Duration.millis(60_000)).output_limit(MaxBytes(2_000_000)).run!().map_err(|_| "gh did not complete")?
 	if listing.status != Exited(0) {
 		if Str.from_utf8_lossy(listing.stderr_bytes).contains("release not found") {
 			return say!("NOTE ${pkg.repository} has no published release yet, so ${version} is its first; roc bump has nothing to compare with")
@@ -631,7 +633,7 @@ check_version! = |version| {
 	latest : Try({ tag : Str, assets : List(Str) }, _)
 	latest = Json.parse(Str.from_utf8_lossy(listing.stdout_bytes))
 	found = latest.map_err(|_| "unreadable release listing")?
-	breaking_suffices = if dry_run Bool.False else ReleasePackage.breaking_suffices(version, found.tag)?
+	breaking_suffices = if (dry_run) Bool.False else ReleasePackage.breaking_suffices(version, found.tag)?
 	bundles = bundles!(working_suite!()?)?
 	for bundle in bundles {
 		match ReleasePackage.published_bundle_file(pkg, bundle, found.assets) {

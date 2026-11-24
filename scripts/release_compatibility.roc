@@ -1,11 +1,13 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
-	roc: "nightly-2026-10-09-258ab27",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-23-b5c77fc",
 }
 
 import cli.Cmd
+import cli.Duration
 import cli.Env
+import cli.System
 import cli.OsStr
 import cli.Path
 import cli.Stdout
@@ -42,8 +44,8 @@ env! = |name| Env.var_str!(OsStr.from_str(name)).map_err(|_| "missing environmen
 ## compiler's cache-root identity rather than mixing both separator forms.
 native! = |path| Compatibility.native_path(
 	Path.display(path),
-	match Env.platform!().os {
-		WINDOWS => Bool.True
+	match System.target!().os() {
+		Windows(_) => Bool.True
 		_ => Bool.False
 	},
 )
@@ -62,8 +64,8 @@ output! = |text| {
 
 ## Requests are always GET. Only selection and asset download inherit GH_TOKEN.
 get! = |path, jq| {
-	ran = Cmd.new("gh").args(["api", "--method", "GET", path, "--jq", jq].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(60_000).output_limit(20_000_000).manage_tree(Bool.True).run!().map_err(|_| "GitHub request timed out or could not run")?
-	if ran.status == Exited(0) Ok(Str.from_utf8_lossy(ran.stdout_bytes)) else Err("GitHub could not supply release metadata")
+	ran = Cmd.new("gh").args(["api", "--method", "GET", path, "--jq", jq].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout(Duration.millis(60_000)).output_limit(MaxBytes(20_000_000)).manage_tree(Bool.True).run!().map_err(|_| "GitHub request timed out or could not run")?
+	if (ran.status == Exited(0)) Ok(Str.from_utf8_lossy(ran.stdout_bytes)) else Err("GitHub could not supply release metadata")
 }
 
 select! = || {
@@ -79,7 +81,7 @@ select! = || {
 	if !Compatibility.valid_repository(repository) or !Compatibility.path(package_name) or package_name.contains("/") or !Compatibility.valid_runners(chosen_runners) or (requested != "" and (!Compatibility.tag(requested) or !requested.starts_with("nightly-"))) or (requested_release != "" and !Compatibility.version(requested_release)) {
 		return Err("invalid selection inputs")
 	}
-	nightly = if requested == "" get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
+	nightly = if (requested == "") get!("repos/roc-lang/nightlies/releases/latest", ".tag_name")?.trim() else requested
 	var $releases = []
 	var $complete = Bool.False
 	pages : List(U64)
@@ -127,7 +129,7 @@ test! = || {
 	}
 	write!(Path.join(directory, "result.json"), Json.to_str(finished))?
 	Stdout.line!(Compatibility.console(Json.to_str(finished))).map_err(|_| "cannot display result")?
-	if finished.outcome == "compatible" Ok({}) else Err("${finished.outcome}: ${finished.detail}")
+	if (finished.outcome == "compatible") Ok({}) else Err("${finished.outcome}: ${finished.detail}")
 }
 
 execute! = |selected, initial, directory| {
@@ -150,7 +152,7 @@ execute! = |selected, initial, directory| {
 	}
 	# Download by the selected asset ID, never a second moving release lookup.
 	asset = Path.join(directory, selected.asset.name)
-	download = Cmd.new("gh").args(["api", "--method", "GET", "-H", "Accept: application/octet-stream", "repos/${selected.repository}/releases/assets/${selected.asset.id.to_str()}"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout_ms(120_000).output_limit(50_000_001).manage_tree(Bool.True).run!().map_err(|_| "examples archive download failed")?
+	download = Cmd.new("gh").args(["api", "--method", "GET", "-H", "Accept: application/octet-stream", "repos/${selected.repository}/releases/assets/${selected.asset.id.to_str()}"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).timeout(Duration.millis(120_000)).output_limit(MaxBytes(50_000_001)).manage_tree(Bool.True).run!().map_err(|_| "examples archive download failed")?
 	if download.status != Exited(0) or download.stdout_bytes.len() != selected.asset.size {
 		return Err("examples asset download failed or length changed")
 	}
@@ -204,7 +206,7 @@ aggregate! = || {
 		}
 	}
 	classified = Compatibility.aggregate(selected, env!("GITHUB_RUN_ID")?, env!("GITHUB_RUN_ATTEMPT")?, $results)
-	decision = if classified.report == "success" and env!("RA_TEST_RESULT")? != "success" { outcome: "setup-failed", report: "none" } else classified
+	decision = if (classified.report == "success" and env!("RA_TEST_RESULT")? != "success") { outcome: "setup-failed", report: "none" } else classified
 	write!(Path.join(directory, "summary.json"), Json.to_str({ selection: selected, results: $results, outcome: decision.outcome, report: decision.report }))?
 	output!("outcome=${decision.outcome}\nreport=${decision.report}\n")?
 	# No example output is copied into the job summary or privileged issue job.

@@ -82,8 +82,8 @@ NightlyReport := [].{
 
 	## Decide what follows `reply`, the answer to the request made at `stage`.
 	advance : Plan, Stage, Reply -> Next
-	advance = |made, stage, reply|
-		match (stage, reply) {
+	advance = |made, stage, response|
+		match (stage, response) {
 			(_, Failed(reason)) => Finished(Err(reason))
 			(Listing({ page, found }), Issues(issues)) => {
 				tracking = found.concat(issues.keep_if(|issue| is_tracking_issue(issue, made.title)).map(|issue| issue.number))
@@ -193,14 +193,14 @@ oldest : List(U64) -> [Absent, Number(U64)]
 oldest = |numbers|
 	match numbers {
 		[] => Absent
-		[first, .. as others] => Number(others.fold(first, |least, number| if number < least number else least))
+		[first, .. as others] => Number(others.fold(first, |least, number| if (number < least) number else least))
 	}
 
 number_text : [Absent, Number(U64)], Str -> Str
 number_text = |issue, prefix|
 	match issue {
 		Number(number) => "${prefix}${number.to_str()}"
-		Absent => if prefix == "" "" else "absent"
+		Absent => if (prefix == "") "" else "absent"
 	}
 
 # An issue, not a pull request, that is open, has exactly this title, and was
@@ -226,7 +226,7 @@ classify = |outcome|
 # ASCII, so that it cannot end the error line or add to it.
 shown : Str -> Str
 shown = |value| {
-	bytes = Str.to_utf8(value).take_first(58).map(|byte| if byte >= ' ' and byte < 127 and byte != '\'' byte else '?')
+	bytes = Str.to_utf8(value).take_first(58).map(|byte| if (byte >= ' ' and byte < 127 and byte != '\'') byte else '?')
 	"'${Str.from_utf8_lossy(bytes)}'"
 }
 
@@ -343,7 +343,7 @@ https_url = |url| {
 }
 
 without_trailing_slashes : Str -> Str
-without_trailing_slashes = |text| if text.ends_with("/") without_trailing_slashes(text.drop_suffix("/")) else text
+without_trailing_slashes = |text| if (text.ends_with("/")) without_trailing_slashes(text.drop_suffix("/")) else text
 
 # Tests. `World` is the issues of one repository behind the four requests, and
 # `run` applies one verdict to it with the same `start` and `advance` the
@@ -397,10 +397,10 @@ respond = |made, before, request| {
 	now = { ..before, asked: before.asked.append(request) }
 	match request {
 		ListOpen(page) => (now, Issues(now.issues.keep_if(|item| item.state == "open").sublist({ start: (page - 1) * made.per_page, len: made.per_page })))
-		Comment(number, body) => (if now.issues.any(|item| item.number == number and item.state == "open") { ..now, comments: now.comments.append((number, body)) } else now, Accepted)
-		Close(number) => ({ ..now, issues: now.issues.map(|item| if item.number == number { ..item, state: "closed" } else item) }, Accepted)
+		Comment(number, body) => (if (now.issues.any(|item| item.number == number and item.state == "open")) { ..now, comments: now.comments.append((number, body)) } else now, Accepted)
+		Close(number) => ({ ..now, issues: now.issues.map(|item| if (item.number == number) { ..item, state: "closed" } else item) }, Accepted)
 		Open(new_title, _) => {
-			number = now.issues.fold(0, |most, item| if item.number > most item.number else most) + 1
+			number = now.issues.fold(0, |most, item| if (item.number > most) item.number else most) + 1
 			({ ..now, issues: now.issues.append({ ..issue(number), title: new_title }) }, Opened(number))
 		}
 	}
