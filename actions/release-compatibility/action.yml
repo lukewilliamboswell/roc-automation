@@ -98,7 +98,7 @@ runs:
     # package compiler. No consumer Blueprint, Nix environment or code is needed.
     - uses: $/actions/setup-roc-nightly
       with:
-        nightly-tag: nightly-2026-10-09-258ab27
+        nightly-tag: nightly-2026-11-24-ff5e544
     - id: build
       shell: bash
       env:

@@ -152,7 +152,7 @@ Settings := [].{
 			# Nothing else can be read either, and one line says so.
 			Err(reason) => return [unknown("Repository", "the repository", reason)]
 		}
-		access = if admin [] else [unknown("Repository", "administration access", "this gh login cannot administer ${name}, so GitHub hides some settings from it")]
+		access = if (admin) [] else [unknown("Repository", "administration access", "this gh login cannot administer ${name}, so GitHub hides some settings from it")]
 		rulesets = answers.rulesets.keep_oks(ruleset)
 		unread = answers.rulesets.keep_errs(ruleset)
 		access
@@ -161,12 +161,12 @@ Settings := [].{
 			.concat(branch_rules(name, default_branch, answers.branch_rules, rulesets, unread))
 			.concat(required_checks(name, answers.branch_rules, answers.head_pulls, answers.check_runs))
 			.concat(ruleset_notes(default_branch, answers.branch_rules, rulesets))
-			.concat(if options.linker_inputs [merge_commits(answers.repository, answers.branch_rules)] else [])
+			.concat(if (options.linker_inputs) [merge_commits(answers.repository, answers.branch_rules)] else [])
 			.concat(immutable_releases(name, answers.immutable, answers.latest_release))
 			.concat(environment("Releases", name, "release", default_branch, answers.release_environment, answers.release_policies))
-			.concat(if options.reviewer_required reviewer(name, answers.release_environment) else [])
+			.concat(if (options.reviewer_required) reviewer(name, answers.release_environment) else [])
 			.concat([tag_rules(name, rulesets, unread)])
-			.concat(if options.site [pages_source(name, answers.pages)].concat(environment("Pages", name, "github-pages", default_branch, answers.pages_environment, answers.pages_policies)) else [])
+			.concat(if (options.site) [pages_source(name, answers.pages)].concat(environment("Pages", name, "github-pages", default_branch, answers.pages_environment, answers.pages_policies)) else [])
 			.concat([dependabot(name, answers.dependabot)])
 			.concat([private_reporting(name, answers.private_reporting), security_policy(name, answers.security, answers.security_in_github)])
 	}
@@ -192,7 +192,7 @@ Settings := [].{
 		Str.join_with(
 			[name]
 				.concat(sections)
-				.concat(if fixes.is_empty() [] else ["", "Fixes"].concat(fixes))
+				.concat(if (fixes.is_empty()) [] else ["", "Fixes"].concat(fixes))
 				.concat(["", "Summary: ${name}: ${count(results, "PASS").to_str()} passed, ${count(results, "FAIL").to_str()} failed, ${count(results, "UNKNOWN").to_str()} unknown, ${count(results, "NOTE").to_str()} noted"]),
 			"\n",
 		)
@@ -310,8 +310,8 @@ workflow_token = |name, answer| {
 	change = "gh api --method PUT repos/${name}/actions/permissions/workflow"
 	match parsed {
 		Ok(setting) => [
-			if setting.default_workflow_permissions == "read" pass("Actions", "the default workflow token is read-only") else fail("Actions", "the default workflow token is ${setting.default_workflow_permissions}, not read-only", "${change} -f default_workflow_permissions=read"),
-			if setting.can_approve_pull_request_reviews fail("Actions", "workflows may create and approve pull requests", "${change} -F can_approve_pull_request_reviews=false") else pass("Actions", "workflows cannot create or approve pull requests"),
+			if (setting.default_workflow_permissions == "read") pass("Actions", "the default workflow token is read-only") else fail("Actions", "the default workflow token is ${setting.default_workflow_permissions}, not read-only", "${change} -f default_workflow_permissions=read"),
+			if (setting.can_approve_pull_request_reviews) fail("Actions", "workflows may create and approve pull requests", "${change} -F can_approve_pull_request_reviews=false") else pass("Actions", "workflows cannot create or approve pull requests"),
 		]
 		Err(reason) => [unknown("Actions", "the default workflow token and pull request approval", reason)]
 	}
@@ -366,7 +366,7 @@ branch_rules = |name, default_branch, answer, rulesets, unread| {
 			bots = applying.keep_if(|candidate| bot_bypass(candidate) == Ok(Bool.True))
 			hidden = applying.keep_if(|candidate| bot_bypass(candidate).is_err())
 			[
-				if enforces("pull_request") pass("Branch rules", "${default_branch} requires a pull request") else fail("Branch rules", "${default_branch} does not require a pull request", "${page}: enable \"Require a pull request before merging\""),
+				if (enforces("pull_request")) pass("Branch rules", "${default_branch} requires a pull request") else fail("Branch rules", "${default_branch} does not require a pull request", "${page}: enable \"Require a pull request before merging\""),
 				if status.is_empty() {
 					fail("Branch rules", "${default_branch} requires no status checks", "${page}: enable \"Require status checks to pass\" and name the required jobs")
 				} else if required_names(found).is_empty() {
@@ -376,7 +376,7 @@ branch_rules = |name, default_branch, answer, rulesets, unread| {
 				} else {
 					fail("Branch rules", "${default_branch} requires status checks but not an up-to-date branch", "${page}: enable \"Require branches to be up to date before merging\"")
 				},
-				if enforces("required_signatures") pass("Branch rules", "${default_branch} requires signed commits") else fail("Branch rules", "${default_branch} does not require signed commits", "${page}: enable \"Require signed commits\""),
+				if (enforces("required_signatures")) pass("Branch rules", "${default_branch} requires signed commits") else fail("Branch rules", "${default_branch} does not require signed commits", "${page}: enable \"Require signed commits\""),
 				match bots {
 					[candidate, ..] => fail("Branch rules", "the ruleset \"${candidate.name}\" lets an app or a deploy key bypass it", "https://github.com/${name}/rules/${candidate.id.to_str()}: remove every app and deploy key from the bypass list")
 					[] if !hidden.is_empty() or !unread.is_empty() or applying.is_empty() => unknown("Branch rules", "who may bypass the rules", unread.first() ?? "GitHub did not list the bypass actors")
@@ -449,7 +449,7 @@ ruleset_notes = |default_branch, branch, rulesets| {
 		Ok(found) => rulesets.keep_if(|candidate| found.any(|rule| rule.ruleset_id == candidate.id))
 		Err(_) => []
 	}
-	several = if applying.len() > 1 [note("Branch rules", "${applying.len().to_str()} rulesets apply to ${default_branch}: ${Str.join_with(applying.map(|candidate| candidate.name), ", ")}")] else []
+	several = if (applying.len() > 1) [note("Branch rules", "${applying.len().to_str()} rulesets apply to ${default_branch}: ${Str.join_with(applying.map(|candidate| candidate.name), ", ")}")] else []
 	idle.concat(several)
 }
 
@@ -638,7 +638,7 @@ smallest = |numbers|
 		[only] => only
 		[first, .. as rest] => {
 			other = smallest(rest)
-			if first < other first else other
+			if (first < other) first else other
 		}
 	}
 
@@ -706,18 +706,18 @@ word = |text, colour| {
 		_ => "33"
 	}
 	padding = Str.repeat(" ", 7 - Str.to_utf8(text).len())
-	if colour "\u(001b)[${code}m${text}\u(001b)[0m${padding}" else "${text}${padding}"
+	if (colour) "\u(001b)[${code}m${text}\u(001b)[0m${padding}" else "${text}${padding}"
 }
 
 unique : List(Str), List(Str) -> List(Str)
 unique = |values, seen|
 	match values {
 		[] => seen
-		[first, .. as rest] => unique(rest, if seen.contains(first) seen else seen.append(first))
+		[first, .. as rest] => unique(rest, if (seen.contains(first)) seen else seen.append(first))
 	}
 
 describe : List(Str) -> Str
-describe = |items| if items.is_empty() "nothing" else Str.join_with(items, ", ")
+describe = |items| if (items.is_empty()) "nothing" else Str.join_with(items, ", ")
 
 first_line : Str -> Str
 first_line = |text|

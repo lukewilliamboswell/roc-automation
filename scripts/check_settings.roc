@@ -1,7 +1,7 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
-	roc: "nightly-2026-10-09-258ab27",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-24-ff5e544",
 }
 
 import cli.Cmd
@@ -36,7 +36,7 @@ main! = |args| {
 		Stdout.line!("${Settings.report(name, results, colour)}\n")?
 		$passed = $passed and Settings.passed(results)
 	}
-	if $passed Ok({}) else Err(Exit(1))
+	if ($passed) Ok({}) else Err(Exit(1))
 }
 
 # Ask GitHub everything the checks read about one repository. A request that
@@ -50,7 +50,7 @@ answers! = |name| {
 		Err(_) => (Bool.False, "")
 	}
 	ask! = |path| get!(admin, "repos/${name}/${path}", Json)
-	on_branch! = |path| if branch == "" Ok(skipped) else ask!(path)
+	on_branch! = |path| if (branch == "") Ok(skipped) else ask!(path)
 
 	actions = ask!("actions/permissions")?
 	listed = ask!("rulesets")?
@@ -75,7 +75,7 @@ answers! = |name| {
 		repository,
 		workflow: ask!("actions/permissions/workflow")?,
 		actions,
-		selected_actions: if Settings.restricts_actions(actions) ask!("actions/permissions/selected-actions")? else skipped,
+		selected_actions: if (Settings.restricts_actions(actions)) ask!("actions/permissions/selected-actions")? else skipped,
 		rulesets: $rulesets,
 		branch_rules: on_branch!("rules/branches/${branch}")?,
 		head_pulls,
@@ -127,6 +127,6 @@ colour! = || {
 		_ => return Ok(Bool.False)
 	}
 	# `test` inherits this script's standard output, and -t asks whether it is a terminal.
-	code = Cmd.new("test").args(["-t", "1"]).exec_exit_code!().map_err(|_| CommandRunFailed("test -t 1", Unavailable))?
-	Ok(code == 0)
+	output = Cmd.new("test").args(["-t", "1"]).inherit_stdio().run!().map_err(|_| CommandRunFailed("test -t 1", Unavailable))?
+	Ok(output.status == Exited(0))
 }

@@ -1,6 +1,6 @@
 import cli.Cmd
-import cli.Env
-import cli.IOErr
+import cli.Duration
+import cli.System
 import cli.OsStr
 import cli.Path
 import cli.Stdout
@@ -107,8 +107,8 @@ context! = |setup, server| {
 	if !Compatibility.valid_environment(setup.environment) {
 		return Err("test environment overrides a reserved variable or repeats a name")
 	}
-	windows = match Env.platform!().os {
-		WINDOWS => Bool.True
+	windows = match System.target!().os() {
+		Windows(_) => Bool.True
 		_ => Bool.False
 	}
 	Ok({ setup, windows, server })
@@ -128,16 +128,16 @@ run! = |context, argv, cwd, input, timeout| {
 	setup = context.setup
 	match argv {
 		[program, .. as arguments] => {
-			base = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout_ms(timeout).output_limit(10_000_000).manage_tree(Bool.True)
-				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env_str("XDG_CACHE_HOME", native(context, setup.cache)).env_str("ROC_CACHE_DIR", native(context, setup.cache))
-			configured = setup.environment.fold(base, |command, entry| command.env_str(entry.name, entry.value))
+			base = Cmd.new(OsStr.from_str(program)).args(arguments.map(OsStr.from_str)).cwd(cwd).stdin(Bytes(input)).stdout(Capture).stderr(Capture).timeout(Duration.millis(timeout)).output_limit(MaxBytes(10_000_000)).manage_tree(Bool.True)
+				.env("GH_TOKEN", "").env("GITHUB_TOKEN", "").env("NO_COLOR", "1").env("XDG_CACHE_HOME", OsStr.from_str(native(context, setup.cache))).env("ROC_CACHE_DIR", OsStr.from_str(native(context, setup.cache)))
+			configured = setup.environment.fold(base, |command, entry| command.env(OsStr.from_str(entry.name), OsStr.from_str(entry.value)))
+			ran : Try(Cmd.Output, [CmdErr(Cmd.Err), Interrupted, Serve(Str)])
 			ran = match context.server {
 				NoServer =>
 					match configured.run!() {
 						Ok(value) => Ok(value)
-						Err(Timeout(partial)) => Err(Timeout(partial))
-						Err(OutputLimit(partial)) => Err(OutputLimit(partial))
-						Err(IO(error)) => Err(IO(error))
+						Err(CmdErr(error)) => Err(CmdErr(error))
+						Err(Interrupted) => Err(Interrupted)
 					}
 				Server(active) => Loopback.run!(active, configured)
 			}
@@ -162,9 +162,13 @@ run! = |context, argv, cwd, input, timeout| {
 						timed_out: Bool.False,
 						limited: Bool.False,
 					})
-				Err(Timeout(partial)) => Ok({ status: "timeout", signal: 0, error: "", code: 124, stdout: partial.stdout_bytes, stderr: partial.stderr_bytes, timed_out: Bool.True, limited: Bool.False })
-				Err(OutputLimit(partial)) => Ok({ status: "output-limit", signal: 0, error: "", code: 125, stdout: partial.stdout_bytes, stderr: partial.stderr_bytes, timed_out: Bool.False, limited: Bool.True })
-				Err(IO(error)) => Ok({ status: "io-error", signal: 0, error: IOErr.to_str(error), code: 126, stdout: [], stderr: [], timed_out: Bool.False, limited: Bool.False })
+				Err(CmdErr(error)) =>
+					match error {
+						TimedOut(partial) => Ok({ status: "timeout", signal: 0, error: "", code: 124, stdout: partial.stdout_bytes, stderr: partial.stderr_bytes, timed_out: Bool.True, limited: Bool.False })
+						OutputLimitExceeded(partial) => Ok({ status: "output-limit", signal: 0, error: "", code: 125, stdout: partial.stdout_bytes, stderr: partial.stderr_bytes, timed_out: Bool.False, limited: Bool.True })
+						_ => Ok({ status: "io-error", signal: 0, error: Cmd.Err.to_str(error), code: 126, stdout: [], stderr: [], timed_out: Bool.False, limited: Bool.False })
+					}
+				Err(Interrupted) => Err("the command was interrupted")
 				Err(Serve(reason)) => Err("the loopback bundle server failed: ${reason}")
 			}
 		}
@@ -209,19 +213,19 @@ examples! = |context, options| {
 		declared = (AppHeader.fields(source) ?? []).map(|field| field.source)
 		replace = replacements.keep_if(|entry| declared.contains(entry.from)).join_map(|entry| ["--replace-dep", entry.from, entry.to])
 		target = example.target ?? "native"
-		executable = Path.join(setup.directory, "example-${($result.number + 1).to_str()}${if target == "wasm32" ".wasm" else if context.windows ".exe" else ""}")
+		executable = Path.join(setup.directory, "example-${($result.number + 1).to_str()}${if (target == "wasm32") ".wasm" else if (context.windows) ".exe" else ""}")
 		native_executable = native(context, executable)
 		native_root = native(context, options.root)
-		build_target = if target == "native" [] else ["--target=${target}"]
+		build_target = if (target == "native") [] else ["--target=${target}"]
 		# Fuzz instrumentation requires LLVM; the development backend cannot link
 		# a runnable libFuzzer target. Ordinary examples keep their existing mode.
-		optimization = if (example.build_args ?? []).contains("--fuzz") "speed" else "dev"
+		optimization = if ((example.build_args ?? []).contains("--fuzz")) "speed" else "dev"
 		var $built = Bool.True
 		for argv in [[options.compiler, "check", example.path, "--no-cache"].concat(replace), [options.compiler, "build", example.path, "--no-cache", "--opt=${optimization}", "--output=${native_executable}"].concat(build_target).concat(example.build_args ?? []).concat(replace)] {
 			$result = { ..$result, number: $result.number + 1 }
 			ran = logged!(context, $result.number, argv, options.root, [], 300_000)?
 			if ran.timed_out or ran.limited {
-				return Ok({ ..$result, interrupted: if ran.timed_out Timeout($result.number) else OutputLimit($result.number) })
+				return Ok({ ..$result, interrupted: if (ran.timed_out) Timeout($result.number) else OutputLimit($result.number) })
 			}
 			$result = { ..$result, diagnostic_commands: $result.diagnostic_commands + 1 }
 			if ran.status != "exited" or ran.code != 0 {
@@ -249,16 +253,16 @@ examples! = |context, options| {
 					# directory, so an example reads sibling data files by relative path.
 					ran = logged!(context, $result.number, runtime.concat(case.args), Path.join(options.root, directory_of(example.path)), Str.to_utf8(case.stdin), options.case_timeout_ms)?
 					if ran.timed_out or ran.limited {
-						return Ok({ ..$result, interrupted: if ran.timed_out Timeout($result.number) else OutputLimit($result.number) })
+						return Ok({ ..$result, interrupted: if (ran.timed_out) Timeout($result.number) else OutputLimit($result.number) })
 					}
 					match options.mode {
 						Update => {
 							$result = { ..$result, tested: $result.tested + 1 }
-							$cases = $cases.append({ ..case, stdout: Str.from_utf8_lossy(ran.stdout), stderr: if (case.stderr_match ?? "exact") == "ignore" "" else Str.from_utf8_lossy(ran.stderr), exit_code: if ran.status == "exited" ran.code else case.exit_code })
+							$cases = $cases.append({ ..case, stdout: Str.from_utf8_lossy(ran.stdout), stderr: if ((case.stderr_match ?? "exact") == "ignore") "" else Str.from_utf8_lossy(ran.stderr), exit_code: if (ran.status == "exited") ran.code else case.exit_code })
 						}
 						Compare => {
 							passed = ran.status == "exited" and ran.code == case.exit_code and ran.stdout == Str.to_utf8(case.stdout) and Compatibility.stderr_matches(case, ran.stderr)
-							$result = { ..$result, tested: $result.tested + 1, failed: $result.failed + if passed 0 else 1 }
+							$result = { ..$result, tested: $result.tested + 1, failed: $result.failed + if (passed) 0 else 1 }
 							$cases = $cases.append(case)
 							if !passed {
 								write!(Path.join(setup.directory, "${$result.number.to_str()}-expected.json"), Json.to_str(case))?

@@ -11,19 +11,19 @@
 # Nothing here provides a bare `roc`.
 app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/GSb71LxYHqLohZz8jMfawWEwQcyev9ZdVC26sfsDwfq8.tar.zst" }
 
+import pf.Recipes
+
 config = [
 	Name("roc-automation"),
 	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
-	Input("roc", "github:roc-lang/roc-overlay"),
 	Environment(
 		"dev",
 		[
-			Overlays(["roc"]),
-			Command("roc-stable", "nix#rocpkgs.nightly-2026-10-09-258ab27"),
+			Programs([Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-11-24-ff5e544"))]),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
 			RocPackages([
-				"https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
+				"https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
 				"https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 			]),
 			# Programs the scripts start.
@@ -35,11 +35,11 @@ config = [
 	Task("check", [Use("dev"), Run(["scripts/check_all.roc"])]),
 	# Compare a repository's GitHub settings with the "Repository settings"
 	# chapter. Read-only; needs a `gh` login with administration access.
-	Task("check-settings", [Use("dev"), Run(["scripts/check_settings.roc", "--"])]),
+	Task("check-settings", [Use("dev"), Run(["scripts/check_settings.roc"])]),
 	# Read-only version inventory, published alongside the manual.
-	Task("downstream-status", [Use("dev"), Run(["scripts/downstream_status.roc", "--"])]),
+	Task("downstream-status", [Use("dev"), Run(["scripts/downstream_status.roc"])]),
 	# Canonical published-release compatibility utility, also built by its action.
-	Task("release-compatibility", [Use("dev"), Run(["scripts/release_compatibility.roc", "--"])]),
+	Task("release-compatibility", [Use("dev"), Run(["scripts/release_compatibility.roc"])]),
 	# The two shared actions that are Roc scripts. Each action runs its task
 	# from its own checkout of this repository, with its inputs in the
 	# environment, and Blueprint.lock fixes everything the task starts.

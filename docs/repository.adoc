@@ -156,7 +156,7 @@ file and names the release it targets, which points at the cause before anyone
 debugs the script.
 
 The field is useful only while it is true, so one cheap check keeps it true.
-The check script reads the tag from the `Command("roc-stable", ...)` setting in
+The check script reads the tag from the `roc-stable` Fetch recipe in
 `Blueprint.roc` and requires every file under `scripts/` that has an `app`
 header to carry exactly that tag in its `roc` field. It reads text and runs no
 compiler, so it costs nothing in pull-request CI.

@@ -1,4 +1,5 @@
 import cli.Cmd
+import cli.Duration
 import cli.Path
 import cli.Tcp
 
@@ -26,7 +27,7 @@ Loopback := [].{
 		if files.is_empty() {
 			return Err("nothing to serve")
 		}
-		listener = Tcp.listen!("127.0.0.1", 0, 5_000).map_err(|_| "cannot listen on a loopback port")?
+		listener = Tcp.listen!("127.0.0.1", 0, Duration.seconds(5)).map_err(|_| "cannot listen on a loopback port")?
 		port = listener.local_port!().map_err(|_| "cannot read the loopback port")?
 		Ok({ listener, files, base: "http://127.0.0.1:${port.to_str()}" })
 	}
@@ -39,8 +40,9 @@ Loopback := [].{
 	## connection made in the meantime. The command's own timeout and output
 	## limit still apply, and end the run as they would under `Cmd.run!`; a
 	## failure of the server itself is `Serve`.
+	run! : Server, Cmd.Command => Try(Cmd.Output, [CmdErr(Cmd.Err), Interrupted, Serve(Str)])
 	run! = |server, command| {
-		child = command.stdout(Capture).stderr(Capture).spawn!().map_err(|err| IO(err))?
+		child = command.stdout(Capture).stderr(Capture).spawn!()?
 		serve_until_exit!(child, server)
 	}
 
@@ -52,27 +54,26 @@ Loopback := [].{
 # This process must answer the child's request and notice the child exiting,
 # without threads. A short accept timeout alternates between the two.
 serve_until_exit! = |child, server|
-	match child.try_wait!() {
-		Ok([output, ..]) => Ok(output)
-		Ok([]) =>
-			match server.listener.accept!(100) {
+	match child.poll!() {
+		Ok(Finished(output)) => Ok(output)
+		Ok(Running) =>
+			match server.listener.accept!({ accept_timeout: After(Duration.millis(100)), io_timeout: Duration.seconds(5) }) {
 				Ok(stream) => {
-					request = stream.read_until!('\n', 65_536, 5_000).map_err(|_| Serve("cannot read the request"))?
+					request = stream.with_line_limit(65_536).read_until!('\n').map_err(|_| Serve("cannot read the request"))?
 					match server.files.keep_if(|file| file.name == requested(Str.from_utf8_lossy(request))) {
 						[file] => {
-							stream.write_utf8!(response_headers(file.bytes.len()), 5_000).map_err(|_| Serve("cannot write the response headers"))?
-							stream.write!(file.bytes, 30_000).map_err(|_| Serve("cannot write the bundle"))?
+							stream.write_utf8!(response_headers(file.bytes.len())).map_err(|_| Serve("cannot write the response headers"))?
+							stream.with_timeout(Duration.seconds(30)).write_bytes!(file.bytes).map_err(|_| Serve("cannot write the bundle"))?
 						}
-						_ => stream.write_utf8!(not_found, 5_000).map_err(|_| Serve("cannot write the response headers"))?
+						_ => stream.write_utf8!(not_found).map_err(|_| Serve("cannot write the response headers"))?
 					}
 					serve_until_exit!(child, server)
 				}
-				Err(TcpListenErr(TimedOut)) => serve_until_exit!(child, server)
+				Err(TcpErr(TimedOut)) => serve_until_exit!(child, server)
 				Err(_) => Err(Serve("cannot accept a connection"))
 			}
-		Err(Timeout(partial)) => Err(Timeout(partial))
-		Err(OutputLimit(partial)) => Err(OutputLimit(partial))
-		Err(IO(err)) => Err(IO(err))
+		Err(CmdErr(err)) => Err(CmdErr(err))
+		Err(Closed) => Err(Serve("the child process handle was closed"))
 	}
 
 # The file a request line such as `GET /Abc.tar.zst HTTP/1.1` asks for.

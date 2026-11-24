@@ -31,7 +31,7 @@ GitHub := [].{
 	## a file is streamed from disk, so neither is ever an argument.
 	args : Call -> List(Str)
 	args = |call| {
-		projection = if call.jq == "" [] else ["--jq", call.jq]
+		projection = if (call.jq == "") [] else ["--jq", call.jq]
 		body = match call.send {
 			Nothing => []
 			Json(_) => ["--input", "-"]
@@ -126,7 +126,7 @@ GitHub := [].{
 
 	## The values of `values` in their first order, each once.
 	unique : List(Str) -> List(Str)
-	unique = |values| values.fold([], |seen, value| if seen.contains(value) seen else seen.append(value))
+	unique = |values| values.fold([], |seen, value| if (seen.contains(value)) seen else seen.append(value))
 }
 
 # The method and resource of a request. The query is left out: it says nothing
@@ -162,7 +162,7 @@ is_digit = |byte| byte >= '0' and byte <= '9'
 compare_bytes = |left, right|
 	match (left, right) {
 		([a, .. as left_rest], [b, .. as right_rest]) =>
-			if a < b Before else if a > b After else compare_bytes(left_rest, right_rest)
+			if (a < b) Before else if (a > b) After else compare_bytes(left_rest, right_rest)
 		([], []) => Same
 		([], _) => Before
 		(_, []) => After

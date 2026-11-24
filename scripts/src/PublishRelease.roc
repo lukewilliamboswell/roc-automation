@@ -159,7 +159,7 @@ PublishRelease := [].{
 			(ForNames(directory), Names(names)) =>
 				match state.matching {
 					Matching(now) => {
-						hits = GitHub.sort(names.keep_if(|name| matches(now.segment, name))).map(|name| if directory == "" name else "${directory}/${name}")
+						hits = GitHub.sort(names.keep_if(|name| matches(now.segment, name))).map(|name| if (directory == "") name else "${directory}/${name}")
 						expand({ ..state, matching: Matching({ ..now, hits: now.hits.concat(hits) }) })
 					}
 					Idle => Rejected(out_of_turn)
@@ -194,14 +194,14 @@ PublishRelease := [].{
 	## publish request can take effect even when its answer is lost, so the
 	## release is read back whatever that answer was.
 	answered : Plan, Stage, Reply -> Publishing
-	answered = |made, stage, reply|
-		match (stage, reply) {
-			(AwaitCommit, Exists(here)) => if here Ask(TagExists(made.tag), AwaitTag) else Stopped("target ${made.target} is not a commit in this repository")
-			(AwaitTag, Exists(here)) => if here Stopped("the tag ${made.tag} already exists; a version is never published twice") else Ask(ListReleases(1), AwaitReleases(1))
+	answered = |made, stage, response|
+		match (stage, response) {
+			(AwaitCommit, Exists(here)) => if (here) Ask(TagExists(made.tag), AwaitTag) else Stopped("target ${made.target} is not a commit in this repository")
+			(AwaitTag, Exists(here)) => if (here) Stopped("the tag ${made.tag} already exists; a version is never published twice") else Ask(ListReleases(1), AwaitReleases(1))
 			# A draft has no tag yet, so only the list of releases shows it.
 			(AwaitReleases(page), Releases(listed)) =>
 				match listed.keep_if(|release| release.tag_name == made.tag) {
-					[existing, ..] => Stopped("a ${if existing.draft == "false" "release" else "draft release"} for ${made.tag} already exists: ${existing.html_url}")
+					[existing, ..] => Stopped("a ${if (existing.draft == "false") "release" else "draft release"} for ${made.tag} already exists: ${existing.html_url}")
 					[] if listed.len() < per_page => Ask(CreateDraft, AwaitDraft)
 					[] if page >= max_pages => Stopped("more than ${(max_pages * per_page).to_str()} releases; refusing to guess whether one exists for ${made.tag}")
 					[] => Ask(ListReleases(page + 1), AwaitReleases(page + 1))
@@ -219,7 +219,7 @@ PublishRelease := [].{
 			# Whether the request created a draft is not known when its answer is lost or unreadable.
 			(AwaitDraft, Failed(reason)) => Stopped("${reason}. If the releases page now shows a draft for ${made.tag}, delete it before running this job again")
 			(Uploading({ draft, asset, rest }), Uploaded(name)) =>
-				if name == asset.name upload(draft, rest) else unpublished(made, draft, "GitHub stored ${asset.name} as ${name}")
+				if (name == asset.name) upload(draft, rest) else unpublished(made, draft, "GitHub stored ${asset.name} as ${name}")
 			(Listing({ draft, page, records }), Assets(listed)) => {
 				held = records.concat(listed)
 				if listed.len() == per_page and page < max_pages {
@@ -239,12 +239,12 @@ PublishRelease := [].{
 			(AwaitPublish(draft), Accepted) => Ask(ReadBack(draft.id), AwaitReadBack({ draft, failure: "" }))
 			(AwaitPublish(draft), Failed(reason)) => Ask(ReadBack(draft.id), AwaitReadBack({ draft, failure: reason }))
 			(AwaitReadBack({ draft, failure }), Failed(reason)) =>
-				Stopped("${if failure == "" reason else failure}. The release could not be read after the publish request, so ${described(draft)} may or may not be published. Look at the releases page: if ${made.tag} is published, do not run this job again")
+				Stopped("${if (failure == "") reason else failure}. The release could not be read after the publish request, so ${described(draft)} may or may not be published. Look at the releases page: if ${made.tag} is published, do not run this job again")
 			(AwaitReadBack({ draft, failure }), Release(release)) =>
 				if release.draft != "false" {
-					Stopped("${if failure == "" "GitHub accepted the publish request without publishing" else failure}. Nothing was published: ${described(draft)} is verified but left unpublished and the tag ${made.tag} has not been created. Delete the draft, then run this job again")
-				} else if release.tag_name != made.tag or release.prerelease != (if made.prerelease "true" else "false") {
-					Stopped("${release.html_url} is published, but not as the ${if made.prerelease "prerelease" else "release"} ${made.tag}; do not run this job again")
+					Stopped("${if (failure == "") "GitHub accepted the publish request without publishing" else failure}. Nothing was published: ${described(draft)} is verified but left unpublished and the tag ${made.tag} has not been created. Delete the draft, then run this job again")
+				} else if release.tag_name != made.tag or release.prerelease != (if (made.prerelease) "true" else "false") {
+					Stopped("${release.html_url} is published, but not as the ${if (made.prerelease) "prerelease" else "release"} ${made.tag}; do not run this job again")
 				} else if release.immutable != "true" {
 					Stopped("${release.html_url} is published with the verified assets, but it is not immutable. Enable immutable releases in the repository settings; do not run this job again")
 				} else {
@@ -293,7 +293,7 @@ PublishRelease := [].{
 				method: "PATCH",
 				path: "${root}/releases/${release.to_str()}",
 				jq: "{id}",
-				send: Json(Json.to_str({ draft: Bool.False, prerelease: made.prerelease, make_latest: if made.prerelease "false" else "true" })),
+				send: Json(Json.to_str({ draft: Bool.False, prerelease: made.prerelease, make_latest: if (made.prerelease) "false" else "true" })),
 			}
 			ReadBack(release) => { ..rest, path: "${root}/releases/${release.to_str()}", jq: "{tag_name: (.tag_name // \"\"), draft: (.draft | tostring), prerelease: (.prerelease | tostring), immutable: (.immutable | tostring), html_url: (.html_url // \"\")}" }
 		}
@@ -351,7 +351,7 @@ PublishRelease := [].{
 
 	## The part of the job summary for a published release.
 	summary : Plan, Str -> Str
-	summary = |made, url| "### ${if made.prerelease "Prerelease" else "Release"} ${made.tag}\n\n${url}\n\nSHA-256 of each published asset, verified against the tested files:\n\n```\n${PublishRelease.digest_listing(made)}```\n"
+	summary = |made, url| "### ${if (made.prerelease) "Prerelease" else "Release"} ${made.tag}\n\n${url}\n\nSHA-256 of each published asset, verified against the tested files:\n\n```\n${PublishRelease.digest_listing(made)}```\n"
 }
 
 # The body of a release may hold this many characters.
@@ -397,14 +397,14 @@ is_prerelease_version = |version| {
 	}
 	numbers = Str.split_on(core, ".")
 	well_formed = numbers.len() == 3 and numbers.all(|number| GitHub.is_digits(number) and (number == "0" or !number.starts_with("0"))) and suffix.all(|text| Str.split_on(text, ".").all(|part| GitHub.is_plain(part, "-") and (!GitHub.is_digits(part) or part == "0" or !part.starts_with("0"))))
-	if well_formed Ok(!suffix.is_empty()) else Err("version must be a release version such as 0.12.0 or 0.12.0-rc1")
+	if (well_formed) Ok(!suffix.is_empty()) else Err("version must be a release version such as 0.12.0 or 0.12.0-rc1")
 }
 
 checked_prerelease : Str, Str -> Try(Bool, Str)
 checked_prerelease = |value, version|
 	match (value, is_prerelease_version(version)) {
-		("true", Ok(suffixed)) => if suffixed Ok(Bool.True) else Err("prerelease is true but ${version} has no prerelease suffix")
-		("false", Ok(suffixed)) => if suffixed Err("prerelease is false but ${version} is a prerelease version") else Ok(Bool.False)
+		("true", Ok(suffixed)) => if (suffixed) Ok(Bool.True) else Err("prerelease is true but ${version} has no prerelease suffix")
+		("false", Ok(suffixed)) => if (suffixed) Err("prerelease is false but ${version} is a prerelease version") else Ok(Bool.False)
 		("true", Err(reason)) => Err(reason)
 		("false", Err(reason)) => Err(reason)
 		_ => Err("prerelease must be exactly true or false")
@@ -460,7 +460,7 @@ within = |workspace, path|
 	}
 
 without_trailing_slashes : Str -> Str
-without_trailing_slashes = |text| if text.ends_with("/") and text != "/" without_trailing_slashes(text.drop_suffix("/")) else text
+without_trailing_slashes = |text| if (text.ends_with("/") and text != "/") without_trailing_slashes(text.drop_suffix("/")) else text
 
 file_name : Str -> Str
 file_name = |path|
@@ -565,7 +565,7 @@ inspect = |state|
 	}
 
 by_name : Str, Str -> [Before, Same, After]
-by_name = |left, right| if left == right Same else if GitHub.sort([left, right]) == [left, right] Before else After
+by_name = |left, right| if (left == right) Same else if (GitHub.sort([left, right]) == [left, right]) Before else After
 
 # The digest in a line `sha256sum` printed. It marks a file name it had to
 # escape with a leading backslash.
@@ -594,7 +594,7 @@ upload_root = |template| {
 		Ok({ before, .. }) => before
 		Err(_) => template
 	}
-	if url.starts_with("https://") and GitHub.is_plain(url.drop_prefix("https://"), "./_-") url else ""
+	if (url.starts_with("https://") and GitHub.is_plain(url.drop_prefix("https://"), "./_-")) url else ""
 }
 
 upload : PublishRelease.Draft, List(PublishRelease.Asset) -> PublishRelease.Publishing
@@ -694,7 +694,7 @@ at = |disk, path|
 				SymLink => SymLink
 				Directory => Directory
 			}
-		[] => if disk.any(|entry| entry.path.starts_with("${path}/")) Directory else Nothing
+		[] => if (disk.any(|entry| entry.path.starts_with("${path}/"))) Directory else Nothing
 	}
 
 look : List(Entry), PublishRelease.Local -> PublishRelease.Found
@@ -938,7 +938,7 @@ uploads = "https://uploads.github.com/repos/o/r/releases/7/assets"
 respond : PublishRelease.Plan, Hub, PublishRelease.Remote -> (Hub, PublishRelease.Reply)
 respond = |made, before, request| {
 	now = { ..before, asked: before.asked.append(request) }
-	text = |flag| if flag "true" else "false"
+	text = |flag| if (flag) "true" else "false"
 	match request {
 		CommitExists(sha) => (now, Exists(now.commits.contains(sha)))
 		TagExists(tag) => (now, Exists(now.tags.contains(tag)))
@@ -946,7 +946,7 @@ respond = |made, before, request| {
 		CreateDraft =>
 			match now.fault {
 				FailCreate => (now, Failed("POST repos/o/r/releases failed: no answer within 120 seconds"))
-				_ => (now, Created({ id: 7, tag_name: made.tag, draft: text(now.fault != NotADraft), html_url: draft_url, upload_url: if now.fault == NoUploadUrl "http://uploads.example/x{?name}" else "${uploads}{?name,label}" }))
+				_ => (now, Created({ id: 7, tag_name: made.tag, draft: text(now.fault != NotADraft), html_url: draft_url, upload_url: if (now.fault == NoUploadUrl) "http://uploads.example/x{?name}" else "${uploads}{?name,label}" }))
 			}
 		Upload({ asset, .. }) => {
 			size = match now.fault {
@@ -966,7 +966,7 @@ respond = |made, before, request| {
 				Extra(name) => now.stored.append({ id: 999, name, size: 1, state: "uploaded" })
 				_ => now.stored
 			}
-			if now.fault == FailList (now, Failed("GitHub answered GET repos/o/r/releases/7/assets with HTTP 500: Server Error")) else (now, Assets(held.sublist({ start: (page - 1) * 100, len: 100 })))
+			if (now.fault == FailList) (now, Failed("GitHub answered GET repos/o/r/releases/7/assets with HTTP 500: Server Error")) else (now, Assets(held.sublist({ start: (page - 1) * 100, len: 100 })))
 		}
 		Download({ name, limit, .. }) => {
 			sha256 = made.assets.keep_if(|asset| asset.name == name).map(|asset| asset.sha256).first() ?? ""
@@ -990,11 +990,11 @@ respond = |made, before, request| {
 					(
 						now,
 						Release({
-							tag_name: if now.fault == OtherTag "9.9.9" else made.tag,
+							tag_name: if (now.fault == OtherTag) "9.9.9" else made.tag,
 							draft: text(!now.published),
 							prerelease: text(made.prerelease),
 							immutable: text(now.published and now.immutable),
-							html_url: if now.published "https://github.com/o/r/releases/tag/${made.tag}" else draft_url,
+							html_url: if (now.published) "https://github.com/o/r/releases/tag/${made.tag}" else draft_url,
 						}),
 					)
 			}
@@ -1161,7 +1161,7 @@ expect {
 	[
 		check_inventory(final.assets, records) == Ok({}),
 		check_inventory(final.assets, records.concat(records.take_first(1))) == Err("the draft lists an asset name more than once"),
-		check_inventory(final.assets, records.map(|record| if record.id == 0 { ..record, state: "starter" } else record)) == Err("the upload of ${bundle} did not complete"),
+		check_inventory(final.assets, records.map(|record| if (record.id == 0) { ..record, state: "starter" } else record)) == Err("the upload of ${bundle} did not complete"),
 		check_inventory(final.assets, []) == Err("the draft is missing ${Str.join_with(names, ", ")}"),
 	].all(|held| held)
 }

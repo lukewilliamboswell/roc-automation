@@ -1,10 +1,11 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
-	roc: "nightly-2026-10-09-258ab27",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-24-ff5e544",
 }
 
 import cli.Cmd
+import cli.Duration
 import cli.Env
 import cli.OsStr
 import cli.Path
@@ -153,21 +154,21 @@ ask! = |made, downloads, request| {
 		.stdin(Bytes(GitHub.stdin(call)))
 		.stdout(Capture)
 		.stderr(Capture)
-		.timeout_ms(allowed.timeout_ms)
-		.output_limit(allowed.capture)
+		.timeout(Duration.millis(allowed.timeout_ms))
+		.output_limit(MaxBytes(allowed.capture))
 		.run!()
 	match (request, ran) {
 		(Download({ name, .. }), Ok(output)) if output.status == Exited(0) => keep!(Path.join(downloads, name), output.stdout_bytes)
 		# More came back than the tested file holds. One byte too many is as wrong as any number.
-		(Download({ limit, .. }), Err(OutputLimit(_))) => Downloaded({ size: limit + 1, digest: "" })
+		(Download({ limit, .. }), Err(CmdErr(OutputLimitExceeded(_)))) => Downloaded({ size: limit + 1, digest: "" })
 		(_, Ok(output)) =>
 			PublishRelease.reply(
 				made,
 				request,
 				{ succeeded: output.status == Exited(0), stdout: Str.from_utf8_lossy(output.stdout_bytes), stderr: Str.from_utf8_lossy(output.stderr_bytes) },
 			)
-		(_, Err(Timeout(_))) => Failed(GitHub.not_run(call, "no answer within ${(allowed.timeout_ms // 1000).to_str()} seconds"))
-		(_, Err(OutputLimit(_))) => Failed(GitHub.not_run(call, "the answer was larger than expected"))
+		(_, Err(CmdErr(TimedOut(_)))) => Failed(GitHub.not_run(call, "no answer within ${(allowed.timeout_ms // 1000).to_str()} seconds"))
+		(_, Err(CmdErr(OutputLimitExceeded(_)))) => Failed(GitHub.not_run(call, "the answer was larger than expected"))
 		(_, Err(_)) => Failed(GitHub.not_run(call, "gh could not be run"))
 	}
 }

@@ -124,11 +124,10 @@ commit SHA the workflow names. What runs in those two jobs is therefore:
 The one full SHA in the workflow's `uses:` line fixes all of these. The install
 action's SHA, the recorded hashes of the binary, the lock and the script are all
 files of that commit. The lock pins provider inputs by revision and content
-digest; the task-only Roc bundles are pinned by their URL content hashes. Nix
-takes the compiler by the hash its pinned overlay records, and takes the tools
-from nixpkgs at the pinned revision, as built by its binary cache, whose
-signatures it checks. Blueprint prepares missing task bundles through Roc's
-verified unbundling path, described below.
+digest. Blueprint verifies the compiler archive against the lock before
+extraction and prepares task bundles through Roc's verified unbundling path.
+Nix obtains the remaining tools from nixpkgs at its pinned revision and checks
+the binary cache signatures.
 
 Neither job checks out the calling repository, and neither action runs any of
 its code. The calling repository's `Blueprint.roc`, lock and scripts play no
@@ -149,13 +148,15 @@ and pinned by the lock, so it needs none.
 
 == Compilers
 
-`Blueprint.roc` names the release tag used for repository tooling, and
-`Blueprint.lock` pins the overlay by revision and content digest. Changing the
-tooling compiler is therefore a reviewed source change. Nix verifies the
-compiler archive against the hash the pinned overlay revision records for that
-tag. This is content integrity under a reviewed hash, as in
-xref:security-model.adoc#released-artifact-verification[Released artifact verification];
-it is not provenance for the upstream compiler build.
+`Blueprint.roc` names the official nightly used for repository tooling.
+`Blueprint.lock` identifies its archive for each system by URL, size and SHA-256.
+Review the release records when changing the compiler. Blueprint checks the
+locked identity of downloaded and cached archives before extraction, so an
+altered archive cannot supply the compiler that runs a privileged script. CI
+damages the stored archive and checks that Blueprint restores the locked bytes.
+The hash identifies the bytes selected for execution. Verify upstream build
+provenance separately, as described in
+xref:security-model.adoc#released-artifact-verification[Released artifact verification].
 
 Task and shell bundles listed under `RocPackages` are not provider inputs in
 `Blueprint.lock`. Their committed URLs name the content hash of each bundle.

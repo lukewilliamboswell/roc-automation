@@ -1,7 +1,7 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.25.0/CZsY7tYZwR3rj9kYbpaCfxki2yVAaRL8bBwMLvB2xkbA.tar.zst",
-	roc: "nightly-2026-10-09-258ab27",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-24-ff5e544",
 }
 
 import cli.Cmd
@@ -34,8 +34,8 @@ main! = |args| {
 	checked = Str.from_utf8_lossy(date.stdout_bytes).trim()
 	# GNU date in Blueprint, with a macOS fallback for the standalone utility.
 	cutoff_gnu = Cmd.new("date").args(["-u", "-d", "48 hours ago", "+%Y-%m-%dT%H:%M:%SZ"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).run!()?
-	cutoff_output = if cutoff_gnu.status == Exited(0) cutoff_gnu else Cmd.new("date").args(["-u", "-v-2d", "+%Y-%m-%dT%H:%M:%SZ"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).run!()?
-	cutoff = if cutoff_output.status == Exited(0) Str.from_utf8_lossy(cutoff_output.stdout_bytes).trim() else ""
+	cutoff_output = if (cutoff_gnu.status == Exited(0)) cutoff_gnu else Cmd.new("date").args(["-u", "-v-2d", "+%Y-%m-%dT%H:%M:%SZ"].map(OsStr.from_str)).stdout(Capture).stderr(Capture).run!()?
+	cutoff = if (cutoff_output.status == Exited(0)) Str.from_utf8_lossy(cutoff_output.stdout_bytes).trim() else ""
 	var $snapshots = []
 	for name in DownstreamStatus.repositories {
 		repository = "${DownstreamStatus.owner}/${name}"
@@ -143,5 +143,5 @@ snapshot! = |repository| {
 ## No request can change a repository; credentials stay in gh's environment.
 get! = |path, accept, jq| {
 	output = Cmd.new("gh").args(DownstreamStatus.get_args(path, accept, jq).map(OsStr.from_str)).stdout(Capture).stderr(Capture).run!()?
-	Ok(if output.status == Exited(0) Ok(Str.from_utf8_lossy(output.stdout_bytes)) else Err("GitHub metadata unavailable (request failed)"))
+	Ok(if (output.status == Exited(0)) Ok(Str.from_utf8_lossy(output.stdout_bytes)) else Err("GitHub metadata unavailable (request failed)"))
 }

@@ -38,10 +38,10 @@ ReleasePackage := [].{
 	## are relative forward-slash names on every host, including mixed input paths.
 	relative_file : Str, Str, Bool -> Try(Str, [OutsideDirectory])
 	relative_file = |directory, file, windows| {
-		portable = |value| if windows value.replace_each("\\", "/") else value
+		portable = |value| if (windows) value.replace_each("\\", "/") else value
 		prefix = "${portable(directory).drop_suffix("/")}/"
 		name = portable(file)
-		if name.starts_with(prefix) Ok(name.drop_prefix(prefix)) else Err(OutsideDirectory)
+		if (name.starts_with(prefix)) Ok(name.drop_prefix(prefix)) else Err(OutsideDirectory)
 	}
 
 	## `x.y.z`, optionally with a `-prerelease` suffix of letters, digits,
@@ -163,7 +163,7 @@ ReleasePackage := [].{
 		if !root.ends_with("/main.roc") or directory == "" or !GitHub.is_plain(directory, "-_/") or directory.contains("//") {
 			return Err(NotABundleRoot(root))
 		}
-		infix = if directory == "package" "" else Str.join_with(Str.split_on(directory.drop_suffix("/package"), "/"), "-")
+		infix = if (directory == "package") "" else Str.join_with(Str.split_on(directory.drop_suffix("/package"), "/"), "-")
 		if infix != "" and (!GitHub.is_plain(infix, "-_") or infix.starts_with("-")) {
 			return Err(NotABundleRoot(root))
 		}
@@ -178,9 +178,9 @@ ReleasePackage := [].{
 	release_bundles : List(Bundle) -> Try(List(Bundle), [NoPrimary(Str)])
 	release_bundles = |found| {
 		has_platform = found.any(|bundle| bundle.kind == Platform)
-		primary = if has_platform platform_root else package_root
-		named = found.map(|bundle| if has_platform and bundle.root == package_root { ..bundle, infix: "package" } else bundle)
-		ordered = named.sort_with(|a, b| if a.root == b.root Same else if a.root == primary Before else if b.root == primary After else if GitHub.sort([a.root, b.root]) == [a.root, b.root] Before else After)
+		primary = if (has_platform) platform_root else package_root
+		named = found.map(|bundle| if (has_platform and bundle.root == package_root) { ..bundle, infix: "package" } else bundle)
+		ordered = named.sort_with(|a, b| if (a.root == b.root) Same else if (a.root == primary) Before else if (b.root == primary) After else if (GitHub.sort([a.root, b.root]) == [a.root, b.root]) Before else After)
 		match ordered {
 			[first, ..] if first.root == primary => Ok(ordered)
 			_ => Err(NoPrimary(primary))
@@ -194,7 +194,7 @@ ReleasePackage := [].{
 	placeholder = |bundle|
 		match bundle.kind {
 			Platform => "{platform-url}"
-			Package => if bundle.infix == "" or bundle.root == package_root "{package-url}" else "{${bundle.infix}-url}"
+			Package => if (bundle.infix == "" or bundle.root == package_root) "{package-url}" else "{${bundle.infix}-url}"
 		}
 
 	## The tracked `.roc` files of the platform directory, relative to it,
@@ -213,7 +213,7 @@ ReleasePackage := [].{
 	## file name carries the repository name and the bundle's infix.
 	bundle_file : Package, Bundle, Str, Bool -> Str
 	bundle_file = |pkg, bundle, created, single|
-		if single and bundle.infix == "" created else if bundle.infix == "" "${pkg.name}-${created}" else "${pkg.name}-${bundle.infix}-${created}"
+		if (single and bundle.infix == "") created else if (bundle.infix == "") "${pkg.name}-${created}" else "${pkg.name}-${bundle.infix}-${created}"
 
 	## Whether `value` is a bundle file name: a content hash with `.tar.zst`,
 	## with an optional `<name>-` or `<name>-<infix>-` prefix.
@@ -225,7 +225,7 @@ ReleasePackage := [].{
 	## repository's own package.
 	published_bundle_file : Package, Bundle, List(Str) -> [One(Str), None, Several]
 	published_bundle_file = |pkg, bundle, assets| {
-		wanted = if bundle.infix == "" ["", pkg.name] else ["${pkg.name}-${bundle.infix}"]
+		wanted = if (bundle.infix == "") ["", pkg.name] else ["${pkg.name}-${bundle.infix}"]
 		matching = assets.keep_if(
 			|asset| valid_bundle_file(asset) and match Str.split_last(asset.drop_suffix(".tar.zst"), "-") {
 				Ok({ before, .. }) => wanted.contains(before)
@@ -279,7 +279,7 @@ ReleasePackage := [].{
 				"# ${pkg.name} ${version} examples",
 				"",
 				"These are the ${pkg.name} examples as they were when ${version} was released.",
-				"Each application depends on that release's ${if urls.len() == 1 "package" else "packages"}:",
+				"Each application depends on that release's ${if (urls.len() == 1) "package" else "packages"}:",
 				"",
 			]
 				.concat(urls.map(|url| "    ${url}"))
@@ -339,7 +339,7 @@ ReleasePackage := [].{
 				"",
 				"- Package and examples built and tested with `roc` ${record.compiler}",
 			]
-				.concat(if record.automation == "" [] else ["- Released by the shared roc-automation workflow at `${record.automation}`"])
+				.concat(if (record.automation == "") [] else ["- Released by the shared roc-automation workflow at `${record.automation}`"])
 				.append(""),
 			"\n",
 		)
@@ -357,7 +357,7 @@ safe_components = |parts|
 	!parts.is_empty() and parts.all(
 		|part| {
 			stem = Str.join_with(Str.split_on(part, ".").take_first(1), "")
-			upper = Str.from_utf8_lossy(Str.to_utf8(stem).map(|byte| if byte >= 'a' and byte <= 'z' byte - 32 else byte))
+			upper = Str.from_utf8_lossy(Str.to_utf8(stem).map(|byte| if (byte >= 'a' and byte <= 'z') byte - 32 else byte))
 			GitHub.is_plain(part, "-._") and part != "." and part != ".." and !part.ends_with(".") and !["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"].contains(upper)
 		},
 	)
@@ -422,7 +422,7 @@ numbers = |version| Str.split_on(version, ".").map(|part| U64.from_str(part).ok_
 compare_numbers = |left, right|
 	match (left, right) {
 		([a, .. as left_rest], [b, .. as right_rest]) =>
-			if a < b Before else if a > b After else compare_numbers(left_rest, right_rest)
+			if (a < b) Before else if (a > b) After else compare_numbers(left_rest, right_rest)
 		([], []) => Same
 		([], _) => Before
 		(_, []) => After

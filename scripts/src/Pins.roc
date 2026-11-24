@@ -4,7 +4,7 @@ Pins := [].{
 	## The release tag that the text of `Blueprint.roc` names as `roc-stable`.
 	stable_tag : Str -> Try(Str, [NoStableCompiler])
 	stable_tag = |blueprint|
-		match Str.split_on(Str.join_with(Str.split_on(blueprint, "\"nix#rocpkgs."), "\"rocpkgs."), "Command(\"roc-stable\", \"rocpkgs.") {
+		match Str.split_on(blueprint, "Fetch(\"roc-stable\", Recipes.roc_nightly(\"") {
 			[_, after] =>
 				match Str.split_first(after, "\"") {
 					Ok({ before, .. }) if before != "" => Ok(before)
@@ -49,9 +49,7 @@ header = |lines|
 
 script = "#!/usr/bin/env roc-stable\napp [main!] {\n\tcli: platform \"https://example.com/cli.tar.zst\",\n\troc: \"nightly-2026-10-09-258ab27\",\n}\n\nmain! = |_| { roc: \"not a header\" }\n"
 
-expect Pins.stable_tag("\t\t\tOverlays([\"roc\"]),\n\t\t\tCommand(\"roc-stable\", \"rocpkgs.nightly-2026-10-09-258ab27\"),\n") == Ok("nightly-2026-10-09-258ab27")
 expect Pins.stable_tag("# `roc-stable` is the release named below\n") == Err(NoStableCompiler)
-expect Pins.stable_tag("Command(\"roc-stable\", \"rocpkgs.\")") == Err(NoStableCompiler)
 expect Pins.is_app(script) and Pins.is_app("app [main!] {}\n")
 expect !Pins.is_app("Pins := [].{\n\tapp = 1\n}\n") and !Pins.is_app("package [A] {}\n")
 expect Pins.roc_pin(script) == Ok("nightly-2026-10-09-258ab27")
@@ -61,6 +59,6 @@ expect Pins.roc_pin("app [main!] { heroc: \"nightly-1\" }\n") == Err(NoPin)
 expect Pins.roc_pin("app [main!] { roc: \"a\", roc: \"b\" }\n") == Err(NoPin)
 expect Pins.roc_pin("Pins := [].{\n\tpin = { roc: \"nightly-1\" }\n}\n") == Err(NoPin)
 
-expect Pins.stable_tag("Command(\"roc-stable\", \"nix#rocpkgs.nightly-2026-10-09-258ab27\")") == Ok("nightly-2026-10-09-258ab27")
-expect Pins.stable_tag("Command(\"roc-stable\", \"nix#rocpkgs.\")") == Err(NoStableCompiler)
-expect Pins.stable_tag("Command(\"roc-stable\", \"rocpkgs.a\")\nCommand(\"roc-stable\", \"nix#rocpkgs.b\")") == Err(NoStableCompiler)
+expect Pins.stable_tag("Programs([Fetch(\"roc-stable\", Recipes.roc_nightly(\"nightly-2026-10-09-258ab27\"))])") == Ok("nightly-2026-10-09-258ab27")
+expect Pins.stable_tag("Fetch(\"roc-stable\", Recipes.roc_nightly(\"\"))") == Err(NoStableCompiler)
+expect Pins.stable_tag("Fetch(\"roc-stable\", Recipes.roc_nightly(\"nightly-one\"))\nFetch(\"roc-stable\", Recipes.roc_nightly(\"nightly-two\"))") == Err(NoStableCompiler)
