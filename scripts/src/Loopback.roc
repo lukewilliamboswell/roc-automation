@@ -40,6 +40,7 @@ Loopback := [].{
 	## connection made in the meantime. The command's own timeout and output
 	## limit still apply, and end the run as they would under `Cmd.run!`; a
 	## failure of the server itself is `Serve`.
+	run! : Server, Cmd.Command => Try(Cmd.Output, [CmdErr(Cmd.Err), Interrupted, Serve(Str)])
 	run! = |server, command| {
 		child = command.stdout(Capture).stderr(Capture).spawn!()?
 		serve_until_exit!(child, server)
