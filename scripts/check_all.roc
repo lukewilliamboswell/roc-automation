@@ -1,7 +1,7 @@
 #!/usr/bin/env roc-stable
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
-	roc: "nightly-2026-11-23-b5c77fc",
+	roc: "nightly-2026-11-24-ff5e544",
 }
 
 import cli.Cmd
@@ -29,7 +29,7 @@ main! = |_args| {
 	Stdout.line!("\n== Compiler pins")?
 	tag = match Pins.stable_tag(Path.read_utf8!("Blueprint.roc")?) {
 		Ok(found) => found
-		Err(NoStableCompiler) => return fail!("Blueprint.roc does not name roc-stable with Command(\"roc-stable\", \"nix#rocpkgs.<tag>\")")
+		Err(NoStableCompiler) => return fail!("Blueprint.roc does not name roc-stable with Fetch(\"roc-stable\", Recipes.roc_nightly(\"<tag>\"))")
 	}
 	for script in scripts {
 		source = Path.read_utf8!(Path.utf8(script))?

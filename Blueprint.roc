@@ -11,15 +11,15 @@
 # Nothing here provides a bare `roc`.
 app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.12.0/GSb71LxYHqLohZz8jMfawWEwQcyev9ZdVC26sfsDwfq8.tar.zst" }
 
+import pf.Recipes
+
 config = [
 	Name("roc-automation"),
 	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
-	Input("roc", "github:roc-lang/roc-overlay/51863fdb8ed01f3286bdde1b6d8d1f5d6a96d657"),
 	Environment(
 		"dev",
 		[
-			Overlays(["roc"]),
-			Command("roc-stable", "nix#rocpkgs.nightly-2026-11-23-b5c77fc"),
+			Programs([Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-11-24-ff5e544"))]),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
 			RocPackages([

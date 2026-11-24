@@ -55,9 +55,9 @@ known vulnerabilities; advisory analysis uses its own component evidence.
 . Open a pull request whose only changed file is `Blueprint.lock`.
 . Merge after `ci.yml` passes.
 
-A lock update moves the overlay revision, the package source and tool versions.
-It never changes which release is `roc-stable`, because that tag is written in
-`Blueprint.roc`. It does not change the `blueprint` binary or the platform URL.
+A lock update can move a provider revision, package source or tool version.
+`Blueprint.roc` determines the `roc-stable` release and the Blueprint platform
+URL, which also selects the matching `blueprint` binary.
 
 Where the repository fingerprints native build inputs, a lock change can make
 those inputs stale. `ci.yml` reports that, and the fix is a new linker-input
@@ -67,15 +67,15 @@ xref:platforms.adoc#choose-the-correct-maintainer-path[Choose the correct mainta
 == Change the tooling compiler
 
 . Choose a published nightly release.
-. Change the tag in the `Command("roc-stable", ...)` setting of `Blueprint.roc`.
+. Change the tag in `Fetch("roc-stable", Recipes.roc_nightly(...))` in
+  `Blueprint.roc`.
 . Change the `roc` field in every script header to the same tag. The check
   script fails until they all match.
-. If the locked overlay revision predates that release, refresh the `roc`
-  input and commit `Blueprint.lock` in the same pull request. Run
-  `blueprint update roc` if the input tracks the overlay's default branch.
-  If the input names a full commit, verify the new revision's compiler archive
-  hashes against the nightly release, update the reference and run
-  `blueprint update`.
+. Run `blueprint update`. Compare the new compiler entries in `Blueprint.lock`
+  against the official release's archive URLs, sizes and SHA-256 digests.
+  Commit the reviewed lock in the same pull request. For a project that selects
+  its compiler from a Nix overlay, update the overlay input if its locked
+  revision predates the release.
 . Fix any script the new compiler breaks in that pull request, so the tag and
   the scripts move together.
 . Merge after `ci.yml` passes.

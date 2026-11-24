@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-11-23-b5c77fc
+          nightly-tag: nightly-2026-11-24-ff5e544
       - id: build
         name: Build the shared runner using its native action bootstrap
         run: '"$PYTHON_COMMAND" actions/release-compatibility/bootstrap.py'
@@ -92,7 +92,7 @@ jobs:
           persist-credentials: false
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-11-23-b5c77fc
+          nightly-tag: nightly-2026-11-24-ff5e544
       - id: build
         name: Build the shared runner with its tooling compiler
         run: python3 actions/release-compatibility/bootstrap.py
@@ -113,7 +113,7 @@ jobs:
           persist-credentials: false
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-11-23-b5c77fc
+          nightly-tag: nightly-2026-11-24-ff5e544
       - name: Check and build the downstream runner
         run: |
           roc fmt --check tools/downstream-regressions/main.roc
@@ -538,7 +538,7 @@ jobs:
       # tools release builds it; consumers fetch that release through Blueprint.
       - uses: ./actions/setup-roc-nightly
         with:
-          nightly-tag: nightly-2026-11-23-b5c77fc
+          nightly-tag: nightly-2026-11-24-ff5e544
       - id: tool
         name: Build the release utility with the tooling compiler
         run: |
@@ -598,10 +598,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Select a private tooling test cache
+        run: printf 'XDG_CACHE_HOME=%s/roc-scripts-cache\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: ./actions/setup-blueprint
         with:
           install-nix: 'true'
       - run: blueprint run check
+      - name: Recover the locked tooling compiler after cache corruption
+        run: |
+          set -euo pipefail
+          digest="$(blueprint lock show --json | jq -er '.fetched | map(select(.name == "roc-stable" and .system == "x86_64-linux")) | if length == 1 then .[0].sha256 else error("expected one tooling compiler archive") end')"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          archive="$XDG_CACHE_HOME/blueprint/v1/artifacts/sha256/$digest"
+          test -f "$archive"
+          printf 'corrupt compiler cache fixture' > "$archive"
+          blueprint run compiler-version
+          printf '%s  %s\n' "$digest" "$archive" | sha256sum --check
   workflow-lint:
     runs-on: ubuntu-24.04
     steps:

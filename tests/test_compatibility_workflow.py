@@ -161,7 +161,7 @@ class CompatibilityWorkflowSecurityTests(unittest.TestCase):
         tooling, package = installers
         # Controller tooling is still fixed; the new transport must not turn
         # that build into execution by a consumer-selected compiler.
-        self.assertIn("nightly-tag: nightly-2026-11-23-b5c77fc", tooling)
+        self.assertIn("nightly-tag: nightly-2026-11-24-ff5e544", tooling)
         self.assertNotIn("inputs.nightly-tag", tooling)
         self.assertTrue(package.startswith("if: inputs.phase == 'test'\n"))
         self.assertIn("nightly-tag: ${{ inputs.nightly-tag }}", package)
