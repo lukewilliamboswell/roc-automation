@@ -72,8 +72,27 @@
     "profile": "blueprint-spdx-3.0-v2",
     "source_invocation": "roc-run-direct-v1",
     "payload_mib": 16
-  }
-,
+  },
+  "0.15.0-rc.1": {
+    "url": "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.15.0-rc.1/roc-blueprint-sbom-DcZ843Loufo1Hu3jREY4NqEWSQ43hm5VWyxcpNBpLzEq.tar.zst",
+    "compiler": "nightly-2026-11-24-ff5e544",
+    "generator": "Tool: blueprint-sbom-0.15.0-rc.1",
+    "binaries": {
+      "x86_64-linux": "17b7c2783b073ea5f967554a5fcbe45e1569c07bd4264e876c6ebecc3282eba9",
+      "aarch64-linux": "affd502232e67dc6eae85ba3481228340178be3135a1a7e170ac2ea0a4335f71",
+      "aarch64-darwin": "85995bf7db372ffb28beaaeff5e51b413796c350726a1342846c7eb86e996ed7",
+      "x86_64-darwin": "af1edf9a95b3ca03d136f0e03eb80d8c9f5545bac1923e11f01408fc976775e9",
+      "x86_64-windows": "e6bfb8fd9fce000537a9fc3bb2b0888afc589ff189d0cda52325971af890a102"
+    },
+    "features": [
+      "members",
+      "manifest",
+      "complete-manifest"
+    ],
+    "profile": "blueprint-spdx-3.0-v2",
+    "source_invocation": "roc-run-direct-v1",
+    "payload_mib": 16
+  },
   "kai": {
     "0.0.12": {
       "plugin": "https://github.com/thebrandonlucas/kai/releases/download/v0.0.12/sbom-HzyZunZdK6VM3Ve3WK2cVtnFtRcTH6qUU6T65ZNG17TF.tar.zst",

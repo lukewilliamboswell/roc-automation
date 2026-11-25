@@ -159,16 +159,19 @@ class PureTests(unittest.TestCase):
     def test_current_released_tool_has_every_native_system_and_corrected_profile(self):
         for version, compiler in (("0.11.0", "nightly-2026-10-28-bad769b"),
                                   ("0.12.0", "nightly-2026-11-07-ad3a5d2"),
-                                  ("0.13.0", "nightly-2026-11-10-f7d1f19")):
+                                  ("0.13.0", "nightly-2026-11-10-f7d1f19"),
+                                  ("0.15.0-rc.1", "nightly-2026-11-24-ff5e544")):
             with self.subTest(version=version):
                 current = sidecars.sbom_tool(version)
                 self.assertEqual(set(current["binaries"]), set(sidecars.setup_blueprint.SYSTEMS.values()))
                 self.assertEqual(current["compiler"], compiler)
                 self.assertEqual(current["profile"], "blueprint-spdx-3.0-v2")
                 self.assertEqual(current["source_invocation"], "roc-run-separator-v1" if version == "0.11.0" else "roc-run-direct-v1")
-        current = sidecars.sbom_tool("0.13.0")
-        self.assertEqual(current["payload_bytes"], 16 * sidecars.MAX_JSON_BYTES)
-        self.assertEqual(set(current["features"]), {"members", "manifest", "complete-manifest"})
+        for version in ("0.13.0", "0.15.0-rc.1"):
+            with self.subTest(version=version):
+                current = sidecars.sbom_tool(version)
+                self.assertEqual(current["payload_bytes"], 16 * sidecars.MAX_JSON_BYTES)
+                self.assertEqual(set(current["features"]), {"members", "manifest", "complete-manifest"})
         for version in ("0.7.0", "0.8.0"):
             self.assertEqual(sidecars.sbom_tool(version)["profile"], "blueprint-spdx-3.0-v1")
             self.assertEqual(sidecars.sbom_tool(version)["source_invocation"], "roc-run-separator-v1")

@@ -140,6 +140,7 @@ def main():
         "0.11.0": ("nightly-2026-10-28-bad769b", "blueprint-spdx-3.0-v2"),
         "0.12.0": ("nightly-2026-11-07-ad3a5d2", "blueprint-spdx-3.0-v2"),
         "0.13.0": ("nightly-2026-11-10-f7d1f19", "blueprint-spdx-3.0-v2"),
+        "0.15.0-rc.1": ("nightly-2026-11-24-ff5e544", "blueprint-spdx-3.0-v2"),
     }[blueprint_version]
     tool = json.loads((ROOT / "actions/setup-blueprint/sbom-tools.json").read_text())[blueprint_version]
     complete_manifest = "complete-manifest" in tool["features"]

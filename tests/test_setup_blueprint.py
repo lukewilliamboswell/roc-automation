@@ -95,7 +95,7 @@ class SetupBlueprintTests(unittest.TestCase):
     def test_new_releases_select_all_native_assets_and_enforce_reviewed_checksums(self):
         runners = [("Linux", "X64"), ("Linux", "ARM64"),
                    ("macOS", "ARM64"), ("macOS", "X64"), ("Windows", "X64")]
-        for version in ("0.11.0", "0.12.0"):
+        for version in ("0.11.0", "0.12.0", "0.15.0-rc.1"):
             self.check_native_release(version, runners)
 
     def check_native_release(self, version, runners):
