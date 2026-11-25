@@ -28,11 +28,13 @@ FIXTURE_DIGESTS = {
     "0.11.0": "ab138ce9fcc20736ca014d81e27d865cadb653d6dedfaff149cd23fb8d57a42a",
     "0.12.0": "d6c2582aab61b45c9df4feefa883df834643b304e9c3588c7731f467207bfada",
     "0.13.0": "2098dc20816af426f65447614f1f210ad08a31abcf731d9ac05f5ab613a4589d",
+    "0.15.0-rc.1": "3698b3aae5a705b9906b95f7f20d9c24ada0747ccda08cc1a364f312dc629a18",
 }
 CYCLONEDX_PROFILES = {
     "0.11.0": "standard-containment-v1",
     "0.12.0": "standard-containment-v1",
     "0.13.0": "standard-evidence-v2",
+    "0.15.0-rc.1": "standard-evidence-v2",
 }
 
 
