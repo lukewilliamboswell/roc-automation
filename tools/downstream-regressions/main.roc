@@ -12,7 +12,7 @@ Case : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, 
 
 App : { id : Str, repository : Str, release : Str, date : Str, earliest_nightly : Str, root : Str, path : Str, cwd : Str, cases : List(Case), note : Str, skip : Str }
 
-Manifest : { cache : Str, output : Str, observations : Str, corpus_hash : Str, host : Str, nightlies : List({ path : Str, sha256 : Str }), apps : List(App) }
+Manifest : { cache : Str, output : Str, observations : Str, corpus_hash : Str, host : Str, nightlies : List({ path : Str, sha256 : Str, source_date : Str, source_key : Str }), apps : List(App) }
 
 Record : { key : Str, compiler_path : Str, compiler_hash : Str, version : Str, nightly_date : Str, app_id : Str, repository : Str, release : Str, stage : Str, case_name : Str, status : Str, code : I32, signal : I32, duration_ms : U64, argv : List(Str), cwd : Str, stdin : Str, stdout : Str, stderr : Str, expected_stdout : Str, expected_stderr : Str, expected_code : I32, note : Str }
 
@@ -57,15 +57,26 @@ sweep! = |config| {
 		base = { key: "", compiler_path: compiler.path, compiler_hash: compiler.sha256, version: "", nightly_date: "", app_id: "", repository: "", release: "", stage: "version", case_name: "", status: "", code: 0, signal: 0, duration_ms: 0, argv: [], cwd: manifest.cache, stdin: "", stdout: "", stderr: "", expected_stdout: "", expected_stderr: "", expected_code: 0, note: "" }
 		identified = observe!(base, [compiler.path, "version"], manifest.cache, "", 30_000, manifest.cache)?
 		version = identified.stdout.trim()
-		date = nightly_date(version)
+		nightly = nightly_date(version)
+		date = if compiler.source_date != "" {
+			compiler.source_date
+		} else if nightly == "" and identified.status == "exited" and identified.code == 0 {
+			helper!(["compiler-release-date"], version)?.trim()
+		} else {
+			nightly
+		}
 		for application in manifest.apps {
-			identity = "${manifest.corpus_hash}|${manifest.host}|${compiler.path}|${compiler.sha256}|${application.id}|v1"
+			identity = "${manifest.corpus_hash}|${manifest.host}|${compiler.source_key}${compiler.path}|${compiler.sha256}|${application.id}|v1"
 			seed = { ..base, key: identity, app_id: application.id, repository: application.repository, release: application.release, version, nightly_date: date, note: application.note }
-			if application.skip != "" or date == "" or identified.status != "exited" or identified.code != 0 or before(date, application.earliest_nightly) {
-				reason = if (application.skip != "") application.skip else if (date == "" or identified.status != "exited" or identified.code != 0) "compiler identity unavailable: ${identified.stderr}" else "nightly predates 24-hour release window"
-				$records = $records.keep_if(|r| r.key != "${identity}|skip").append({ ..seed, key: "${identity}|skip", stage: "suite", status: if (reason == "nightly predates 24-hour release window") "not-applicable" else "skipped", note: reason })
+			if application.skip != "" or version == "" or date == "" or identified.status != "exited" or identified.code != 0 or before(date, application.earliest_nightly) {
+				reason = if (application.skip != "") application.skip else if (version == "" or date == "" or identified.status != "exited" or identified.code != 0) "compiler identity unavailable: ${identified.stderr}" else "compiler predates 24-hour release window"
+				$records = $records.keep_if(|r| r.key != "${identity}|skip").append({ ..seed, key: "${identity}|skip", stage: "suite", status: if (reason == "compiler predates 24-hour release window") "not-applicable" else "skipped", note: reason })
 				_ = helper!(["save", manifest.observations], Json.to_str($records))?
 			} else {
+				if $records.any(|r| r.key == "${identity}|skip") {
+					$records = $records.keep_if(|r| r.key != "${identity}|skip")
+					_ = helper!(["save", manifest.observations], Json.to_str($records))?
+				}
 				complete = ["check", "test", "build"].all(|stage| $records.any(|r| r.key == "${identity}|${stage}")) and application.cases.all(|case| ["run", "binary"].all(|stage| $records.any(|r| r.key == "${identity}|${stage}|${case.name}")))
 				if !complete {
 					Stdout.line!("${date} ${application.id}").map_err(|_| "cannot write progress")?
