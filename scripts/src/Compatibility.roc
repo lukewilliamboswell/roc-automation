@@ -179,6 +179,9 @@ Compatibility := [].{
 		if results.any(|r| r.outcome == "output-limit") {
 			return { outcome: "output-limit", report: "none" }
 		}
+		if results.any(|r| r.outcome == "dependency-fetch-failed") {
+			return { outcome: "dependency-fetch-failed", report: "none" }
+		}
 		if results.all(|r| r.outcome == "compatible" and r.tested > 0 and r.failed == 0 and r.skipped == 0 and r.diagnostic_commands > 0) {
 			{ outcome: "compatible", report: "success" }
 		} else {

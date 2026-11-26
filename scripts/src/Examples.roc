@@ -3,6 +3,7 @@ import cli.Env
 import cli.IOErr
 import cli.OsStr
 import cli.Path
+import cli.Sleep
 import cli.Stdout
 import AppHeader
 import Compatibility
@@ -44,6 +45,7 @@ Examples := [].{
 		setup : Setup,
 		case_timeout_ms : U64,
 		source : Source,
+		retry_dependency_fetch : Bool,
 		mode : [Compare, Update],
 		first_number : U64,
 	}
@@ -61,6 +63,7 @@ Examples := [].{
 		interrupted : [None, Timeout(U64), OutputLimit(U64)],
 		updated : Compatibility.Suite,
 		failures : List(Str),
+		dependency_fetch_failures : List(Str),
 	}
 
 	## Run one command with captured output and the test environment, with
@@ -79,7 +82,7 @@ Examples := [].{
 		logged!(context, number, argv, cwd, input, timeout)
 	}
 
-	## Check and build every example once, then run each of its cases.
+	## Check and build every example, then run each of its cases.
 	execute! : Options => Try(Outcome, Str)
 	execute! = |options| {
 		server : Try(Server, Str)
@@ -187,6 +190,25 @@ logged! = |context, number, argv, cwd, input, timeout| {
 	Ok(ran)
 }
 
+# Only a compiler package-download diagnostic on a failed exit is retryable.
+dependency_fetch_failed : Examples.Ran -> Bool
+dependency_fetch_failed = |ran| {
+	diagnostic = Str.from_utf8_lossy(ran.stderr)
+	ran.status == "exited" and ran.code != 0 and diagnostic.contains("package download failed") and diagnostic.split_on("\n").any(|line| line.trim() == "Error: DownloadFailed.")
+}
+
+compile! : Context, U64, List(Str), Path, List(U64) => Try({ ran : Examples.Ran, number : U64 }, Str)
+compile! = |context, number, argv, root, delays| {
+	ran = logged!(context, number, argv, root, [], 300_000)?
+	match delays {
+		[delay, .. as remaining] if dependency_fetch_failed(ran) => {
+			Sleep.millis!(delay)
+			compile!(context, number + 1, argv, root, remaining)
+		}
+		_ => Ok({ ran, number })
+	}
+}
+
 examples! : Context, Examples.Options => Try(Examples.Outcome, Str)
 examples! = |context, options| {
 	setup = options.setup
@@ -200,7 +222,8 @@ examples! = |context, options| {
 				NoServer => []
 			}
 	}
-	var $result = { tested: 0, failed: 0, skipped: 0, diagnostic_commands: 0, number: options.first_number - 1, interrupted: None, updated: { ..options.suite, apps: [] }, failures: [] }
+	retry_delays = if options.retry_dependency_fetch [1_000, 3_000] else []
+	var $result = { tested: 0, failed: 0, skipped: 0, diagnostic_commands: 0, number: options.first_number - 1, interrupted: None, updated: { ..options.suite, apps: [] }, failures: [], dependency_fetch_failures: [] }
 	for example in options.suite.apps {
 		source = read!(Path.join(options.root, example.path))?
 		if !Compatibility.app_source(source, options.dependencies) {
@@ -217,19 +240,27 @@ examples! = |context, options| {
 		# a runnable libFuzzer target. Ordinary examples keep their existing mode.
 		optimization = if (example.build_args ?? []).contains("--fuzz") "speed" else "dev"
 		var $built = Bool.True
+		var $compile_failed = Bool.False
 		for argv in [[options.compiler, "check", example.path, "--no-cache"].concat(replace), [options.compiler, "build", example.path, "--no-cache", "--opt=${optimization}", "--output=${native_executable}"].concat(build_target).concat(example.build_args ?? []).concat(replace)] {
-			$result = { ..$result, number: $result.number + 1 }
-			ran = logged!(context, $result.number, argv, options.root, [], 300_000)?
+			compiled = compile!(context, $result.number + 1, argv, options.root, retry_delays)?
+			ran = compiled.ran
+			completed = compiled.number - $result.number - if ran.timed_out or ran.limited 1 else 0
+			$result = { ..$result, number: compiled.number, diagnostic_commands: $result.diagnostic_commands + completed }
 			if ran.timed_out or ran.limited {
 				return Ok({ ..$result, interrupted: if ran.timed_out Timeout($result.number) else OutputLimit($result.number) })
 			}
-			$result = { ..$result, diagnostic_commands: $result.diagnostic_commands + 1 }
 			if ran.status != "exited" or ran.code != 0 {
 				$built = Bool.False
+				if options.retry_dependency_fetch and dependency_fetch_failed(ran) {
+					$result = { ..$result, dependency_fetch_failures: $result.dependency_fetch_failures.append("${example.path}: dependency fetch failed after three attempts; see command ${compiled.number.to_str()} stderr for the package URL") }
+				} else {
+					$compile_failed = Bool.True
+					$result = { ..$result, failures: $result.failures.append("${example.path}: compiler command ${compiled.number.to_str()} failed") }
+				}
 			}
 		}
-		if !$built {
-			$result = { ..$result, failed: $result.failed + 1, failures: $result.failures.append("${example.path}: did not check and build; see command ${$result.number.to_str()}") }
+		if $compile_failed {
+			$result = { ..$result, failed: $result.failed + 1 }
 		}
 		var $cases = []
 		for case in example.cases {

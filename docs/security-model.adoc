@@ -396,7 +396,9 @@ Aggregation checks every declared target's source/compiler identity, counts and
 run attempt as inert JSON. A single matrix output cannot establish a complete
 pass. Reporting holds only `issues: write`, checks out nothing and receives a
 constrained outcome and selected tags, never archive-generated diagnostic text.
-Complete passes can close the issue; known failures can open/update it. Unknown,
+Complete passes can close the issue; known failures can open/update it. A
+package fetch that still fails after bounded retries cannot by itself change
+the issue. Unknown,
 missing, skipped or interrupted work cannot close it, and override probes do not
 modify the latest-pair tracking issue. The runner has no pin-update, PR, merge,
 dispatch, release or deployment authority.

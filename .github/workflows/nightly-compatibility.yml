@@ -239,8 +239,14 @@ jobs:
           exit 1
       - name: Compatibility evidence incomplete
         if: steps.aggregate.outputs.outcome != 'compatible' && steps.aggregate.outputs.outcome != 'incompatible'
+        env:
+          OUTCOME: ${{ steps.aggregate.outputs.outcome }}
         run: |
-          echo '::error::Compatibility was not established. Inspect setup, skipped cases, timeouts and missing target evidence; then rerun all jobs.'
+          if [[ "$OUTCOME" == dependency-fetch-failed ]]; then
+            echo '::error::A Roc package fetch failed after three attempts. Inspect the affected command logs for the package URL.'
+          else
+            echo '::error::Compatibility was not established. Inspect setup, skipped cases, timeouts and missing target evidence; then rerun all jobs.'
+          fi
           exit 1
 
   report:
