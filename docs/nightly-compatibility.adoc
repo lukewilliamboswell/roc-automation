@@ -320,7 +320,10 @@ stdin, public environment, deadlines and expected output for failing cases.
 The ZIP inventory is retained too. Console rendering escapes workflow-command
 markers, carriage returns and terminal escapes; raw files preserve the original
 bytes. Compiler diagnostics and example stderr are separate: expected example
-stderr is compared with the case's specification.
+stderr is compared with the case's specification. When a check or build reports
+a package download failure, the nightly runner retries that command after one
+second and then after three seconds. Each attempt has its own logs. An example's
+cases require both a successful check and a successful build.
 
 The `nightly-compatibility-summary-<attempt>` artifact contains `summary.json`:
 the selected identities, per-target results, counts and aggregate verdict. The
@@ -333,6 +336,7 @@ expires; the run link and selected versions allow a later manual reproduction.
 | Result | Meaning | Follow-up
 | `compatible` | Every target ran cases and passed, without skips | No compatibility action; review any compiler warnings
 | `incompatible` | A compiler check/build or recorded example assertion failed | Inspect per-target diagnostics; fix the compiler/package issue and publish a compatible patch release when needed
+| `dependency-fetch-failed` | A compiler package fetch failed on all three attempts | Inspect the command stderr for the package URL and rerun all jobs
 | `setup-failed` | Selection, archive validation, prerequisites or target evidence failed | Repair setup or release packaging; rerun all jobs
 | `test-timeout` / `output-limit` | Execution was interrupted; compatibility is unknown | Inspect partial logs; repair the hang/noise or adjust a justified deadline
 | `not-tested` | Cases were skipped or no complete execution was established | Resolve the documented skips or missing work; rerun all targets
@@ -346,8 +350,8 @@ retrying a matrix; a successful old target is not current-attempt evidence.
 
 Only an established compatibility failure opens or updates the one tracking
 issue. Only a complete current-attempt pass on every target closes it.
-Infrastructure failure, cancellation, timeout and skipped cases leave that issue
-alone. The privileged report job executes only the pinned shared reporting
+Dependency fetch failures without other confirmed failures, infrastructure
+failures, cancellation, timeouts and skipped cases leave that issue alone. The privileged report job executes only the pinned shared reporting
 action; it receives outcome and selected tags, never archive diagnostics or
 repository code.
 

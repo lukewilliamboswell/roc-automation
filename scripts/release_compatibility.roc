@@ -173,12 +173,13 @@ execute! = |selected, initial, directory| {
 	if version.status != "exited" or version.code != 0 or !Str.from_utf8_lossy(version.stdout).contains(selected.nightly) {
 		return Err("installed compiler identity does not match the selected nightly")
 	}
-	ran = Examples.execute!({ compiler, root, suite, dependencies: suite.dependencies, setup: commands, case_timeout_ms: case_timeout, source: Direct, mode: Compare, first_number: 2 })?
-	counted = { ..initial, detail: "", tested: ran.tested, failed: ran.failed, skipped: ran.skipped, diagnostic_commands: ran.diagnostic_commands }
+	ran = Examples.execute!({ compiler, root, suite, dependencies: suite.dependencies, setup: commands, case_timeout_ms: case_timeout, source: Direct, retry_dependency_fetch: Bool.True, mode: Compare, first_number: 2 })?
+	counted = { ..initial, detail: Str.join_with(ran.dependency_fetch_failures, "\n"), tested: ran.tested, failed: ran.failed, skipped: ran.skipped, diagnostic_commands: ran.diagnostic_commands }
 	Ok(
 		match ran.interrupted {
 			Timeout(number) => { ..counted, outcome: "test-timeout", detail: "command ${number.to_str()} was interrupted; inspect its logs" }
 			OutputLimit(number) => { ..counted, outcome: "output-limit", detail: "command ${number.to_str()} was interrupted; inspect its logs" }
+			None if ran.failed == 0 and !ran.dependency_fetch_failures.is_empty() => { ..counted, outcome: "dependency-fetch-failed" }
 			None => { ..counted, outcome: Compatibility.classify(ran.tested, ran.failed, ran.skipped) }
 		},
 	)

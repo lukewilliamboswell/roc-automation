@@ -70,7 +70,17 @@ if sys.argv[1]=='version':
 else:
     print('compiler stdout detail')
     print('warning: successful compilation diagnostic ::error::not an annotation',file=sys.stderr)
-    if os.environ.get('FAKE_COMPILER_FAIL'): sys.exit(1)
+    fetch_command = os.environ.get('FAKE_FETCH_COMMAND')
+    if sys.argv[1] == fetch_command:
+        attempts = Path(os.environ['ROC_CACHE_DIR']) / ('fetch-' + fetch_command)
+        count = int(attempts.read_text()) + 1 if attempts.exists() else 1
+        attempts.write_text(str(count))
+        if count <= int(os.environ['FAKE_FETCH_FAILURES']):
+            print('package download failed', file=sys.stderr)
+            print('    https://example.com/failing-package.tar.zst', file=sys.stderr)
+            print('Error: DownloadFailed.', file=sys.stderr)
+            sys.exit(1)
+    if os.environ.get('FAKE_COMPILER_FAIL') in ('1', sys.argv[1]): sys.exit(1)
     if sys.argv[1]=='docs':
         out=Path(next(a.split('=',1)[1] for a in sys.argv if a.startswith('--output=')))
         out.mkdir(parents=True)
@@ -178,8 +188,55 @@ else:
     def test_compiler_failure_is_incompatible_and_keeps_diagnostics(self):
         ran, directory, _ = self.run_phase("test", FAKE_COMPILER_FAIL="1")
         self.assertNotEqual(ran.returncode, 0)
-        self.assertEqual(json.loads((directory / "result.json").read_text())["outcome"], "incompatible")
+        result = json.loads((directory / "result.json").read_text())
+        self.assertEqual(result["outcome"], "incompatible")
+        self.assertEqual(result["diagnostic_commands"], 2)
         self.assertIn("warning: successful", ran.stdout)
+
+    def test_retries_only_the_failed_compiler_command_and_preserves_attempts(self):
+        for stage, first in (("check", 2), ("build", 3)):
+            with self.subTest(stage=stage):
+                ran, directory, _ = self.run_phase("test", FAKE_FETCH_COMMAND=stage, FAKE_FETCH_FAILURES="1")
+                self.assertEqual(ran.returncode, 0, ran.stderr + ran.stdout)
+                result = json.loads((directory / "result.json").read_text())
+                self.assertEqual((result["outcome"], result["tested"], result["failed"]), ("compatible", 1, 0))
+                self.assertEqual(result["diagnostic_commands"], 3)
+                failed = json.loads((directory / f"{first}-command.json").read_text())
+                retried = json.loads((directory / f"{first + 1}-command.json").read_text())
+                self.assertEqual(failed["argv"][1], stage)
+                self.assertEqual(failed["argv"], retried["argv"])
+                self.assertEqual((failed["code"], retried["code"]), (1, 0))
+                self.assertIn("DownloadFailed", (directory / f"{first}-stderr.log").read_text(encoding="utf-8"))
+
+    def test_exhausted_fetch_retries_keep_the_run_red_without_reporting_incompatibility(self):
+        ran, directory, _ = self.run_phase("test", FAKE_FETCH_COMMAND="check", FAKE_FETCH_FAILURES="3")
+        self.assertNotEqual(ran.returncode, 0)
+        result = json.loads((directory / "result.json").read_text())
+        self.assertEqual((result["outcome"], result["tested"], result["failed"]), ("dependency-fetch-failed", 0, 0))
+        self.assertEqual(result["diagnostic_commands"], 4)
+        self.assertIn("command 4 stderr", result["detail"])
+        for number in (2, 3, 4):
+            self.assertIn("https://example.com/failing-package.tar.zst",
+                          (directory / f"{number}-stderr.log").read_text(encoding="utf-8"))
+        build = json.loads((directory / "5-command.json").read_text())
+        self.assertEqual((build["argv"][1], build["code"]), ("build", 0))
+        self.assertFalse((directory / "6-command.json").exists())
+        artifacts = self.root / "artifacts"
+        target = artifacts / ("compatibility-" + self.env["RA_RUNNER"])
+        target.mkdir(parents=True)
+        shutil.copy(directory / "result.json", target / "result.json")
+        ran, _, outputs = self.run_phase("aggregate", RA_ARTIFACTS=str(artifacts), RA_TEST_RESULT="failure")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("outcome=dependency-fetch-failed", outputs)
+        self.assertIn("report=none", outputs)
+
+    def test_confirmed_compiler_failure_still_counts_with_an_exhausted_fetch(self):
+        ran, directory, _ = self.run_phase("test", FAKE_FETCH_COMMAND="check", FAKE_FETCH_FAILURES="3",
+                                          FAKE_COMPILER_FAIL="build")
+        self.assertNotEqual(ran.returncode, 0)
+        result = json.loads((directory / "result.json").read_text())
+        self.assertEqual((result["outcome"], result["failed"]), ("incompatible", 1))
+        self.assertEqual(result["diagnostic_commands"], 4)
 
     def test_fuzz_build_argument_is_owned_by_the_build_command(self):
         self.spec["apps"][0]["build_args"] = ["--fuzz"]

@@ -685,7 +685,7 @@ test_examples! = |mode| {
 			Path.copy!(Path.utf8("${directory}/${file}"), Path.join(stage, "${directory}/${file}")).map_err(|_| "cannot copy ${directory}/${file}")?
 		}
 	}
-	ran = Examples.execute!({ compiler: settings.compiler, root: stage, suite, dependencies: declared, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: settings.case_timeout_ms, source: Direct, mode, first_number: 1 })?
+	ran = Examples.execute!({ compiler: settings.compiler, root: stage, suite, dependencies: declared, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: settings.case_timeout_ms, source: Direct, retry_dependency_fetch: Bool.False, mode, first_number: 1 })?
 	match mode {
 		Update => {
 			rendered = Compatibility.render(ran.updated)
@@ -761,6 +761,6 @@ test_archive! = || {
 	for s in served {
 		say!("SERVE ${Path.display(s.bundle)} in place of ${s.url}")?
 	}
-	ran = Examples.execute!({ compiler: settings.compiler, root: suite_root, suite, dependencies: urls, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: settings.case_timeout_ms, source: Served(served), mode: Compare, first_number: 1 })?
+	ran = Examples.execute!({ compiler: settings.compiler, root: suite_root, suite, dependencies: urls, setup: { directory: settings.directory, cache, environment: [], environment_text: "[]" }, case_timeout_ms: settings.case_timeout_ms, source: Served(served), retry_dependency_fetch: Bool.False, mode: Compare, first_number: 1 })?
 	verdict!(ran, "Archived examples against the bundles")
 }
