@@ -28,7 +28,11 @@ scripts/*.roc        executable automation entry points
 scripts/src/*.roc    modules shared by those scripts
 tests/               package-specific cases and expected output
 docs/*.adoc          the manual, where the repository has one
+docs/releases/template.adoc  the required release-note authoring template
 ----
+
+See xref:workflows.adoc#write-the-release-notes[Write the release notes] for how
+to use the template.
 
 A repository that publishes several packages or platforms gives each its own
 root directory, such as `package/` and `tzdb/package/`, or `platform-web/` and

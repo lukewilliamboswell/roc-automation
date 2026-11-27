@@ -1,0 +1,17 @@
+= roc-automation tools <version>
+
+// Copy this template to tools-<version>.md and translate headings and code
+// blocks to Markdown. Remove the prompts and any unused sections before review.
+
+// In one or two sentences, say what changed for the project maintainers who
+// install the released utilities or use the shared workflows.
+
+== Use this release
+
+// Show a tested installation or upgrade step using the exact utility version
+// and the published download URL or full action SHA, as appropriate. Give one
+// command a maintainer can run to confirm the expected result.
+
+// The tools publisher appends the compilers used for the release. Mention
+// consumer Roc compatibility here if it changes what maintainers need to install.
+// Add a short migration section only when an upgrade requires changes.
