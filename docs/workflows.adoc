@@ -311,23 +311,28 @@ always a new version. Nothing is ever republished under an existing version.
 
 === Write the release notes
 
-Each release has its notes in `docs/releases/<version>.adoc`, for example
-`docs/releases/0.12.0.adoc`. They are committed in a pull request before the
-release is dispatched, and the workflow refuses to release a version whose
-notes file is missing.
-The workflow publishes the notes with the release. Keep the manual focused on
-the current interface and procedures; link readers to the published releases
-for version-specific changes.
+Every project following this guidance must commit a release-note template at
+`docs/releases/template.adoc`. This applies to packages, platforms, applications
+and tools, including projects with custom release workflows. Tailor the template
+to how people use the project. Keep it in the source tree for authors and outside
+the published manual and release index.
 
-The notes are an authored narrative, written for a user deciding whether and
-how to upgrade. They are not a list of commits or merged pull requests.
+Copy the template for each release and adapt it to the source format your
+workflow expects. Remove author prompts and unused sections before review.
+The shared package workflow requires reviewed AsciiDoc in
+`docs/releases/<version>.adoc`, such as `docs/releases/0.12.0.adoc`, before
+dispatch. Open it with `= <name> <version>`. The workflow publishes the rendered
+notes as the GitHub release body.
 
-* Open with what this release is for, in a sentence or two.
-* Describe what changed in terms of what a user can now do, or must now do
-  differently.
-* For a breaking change, show the code before and after.
-* Say what was fixed, naming the visible symptom.
-* Thank contributors, and link issues where a reader may want the background.
+* Open with one or two sentences about what users gain or need to do differently.
+  When describing a fix, name the symptom a user would recognize.
+* Show a copyable way to use the release. Give the actual dependency declaration
+  or install command, then a first action and its expected result.
+* Identify the exact Roc compiler used to build and test the release. Explain
+  version compatibility when it affects adoption.
+* Add migration steps, alternate bundles, and prerequisites when they change
+  what the reader needs to do. Link to the manual for ongoing procedures and to
+  manifests, checksums, or provenance for verification details.
 
 .docs/releases/0.12.0.adoc
 [source,asciidoc]
@@ -361,10 +366,9 @@ therefore use a placeholder, and the workflow fills it in:
 * After building the bundles, `release.yml` renders the notes with each
   placeholder set to the real URL, tag and hash. A placeholder that is left
   unresolved, or one the notes never use, fails the release.
-* The rendered notes become the body of the GitHub release, followed by a
-  section headed "Compilers" that holds the output of `roc version` and
-  `roc-stable version`. That record is the statement of what the release was
-  built and tested with; no header pin makes it.
+* The shared package workflow appends a "Built with" section with the tested
+  compiler. Use that generated record for the compiler version. A custom
+  workflow supplies the tested compiler when its publisher has no generated record.
 * A dry run renders the notes too, so a mistake in them fails on the pull
   request. It renders one file: the notes for the highest version under
   `docs/releases/`, which are the notes of the next release whenever a pull

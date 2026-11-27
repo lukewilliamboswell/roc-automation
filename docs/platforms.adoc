@@ -576,7 +576,8 @@ and target contents early, so that publication does not discover that a bundle
 cannot carry its advertised hosts.
 
 Keep preparation, validation and publication connected by recorded artifact
-digests and the exact source SHA. Record archive digests, selected dependency
-identities, the source revision and the compiler versions in the release notes.
+digests and the exact source SHA. Record archive digests, dependency identities,
+and source revisions in the release evidence. Use the notes to identify the
+tested compiler and link to the evidence readers need.
 The remaining steps are those of every release; see
 xref:workflows.adoc#the-order-of-a-release[The order of a release].
