@@ -99,8 +99,9 @@ Missing tags, escaping paths, output overlap and ambiguous chapter provenance re
 
 HTML and PDF share the same language-aware source highlighter and original
 UTF-8 lexical ranges. They highlight Roc and YAML through roc-parser's source
-tokenizers, and shell, JSON and diff
-through small lexical adapters. Unknown languages retain preformatted text. The highlighter accepts incomplete snippets and does
+tokenizers, and shell, JSON, diff and S-expressions through small lexical
+adapters. Label S-expression blocks `scheme`, `sexp` or `s-expression`.
+Unknown languages retain preformatted text. The highlighter accepts incomplete snippets and does
 not require type checking. AsciiDoc LF source blocks retain their original
 bytes. Native Markdown follows the upstream CommonMark line-ending
 normalization before code highlighting;

@@ -2,7 +2,7 @@ import parser.Yaml
 import SyntaxHighlight
 
 ## Original-source foreground ranges shared by HTML and PDF. Roc and YAML use
-## upstream lexers. Small lexical adapters cover shell, JSON and unified diffs;
+## upstream lexers. Small lexical adapters cover shell, JSON, S-expressions and unified diffs;
 ## none of these highlighters requires the snippet to be a valid program.
 CodeHighlight :: [].{
 	highlight : Str, Str -> List(SyntaxHighlight.Span)
@@ -35,6 +35,9 @@ CodeHighlight :: [].{
 			}
 			return if ($cursor == lexed.source.len()) $spans else plain(source)
 		}
+		if ["scheme", "sexp", "s-expression"].contains(language) {
+			return sexpressions(source)
+		}
 		shell = ["sh", "bash", "shell", "zsh"].contains(language)
 		if !shell and language != "json" and language != "diff" and language != "patch" {
 			return plain(source)
@@ -60,16 +63,7 @@ CodeHighlight :: [].{
 						$cursor = bytes.len()
 					} else if byte == '"' or (shell and byte == '\'') {
 						$category = StringText
-						var $closed = False
-						while $cursor < bytes.len() and !$closed {
-							current = at(bytes, $cursor)
-							$cursor = $cursor + 1
-							if current == '\\' and byte == '"' and $cursor < bytes.len() {
-								$cursor = $cursor + 1
-							} else if current == byte {
-								$closed = True
-							}
-						}
+						$cursor = quoted_end(bytes, $cursor, byte)
 						if !shell and key_follows(bytes, $cursor) {
 							$category = Name
 						}
@@ -91,6 +85,64 @@ CodeHighlight :: [].{
 		}
 		$result
 	}
+}
+
+sexpressions = |source| {
+	bytes = source.to_utf8()
+	var $cursor = 0.U64
+	var $spans = []
+	while $cursor < bytes.len() {
+		start = $cursor
+		byte = at(bytes, start)
+		$cursor = start + 1
+		category = if sexp_space(byte) {
+			Trivia
+		} else if byte == ';' {
+			while $cursor < bytes.len() and at(bytes, $cursor) != '\n' and at(bytes, $cursor) != '\r' {
+				$cursor = $cursor + 1
+			}
+			CommentText
+		} else if byte == '"' {
+			$cursor = quoted_end(bytes, $cursor, byte)
+			StringText
+		} else if sexp_symbol(byte) {
+			Symbol
+		} else {
+			while $cursor < bytes.len() and !sexp_delimiter(at(bytes, $cursor)) {
+				$cursor = $cursor + 1
+			}
+			atom = Str.from_utf8_lossy(bytes.sublist({ start, len: $cursor - start }))
+			sexp_atom(atom)
+		}
+		$spans = add($spans, start, $cursor, category)
+	}
+	$spans
+}
+
+sexp_space = |byte| whitespace(byte) or byte == '\n'
+
+sexp_symbol = |byte| ['(', ')', '[', ']', '\'', '`', ','].contains(byte)
+
+sexp_delimiter = |byte| sexp_space(byte) or sexp_symbol(byte) or byte == ';' or byte == '"'
+
+sexp_atom = |atom| {
+	keywords = ["#t", "#f", "#true", "#false", "true", "false", "define", "lambda", "let", "let*", "letrec", "if", "cond", "case", "begin", "set!", "quote", "quasiquote", "unquote", "unquote-splicing", "and", "or"]
+	if (atom.starts_with(":") or keywords.contains(atom)) ReservedWord else if (F64.from_str(atom).is_ok()) NumericLiteral else Name
+}
+
+quoted_end = |bytes, start, delimiter| {
+	var $cursor = start
+	while $cursor < bytes.len() {
+		byte = at(bytes, $cursor)
+		$cursor = $cursor + 1
+		if byte == delimiter {
+			return $cursor
+		}
+		if byte == '\\' and delimiter == '"' and $cursor < bytes.len() {
+			$cursor = $cursor + 1
+		}
+	}
+	$cursor
 }
 
 plain = |source| if (source.is_empty()) [] else [{ start: 0, end: source.to_utf8().len(), category: Trivia }]

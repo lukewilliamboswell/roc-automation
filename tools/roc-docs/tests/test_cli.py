@@ -83,6 +83,7 @@ class RendererTests(unittest.TestCase):
             'sh': '# shell\nexport MODE="green"\nif true; then echo "$MODE"; fi\n',
             'json': '{"key": false, "value": 42}\n',
             'diff': '@@ -1 +1 @@\n-old\n+new\n',
+            'sexp': '(expect-request 1 :method "GET") ; café\n',
         }
         for language, code in snippets.items():
             with self.subTest(language=language):
@@ -349,6 +350,7 @@ class RendererTests(unittest.TestCase):
             'sh': 'export MODE="green string"\n',
             'json': '{"name": "green string", "port": 42, "enabled": true}\n',
             'diff': '@@ -1 +1 @@\n-old\n+green string\n',
+            'scheme': '(expect-visible (text "green string")) ; comment\n',
             'unknown-language': 'unhighlighted plain source\n',
         }
         for language, code in snippets.items():

@@ -13,6 +13,14 @@ import SyntaxHighlight
 import parser.Markdown
 main! = |_| Ok({})
 expect {
+	source = "(test (café :status -42 #t) \"say \\\"hi\\\"\") ; note\r\n\"partial\nstring"
+	spans = CodeHighlight.highlight("scheme", source)
+	tokens = spans.keep_if(|span| span.category != Trivia).map(|span| (span.category, SyntaxHighlight.text(source, span)))
+	Str.join_with(spans.map(|span| SyntaxHighlight.text(source, span)), "") == source and
+		tokens == [(Symbol, "("), (Name, "test"), (Symbol, "("), (Name, "café"), (ReservedWord, ":status"), (NumericLiteral, "-42"), (ReservedWord, "#t"), (Symbol, ")"), (StringText, "\"say \\\"hi\\\"\""), (Symbol, ")"), (CommentText, "; note"), (StringText, "\"partial\nstring")] and
+			["sexp", "s-expression"].all(|language| CodeHighlight.highlight(language, source) == spans)
+}
+expect {
 	source = "# Home {#home}\n\n## Chapter {#chapter}\n\n### Section {#section}\n"
 	entries = Html.entries(Markdown.parse_str(source), True)
 	entries.map(|e| e.number) == ["1. ", "1.1. "] and Html.toc(entries).contains("<ul><li><a href=\"#section\">")
