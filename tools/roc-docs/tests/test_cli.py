@@ -44,8 +44,8 @@ def png_bytes(width, height, pixels):
 class RendererTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup); self.root = Path(self.tmp.name)
-    def run_doc(self, source, *options, name='out', expect=0):
-        path = self.root / (name + '.md'); path.write_text(source)
+    def run_doc(self, source, *options, name='out', expect=0, extension='md'):
+        path = self.root / (name + '.' + extension); path.write_text(source)
         output = self.root / name
         result = subprocess.run([BINARY, 'render', str(path), str(output), *options], capture_output=True, text=True,
                                 env={**os.environ, 'PATH': '/nonexistent'}, timeout=45)
@@ -83,6 +83,7 @@ class RendererTests(unittest.TestCase):
             'sh': '# shell\nexport MODE="green"\nif true; then echo "$MODE"; fi\n',
             'json': '{"key": false, "value": 42}\n',
             'diff': '@@ -1 +1 @@\n-old\n+new\n',
+            'sexp': '(expect-request 1 :method "GET") ; café\n',
         }
         for language, code in snippets.items():
             with self.subTest(language=language):
@@ -91,6 +92,12 @@ class RendererTests(unittest.TestCase):
                 # CommonMark normalizes CRLF before handing code to the lexer;
                 # the highlighter must preserve that prepared text exactly.
                 self.assertEqual(page.code, [code.replace('\r\n','\n')]); self.assertTrue(page.syntax)
+    def test_asciidoc_scheme_source_is_highlighted(self):
+        code = '(expect-request 1 :method "GET") ; café\n'
+        output, _ = self.run_doc('= Sources\n\n[source,scheme]\n----\n' + code + '----\n', '--html-only', name='scheme', extension='adoc')
+        page = Page((output/'index.html').read_text())
+        self.assertEqual(page.code, [code])
+        self.assertTrue({'syntax-symbol', 'syntax-name', 'syntax-keyword', 'syntax-number', 'syntax-string', 'syntax-comment'}.issubset(page.syntax))
     def test_chrome_ids_do_not_collide_with_authored_headings(self):
         output, _ = self.run_doc('# Content {#content}\n\n## TOC {#toc}\n', '--html-only')
         page = Page((output/'index.html').read_text())
@@ -349,6 +356,7 @@ class RendererTests(unittest.TestCase):
             'sh': 'export MODE="green string"\n',
             'json': '{"name": "green string", "port": 42, "enabled": true}\n',
             'diff': '@@ -1 +1 @@\n-old\n+green string\n',
+            'scheme': '(expect-visible (text "green string")) ; comment\n',
             'unknown-language': 'unhighlighted plain source\n',
         }
         for language, code in snippets.items():
