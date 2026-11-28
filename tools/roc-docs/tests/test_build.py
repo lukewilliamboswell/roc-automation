@@ -59,6 +59,15 @@ class RepositoryTests(unittest.TestCase):
         return output
     def unchanged(self, output):
         self.assertEqual({str(p.relative_to(output)):p.read_bytes() for p in output.rglob('*') if p.is_file()}, {'keep':b'previous publication'})
+    def test_asciidoc_scheme_source_is_highlighted(self):
+        code = '(expect-request 1 :method "GET") ; café\n'
+        self.source('index.adoc', '= Sources\n\n[source,scheme]\n----\n' + code + '----\n')
+        self.run_build()
+        page = (self.root/'.docs-out/site/index.html').read_text()
+        self.assertEqual(Html(page).code, [code])
+        for category in ('symbol', 'name', 'keyword', 'number', 'string', 'comment'):
+            self.assertIn(f'<span class="syntax-{category}">', page)
+
     def test_checked_listing_keeps_selected_tabs_whitespace_and_quote_bytes(self):
         code = '\tvalue = "`code`\'s"  \n'
         original = '# tag::body[]\n' + code + '# end::body[]\n'
